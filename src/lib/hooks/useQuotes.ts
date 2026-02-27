@@ -1,6 +1,10 @@
 import useSWR from 'swr';
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`API error ${r.status}`);
+  return r.json();
+};
 
 interface QuoteData {
   symbol: string;
@@ -23,10 +27,11 @@ export function useQuotes(symbols: string[]) {
     dedupingInterval: 30_000,
   });
 
+  const safeData = Array.isArray(data) ? data : [];
   const quotesMap = new Map<string, QuoteData>();
-  data?.forEach((q) => quotesMap.set(q.symbol, q));
+  safeData.forEach((q) => quotesMap.set(q.symbol, q));
 
-  return { quotes: data || [], quotesMap, error, isLoading };
+  return { quotes: safeData, quotesMap, error, isLoading };
 }
 
 export function useSymbolSearch(query: string) {
@@ -38,5 +43,5 @@ export function useSymbolSearch(query: string) {
     dedupingInterval: 5_000,
   });
 
-  return { results: data || [], error, isLoading };
+  return { results: Array.isArray(data) ? data : [], error, isLoading };
 }
