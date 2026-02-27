@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
-import { Plus, PieChart, Trash2, Eye, Star } from 'lucide-react';
+import { Plus, PieChart, Trash2, Eye, Star, Rocket } from 'lucide-react';
 
 const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   CONSERVATEUR: 'info',
@@ -124,6 +124,11 @@ export default function ModelsPage() {
                 <Link href={`/models/${model.id}`} className="flex-1">
                   <Button variant="ghost" size="sm" className="w-full" icon={<Eye className="h-3.5 w-3.5" />}>
                     Voir
+                  </Button>
+                </Link>
+                <Link href={`/models/${model.id}/apply`} className="flex-1">
+                  <Button variant="ghost" size="sm" className="w-full text-brand-primary" icon={<Rocket className="h-3.5 w-3.5" />}>
+                    Appliquer
                   </Button>
                 </Link>
                 <Button

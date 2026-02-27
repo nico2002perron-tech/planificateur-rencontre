@@ -7,44 +7,52 @@ import { buildFullReportData } from '@/lib/pdf/report-data';
 import { createClient } from '@/lib/supabase/server';
 import React from 'react';
 
-export async function POST(request: NextRequest) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const body = await request.json();
-    const { portfolio_id, client_id, config } = body;
-
-    if (!portfolio_id || !client_id) {
-      return NextResponse.json({ error: 'portfolio_id and client_id required' }, { status: 400 });
-    }
-
+    const { id } = await params;
     const supabase = createClient();
+
+    // Fetch report
+    const { data: report } = await supabase
+      .from('reports')
+      .select('*')
+      .eq('id', id)
+      .eq('advisor_id', session.user.id)
+      .single();
+
+    if (!report) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    }
 
     // Fetch portfolio with holdings
     const { data: portfolio } = await supabase
       .from('portfolios')
       .select('*, holdings(*)')
-      .eq('id', portfolio_id)
+      .eq('id', report.portfolio_id)
       .single();
 
     if (!portfolio) {
       return NextResponse.json({ error: 'Portfolio not found' }, { status: 404 });
     }
 
-    // Verify client belongs to advisor
+    // Fetch client
     const { data: client } = await supabase
       .from('clients')
       .select('*')
-      .eq('id', client_id)
-      .eq('advisor_id', session.user.id)
+      .eq('id', report.client_id)
       .single();
 
     if (!client) {
-      return NextResponse.json({ error: 'Client not found or unauthorized' }, { status: 404 });
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
-    // Fetch cached prices for all holding symbols
+    // Fetch cached prices
     const symbols = (portfolio.holdings || []).map((h: { symbol: string }) => h.symbol);
     const priceMap: Record<string, { price: number; company_name?: string; sector?: string }> = {};
 
@@ -65,14 +73,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch advisor info
+    // Fetch advisor
     const { data: advisor } = await supabase
       .from('users')
       .select('name, title')
       .eq('id', session.user.id)
       .single();
 
-    // Build full report data
+    // Build and render
     const reportData = buildFullReportData(
       portfolio,
       portfolio.holdings || [],
@@ -83,42 +91,23 @@ export async function POST(request: NextRequest) {
       },
       priceMap,
       {
-        sections: config?.sections,
-        projectionYears: config?.projection_years,
+        sections: (report.config as Record<string, unknown>)?.sections as string[] | undefined,
+        projectionYears: (report.config as Record<string, unknown>)?.projection_years as number | undefined,
       }
     );
 
-    // Generate PDF
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = React.createElement(FullReportDocument, { data: reportData }) as any;
     const buffer = await renderToBuffer(element);
-
-    // Record report in database
-    const reportTitle = `Rapport - ${client.first_name} ${client.last_name} - ${portfolio.name}`;
-    const { data: report } = await supabase
-      .from('reports')
-      .insert({
-        portfolio_id,
-        client_id,
-        advisor_id: session.user.id,
-        title: reportTitle,
-        config: config || {},
-        status: 'ready',
-        generated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="rapport-${client.last_name}-${portfolio.name}.pdf"`,
-        'X-Report-Id': report?.id || '',
-        'X-Report-Title': reportTitle,
       },
     });
   } catch (error) {
-    console.error('Report generation error:', error);
-    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 });
+    console.error('Report download error:', error);
+    return NextResponse.json({ error: 'Failed to download report' }, { status: 500 });
   }
 }

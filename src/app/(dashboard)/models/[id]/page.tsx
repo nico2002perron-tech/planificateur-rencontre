@@ -12,7 +12,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModel, type ModelHolding } from '@/lib/hooks/useModels';
 import { RISK_PROFILES, ASSET_CLASSES, REGIONS } from '@/lib/utils/constants';
-import { Save, Plus, Trash2, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Save, Plus, Trash2, ArrowLeft, Rocket } from 'lucide-react';
 
 const riskLabels: Record<string, string> = {
   CONSERVATEUR: 'Conservateur',
@@ -117,7 +118,12 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
               Retour
             </Button>
             {!editing ? (
-              <Button variant="outline" onClick={() => setEditing(true)}>Modifier</Button>
+              <>
+                <Link href={`/models/${id}/apply`}>
+                  <Button variant="outline" icon={<Rocket className="h-4 w-4" />}>Appliquer à un client</Button>
+                </Link>
+                <Button variant="outline" onClick={() => setEditing(true)}>Modifier</Button>
+              </>
             ) : (
               <>
                 <Button variant="ghost" onClick={() => { setEditing(false); if (model) { setName(model.name); setDescription(model.description || ''); setRiskLevel(model.risk_level); setHoldings(model.holdings.length > 0 ? model.holdings : [{ ...emptyHolding }]); } }}>

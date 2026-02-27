@@ -66,6 +66,13 @@ export const styles = StyleSheet.create({
     color: '#1a2a3a',
     marginBottom: 8,
   },
+  subsectionTitle: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: '#03045e',
+    marginBottom: 6,
+    marginTop: 12,
+  },
 
   // Table
   table: {
@@ -86,6 +93,14 @@ export const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
     borderBottomStyle: 'solid',
     paddingVertical: 5,
+  },
+  tableRowAlt: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f0f0f0',
+    borderBottomStyle: 'solid',
+    paddingVertical: 5,
+    backgroundColor: '#fafbfc',
   },
   tableCell: {
     fontSize: 9,
@@ -129,6 +144,62 @@ export const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 10,
     alignItems: 'center',
+  },
+
+  // Allocation bar (horizontal stacked bar)
+  allocationBar: {
+    flexDirection: 'row',
+    height: 16,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  allocationBarSegment: {
+    height: '100%',
+  },
+
+  // Legend
+  legendContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+    marginBottom: 4,
+  },
+  colorSwatch: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    marginRight: 4,
+  },
+  legendText: {
+    fontSize: 8,
+    color: '#586e82',
+  },
+
+  // Stress test
+  stressTestRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f0f0f0',
+    borderBottomStyle: 'solid',
+  },
+
+  // Note
+  noteText: {
+    fontSize: 7,
+    color: '#8a9bb0',
+    fontStyle: 'italic',
+    marginTop: 6,
   },
 
   // Bullets
