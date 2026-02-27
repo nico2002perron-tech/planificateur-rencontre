@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useMemo } from 'react';
+import { Suspense, useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -9,14 +9,19 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useClients } from '@/lib/hooks/useClients';
 import { usePortfolios } from '@/lib/hooks/usePortfolio';
-import { FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings } from 'lucide-react';
+import { useQuotes } from '@/lib/hooks/useQuotes';
+import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
+import {
+  FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
+  TrendingUp,
+} from 'lucide-react';
 
 const REPORT_SECTIONS = [
-  { key: 'summary', label: 'Résumé exécutif + Profil client', default: true },
-  { key: 'composition', label: 'Composition détaillée', default: true },
-  { key: 'allocation', label: 'Allocations (classe, secteur, région)', default: true },
-  { key: 'risk', label: 'Métriques de risque', default: true },
-  { key: 'scenarios', label: 'Scénarios de projection', default: true },
+  { key: 'summary', label: 'Sommaire du portefeuille (Morningstar)', default: true },
+  { key: 'composition', label: 'Rendement + Composition détaillée', default: true },
+  { key: 'targets', label: 'Cours cibles des analystes', default: true },
+  { key: 'profiles', label: 'Fiches descriptives des titres', default: true },
+  { key: 'risk', label: 'Métriques de risque & Scénarios', default: true },
   { key: 'stress', label: 'Tests de résistance', default: true },
   { key: 'disclaimers', label: 'Avertissements complets', default: true },
 ];
@@ -24,9 +29,18 @@ const REPORT_SECTIONS = [
 const STEPS = [
   { label: 'Client', icon: User },
   { label: 'Portefeuille', icon: Briefcase },
+  { label: 'Vérification', icon: Eye },
   { label: 'Configuration', icon: Settings },
   { label: 'Générer', icon: FileText },
 ];
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0 }).format(value);
+}
+
+function formatCurrencyFull(value: number): string {
+  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(value);
+}
 
 function NewReportWizard() {
   const router = useRouter();
@@ -57,7 +71,7 @@ function NewReportWizard() {
       if (p) {
         setSelectedClientId(p.client_id);
         setSelectedPortfolioId(p.id);
-        setStep(2); // Jump to config
+        setStep(2); // Jump to verification
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,6 +79,70 @@ function NewReportWizard() {
 
   const selectedClient = clients?.find((c) => c.id === selectedClientId);
   const selectedPortfolio = portfolios?.find((p) => p.id === selectedPortfolioId);
+
+  // Get holdings from selected portfolio for verification step
+  const [portfolioHoldings, setPortfolioHoldings] = useState<
+    { symbol: string; name: string; quantity: number; average_cost: number; sector: string }[]
+  >([]);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+
+  // Fetch portfolio holdings when portfolio is selected
+  useEffect(() => {
+    if (selectedPortfolioId && step >= 2) {
+      setHoldingsLoading(true);
+      fetch(`/api/portfolios/${selectedPortfolioId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          setPortfolioHoldings(data.holdings || []);
+        })
+        .catch(() => setPortfolioHoldings([]))
+        .finally(() => setHoldingsLoading(false));
+    }
+  }, [selectedPortfolioId, step]);
+
+  // Get symbols for FMP fetch
+  const holdingSymbols = useMemo(() => portfolioHoldings.map((h) => h.symbol), [portfolioHoldings]);
+
+  // Fetch real-time prices
+  const { quotes, quotesMap, isLoading: quotesLoading } = useQuotes(step >= 2 ? holdingSymbols : []);
+
+  // Fetch price targets
+  const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(step >= 2 ? holdingSymbols : []);
+
+  // Compute verification table data
+  const verificationData = useMemo(() => {
+    return portfolioHoldings.map((h) => {
+      const quote = quotesMap.get(h.symbol);
+      const target = targets[h.symbol];
+      const currentPrice = quote?.price || h.average_cost;
+      const marketValue = h.quantity * currentPrice;
+      const targetPrice = target?.targetConsensus || 0;
+      const gainPercent = targetPrice > 0 && currentPrice > 0
+        ? ((targetPrice - currentPrice) / currentPrice) * 100
+        : 0;
+      const sector = quote?.exchange || h.sector || '';
+      return {
+        symbol: h.symbol,
+        name: quote?.company_name || h.name,
+        currentPrice,
+        hasFmpPrice: !!quote,
+        targetPrice,
+        gainPercent,
+        sector,
+        marketValue,
+      };
+    });
+  }, [portfolioHoldings, quotesMap, targets]);
+
+  const totalCurrentValue = verificationData.reduce((sum, v) => sum + v.marketValue, 0);
+  const totalTargetValue = verificationData.reduce((sum, v) => {
+    return sum + (v.targetPrice > 0 ? portfolioHoldings.find(h => h.symbol === v.symbol)!.quantity * v.targetPrice : v.marketValue);
+  }, 0);
+  const totalEstimatedGain = totalTargetValue - totalCurrentValue;
+  const totalEstimatedGainPct = totalCurrentValue > 0 ? (totalEstimatedGain / totalCurrentValue) * 100 : 0;
+
+  const fmpPriceCount = verificationData.filter((v) => v.hasFmpPrice).length;
+  const targetCount = verificationData.filter((v) => v.targetPrice > 0).length;
 
   function toggleSection(key: string) {
     setSections((prev) =>
@@ -125,7 +203,7 @@ function NewReportWizard() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl">
       {/* Stepper */}
       <div className="flex items-center justify-between mb-8 px-4">
         {STEPS.map((s, i) => {
@@ -149,7 +227,7 @@ function NewReportWizard() {
                 </span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`h-0.5 w-12 mx-2 mt-[-12px] ${i < step ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+                <div className={`h-0.5 w-8 mx-1.5 mt-[-12px] ${i < step ? 'bg-emerald-300' : 'bg-gray-200'}`} />
               )}
             </div>
           );
@@ -259,8 +337,129 @@ function NewReportWizard() {
         </Card>
       )}
 
-      {/* Step 2: Configuration */}
+      {/* Step 2: Vérification des prix & Secteurs */}
       {step === 2 && (
+        <Card>
+          <h3 className="font-semibold text-text-main mb-4 flex items-center gap-2">
+            <Eye className="h-5 w-5 text-brand-primary" />
+            Vérification des prix &amp; Cours cibles
+          </h3>
+
+          {holdingsLoading ? (
+            <div className="flex justify-center py-8">
+              <Spinner size="lg" />
+            </div>
+          ) : portfolioHoldings.length === 0 ? (
+            <p className="text-sm text-text-muted py-8 text-center">
+              Aucun titre dans ce portefeuille.
+            </p>
+          ) : (
+            <>
+              {/* Status badges */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {quotesLoading || targetsLoading ? (
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
+                    <Spinner size="sm" /> Chargement des données FMP...
+                  </span>
+                ) : (
+                  <>
+                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
+                      fmpPriceCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {fmpPriceCount > 0 ? <Wifi className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                      {fmpPriceCount}/{holdingSymbols.length} prix temps réel
+                    </span>
+                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
+                      targetCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-text-muted'
+                    }`}>
+                      <TrendingUp className="h-3 w-3" />
+                      {targetCount}/{holdingSymbols.length} cours cibles
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Verification table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-text-muted">
+                      <th className="text-left py-2 font-semibold text-xs">Symbole</th>
+                      <th className="text-left py-2 font-semibold text-xs">Nom</th>
+                      <th className="text-right py-2 font-semibold text-xs">Prix actuel</th>
+                      <th className="text-right py-2 font-semibold text-xs">Cours cible</th>
+                      <th className="text-right py-2 font-semibold text-xs">Gain est. %</th>
+                      <th className="text-right py-2 font-semibold text-xs">Valeur</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {verificationData.map((v) => (
+                      <tr key={v.symbol} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <td className="py-2.5">
+                          <span className="font-mono font-semibold text-brand-primary">{v.symbol}</span>
+                          {v.hasFmpPrice ? (
+                            <span className="ml-1.5 px-1 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700">FMP</span>
+                          ) : (
+                            <span className="ml-1.5 px-1 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700">Coût</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 text-text-main">{v.name}</td>
+                        <td className="py-2.5 text-right font-semibold">{formatCurrencyFull(v.currentPrice)}</td>
+                        <td className="py-2.5 text-right">
+                          {v.targetPrice > 0 ? formatCurrencyFull(v.targetPrice) : (
+                            <span className="text-text-muted">N/D</span>
+                          )}
+                        </td>
+                        <td className={`py-2.5 text-right font-semibold ${
+                          v.gainPercent > 0 ? 'text-emerald-600' : v.gainPercent < 0 ? 'text-red-500' : 'text-text-muted'
+                        }`}>
+                          {v.targetPrice > 0 ? `${v.gainPercent >= 0 ? '+' : ''}${v.gainPercent.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="py-2.5 text-right">{formatCurrency(v.marketValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary */}
+              <div className="mt-4 p-4 bg-bg-light rounded-lg">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-xs text-text-muted">Valeur totale</p>
+                    <p className="text-lg font-bold text-text-main">{formatCurrency(totalCurrentValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-muted">Valeur cible 12 mois</p>
+                    <p className="text-lg font-bold text-brand-primary">{formatCurrency(totalTargetValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-text-muted">Gain estimé total</p>
+                    <p className={`text-lg font-bold ${totalEstimatedGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {formatCurrency(totalEstimatedGain)} ({totalEstimatedGainPct >= 0 ? '+' : ''}{totalEstimatedGainPct.toFixed(1)}%)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-between mt-6">
+            <Button variant="ghost" onClick={() => setStep(1)} icon={<ChevronLeft className="h-4 w-4" />}>
+              Retour
+            </Button>
+            <Button
+              onClick={() => setStep(3)}
+              icon={<ChevronRight className="h-4 w-4" />}
+            >
+              Configuration
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Step 3: Configuration */}
+      {step === 3 && (
         <Card>
           <h3 className="font-semibold text-text-main mb-4 flex items-center gap-2">
             <Settings className="h-5 w-5 text-brand-primary" />
@@ -309,18 +508,18 @@ function NewReportWizard() {
           </div>
 
           <div className="flex justify-between mt-6">
-            <Button variant="ghost" onClick={() => setStep(1)} icon={<ChevronLeft className="h-4 w-4" />}>
+            <Button variant="ghost" onClick={() => setStep(2)} icon={<ChevronLeft className="h-4 w-4" />}>
               Retour
             </Button>
-            <Button onClick={() => setStep(3)} icon={<ChevronRight className="h-4 w-4" />}>
+            <Button onClick={() => setStep(4)} icon={<ChevronRight className="h-4 w-4" />}>
               Aperçu
             </Button>
           </div>
         </Card>
       )}
 
-      {/* Step 3: Preview + Generate */}
-      {step === 3 && (
+      {/* Step 4: Preview + Generate */}
+      {step === 4 && (
         <Card>
           <h3 className="font-semibold text-text-main mb-4 flex items-center gap-2">
             <FileText className="h-5 w-5 text-brand-primary" />
@@ -347,12 +546,24 @@ function NewReportWizard() {
               <span className="text-text-main">{selectedPortfolio?.holdings_count || 0}</span>
             </div>
             <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Prix FMP temps réel</span>
+              <span className={`font-semibold ${fmpPriceCount > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {fmpPriceCount}/{holdingSymbols.length}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Cours cibles analystes</span>
+              <span className={`font-semibold ${targetCount > 0 ? 'text-emerald-600' : 'text-text-muted'}`}>
+                {targetCount}/{holdingSymbols.length}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
               <span className="text-text-muted">Projection</span>
               <span className="text-text-main">{projectionYears} ans</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Pages</span>
-              <span className="font-semibold text-brand-primary">8 pages</span>
+              <span className="font-semibold text-brand-primary">8 pages (style Morningstar)</span>
             </div>
           </div>
 
@@ -370,8 +581,17 @@ function NewReportWizard() {
             </div>
           </div>
 
+          {totalEstimatedGain !== 0 && (
+            <div className="mb-6 p-3 bg-bg-light rounded-lg">
+              <p className="text-xs text-text-muted mb-1">Estimation consensus 12 mois</p>
+              <p className={`text-sm font-bold ${totalEstimatedGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                Gain estimé: {formatCurrency(totalEstimatedGain)} ({totalEstimatedGainPct >= 0 ? '+' : ''}{totalEstimatedGainPct.toFixed(1)}%)
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-between mt-6">
-            <Button variant="ghost" onClick={() => setStep(2)} icon={<ChevronLeft className="h-4 w-4" />}>
+            <Button variant="ghost" onClick={() => setStep(3)} icon={<ChevronLeft className="h-4 w-4" />}>
               Retour
             </Button>
             <Button
@@ -391,7 +611,7 @@ function NewReportWizard() {
 export default function NewReportPage() {
   return (
     <div>
-      <PageHeader title="Nouveau rapport" description="Configurez et générez un rapport PDF détaillé" />
+      <PageHeader title="Nouveau rapport" description="Rapport professionnel style Morningstar — 8 pages avec cours cibles et fiches descriptives" />
       <Suspense fallback={<div className="flex justify-center py-12"><Spinner size="lg" /></div>}>
         <NewReportWizard />
       </Suspense>

@@ -256,6 +256,189 @@ export const styles = StyleSheet.create({
     marginTop: 20,
   },
 
+  // ─── Performance Chart (bar chart via Views) ──────────────────
+  chartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 120,
+    gap: 6,
+    marginBottom: 8,
+    paddingLeft: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    borderBottomStyle: 'solid',
+  },
+  chartBarGroup: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  chartBar: {
+    width: 18,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
+  chartBarGreen: {
+    backgroundColor: '#00b4d8',
+  },
+  chartBarRed: {
+    backgroundColor: '#ef4444',
+  },
+  chartBarBench: {
+    backgroundColor: '#c4c4c4',
+  },
+  chartLabel: {
+    fontSize: 7,
+    color: '#586e82',
+    textAlign: 'center',
+    marginTop: 3,
+  },
+
+  // ─── Target Table (Cours Cibles) ──────────────────────────────
+  targetTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#03045e',
+    paddingVertical: 6,
+  },
+  targetHeaderCell: {
+    fontSize: 7,
+    fontFamily: 'Helvetica-Bold',
+    color: '#ffffff',
+    paddingHorizontal: 3,
+    textTransform: 'uppercase',
+  },
+  targetRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+    borderBottomStyle: 'solid',
+    paddingVertical: 5,
+  },
+  targetRowAlt: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e7eb',
+    borderBottomStyle: 'solid',
+    paddingVertical: 5,
+    backgroundColor: '#f8f9fb',
+  },
+  targetCell: {
+    fontSize: 8,
+    paddingHorizontal: 3,
+  },
+  targetTotalRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f3f6fa',
+    paddingVertical: 6,
+    borderTopWidth: 1.5,
+    borderTopColor: '#03045e',
+    borderTopStyle: 'solid',
+  },
+  targetPositive: {
+    color: '#10b981',
+    fontFamily: 'Helvetica-Bold',
+  },
+  targetNegative: {
+    color: '#ef4444',
+    fontFamily: 'Helvetica-Bold',
+  },
+
+  // ─── Holding Cards (Fiches descriptives) ──────────────────────
+  holdingCard: {
+    backgroundColor: '#f8f9fb',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#00b4d8',
+    borderLeftStyle: 'solid',
+  },
+  holdingCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  holdingCardTitle: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: '#03045e',
+  },
+  holdingCardSymbol: {
+    fontSize: 9,
+    color: '#586e82',
+  },
+  holdingDescription: {
+    fontSize: 8,
+    color: '#3a4a5a',
+    lineHeight: 1.4,
+    marginBottom: 6,
+  },
+  holdingMetaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
+  holdingMeta: {
+    width: '30%',
+  },
+  holdingMetaLabel: {
+    fontSize: 7,
+    color: '#8a9bb0',
+    marginBottom: 1,
+  },
+  holdingMetaValue: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: '#1a2a3a',
+  },
+
+  // ─── Sector Bars (horizontal) ─────────────────────────────────
+  sectorBarContainer: {
+    marginBottom: 4,
+  },
+  sectorBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sectorLabel: {
+    width: '30%',
+    fontSize: 9,
+    color: '#1a2a3a',
+  },
+  sectorBarOuter: {
+    flex: 1,
+    height: 12,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginHorizontal: 6,
+  },
+  sectorBarInner: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#00b4d8',
+  },
+  sectorPercent: {
+    width: '10%',
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: '#03045e',
+    textAlign: 'right',
+  },
+
+  // ─── Summary Pie Row ──────────────────────────────────────────
+  pieSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f0f0f0',
+    borderBottomStyle: 'solid',
+  },
+
   // Spacing
   mb4: { marginBottom: 4 },
   mb8: { marginBottom: 8 },

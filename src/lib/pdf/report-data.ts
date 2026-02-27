@@ -75,6 +75,94 @@ export interface ProjectionYear {
   bear: number;
 }
 
+// ─── New Enriched Types ──────────────────────────────────────────
+
+export interface HoldingProfile {
+  symbol: string;
+  companyName: string;
+  description: string;
+  sector: string;
+  industry: string;
+  country: string;
+  beta: number;
+  lastDiv: number;
+  marketCap: number;
+  exchange: string;
+  targetPrice: number;
+  targetHigh: number;
+  targetLow: number;
+  numberOfAnalysts: number;
+  currentPrice: number;
+  quantity: number;
+  costBasis: number;
+  estimatedGainPercent: number;
+  estimatedGainDollar: number;
+}
+
+export interface HistoricalPoint {
+  date: string;
+  portfolioValue: number;
+  benchmarkValue: number;
+}
+
+export interface AnnualReturn {
+  year: number;
+  portfolioReturn: number;
+  benchmarkReturn: number;
+  difference: number;
+}
+
+export interface PriceTargetSummary {
+  totalCurrentValue: number;
+  totalTargetValue: number;
+  totalEstimatedGainDollar: number;
+  totalEstimatedGainPercent: number;
+}
+
+export interface SectorBreakdownItem {
+  sector: string;
+  sectorLabel: string;
+  holdings: string[];
+  totalValue: number;
+  weight: number;
+}
+
+// ─── FMP Data Inputs ─────────────────────────────────────────────
+
+export interface FMPProfileData {
+  symbol: string;
+  companyName: string;
+  description: string;
+  sector: string;
+  industry: string;
+  country: string;
+  beta: number;
+  lastDiv: number;
+  mktCap: number;
+  exchange: string;
+}
+
+export interface FMPTargetData {
+  targetConsensus: number;
+  targetHigh: number;
+  targetLow: number;
+  numberOfAnalysts: number;
+}
+
+export interface FMPHistoricalData {
+  date: string;
+  close: number;
+}
+
+export interface EnrichedFMPData {
+  profiles: Record<string, FMPProfileData>;
+  targets: Record<string, FMPTargetData>;
+  holdingHistory: Record<string, FMPHistoricalData[]>;
+  benchmarkHistory: FMPHistoricalData[];
+}
+
+// ─── Full Report Data ────────────────────────────────────────────
+
 export interface FullReportData {
   client: {
     name: string;
@@ -114,12 +202,35 @@ export interface FullReportData {
   scenarios: ScenarioResult[];
   projectionYears: ProjectionYear[];
   stressTests: StressTestResult[];
+  // New enriched data
+  holdingProfiles: HoldingProfile[];
+  annualReturns: AnnualReturn[];
+  priceTargetSummary: PriceTargetSummary;
+  sectorBreakdown: SectorBreakdownItem[];
   generatedAt: string;
   config: {
     sections: string[];
     projectionYears: number;
   };
 }
+
+// ─── Sector Labels (FR) ─────────────────────────────────────────
+
+const SECTOR_LABELS_FR: Record<string, string> = {
+  'Technology': 'Technologie',
+  'Healthcare': 'Santé',
+  'Financial Services': 'Services financiers',
+  'Financials': 'Services financiers',
+  'Consumer Cyclical': 'Consommation cyclique',
+  'Consumer Defensive': 'Consommation défensive',
+  'Industrials': 'Industriels',
+  'Energy': 'Énergie',
+  'Utilities': 'Services publics',
+  'Real Estate': 'Immobilier',
+  'Basic Materials': 'Matériaux de base',
+  'Communication Services': 'Communications',
+  'Consumer Staples': 'Biens de consommation',
+};
 
 // ─── Risk Estimates by Asset Class ──────────────────────────────
 
@@ -150,6 +261,83 @@ const ASSET_CLASS_RETURN: Record<string, number> = {
   COMMODITY: 4,
 };
 
+// ─── Helper: Truncate description ────────────────────────────────
+
+function truncateWords(text: string, maxWords: number): string {
+  if (!text) return '';
+  const words = text.split(/\s+/);
+  if (words.length <= maxWords) return text;
+  return words.slice(0, maxWords).join(' ') + '...';
+}
+
+// ─── Helper: Compute annual returns from monthly history ─────────
+
+function computeAnnualReturns(
+  holdingHistory: Record<string, FMPHistoricalData[]>,
+  benchmarkHistory: FMPHistoricalData[],
+  holdings: ReportHolding[]
+): AnnualReturn[] {
+  if (benchmarkHistory.length < 12) return [];
+
+  // Group benchmark by year
+  const benchmarkByYear = new Map<number, { first: number; last: number }>();
+  const sortedBenchmark = [...benchmarkHistory].sort((a, b) => a.date.localeCompare(b.date));
+
+  for (const pt of sortedBenchmark) {
+    const year = new Date(pt.date).getFullYear();
+    const existing = benchmarkByYear.get(year);
+    if (!existing) {
+      benchmarkByYear.set(year, { first: pt.close, last: pt.close });
+    } else {
+      existing.last = pt.close;
+    }
+  }
+
+  // Build portfolio value at year boundaries
+  const allYears = Array.from(benchmarkByYear.keys()).sort();
+  const results: AnnualReturn[] = [];
+
+  for (const year of allYears) {
+    const benchData = benchmarkByYear.get(year);
+    if (!benchData || benchData.first === 0) continue;
+
+    const benchReturn = ((benchData.last - benchData.first) / benchData.first) * 100;
+
+    // Calculate portfolio return for this year
+    let portfolioStartValue = 0;
+    let portfolioEndValue = 0;
+    let hasData = false;
+
+    for (const h of holdings) {
+      const history = holdingHistory[h.symbol];
+      if (!history || history.length === 0) continue;
+
+      const yearData = history
+        .filter((p) => new Date(p.date).getFullYear() === year)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      if (yearData.length >= 2) {
+        portfolioStartValue += h.quantity * yearData[0].close;
+        portfolioEndValue += h.quantity * yearData[yearData.length - 1].close;
+        hasData = true;
+      }
+    }
+
+    if (hasData && portfolioStartValue > 0) {
+      const portReturn = ((portfolioEndValue - portfolioStartValue) / portfolioStartValue) * 100;
+      results.push({
+        year,
+        portfolioReturn: Math.round(portReturn * 100) / 100,
+        benchmarkReturn: Math.round(benchReturn * 100) / 100,
+        difference: Math.round((portReturn - benchReturn) * 100) / 100,
+      });
+    }
+  }
+
+  // Return last 5 years maximum
+  return results.slice(-5);
+}
+
 // ─── Builder ────────────────────────────────────────────────────
 
 export function buildFullReportData(
@@ -158,7 +346,8 @@ export function buildFullReportData(
   client: DBClient,
   advisor: { name: string; title: string },
   priceMap: Record<string, PriceInfo>,
-  config: { sections?: string[]; projectionYears?: number; modelSource?: string } = {}
+  config: { sections?: string[]; projectionYears?: number; modelSource?: string } = {},
+  fmpData?: EnrichedFMPData
 ): FullReportData {
   const projYears = config.projectionYears || 5;
   const sections = config.sections || [
@@ -168,6 +357,7 @@ export function buildFullReportData(
   // ── Build Holdings with market values ──
   const holdings: ReportHolding[] = dbHoldings.map((h) => {
     const priceInfo = priceMap[h.symbol];
+    const profile = fmpData?.profiles[h.symbol];
     const currentPrice = priceInfo?.price || h.average_cost;
     const marketValue = h.quantity * currentPrice;
     const costBasis = h.quantity * h.average_cost;
@@ -176,7 +366,7 @@ export function buildFullReportData(
 
     return {
       symbol: h.symbol,
-      name: h.name || priceInfo?.company_name || h.symbol,
+      name: profile?.companyName || h.name || priceInfo?.company_name || h.symbol,
       quantity: h.quantity,
       avgCost: h.average_cost,
       currentPrice,
@@ -186,8 +376,8 @@ export function buildFullReportData(
       gainLoss,
       gainLossPercent,
       assetClass: h.asset_class || 'EQUITY',
-      sector: priceInfo?.sector || h.sector || '',
-      region: h.region || 'CA',
+      sector: profile?.sector || priceInfo?.sector || h.sector || '',
+      region: h.region || (profile?.country === 'CA' || profile?.country === 'Canada' ? 'CA' : profile?.country === 'US' || profile?.country === 'United States' ? 'US' : h.region || 'CA'),
     };
   });
 
@@ -240,9 +430,9 @@ export function buildFullReportData(
     if (h.assetClass === 'EQUITY') equityWeight += w;
   }
 
-  const riskFreeRate = 4; // approximate risk-free rate
+  const riskFreeRate = 4;
   const sharpe = weightedVol > 0 ? (weightedReturn - riskFreeRate) / weightedVol : 0;
-  const maxDrawdown = weightedVol * 2.5; // rough approximation
+  const maxDrawdown = weightedVol * 2.5;
 
   // ── Scenarios ──
   const scenarios = projectPortfolioValue(totalValue, equityWeight, {
@@ -271,6 +461,87 @@ export function buildFullReportData(
   const stressTests: StressTestResult[] = (
     Object.keys(STRESS_TEST_SCENARIOS) as Array<keyof typeof STRESS_TEST_SCENARIOS>
   ).map((key) => applyStressTest(totalValue, equityWeight, key));
+
+  // ── Holding Profiles (enriched from FMP) ──
+  const holdingProfiles: HoldingProfile[] = holdings.map((h) => {
+    const profile = fmpData?.profiles[h.symbol];
+    const target = fmpData?.targets[h.symbol];
+    const targetPrice = target?.targetConsensus || 0;
+    const gainDollar = targetPrice > 0 ? h.quantity * (targetPrice - h.currentPrice) : 0;
+    const gainPercent = h.currentPrice > 0 && targetPrice > 0
+      ? ((targetPrice - h.currentPrice) / h.currentPrice) * 100
+      : 0;
+
+    return {
+      symbol: h.symbol,
+      companyName: profile?.companyName || h.name,
+      description: truncateWords(profile?.description || '', 100),
+      sector: profile?.sector || h.sector || '',
+      industry: profile?.industry || '',
+      country: profile?.country || '',
+      beta: profile?.beta || 0,
+      lastDiv: profile?.lastDiv || 0,
+      marketCap: profile?.mktCap || 0,
+      exchange: profile?.exchange || '',
+      targetPrice,
+      targetHigh: target?.targetHigh || 0,
+      targetLow: target?.targetLow || 0,
+      numberOfAnalysts: target?.numberOfAnalysts || 0,
+      currentPrice: h.currentPrice,
+      quantity: h.quantity,
+      costBasis: h.costBasis,
+      estimatedGainPercent: Math.round(gainPercent * 100) / 100,
+      estimatedGainDollar: Math.round(gainDollar * 100) / 100,
+    };
+  });
+
+  // ── Price Target Summary ──
+  let totalTargetValue = 0;
+  for (const hp of holdingProfiles) {
+    if (hp.targetPrice > 0) {
+      totalTargetValue += hp.quantity * hp.targetPrice;
+    } else {
+      totalTargetValue += hp.quantity * hp.currentPrice;
+    }
+  }
+  const totalEstimatedGainDollar = totalTargetValue - totalValue;
+  const totalEstimatedGainPercent = totalValue > 0
+    ? (totalEstimatedGainDollar / totalValue) * 100
+    : 0;
+
+  const priceTargetSummary: PriceTargetSummary = {
+    totalCurrentValue: totalValue,
+    totalTargetValue,
+    totalEstimatedGainDollar: Math.round(totalEstimatedGainDollar * 100) / 100,
+    totalEstimatedGainPercent: Math.round(totalEstimatedGainPercent * 100) / 100,
+  };
+
+  // ── Sector Breakdown ──
+  const sectorMap = new Map<string, { holdings: string[]; totalValue: number }>();
+  for (const h of holdings) {
+    const sector = h.sector || 'Autre';
+    const existing = sectorMap.get(sector);
+    if (existing) {
+      existing.holdings.push(h.symbol);
+      existing.totalValue += h.marketValue;
+    } else {
+      sectorMap.set(sector, { holdings: [h.symbol], totalValue: h.marketValue });
+    }
+  }
+  const sectorBreakdown: SectorBreakdownItem[] = Array.from(sectorMap.entries())
+    .map(([sector, data]) => ({
+      sector,
+      sectorLabel: SECTOR_LABELS_FR[sector] || sector,
+      holdings: data.holdings,
+      totalValue: data.totalValue,
+      weight: totalValue > 0 ? (data.totalValue / totalValue) * 100 : 0,
+    }))
+    .sort((a, b) => b.weight - a.weight);
+
+  // ── Annual Returns (from FMP historical data) ──
+  const annualReturns = fmpData
+    ? computeAnnualReturns(fmpData.holdingHistory, fmpData.benchmarkHistory, holdings)
+    : [];
 
   // ── Final Data ──
   return {
@@ -308,6 +579,10 @@ export function buildFullReportData(
     scenarios,
     projectionYears,
     stressTests,
+    holdingProfiles,
+    annualReturns,
+    priceTargetSummary,
+    sectorBreakdown,
     generatedAt: new Intl.DateTimeFormat('fr-CA', {
       year: 'numeric',
       month: 'long',

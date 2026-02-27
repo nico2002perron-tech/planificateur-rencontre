@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, use } from 'react';
+import { useState, useMemo, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -11,8 +11,9 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModel } from '@/lib/hooks/useModels';
 import { useClients } from '@/lib/hooks/useClients';
+import { useQuotes } from '@/lib/hooks/useQuotes';
 import { ACCOUNT_TYPES } from '@/lib/utils/constants';
-import { ArrowLeft, Rocket, DollarSign } from 'lucide-react';
+import { ArrowLeft, Rocket, DollarSign, Wifi, AlertCircle } from 'lucide-react';
 
 const currencies = [
   { value: 'CAD', label: 'CAD — Dollar canadien' },
@@ -36,9 +37,41 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
   const [currency, setCurrency] = useState('CAD');
   const [totalInvestment, setTotalInvestment] = useState<number>(100000);
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [priceSource, setPriceSource] = useState<Record<string, 'fmp' | 'manual'>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  // Initialize prices when model loads
+  // Get symbols from model for FMP fetch
+  const symbols = useMemo(() => {
+    return model?.holdings?.map((h) => h.symbol) || [];
+  }, [model]);
+
+  // Fetch real-time prices from FMP
+  const { quotes, quotesMap, isLoading: quotesLoading } = useQuotes(symbols);
+
+  // Initialize prices with FMP data when available, fallback to $100
+  useEffect(() => {
+    if (model?.holdings && quotes.length > 0) {
+      const updated: Record<string, number> = {};
+      const sources: Record<string, 'fmp' | 'manual'> = {};
+      model.holdings.forEach((h) => {
+        const quote = quotesMap.get(h.symbol);
+        if (quote && quote.price > 0) {
+          updated[h.symbol] = Math.round(quote.price * 100) / 100;
+          sources[h.symbol] = 'fmp';
+        } else if (!prices[h.symbol]) {
+          updated[h.symbol] = 100;
+          sources[h.symbol] = 'manual';
+        }
+      });
+      if (Object.keys(updated).length > 0) {
+        setPrices((prev) => ({ ...updated, ...prev }));
+        setPriceSource((prev) => ({ ...sources, ...prev }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, quotes]);
+
+  // Initialize default prices for holdings without FMP data
   useMemo(() => {
     if (model?.holdings) {
       const initial: Record<string, number> = {};
@@ -70,6 +103,9 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
       };
     });
   }, [model, prices, totalInvestment]);
+
+  const fmpCount = Object.values(priceSource).filter((s) => s === 'fmp').length;
+  const totalSymbols = symbols.length;
 
   async function handleSubmit() {
     if (!clientId) {
@@ -192,32 +228,63 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
 
         {/* Prix par position */}
         <Card>
-          <h3 className="font-semibold text-text-main mb-4">
-            Prix par position
-            <span className="ml-2 text-xs font-normal text-text-muted">
-              (Ajustez les prix si vous les connaissez. Par défaut: 100$)
-            </span>
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-text-main">
+              Prix par position
+            </h3>
+            <div className="flex items-center gap-2 text-xs">
+              {quotesLoading ? (
+                <span className="flex items-center gap-1 text-text-muted">
+                  <Spinner size="sm" /> Chargement des prix...
+                </span>
+              ) : fmpCount > 0 ? (
+                <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                  <Wifi className="h-3 w-3" />
+                  {fmpCount}/{totalSymbols} prix temps réel
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-50 text-amber-700">
+                  <AlertCircle className="h-3 w-3" />
+                  Prix estimés (100$)
+                </span>
+              )}
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {model.holdings.map((h) => (
-              <div key={h.symbol}>
-                <label className="block text-xs font-semibold text-text-muted mb-1">
-                  {h.symbol}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">$</span>
-                  <input
-                    type="number"
-                    min={0.01}
-                    step={0.01}
-                    className="w-full pl-7 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none"
-                    value={prices[h.symbol] || 100}
-                    onChange={(e) => setPrices((prev) => ({ ...prev, [h.symbol]: Number(e.target.value) || 0 }))}
-                  />
+            {model.holdings.map((h) => {
+              const source = priceSource[h.symbol];
+              return (
+                <div key={h.symbol}>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-text-muted mb-1">
+                    {h.symbol}
+                    {source === 'fmp' ? (
+                      <span className="px-1 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700 font-medium">
+                        Temps réel
+                      </span>
+                    ) : (
+                      <span className="px-1 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 font-medium">
+                        Estimé
+                      </span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">$</span>
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.01}
+                      className="w-full pl-7 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none"
+                      value={prices[h.symbol] || 100}
+                      onChange={(e) => {
+                        setPrices((prev) => ({ ...prev, [h.symbol]: Number(e.target.value) || 0 }));
+                        setPriceSource((prev) => ({ ...prev, [h.symbol]: 'manual' }));
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
