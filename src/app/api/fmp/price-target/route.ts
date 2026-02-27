@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPriceTargets } from '@/lib/fmp/client';
+import { getTargetConsensus } from '@/lib/fmp/client';
 
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get('symbol');
@@ -8,8 +8,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const targets = await getPriceTargets(symbol);
-    return NextResponse.json(targets.slice(0, 10));
+    const consensus = await getTargetConsensus(symbol);
+    return NextResponse.json(consensus ? [consensus] : []);
   } catch (error) {
     console.error('FMP price target error:', error);
     return NextResponse.json({ error: 'Failed to fetch price targets' }, { status: 500 });

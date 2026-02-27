@@ -54,7 +54,7 @@ export const BENCHMARK_DEFAULTS = [
   { symbol: 'XBB.TO', name: 'iShares Core Canadian Universe Bond', region: 'CA' },
 ] as const;
 
-export const FMP_BASE_URL = 'https://financialmodelingprep.com/api/v3';
+export const FMP_BASE_URL = 'https://financialmodelingprep.com/stable';
 
 export const MARKET_HOURS = {
   open: 9.5, // 9:30 AM EST

@@ -6,7 +6,7 @@ import { FullReportDocument } from '@/lib/pdf/report-template';
 import { buildFullReportData } from '@/lib/pdf/report-data';
 import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData } from '@/lib/pdf/report-data';
 import { createClient } from '@/lib/supabase/server';
-import { getQuotes, getProfile, getPriceTargets, getHistoricalPrices } from '@/lib/fmp/client';
+import { getQuotes, getProfile, getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
 import React from 'react';
 
 export async function POST(request: NextRequest) {
@@ -121,20 +121,15 @@ export async function POST(request: NextRequest) {
       // Fetch price target consensus for all holdings in parallel
       const targetPromises = symbols.map(async (symbol: string) => {
         try {
-          const targets = await getPriceTargets(symbol);
-          if (targets && targets.length > 0) {
-            const recent = targets.slice(0, 20);
-            const prices = recent.map((t) => t.adjPriceTarget || t.priceTarget).filter((p) => p > 0);
-            if (prices.length > 0) {
-              const sum = prices.reduce((a, b) => a + b, 0);
-              const data: FMPTargetData = {
-                targetConsensus: sum / prices.length,
-                targetHigh: Math.max(...prices),
-                targetLow: Math.min(...prices),
-                numberOfAnalysts: prices.length,
-              };
-              return { symbol, data };
-            }
+          const consensus = await getTargetConsensus(symbol);
+          if (consensus && consensus.targetConsensus > 0) {
+            const data: FMPTargetData = {
+              targetConsensus: consensus.targetConsensus,
+              targetHigh: consensus.targetHigh,
+              targetLow: consensus.targetLow,
+              numberOfAnalysts: 0,
+            };
+            return { symbol, data };
           }
           return { symbol, data: null };
         } catch {

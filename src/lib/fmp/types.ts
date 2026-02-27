@@ -75,3 +75,11 @@ export interface FMPSectorPerformance {
   sector: string;
   changesPercentage: string;
 }
+
+export interface FMPPriceTargetConsensus {
+  symbol: string;
+  targetHigh: number;
+  targetLow: number;
+  targetConsensus: number;
+  targetMedian: number;
+}
