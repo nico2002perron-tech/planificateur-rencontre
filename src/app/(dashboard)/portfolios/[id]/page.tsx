@@ -12,13 +12,25 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { formatCurrency, formatPercent } from '@/lib/utils/format';
-import { BarChart3, GitCompare, FileText, Plus } from 'lucide-react';
+import { AdvancedChart } from '@/components/tradingview/AdvancedChart';
+import { TechnicalAnalysis } from '@/components/tradingview/TechnicalAnalysis';
+import { FundamentalData } from '@/components/tradingview/FundamentalData';
+import { SymbolInfo } from '@/components/tradingview/SymbolInfo';
+import { GitCompare, FileText, Plus } from 'lucide-react';
 
 const tabs = [
   { id: 'holdings', label: 'Positions' },
   { id: 'performance', label: 'Performance' },
   { id: 'analysis', label: 'Analyse' },
 ];
+
+function toTVSymbol(symbol: string): string {
+  if (!symbol) return 'TSX:RY';
+  if (symbol.includes(':')) return symbol;
+  if (symbol.endsWith('.TO')) return `TSX:${symbol.replace('.TO', '')}`;
+  if (symbol.endsWith('.V')) return `TSXV:${symbol.replace('.V', '')}`;
+  return symbol;
+}
 
 export default function PortfolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -113,20 +125,65 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                 </div>
               )}
               {activeTab === 'performance' && (
-                <div className="text-center py-12">
-                  <BarChart3 className="h-12 w-12 text-text-light mx-auto mb-3" />
-                  <p className="text-text-muted">Les graphiques de performance apparaîtront ici.</p>
-                  <Link href={`/portfolios/${id}/compare`}>
-                    <Button variant="outline" size="sm" className="mt-3">Voir la comparaison</Button>
-                  </Link>
+                <div className="space-y-6">
+                  {holdings && holdings.length > 0 ? (
+                    <>
+                      <div>
+                        <h3 className="font-semibold mb-3">Graphique — {holdings[0]?.symbol}</h3>
+                        <div className="rounded-xl overflow-hidden border border-gray-100" style={{ height: 450 }}>
+                          <AdvancedChart
+                            symbol={toTVSymbol(holdings[0]?.symbol)}
+                            height={450}
+                          />
+                        </div>
+                      </div>
+                      {holdings.length > 1 && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {holdings.slice(1, 5).map((h) => (
+                            <div key={h.id} className="border border-gray-100 rounded-xl overflow-hidden">
+                              <SymbolInfo symbol={toTVSymbol(h.symbol)} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-text-muted text-center py-8">Ajoutez des positions pour voir la performance.</p>
+                  )}
+                  <div className="flex justify-center">
+                    <Link href={`/portfolios/${id}/compare`}>
+                      <Button variant="outline" size="sm">Comparer avec un indice</Button>
+                    </Link>
+                  </div>
                 </div>
               )}
               {activeTab === 'analysis' && (
-                <div className="text-center py-12">
-                  <p className="text-text-muted">L&apos;analyse détaillée (cibles, risque, scénarios) apparaîtra ici.</p>
-                  <Link href={`/portfolios/${id}/simulation`}>
-                    <Button variant="outline" size="sm" className="mt-3">Lancer une simulation</Button>
-                  </Link>
+                <div className="space-y-6">
+                  {holdings && holdings.length > 0 ? (
+                    <>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                          <h3 className="font-semibold mb-3">Analyse technique — {holdings[0]?.symbol}</h3>
+                          <div className="rounded-xl overflow-hidden border border-gray-100">
+                            <TechnicalAnalysis symbol={toTVSymbol(holdings[0]?.symbol)} height={425} />
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold mb-3">Données fondamentales — {holdings[0]?.symbol}</h3>
+                          <div className="rounded-xl overflow-hidden border border-gray-100">
+                            <FundamentalData symbol={toTVSymbol(holdings[0]?.symbol)} height={425} />
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-text-muted text-center py-8">Ajoutez des positions pour voir l&apos;analyse.</p>
+                  )}
+                  <div className="flex justify-center">
+                    <Link href={`/portfolios/${id}/simulation`}>
+                      <Button variant="outline" size="sm">Lancer une simulation</Button>
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>

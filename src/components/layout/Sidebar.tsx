@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   ChevronLeft,
+  TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
@@ -21,6 +22,7 @@ const navItems = [
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/portfolios', label: 'Portefeuilles', icon: Briefcase },
   { href: '/models', label: 'Modèles', icon: PieChart },
+  { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/reports', label: 'Rapports', icon: FileText },
   { href: '/admin', label: 'Administration', icon: Settings },
 ];
