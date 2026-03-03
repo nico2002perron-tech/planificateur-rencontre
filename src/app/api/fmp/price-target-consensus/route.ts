@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { getTargetConsensus } from '@/lib/fmp/client';
+import { getYahooPriceTarget } from '@/lib/yahoo/client';
 
 export interface PriceTargetConsensus {
   targetConsensus: number;
@@ -27,9 +28,11 @@ export async function GET(request: NextRequest) {
   try {
     const result: Record<string, PriceTargetConsensus> = {};
 
-    // Fetch price target consensus for each symbol in parallel
+    // Fetch price target consensus — FMP en premier, Yahoo Finance en fallback
+    // Yahoo Finance couvre les titres canadiens (.TO, .V) non supportés par FMP gratuit
     const promises = symbols.map(async (symbol) => {
       try {
+        // 1. Essayer FMP
         const consensus = await getTargetConsensus(symbol);
         if (consensus && consensus.targetConsensus > 0) {
           return {
@@ -38,10 +41,25 @@ export async function GET(request: NextRequest) {
               targetConsensus: consensus.targetConsensus,
               targetHigh: consensus.targetHigh,
               targetLow: consensus.targetLow,
-              numberOfAnalysts: 0, // consensus endpoint doesn't provide count
+              numberOfAnalysts: 0,
             } as PriceTargetConsensus,
           };
         }
+
+        // 2. Fallback Yahoo Finance
+        const yahoo = await getYahooPriceTarget(symbol);
+        if (yahoo.targetMean && yahoo.targetMean > 0) {
+          return {
+            symbol,
+            data: {
+              targetConsensus: yahoo.targetMean,
+              targetHigh:      yahoo.targetHigh  ?? yahoo.targetMean,
+              targetLow:       yahoo.targetLow   ?? yahoo.targetMean,
+              numberOfAnalysts: yahoo.numAnalysts,
+            } as PriceTargetConsensus,
+          };
+        }
+
         return { symbol, data: null };
       } catch {
         return { symbol, data: null };

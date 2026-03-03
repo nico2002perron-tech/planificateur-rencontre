@@ -7,6 +7,7 @@ import { buildFullReportData } from '@/lib/pdf/report-data';
 import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData } from '@/lib/pdf/report-data';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotes, getProfile, getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
+import { getYahooPriceTarget } from '@/lib/yahoo/client';
 import React from 'react';
 
 export async function POST(request: NextRequest) {
@@ -118,9 +119,11 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Fetch price target consensus for all holdings in parallel
+      // Fetch price target consensus — FMP en premier, Yahoo Finance en fallback
+      // Yahoo Finance supporte les titres canadiens (.TO, .V) que FMP ne couvre pas
       const targetPromises = symbols.map(async (symbol: string) => {
         try {
+          // 1. Essayer FMP d'abord
           const consensus = await getTargetConsensus(symbol);
           if (consensus && consensus.targetConsensus > 0) {
             const data: FMPTargetData = {
@@ -131,6 +134,19 @@ export async function POST(request: NextRequest) {
             };
             return { symbol, data };
           }
+
+          // 2. Fallback Yahoo Finance (titres canadiens, ETFs, etc.)
+          const yahoo = await getYahooPriceTarget(symbol);
+          if (yahoo.targetMean && yahoo.targetMean > 0) {
+            const data: FMPTargetData = {
+              targetConsensus: yahoo.targetMean,
+              targetHigh:      yahoo.targetHigh  ?? yahoo.targetMean,
+              targetLow:       yahoo.targetLow   ?? yahoo.targetMean,
+              numberOfAnalysts: yahoo.numAnalysts,
+            };
+            return { symbol, data };
+          }
+
           return { symbol, data: null };
         } catch {
           return { symbol, data: null };
