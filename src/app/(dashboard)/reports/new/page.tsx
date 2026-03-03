@@ -13,7 +13,7 @@ import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp, Pencil, X,
+  TrendingUp, X,
 } from 'lucide-react';
 
 const REPORT_SECTIONS = [
@@ -119,8 +119,11 @@ function NewReportWizard() {
       const currentPrice = quote?.price || h.average_cost;
       const marketValue = h.quantity * currentPrice;
       const apiTargetPrice = target?.targetConsensus || 0;
-      const targetPrice = customTargets[h.symbol] ?? apiTargetPrice;
-      const hasCustomTarget = h.symbol in customTargets;
+      const apiSource = target?.source || null;
+      // Custom target only used when no API target exists
+      const hasApiTarget = apiTargetPrice > 0;
+      const targetPrice = hasApiTarget ? apiTargetPrice : (customTargets[h.symbol] ?? 0);
+      const hasCustomTarget = !hasApiTarget && h.symbol in customTargets;
       const gainPercent = targetPrice > 0 && currentPrice > 0
         ? ((targetPrice - currentPrice) / currentPrice) * 100
         : 0;
@@ -132,6 +135,8 @@ function NewReportWizard() {
         hasFmpPrice: !!quote,
         targetPrice,
         apiTargetPrice,
+        apiSource,
+        hasApiTarget,
         hasCustomTarget,
         gainPercent,
         sector,
@@ -225,7 +230,7 @@ function NewReportWizard() {
                   transition-all duration-200
                   ${isActive ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/30' :
                     isDone ? 'bg-emerald-100 text-emerald-700' :
-                    'bg-gray-100 text-text-muted'}
+                      'bg-gray-100 text-text-muted'}
                 `}>
                   {isDone ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
                 </div>
@@ -370,15 +375,13 @@ function NewReportWizard() {
                   </span>
                 ) : (
                   <>
-                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
-                      fmpPriceCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                    }`}>
+                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${fmpPriceCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                      }`}>
                       {fmpPriceCount > 0 ? <Wifi className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
                       {fmpPriceCount}/{holdingSymbols.length} prix temps réel
                     </span>
-                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${
-                      targetCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-text-muted'
-                    }`}>
+                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${targetCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-text-muted'
+                      }`}>
                       <TrendingUp className="h-3 w-3" />
                       {targetCount}/{holdingSymbols.length} cours cibles
                     </span>
@@ -441,9 +444,20 @@ function NewReportWizard() {
                                 }}
                               />
                             </div>
+                          ) : v.hasApiTarget ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="font-semibold">{formatCurrencyFull(v.targetPrice)}</span>
+                              <span className={`ml-1 px-1 py-0.5 rounded text-[10px] ${v.apiSource === 'yahoo'
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                {v.apiSource === 'yahoo' ? 'Yahoo' : 'FMP'}
+                              </span>
+                            </div>
                           ) : v.hasCustomTarget ? (
                             <div className="flex items-center justify-end gap-1">
                               <span className="font-semibold text-brand-primary">{formatCurrencyFull(v.targetPrice)}</span>
+                              <span className="ml-1 px-1 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700">Manuel</span>
                               <button
                                 onClick={() => setCustomTargets((prev) => {
                                   const next = { ...prev };
@@ -451,20 +465,9 @@ function NewReportWizard() {
                                   return next;
                                 })}
                                 className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                                title="Réinitialiser"
+                                title="Supprimer"
                               >
                                 <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ) : v.apiTargetPrice > 0 ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <span>{formatCurrencyFull(v.targetPrice)}</span>
-                              <button
-                                onClick={() => setEditingTarget(v.symbol)}
-                                className="p-0.5 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
-                                title="Modifier"
-                              >
-                                <Pencil className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
@@ -478,9 +481,8 @@ function NewReportWizard() {
                             </div>
                           )}
                         </td>
-                        <td className={`py-2.5 text-right font-semibold ${
-                          v.gainPercent > 0 ? 'text-emerald-600' : v.gainPercent < 0 ? 'text-red-500' : 'text-text-muted'
-                        }`}>
+                        <td className={`py-2.5 text-right font-semibold ${v.gainPercent > 0 ? 'text-emerald-600' : v.gainPercent < 0 ? 'text-red-500' : 'text-text-muted'
+                          }`}>
                           {v.targetPrice > 0 ? `${v.gainPercent >= 0 ? '+' : ''}${v.gainPercent.toFixed(1)}%` : '—'}
                         </td>
                         <td className="py-2.5 text-right">{formatCurrency(v.marketValue)}</td>

@@ -17,5 +17,5 @@ export interface Report {
 
 export function useReports() {
   const { data, error, isLoading, mutate } = useSWR<Report[]>('/api/reports', fetcher);
-  return { reports: data, error, isLoading, mutate };
+  return { reports: Array.isArray(data) ? data : [], error, isLoading, mutate };
 }

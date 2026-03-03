@@ -9,6 +9,7 @@ export interface PriceTargetConsensus {
   targetHigh: number;
   targetLow: number;
   numberOfAnalysts: number;
+  source: 'yahoo' | 'fmp' | 'manual';
 }
 
 export async function GET(request: NextRequest) {
@@ -28,11 +29,26 @@ export async function GET(request: NextRequest) {
   try {
     const result: Record<string, PriceTargetConsensus> = {};
 
-    // Fetch price target consensus — FMP en premier, Yahoo Finance en fallback
-    // Yahoo Finance couvre les titres canadiens (.TO, .V) non supportés par FMP gratuit
+    // Fetch price target consensus — Yahoo Finance en premier, FMP en fallback
+    // Yahoo Finance est la source principale pour les 1Y targets
     const promises = symbols.map(async (symbol) => {
       try {
-        // 1. Essayer FMP
+        // 1. Essayer Yahoo Finance en premier (source principale)
+        const yahoo = await getYahooPriceTarget(symbol);
+        if (yahoo.targetMean && yahoo.targetMean > 0) {
+          return {
+            symbol,
+            data: {
+              targetConsensus: yahoo.targetMean,
+              targetHigh: yahoo.targetHigh ?? yahoo.targetMean,
+              targetLow: yahoo.targetLow ?? yahoo.targetMean,
+              numberOfAnalysts: yahoo.numAnalysts,
+              source: 'yahoo' as const,
+            },
+          };
+        }
+
+        // 2. Fallback FMP
         const consensus = await getTargetConsensus(symbol);
         if (consensus && consensus.targetConsensus > 0) {
           return {
@@ -42,21 +58,8 @@ export async function GET(request: NextRequest) {
               targetHigh: consensus.targetHigh,
               targetLow: consensus.targetLow,
               numberOfAnalysts: 0,
-            } as PriceTargetConsensus,
-          };
-        }
-
-        // 2. Fallback Yahoo Finance
-        const yahoo = await getYahooPriceTarget(symbol);
-        if (yahoo.targetMean && yahoo.targetMean > 0) {
-          return {
-            symbol,
-            data: {
-              targetConsensus: yahoo.targetMean,
-              targetHigh:      yahoo.targetHigh  ?? yahoo.targetMean,
-              targetLow:       yahoo.targetLow   ?? yahoo.targetMean,
-              numberOfAnalysts: yahoo.numAnalysts,
-            } as PriceTargetConsensus,
+              source: 'fmp' as const,
+            },
           };
         }
 

@@ -18,7 +18,7 @@ interface Client {
 
 export function useClients() {
   const { data, error, isLoading, mutate } = useSWR<Client[]>('/api/clients', fetcher);
-  return { clients: data, error, isLoading, mutate };
+  return { clients: Array.isArray(data) ? data : [], error, isLoading, mutate };
 }
 
 export function useClient(id: string) {

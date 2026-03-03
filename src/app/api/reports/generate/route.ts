@@ -119,11 +119,23 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Fetch price target consensus — FMP en premier, Yahoo Finance en fallback
-      // Yahoo Finance supporte les titres canadiens (.TO, .V) que FMP ne couvre pas
+      // Fetch price target consensus — Yahoo Finance en premier, FMP en fallback
+      // Yahoo Finance est la source principale pour les 1Y targets
       const targetPromises = symbols.map(async (symbol: string) => {
         try {
-          // 1. Essayer FMP d'abord
+          // 1. Essayer Yahoo Finance en premier (source principale)
+          const yahoo = await getYahooPriceTarget(symbol);
+          if (yahoo.targetMean && yahoo.targetMean > 0) {
+            const data: FMPTargetData = {
+              targetConsensus: yahoo.targetMean,
+              targetHigh: yahoo.targetHigh ?? yahoo.targetMean,
+              targetLow: yahoo.targetLow ?? yahoo.targetMean,
+              numberOfAnalysts: yahoo.numAnalysts,
+            };
+            return { symbol, data };
+          }
+
+          // 2. Fallback FMP
           const consensus = await getTargetConsensus(symbol);
           if (consensus && consensus.targetConsensus > 0) {
             const data: FMPTargetData = {
@@ -131,18 +143,6 @@ export async function POST(request: NextRequest) {
               targetHigh: consensus.targetHigh,
               targetLow: consensus.targetLow,
               numberOfAnalysts: 0,
-            };
-            return { symbol, data };
-          }
-
-          // 2. Fallback Yahoo Finance (titres canadiens, ETFs, etc.)
-          const yahoo = await getYahooPriceTarget(symbol);
-          if (yahoo.targetMean && yahoo.targetMean > 0) {
-            const data: FMPTargetData = {
-              targetConsensus: yahoo.targetMean,
-              targetHigh:      yahoo.targetHigh  ?? yahoo.targetMean,
-              targetLow:       yahoo.targetLow   ?? yahoo.targetMean,
-              numberOfAnalysts: yahoo.numAnalysts,
             };
             return { symbol, data };
           }

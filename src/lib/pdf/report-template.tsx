@@ -236,6 +236,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
+  const coveredCount = data.holdingProfiles.filter((hp) => hp.targetPrice > 0).length;
+  const totalAnalysts = data.holdingProfiles.reduce((sum, hp) => sum + hp.numberOfAnalysts, 0);
+  const weightedBeta = data.holdingProfiles.reduce((sum, hp) => {
+    const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
+    return sum + w * hp.beta;
+  }, 0);
 
   return (
     <Document>
@@ -461,8 +467,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       {/* ── PAGE 4: Tableau Cours Cibles (style Thomson One) ──── */}
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.sectionTitle}>Cours cibles des analystes</Text>
-        <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 12 }}>
-          Consensus des analystes financiers — Estimation de la variation sur 12 mois
+        <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 6 }}>
+          Toutes les données financières et les estimations sont données par les analystes financiers sur Yahoo Finance
         </Text>
 
         {hasTargets ? (
@@ -535,19 +541,48 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 </Text>
               </View>
             ))}
+
+            {/* ── Sommaire des indicateurs sous le tableau ── */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 4 }}>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={{ fontSize: 7, color: '#8a9bb0' }}>Couverture analystes</Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
+                  {coveredCount}/{data.holdingProfiles.length} titres
+                </Text>
+                {totalAnalysts > 0 && (
+                  <Text style={{ fontSize: 7, color: '#8a9bb0' }}>{totalAnalysts} analystes au total</Text>
+                )}
+              </View>
+              {estimatedDividend > 0 && (
+                <View style={{ alignItems: 'center', flex: 1 }}>
+                  <Text style={{ fontSize: 7, color: '#8a9bb0' }}>Revenu de dividende estimé</Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#10b981' }}>
+                    {fmt(estimatedDividend, ccy)} / an
+                  </Text>
+                </View>
+              )}
+              {weightedBeta > 0 && (
+                <View style={{ alignItems: 'center', flex: 1 }}>
+                  <Text style={{ fontSize: 7, color: '#8a9bb0' }}>Bêta pondéré du portefeuille</Text>
+                  <Text style={{ fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
+                    {weightedBeta.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            </View>
           </>
         ) : (
           <View style={styles.card}>
             <Text style={{ fontSize: 10, color: '#586e82' }}>
               Les cours cibles des analystes ne sont pas disponibles pour les titres de ce portefeuille.
-              Cette section sera remplie lorsque les données FMP seront accessibles.
+              Cette section sera remplie lorsque les données Yahoo Finance seront accessibles.
             </Text>
           </View>
         )}
 
         <Text style={styles.noteText}>
           Les cours cibles sont des estimations consensus des analystes et ne constituent pas une garantie de rendement futur.
-          Source: Financial Modeling Prep (FMP).
+          Source: Yahoo Finance / Financial Modeling Prep (FMP).
         </Text>
 
         <PageFooter pageNumber={4} total={totalPages} />
@@ -747,7 +782,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             {'\n'}
             4. COURS CIBLES DES ANALYSTES{'\n'}
             Les cours cibles présentés dans ce rapport sont des estimations consensus des analystes financiers
-            compilées par Financial Modeling Prep. Ils ne constituent pas une garantie de rendement futur.
+            compilées par Yahoo Finance et Financial Modeling Prep. Ils ne constituent pas une garantie de rendement futur.
             Les estimations des analystes sont sujettes à révision et les résultats réels peuvent différer
             significativement des prévisions.{'\n'}
             {'\n'}
@@ -769,7 +804,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             {'\n'}
             9. SOURCES DES DONNÉES{'\n'}
             Prix de marché: Financial Modeling Prep (FMP){'\n'}
-            Cours cibles analystes: FMP Price Target Consensus{'\n'}
+            Cours cibles analystes: Yahoo Finance (principal) / FMP (fallback){'\n'}
             Profils d&apos;entreprise: FMP Company Profile{'\n'}
             Données historiques: FMP Historical Prices{'\n'}
             {'\n'}

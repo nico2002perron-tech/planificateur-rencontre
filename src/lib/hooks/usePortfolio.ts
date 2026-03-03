@@ -39,7 +39,7 @@ interface PortfolioDetail extends Portfolio {
 
 export function usePortfolios() {
   const { data, error, isLoading, mutate } = useSWR<Portfolio[]>('/api/portfolios', fetcher);
-  return { portfolios: data, error, isLoading, mutate };
+  return { portfolios: Array.isArray(data) ? data : [], error, isLoading, mutate };
 }
 
 export function usePortfolio(id: string) {
