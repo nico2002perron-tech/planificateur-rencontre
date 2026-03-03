@@ -469,23 +469,19 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           <>
             {/* Summary row at top */}
             <View style={styles.targetTotalRow}>
-              <Text style={{ ...styles.targetCell, width: '5%', fontFamily: 'Helvetica-Bold' }}></Text>
-              <Text style={{ ...styles.targetCell, width: '13%', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>TOTAL</Text>
+              <Text style={{ ...styles.targetCell, width: '7%', fontFamily: 'Helvetica-Bold' }}></Text>
+              <Text style={{ ...styles.targetCell, width: '17%', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>TOTAL</Text>
               <Text style={{ ...styles.targetCell, width: '8%' }}></Text>
               <Text style={{ ...styles.targetCell, width: '10%' }}></Text>
               <Text style={{ ...styles.targetCell, width: '10%' }}></Text>
-              <Text style={{ ...styles.targetCell, width: '10%' }}></Text>
-              <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
-                {fmt(data.portfolio.totalCost, ccy)}
-              </Text>
-              <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
+              <Text style={{ ...styles.targetCell, width: '14%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
                 {fmt(data.priceTargetSummary.totalCurrentValue, ccy)}
               </Text>
-              <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
+              <Text style={{ ...styles.targetCell, width: '14%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
                 {fmt(data.priceTargetSummary.totalTargetValue, ccy)}
               </Text>
               <Text style={{
-                ...styles.targetCell, width: '10%', textAlign: 'right', fontSize: 8,
+                ...styles.targetCell, width: '12%', textAlign: 'right', fontSize: 8,
                 ...(data.priceTargetSummary.totalEstimatedGainDollar >= 0 ? styles.targetPositive : styles.targetNegative),
               }}>
                 {fmt(data.priceTargetSummary.totalEstimatedGainDollar, ccy)}
@@ -500,37 +496,33 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
             {/* Column headers */}
             <View style={styles.targetTableHeader}>
-              <Text style={{ ...styles.targetHeaderCell, width: '5%' }}>Qté</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '13%' }}>Description</Text>
+              <Text style={{ ...styles.targetHeaderCell, width: '7%' }}>Qté</Text>
+              <Text style={{ ...styles.targetHeaderCell, width: '17%' }}>Description</Text>
               <Text style={{ ...styles.targetHeaderCell, width: '8%' }}>Symb.</Text>
               <Text style={{ ...styles.targetHeaderCell, width: '10%', textAlign: 'right' }}>Coût</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '10%', textAlign: 'right' }}>Prix march.</Text>
               <Text style={{ ...styles.targetHeaderCell, width: '10%', textAlign: 'right' }}>Crs cible</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '12%', textAlign: 'right' }}>Coût total</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '12%', textAlign: 'right' }}>Val. marché</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '12%', textAlign: 'right' }}>Crs cible 12m</Text>
-              <Text style={{ ...styles.targetHeaderCell, width: '10%', textAlign: 'right' }}>Gain esp. $</Text>
+              <Text style={{ ...styles.targetHeaderCell, width: '14%', textAlign: 'right' }}>Coût total</Text>
+              <Text style={{ ...styles.targetHeaderCell, width: '14%', textAlign: 'right' }}>Crs cible 12m</Text>
+              <Text style={{ ...styles.targetHeaderCell, width: '12%', textAlign: 'right' }}>Gain esp. $</Text>
               <Text style={{ ...styles.targetHeaderCell, width: '8%', textAlign: 'right' }}>Var. %</Text>
             </View>
 
             {/* Data rows */}
             {data.holdingProfiles.map((hp: HoldingProfile, i: number) => (
               <View key={i} style={i % 2 === 0 ? styles.targetRow : styles.targetRowAlt}>
-                <Text style={{ ...styles.targetCell, width: '5%' }}>{fmtNum(hp.quantity)}</Text>
-                <Text style={{ ...styles.targetCell, width: '13%' }}>{hp.companyName.substring(0, 18)}</Text>
+                <Text style={{ ...styles.targetCell, width: '7%' }}>{fmtNum(hp.quantity)}</Text>
+                <Text style={{ ...styles.targetCell, width: '17%' }}>{hp.companyName.substring(0, 22)}</Text>
                 <Text style={{ ...styles.targetCell, width: '8%', fontFamily: 'Helvetica-Bold' }}>{hp.symbol}</Text>
-                <Text style={{ ...styles.targetCell, width: '10%', textAlign: 'right' }}>{fmtFull(hp.costBasis / hp.quantity, ccy)}</Text>
                 <Text style={{ ...styles.targetCell, width: '10%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
                 <Text style={{ ...styles.targetCell, width: '10%', textAlign: 'right' }}>
                   {hp.targetPrice > 0 ? fmtFull(hp.targetPrice, ccy) : 'N/D'}
                 </Text>
-                <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right' }}>{fmt(hp.costBasis, ccy)}</Text>
-                <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right' }}>{fmt(hp.quantity * hp.currentPrice, ccy)}</Text>
-                <Text style={{ ...styles.targetCell, width: '12%', textAlign: 'right' }}>
+                <Text style={{ ...styles.targetCell, width: '14%', textAlign: 'right' }}>{fmt(hp.currentPrice * hp.quantity, ccy)}</Text>
+                <Text style={{ ...styles.targetCell, width: '14%', textAlign: 'right' }}>
                   {hp.targetPrice > 0 ? fmt(hp.quantity * hp.targetPrice, ccy) : 'N/D'}
                 </Text>
                 <Text style={{
-                  ...styles.targetCell, width: '10%', textAlign: 'right',
+                  ...styles.targetCell, width: '12%', textAlign: 'right',
                   ...(hp.estimatedGainDollar >= 0 ? styles.targetPositive : styles.targetNegative),
                 }}>
                   {hp.targetPrice > 0 ? fmt(hp.estimatedGainDollar, ccy) : '—'}

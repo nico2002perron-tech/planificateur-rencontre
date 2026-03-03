@@ -346,7 +346,7 @@ export function buildFullReportData(
   client: DBClient,
   advisor: { name: string; title: string },
   priceMap: Record<string, PriceInfo>,
-  config: { sections?: string[]; projectionYears?: number; modelSource?: string } = {},
+  config: { sections?: string[]; projectionYears?: number; modelSource?: string; customTargets?: Record<string, number> } = {},
   fmpData?: EnrichedFMPData
 ): FullReportData {
   const projYears = config.projectionYears || 5;
@@ -466,7 +466,7 @@ export function buildFullReportData(
   const holdingProfiles: HoldingProfile[] = holdings.map((h) => {
     const profile = fmpData?.profiles[h.symbol];
     const target = fmpData?.targets[h.symbol];
-    const targetPrice = target?.targetConsensus || 0;
+    const targetPrice = config.customTargets?.[h.symbol] ?? target?.targetConsensus ?? 0;
     const gainDollar = targetPrice > 0 ? h.quantity * (targetPrice - h.currentPrice) : 0;
     const gainPercent = h.currentPrice > 0 && targetPrice > 0
       ? ((targetPrice - h.currentPrice) / h.currentPrice) * 100

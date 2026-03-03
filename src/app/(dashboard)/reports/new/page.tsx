@@ -13,7 +13,7 @@ import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp,
+  TrendingUp, Pencil, X,
 } from 'lucide-react';
 
 const REPORT_SECTIONS = [
@@ -57,6 +57,8 @@ function NewReportWizard() {
   const [sections, setSections] = useState<string[]>(REPORT_SECTIONS.filter(s => s.default).map(s => s.key));
   const [projectionYears, setProjectionYears] = useState(5);
   const [generating, setGenerating] = useState(false);
+  const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
+  const [editingTarget, setEditingTarget] = useState<string | null>(null);
 
   // Filter portfolios by selected client
   const filteredPortfolios = useMemo(() => {
@@ -116,7 +118,9 @@ function NewReportWizard() {
       const target = targets[h.symbol];
       const currentPrice = quote?.price || h.average_cost;
       const marketValue = h.quantity * currentPrice;
-      const targetPrice = target?.targetConsensus || 0;
+      const apiTargetPrice = target?.targetConsensus || 0;
+      const targetPrice = customTargets[h.symbol] ?? apiTargetPrice;
+      const hasCustomTarget = h.symbol in customTargets;
       const gainPercent = targetPrice > 0 && currentPrice > 0
         ? ((targetPrice - currentPrice) / currentPrice) * 100
         : 0;
@@ -127,12 +131,14 @@ function NewReportWizard() {
         currentPrice,
         hasFmpPrice: !!quote,
         targetPrice,
+        apiTargetPrice,
+        hasCustomTarget,
         gainPercent,
         sector,
         marketValue,
       };
     });
-  }, [portfolioHoldings, quotesMap, targets]);
+  }, [portfolioHoldings, quotesMap, targets, customTargets]);
 
   const totalCurrentValue = verificationData.reduce((sum, v) => sum + v.marketValue, 0);
   const totalTargetValue = verificationData.reduce((sum, v) => {
@@ -167,6 +173,7 @@ function NewReportWizard() {
           config: {
             sections,
             projection_years: projectionYears,
+            custom_targets: Object.keys(customTargets).length > 0 ? customTargets : undefined,
           },
         }),
       });
@@ -406,8 +413,69 @@ function NewReportWizard() {
                         <td className="py-2.5 text-text-main">{v.name}</td>
                         <td className="py-2.5 text-right font-semibold">{formatCurrencyFull(v.currentPrice)}</td>
                         <td className="py-2.5 text-right">
-                          {v.targetPrice > 0 ? formatCurrencyFull(v.targetPrice) : (
-                            <span className="text-text-muted">N/D</span>
+                          {editingTarget === v.symbol ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                autoFocus
+                                defaultValue={v.targetPrice || ''}
+                                className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    const val = parseFloat((e.target as HTMLInputElement).value);
+                                    if (!isNaN(val) && val > 0) {
+                                      setCustomTargets((prev) => ({ ...prev, [v.symbol]: val }));
+                                    }
+                                    setEditingTarget(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingTarget(null);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isNaN(val) && val > 0) {
+                                    setCustomTargets((prev) => ({ ...prev, [v.symbol]: val }));
+                                  }
+                                  setEditingTarget(null);
+                                }}
+                              />
+                            </div>
+                          ) : v.hasCustomTarget ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="font-semibold text-brand-primary">{formatCurrencyFull(v.targetPrice)}</span>
+                              <button
+                                onClick={() => setCustomTargets((prev) => {
+                                  const next = { ...prev };
+                                  delete next[v.symbol];
+                                  return next;
+                                })}
+                                className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                title="Réinitialiser"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : v.apiTargetPrice > 0 ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span>{formatCurrencyFull(v.targetPrice)}</span>
+                              <button
+                                onClick={() => setEditingTarget(v.symbol)}
+                                className="p-0.5 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
+                                title="Modifier"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => setEditingTarget(v.symbol)}
+                                className="px-2 py-0.5 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100"
+                              >
+                                Saisir
+                              </button>
+                            </div>
                           )}
                         </td>
                         <td className={`py-2.5 text-right font-semibold ${

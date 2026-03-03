@@ -261,6 +261,7 @@ export async function POST(request: NextRequest) {
       {
         sections: config?.sections,
         projectionYears: config?.projection_years,
+        customTargets: config?.custom_targets,
       },
       fmpData
     );
