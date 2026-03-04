@@ -9,6 +9,8 @@ import {
   STRESS_TEST_SCENARIOS,
   type ScenarioResult,
 } from '@/lib/calculations/scenarios';
+import type { AIReportContent, ValuationDataItem } from '@/lib/ai/types';
+export type { AIReportContent, ValuationDataItem };
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -211,7 +213,11 @@ export interface FullReportData {
   config: {
     sections: string[];
     projectionYears: number;
+    aiEnabled?: boolean;
+    includeValuation?: boolean;
   };
+  aiContent?: AIReportContent | null;
+  valuationData?: ValuationDataItem[] | null;
 }
 
 // ─── Sector Labels (FR) ─────────────────────────────────────────
@@ -346,7 +352,7 @@ export function buildFullReportData(
   client: DBClient,
   advisor: { name: string; title: string },
   priceMap: Record<string, PriceInfo>,
-  config: { sections?: string[]; projectionYears?: number; modelSource?: string; customTargets?: Record<string, number> } = {},
+  config: { sections?: string[]; projectionYears?: number; modelSource?: string; customTargets?: Record<string, number>; aiEnabled?: boolean; includeValuation?: boolean } = {},
   fmpData?: EnrichedFMPData
 ): FullReportData {
   const projYears = config.projectionYears || 5;
@@ -591,6 +597,8 @@ export function buildFullReportData(
     config: {
       sections,
       projectionYears: projYears,
+      aiEnabled: config.aiEnabled,
+      includeValuation: config.includeValuation,
     },
   };
 }

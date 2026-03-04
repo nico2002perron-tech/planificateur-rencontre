@@ -200,7 +200,22 @@ CREATE TABLE exchange_rates (
 INSERT INTO exchange_rates (pair, rate) VALUES ('CAD/USD', 0.74), ('USD/CAD', 1.35);
 
 -- ============================================
--- 12. AUDIT_LOG
+-- 12. AI_CONTENT_CACHE (cache IA Groq 24h)
+-- ============================================
+CREATE TABLE ai_content_cache (
+  id BIGSERIAL PRIMARY KEY,
+  portfolio_id UUID NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+  data_hash TEXT NOT NULL,
+  content JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(portfolio_id, data_hash)
+);
+
+CREATE INDEX idx_ai_cache_portfolio ON ai_content_cache(portfolio_id);
+CREATE INDEX idx_ai_cache_created ON ai_content_cache(created_at DESC);
+
+-- ============================================
+-- 13. AUDIT_LOG
 -- ============================================
 CREATE TABLE audit_log (
   id BIGSERIAL PRIMARY KEY,

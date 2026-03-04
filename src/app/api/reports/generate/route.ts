@@ -5,9 +5,14 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { FullReportDocument } from '@/lib/pdf/report-template';
 import { buildFullReportData } from '@/lib/pdf/report-data';
 import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData } from '@/lib/pdf/report-data';
+import type { ValuationDataItem } from '@/lib/ai/types';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotes, getProfile, getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
 import { getYahooPriceTarget } from '@/lib/yahoo/client';
+import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
+import { getBenchmarkData } from '@/lib/valuation/benchmarks';
+import { scoreOutOf10 } from '@/lib/valuation/scoring';
+import { generateReportAIContent } from '@/lib/ai/groq-client';
 import React from 'react';
 
 export async function POST(request: NextRequest) {
@@ -262,16 +267,160 @@ export async function POST(request: NextRequest) {
         sections: config?.sections,
         projectionYears: config?.projection_years,
         customTargets: config?.custom_targets,
+        aiEnabled: config?.ai_enabled,
+        includeValuation: config?.include_valuation,
       },
       fmpData
     );
 
-    // ── Step 5: Generate PDF ──
+    // ── Step 5: Compute valuation data (if enabled) ──
+    let valuationData: ValuationDataItem[] | null = null;
+    if (config?.include_valuation && symbols.length > 0) {
+      try {
+        const valuationPromises = symbols.map(async (symbol: string) => {
+          try {
+            const res = await fetch(
+              `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/valuation/stock/${encodeURIComponent(symbol)}`,
+              { headers: { 'User-Agent': 'PlanificateurRencontre/1.0' } }
+            );
+            if (!res.ok) return null;
+            const yahoo = await res.json();
+
+            const profile = fmpData.profiles[symbol];
+            const sector = profile?.sector || yahoo.sector || '';
+            const bench = getBenchmarkData(symbol, sector);
+
+            const revenue = yahoo.revenue || 0;
+            const fcf = yahoo.fcf || 0;
+            const eps = yahoo.eps || 0;
+            const cash = yahoo.cash || 0;
+            const totalDebt = yahoo.totalDebt || 0;
+            const shares = yahoo.sharesOutstanding || 1;
+            const currentPrice = yahoo.currentPrice || priceMap[symbol]?.price || 0;
+
+            const [priceDcf, priceSales, priceEarnings] = calculateValuation(
+              bench.gr_sales / 100,
+              bench.gr_fcf / 100,
+              bench.gr_eps / 100,
+              bench.wacc / 100,
+              bench.ps,
+              bench.pe,
+              revenue,
+              fcf,
+              eps,
+              cash,
+              totalDebt,
+              shares
+            );
+
+            const validPrices = [priceDcf, priceSales, priceEarnings].filter((p) => p > 0);
+            const avgIntrinsic = validPrices.length > 0
+              ? validPrices.reduce((s, p) => s + p, 0) / validPrices.length
+              : 0;
+
+            const upsidePercent = currentPrice > 0 && avgIntrinsic > 0
+              ? ((avgIntrinsic - currentPrice) / currentPrice) * 100
+              : 0;
+
+            const reverseDcfGrowth = solveReverseDcf(
+              currentPrice, fcf, bench.wacc / 100, shares, cash, totalDebt
+            );
+
+            const scores = scoreOutOf10(
+              {
+                ticker: symbol,
+                price: currentPrice,
+                pe: yahoo.pe || 0,
+                ps: yahoo.ps || 0,
+                sales_gr: yahoo.revenueGrowth || 0,
+                eps_gr: yahoo.earningsGrowth || 0,
+                net_cash: cash - totalDebt,
+                fcf_yield: currentPrice > 0 && shares > 0 ? fcf / (currentPrice * shares) : 0,
+                rule_40: (yahoo.revenueGrowth || 0) * 100 + (yahoo.profitMargin || 0) * 100,
+              },
+              bench
+            );
+
+            return {
+              symbol,
+              name: profile?.companyName || yahoo.name || symbol,
+              currentPrice,
+              priceDcf,
+              priceSales,
+              priceEarnings,
+              avgIntrinsic,
+              upsidePercent,
+              reverseDcfGrowth,
+              scores: {
+                overall: scores.overall,
+                health: scores.health,
+                growth: scores.growth,
+                valuation: scores.valuation,
+              },
+            } as ValuationDataItem;
+          } catch {
+            return null;
+          }
+        });
+
+        const results = await Promise.all(valuationPromises);
+        const validResults = results.filter((r): r is ValuationDataItem => r !== null && r.avgIntrinsic > 0);
+
+        if (validResults.length > 0) {
+          // Add sensitivity matrix for top 3 positions by weight
+          const holdingWeights = reportData.portfolio.holdings
+            .sort((a, b) => b.weight - a.weight)
+            .slice(0, 3)
+            .map((h) => h.symbol);
+
+          for (const item of validResults) {
+            if (holdingWeights.includes(item.symbol)) {
+              try {
+                const res = await fetch(
+                  `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/valuation/stock/${encodeURIComponent(item.symbol)}`,
+                  { headers: { 'User-Agent': 'PlanificateurRencontre/1.0' } }
+                );
+                if (res.ok) {
+                  const yahoo = await res.json();
+                  const bench = getBenchmarkData(item.symbol, fmpData.profiles[item.symbol]?.sector || '');
+                  item.sensitivityMatrix = buildSensitivityMatrix(
+                    bench.wacc,
+                    bench.gr_fcf,
+                    yahoo.fcf || 0,
+                    yahoo.cash || 0,
+                    yahoo.totalDebt || 0,
+                    yahoo.sharesOutstanding || 1
+                  );
+                }
+              } catch { /* skip sensitivity */ }
+            }
+          }
+
+          valuationData = validResults;
+        }
+      } catch (err) {
+        console.warn('Valuation computation failed, skipping:', err);
+      }
+    }
+    reportData.valuationData = valuationData;
+
+    // ── Step 6: Generate AI content (if enabled) ──
+    if (config?.ai_enabled && process.env.GROQ_API_KEY) {
+      try {
+        const aiContent = await generateReportAIContent(reportData, valuationData, portfolio_id);
+        reportData.aiContent = aiContent;
+      } catch (err) {
+        console.warn('AI content generation failed, skipping:', err);
+        reportData.aiContent = null;
+      }
+    }
+
+    // ── Step 7: Generate PDF ──
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = React.createElement(FullReportDocument, { data: reportData }) as any;
     const buffer = await renderToBuffer(element);
 
-    // ── Step 6: Record report in database ──
+    // ── Step 8: Record report in database ──
     const reportTitle = `Rapport - ${client.first_name} ${client.last_name} - ${portfolio.name}`;
     const { data: report } = await supabase
       .from('reports')

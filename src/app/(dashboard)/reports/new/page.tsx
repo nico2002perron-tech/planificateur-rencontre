@@ -13,7 +13,7 @@ import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp, X,
+  TrendingUp, X, Sparkles, BarChart3,
 } from 'lucide-react';
 
 const REPORT_SECTIONS = [
@@ -59,6 +59,8 @@ function NewReportWizard() {
   const [generating, setGenerating] = useState(false);
   const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [includeValuation, setIncludeValuation] = useState(false);
 
   // Filter portfolios by selected client
   const filteredPortfolios = useMemo(() => {
@@ -179,6 +181,8 @@ function NewReportWizard() {
             sections,
             projection_years: projectionYears,
             custom_targets: Object.keys(customTargets).length > 0 ? customTargets : undefined,
+            ai_enabled: aiEnabled,
+            include_valuation: includeValuation,
           },
         }),
       });
@@ -577,6 +581,45 @@ function NewReportWizard() {
             </div>
           </div>
 
+          {/* AI & Valuation toggles */}
+          <div className="mb-6 border-t border-gray-100 pt-6">
+            <label className="block text-sm font-semibold text-text-main mb-3">
+              Fonctionnalites avancees
+            </label>
+
+            <label className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200 mb-2">
+              <input
+                type="checkbox"
+                checked={aiEnabled}
+                onChange={() => setAiEnabled(!aiEnabled)}
+                className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+              />
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              <div>
+                <span className="text-sm text-text-main font-medium">Activer les analyses IA (Groq)</span>
+                <p className="text-xs text-text-muted">
+                  Sommaire executif, descriptions en francais, commentaire d&apos;allocation, analyse des risques
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+              <input
+                type="checkbox"
+                checked={includeValuation}
+                onChange={() => setIncludeValuation(!includeValuation)}
+                className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+              />
+              <BarChart3 className="h-4 w-4 text-cyan-600" />
+              <div>
+                <span className="text-sm text-text-main font-medium">Inclure la page Valorisation intrinseque</span>
+                <p className="text-xs text-text-muted">
+                  DCF, P/S, P/E, reverse DCF, matrice de sensibilite, scorecard (Valuation Master Pro)
+                </p>
+              </div>
+            </label>
+          </div>
+
           <div className="flex justify-between mt-6">
             <Button variant="ghost" onClick={() => setStep(2)} icon={<ChevronLeft className="h-4 w-4" />}>
               Retour
@@ -633,7 +676,27 @@ function NewReportWizard() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Pages</span>
-              <span className="font-semibold text-brand-primary">8 pages (style Morningstar)</span>
+              <span className="font-semibold text-brand-primary">{8 + (includeValuation ? 1 : 0)} pages (style Morningstar)</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Analyses IA</span>
+              {aiEnabled ? (
+                <span className="flex items-center gap-1 font-semibold text-purple-600">
+                  <Sparkles className="h-3 w-3" /> Activees
+                </span>
+              ) : (
+                <span className="text-text-muted">Desactivees</span>
+              )}
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Valorisation intrinseque</span>
+              {includeValuation ? (
+                <span className="flex items-center gap-1 font-semibold text-cyan-600">
+                  <BarChart3 className="h-3 w-3" /> Incluse
+                </span>
+              ) : (
+                <span className="text-text-muted">Non incluse</span>
+              )}
             </div>
           </div>
 
@@ -681,7 +744,7 @@ function NewReportWizard() {
 export default function NewReportPage() {
   return (
     <div>
-      <PageHeader title="Nouveau rapport" description="Rapport professionnel style Morningstar — 8 pages avec cours cibles et fiches descriptives" />
+      <PageHeader title="Nouveau rapport" description="Rapport professionnel style Morningstar — 8-9 pages avec cours cibles, fiches descriptives, valorisation et analyses IA" />
       <Suspense fallback={<div className="flex justify-center py-12"><Spinner size="lg" /></div>}>
         <NewReportWizard />
       </Suspense>

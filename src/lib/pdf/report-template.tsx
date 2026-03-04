@@ -7,6 +7,7 @@ import type {
   HoldingProfile,
   AnnualReturn,
   SectorBreakdownItem,
+  ValuationDataItem,
 } from './report-data';
 
 // ─── Backward compat: keep old interface exported for any existing consumers ──
@@ -228,11 +229,104 @@ function HoldingCards({ profiles, currency }: { profiles: HoldingProfile[]; curr
   );
 }
 
+// ─── AI Narrative Block ─────────────────────────────────────────
+
+function AINarrativeBlock({ label, content }: { label: string; content?: string }) {
+  if (!content) return null;
+  return (
+    <View style={styles.aiNarrativeBlock}>
+      <Text style={styles.aiNarrativeLabel}>{label}</Text>
+      <Text style={styles.aiNarrative}>{content}</Text>
+    </View>
+  );
+}
+
+// ─── Valuation Badge ────────────────────────────────────────────
+
+function ValuationBadge({ upside }: { upside: number }) {
+  if (upside > 10) {
+    return <Text style={styles.badgeUndervalued}>Sous-eval. ({fmtPct(upside)})</Text>;
+  }
+  if (upside < -10) {
+    return <Text style={styles.badgeOvervalued}>Sur-eval. ({fmtPct(upside)})</Text>;
+  }
+  return <Text style={styles.badgeFairValue}>Juste val. ({fmtPct(upside)})</Text>;
+}
+
+// ─── Score Bar ──────────────────────────────────────────────────
+
+function ScoreBar({ label, score }: { label: string; score: number }) {
+  const pct = Math.min(100, Math.max(0, score * 10));
+  const color = score >= 7 ? '#10b981' : score >= 4 ? '#f59e0b' : '#ef4444';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
+      <Text style={{ fontSize: 7, color: '#586e82', width: 55 }}>{label}</Text>
+      <View style={styles.scoreBarOuter}>
+        <View style={{ ...styles.scoreBarInner, width: `${pct}%`, backgroundColor: color }} />
+      </View>
+      <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#1a2a3a', width: 25, textAlign: 'right' }}>
+        {score.toFixed(1)}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Sensitivity Matrix ─────────────────────────────────────────
+
+function SensitivityMatrix({ matrix, symbol, currentPrice }: {
+  matrix: { rows: string[]; cols: string[]; data: number[][] };
+  symbol: string;
+  currentPrice: number;
+}) {
+  return (
+    <View wrap={false} style={{ marginBottom: 8 }}>
+      <Text style={{ fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#03045e', marginBottom: 4 }}>
+        Matrice de sensibilite — {symbol} (prix actuel: {fmtFull(currentPrice)})
+      </Text>
+      <View style={{ flexDirection: 'row' }}>
+        <View style={{ ...styles.sensitivityHeader, backgroundColor: '#03045e' }}>
+          <Text style={{ fontSize: 7, color: '#ffffff', fontFamily: 'Helvetica-Bold' }}>WACC \ Cr.</Text>
+        </View>
+        {matrix.cols.map((col, ci) => (
+          <View key={ci} style={styles.sensitivityHeader}>
+            <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>{col}</Text>
+          </View>
+        ))}
+      </View>
+      {matrix.rows.map((row, ri) => (
+        <View key={ri} style={{ flexDirection: 'row', backgroundColor: ri % 2 === 0 ? '#ffffff' : '#f8f9fb' }}>
+          <View style={{ ...styles.sensitivityHeader, backgroundColor: ri % 2 === 0 ? '#f3f6fa' : '#edf0f4' }}>
+            <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>{row}</Text>
+          </View>
+          {matrix.data[ri].map((val, ci) => {
+            const isCenter = ri === 2 && ci === 2;
+            const color = val > currentPrice * 1.1 ? '#10b981' : val < currentPrice * 0.9 ? '#ef4444' : '#1a2a3a';
+            return (
+              <View key={ci} style={{
+                ...styles.sensitivityCell,
+                backgroundColor: isCenter ? '#e0f7fa' : undefined,
+              }}>
+                <Text style={{ fontSize: 7, color, fontFamily: isCenter ? 'Helvetica-Bold' : 'Helvetica' }}>
+                  {fmtFull(val)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── Full 8-Page Morningstar-style Report ───────────────────────
 
 export function FullReportDocument({ data }: { data: FullReportData }) {
   const ccy = data.portfolio.currency;
-  const totalPages = 8;
+  const ai = data.aiContent;
+  const valData = data.valuationData;
+  const hasValuation = valData && valData.length > 0;
+  const hasAI = !!ai;
+  const totalPages = 8 + (hasValuation ? 1 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -242,6 +336,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
     const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
     return sum + w * hp.beta;
   }, 0);
+  // Dynamic page offset: if valuation page present, pages after page 4 shift by 1
+  const valOffset = hasValuation ? 1 : 0;
 
   return (
     <Document>
@@ -369,6 +465,10 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
           </>
         )}
+
+        {/* AI Narrative Blocks */}
+        <AINarrativeBlock label="Sommaire executif — Analyse IA" content={ai?.executiveSummary} />
+        <AINarrativeBlock label="Commentaire d'allocation — Analyse IA" content={ai?.allocationComment} />
 
         <PageFooter pageNumber={2} total={totalPages} />
       </Page>
@@ -585,31 +685,159 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           Source: Yahoo Finance / Financial Modeling Prep (FMP).
         </Text>
 
+        {/* AI Target Analysis */}
+        <AINarrativeBlock label="Analyse des cours cibles — IA" content={ai?.targetAnalysis} />
+
         <PageFooter pageNumber={4} total={totalPages} />
       </Page>
 
-      {/* ── PAGE 5: Fiches Descriptives des Titres ─────────────── */}
+      {/* ── PAGE 5 (conditional): Valorisation intrinsèque ────── */}
+      {hasValuation && valData && (
+        <Page size="LETTER" style={styles.page}>
+          <Text style={styles.sectionTitle}>Valorisation intrinseque — Valuation Master Pro</Text>
+          <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 8 }}>
+            Analyse multi-methodes: DCF (flux de tresorerie actualises), P/S (prix/ventes) et P/E (prix/benefices)
+          </Text>
+
+          {/* Main valuation table */}
+          <View style={styles.table}>
+            <View style={styles.valuationTableHeader}>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%' }}>Symb.</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '14%' }}>Nom</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Prix act.</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>DCF</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>P/S</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>P/E</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Moyenne</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Ecart</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '16%', textAlign: 'center' }}>Signal</Text>
+            </View>
+            {valData.map((v: ValuationDataItem, i: number) => (
+              <View key={i} style={i % 2 === 0 ? styles.valuationRow : styles.valuationRowAlt}>
+                <Text style={{ ...styles.valuationCell, width: '10%', fontFamily: 'Helvetica-Bold' }}>{v.symbol}</Text>
+                <Text style={{ ...styles.valuationCell, width: '14%' }}>{v.name.substring(0, 18)}</Text>
+                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>{fmtFull(v.currentPrice, ccy)}</Text>
+                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
+                  {v.priceDcf > 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
+                </Text>
+                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
+                  {v.priceSales > 0 ? fmtFull(v.priceSales, ccy) : 'N/D'}
+                </Text>
+                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
+                  {v.priceEarnings > 0 ? fmtFull(v.priceEarnings, ccy) : 'N/D'}
+                </Text>
+                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>
+                  {fmtFull(v.avgIntrinsic, ccy)}
+                </Text>
+                <Text style={{
+                  ...styles.valuationCell, width: '10%', textAlign: 'right',
+                  color: v.upsidePercent > 10 ? '#10b981' : v.upsidePercent < -10 ? '#ef4444' : '#854d0e',
+                  fontFamily: 'Helvetica-Bold',
+                }}>
+                  {fmtPct(v.upsidePercent)}
+                </Text>
+                <View style={{ width: '16%', alignItems: 'center', justifyContent: 'center' }}>
+                  <ValuationBadge upside={v.upsidePercent} />
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* Reverse DCF */}
+          <Text style={styles.subsectionTitle}>DCF inverse — Croissance implicite du marche</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={{ ...styles.tableCellHeader, width: '20%' }}>Symbole</Text>
+              <Text style={{ ...styles.tableCellHeader, width: '30%' }}>Nom</Text>
+              <Text style={{ ...styles.tableCellHeader, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
+              <Text style={{ ...styles.tableCellHeader, width: '25%', textAlign: 'right' }}>Interpretation</Text>
+            </View>
+            {valData.map((v: ValuationDataItem, i: number) => (
+              <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                <Text style={{ ...styles.tableCell, width: '20%', fontFamily: 'Helvetica-Bold' }}>{v.symbol}</Text>
+                <Text style={{ ...styles.tableCell, width: '30%' }}>{v.name.substring(0, 25)}</Text>
+                <Text style={{ ...styles.tableCell, width: '25%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>
+                  {v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
+                </Text>
+                <Text style={{ ...styles.tableCell, width: '25%', textAlign: 'right', fontSize: 8 }}>
+                  {v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : 'N/D'}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Sensitivity matrices for top 3 */}
+          {valData.filter((v: ValuationDataItem) => v.sensitivityMatrix).length > 0 && (
+            <>
+              <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
+              {valData
+                .filter((v: ValuationDataItem) => v.sensitivityMatrix)
+                .map((v: ValuationDataItem, i: number) => (
+                  <SensitivityMatrix
+                    key={i}
+                    matrix={v.sensitivityMatrix!}
+                    symbol={v.symbol}
+                    currentPrice={v.currentPrice}
+                  />
+                ))}
+            </>
+          )}
+
+          {/* Scorecard */}
+          <Text style={styles.subsectionTitle}>Tableau de bord — Scores (0-10)</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {valData.slice(0, 6).map((v: ValuationDataItem, i: number) => (
+              <View key={i} style={{ width: '48%', backgroundColor: '#f8f9fb', borderRadius: 6, padding: 8, marginBottom: 4 }}>
+                <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#03045e', marginBottom: 4 }}>
+                  {v.symbol} — {v.scores.overall.toFixed(1)}/10
+                </Text>
+                <ScoreBar label="Sante" score={v.scores.health} />
+                <ScoreBar label="Croissance" score={v.scores.growth} />
+                <ScoreBar label="Valorisation" score={v.scores.valuation} />
+              </View>
+            ))}
+          </View>
+
+          {/* AI Valuation Comment */}
+          <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
+
+          <Text style={styles.noteText}>
+            Les valorisations sont des estimations basees sur des modeles financiers. Elles ne constituent pas des recommandations d&apos;investissement.
+          </Text>
+
+          <PageFooter pageNumber={5} total={totalPages} />
+        </Page>
+      )}
+
+      {/* ── PAGE 5+offset: Fiches Descriptives des Titres ─────────────── */}
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.sectionTitle}>Fiches descriptives des titres</Text>
         <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 12 }}>
-          Profil détaillé des positions du portefeuille — Source: Financial Modeling Prep
+          {hasAI ? 'Descriptions en francais — Analyse IA + Financial Modeling Prep' : 'Profil detaille des positions du portefeuille — Source: Financial Modeling Prep'}
         </Text>
 
+        {/* If AI descriptions are available, override the HoldingCards descriptions */}
         <HoldingCards
-          profiles={data.holdingProfiles.slice(0, 5)}
+          profiles={data.holdingProfiles.slice(0, 5).map((hp) => ({
+            ...hp,
+            description: ai?.holdingDescriptions?.[hp.symbol] || hp.description,
+          }))}
           currency={ccy}
         />
 
-        <PageFooter pageNumber={5} total={totalPages} />
+        <PageFooter pageNumber={5 + valOffset} total={totalPages} />
       </Page>
 
-      {/* ── PAGE 6: Fiches suite + Top positions ──────────────── */}
+      {/* ── PAGE 6+offset: Fiches suite + Top positions ──────────────── */}
       <Page size="LETTER" style={styles.page}>
         {data.holdingProfiles.length > 5 ? (
           <>
             <Text style={styles.sectionTitle}>Fiches descriptives (suite)</Text>
             <HoldingCards
-              profiles={data.holdingProfiles.slice(5, 10)}
+              profiles={data.holdingProfiles.slice(5, 10).map((hp) => ({
+                ...hp,
+                description: ai?.holdingDescriptions?.[hp.symbol] || hp.description,
+              }))}
               currency={ccy}
             />
           </>
@@ -663,10 +891,10 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </>
         )}
 
-        <PageFooter pageNumber={6} total={totalPages} />
+        <PageFooter pageNumber={6 + valOffset} total={totalPages} />
       </Page>
 
-      {/* ── PAGE 7: Risk Metrics + Scenarios + Stress Tests ────── */}
+      {/* ── PAGE 7+offset: Risk Metrics + Scenarios + Stress Tests ────── */}
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.sectionTitle}>Métriques de risque &amp; Scénarios</Text>
 
@@ -757,10 +985,13 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         )}
 
-        <PageFooter pageNumber={7} total={totalPages} />
+        {/* AI Risk Interpretation */}
+        <AINarrativeBlock label="Interpretation des risques — IA" content={ai?.riskInterpretation} />
+
+        <PageFooter pageNumber={7 + valOffset} total={totalPages} />
       </Page>
 
-      {/* ── PAGE 8: Disclaimers ───────────────────────────────── */}
+      {/* ── PAGE 8+offset: Disclaimers ───────────────────────────────── */}
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.sectionTitle}>Avertissements importants</Text>
 
@@ -807,10 +1038,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             Cours cibles analystes: Yahoo Finance (principal) / FMP (fallback){'\n'}
             Profils d&apos;entreprise: FMP Company Profile{'\n'}
             Données historiques: FMP Historical Prices{'\n'}
+            {hasValuation ? `Valorisation intrinsèque: Valuation Master Pro (DCF, P/S, P/E)\n` : ''}
             {'\n'}
             10. RÉGLEMENTATION{'\n'}
             Groupe Financier Ste-Foy est réglementé par l&apos;Autorité des marchés financiers (AMF) du Québec.
             Les services de planification financière sont offerts conformément aux lois et règlements applicables.
+            {hasAI ? `${'\n'}${'\n'}11. CONTENU GÉNÉRÉ PAR INTELLIGENCE ARTIFICIELLE${'\n'}Certaines sections de ce rapport (identifiées par « Analyse IA ») ont été générées par un modèle de langage (Groq / Llama). Ce contenu est fourni à titre informatif uniquement et ne constitue pas un avis professionnel. Le contenu IA est basé sur les données du portefeuille au moment de la génération et peut contenir des inexactitudes. Toute décision doit être validée par votre conseiller financier.` : ''}
           </Text>
         </View>
 
@@ -832,7 +1065,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         </View>
 
-        <PageFooter pageNumber={8} total={totalPages} />
+        <PageFooter pageNumber={8 + valOffset} total={totalPages} />
       </Page>
     </Document>
   );
