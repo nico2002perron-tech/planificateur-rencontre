@@ -1,5 +1,5 @@
 import React from 'react';
-import { Document, Page, Text, View } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Svg, Path, G, Circle } from '@react-pdf/renderer';
 import { styles } from './styles';
 import type {
   FullReportData,
@@ -72,6 +72,82 @@ const REGION_LABELS: Record<string, string> = {
   INTL: 'International',
   EM: 'Marchés émergents',
 };
+
+// ─── Pie Chart (SVG) ────────────────────────────────────────────
+
+interface PieSlice {
+  label: string;
+  percentage: number;
+  color: string;
+  value?: number;
+}
+
+function PieChart({ slices, size = 100, title, labelMap }: {
+  slices: PieSlice[];
+  size?: number;
+  title: string;
+  labelMap?: Record<string, string>;
+}) {
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2 - 2;
+  const filtered = slices.filter((s) => s.percentage > 0);
+  if (filtered.length === 0) return null;
+
+  let cumulative = 0;
+  const arcs = filtered.map((slice) => {
+    const startAngle = cumulative * 3.6 * (Math.PI / 180);
+    cumulative += slice.percentage;
+    const endAngle = cumulative * 3.6 * (Math.PI / 180);
+
+    const x1 = cx + r * Math.sin(startAngle);
+    const y1 = cy - r * Math.cos(startAngle);
+    const x2 = cx + r * Math.sin(endAngle);
+    const y2 = cy - r * Math.cos(endAngle);
+
+    const largeArc = slice.percentage > 50 ? 1 : 0;
+
+    // Full circle case
+    if (slice.percentage >= 99.9) {
+      return { d: '', color: slice.color, label: slice.label, pct: slice.percentage, full: true };
+    }
+
+    const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    return { d, color: slice.color, label: slice.label, pct: slice.percentage, full: false };
+  });
+
+  return (
+    <View style={{ alignItems: 'center', marginBottom: 8 }}>
+      <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#03045e', marginBottom: 6 }}>{title}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {arcs.map((arc, i) =>
+            arc.full ? (
+              <Circle key={i} cx={cx} cy={cy} r={r} fill={arc.color} />
+            ) : (
+              <Path key={i} d={arc.d} fill={arc.color} />
+            )
+          )}
+          {/* White center for donut effect */}
+          <Circle cx={cx} cy={cy} r={r * 0.45} fill="#ffffff" />
+        </Svg>
+        <View style={{ flex: 1, maxWidth: 150 }}>
+          {filtered.slice(0, 6).map((s, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: s.color, marginRight: 5 }} />
+              <Text style={{ fontSize: 7, color: '#1a2a3a', flex: 1 }}>
+                {(labelMap ? labelMap[s.label] || s.label : s.label).substring(0, 18)}
+              </Text>
+              <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
+                {s.percentage.toFixed(1)}%
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // ─── Sub-components ─────────────────────────────────────────────
 
@@ -412,30 +488,50 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           ))}
         </View>
 
-        {/* Top 5 Sectors */}
+        {/* Pie Charts: Sector + Geographic side by side */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+          {data.sectorBreakdown.length > 0 ? (
+            <View style={{ width: '49%' }}>
+              <PieChart
+                title="Exposition sectorielle"
+                slices={data.sectorBreakdown.map((s, i) => ({
+                  label: s.sectorLabel,
+                  percentage: s.weight,
+                  color: ['#00b4d8', '#03045e', '#0077b6', '#48cae4', '#90e0ef', '#023e8a', '#0096c7', '#2a9d8f', '#264653', '#e76f51'][i % 10],
+                  value: s.totalValue,
+                }))}
+                size={110}
+              />
+            </View>
+          ) : (
+            <View style={{ width: '49%' }}>
+              <Text style={styles.noteText}>Données sectorielles non disponibles</Text>
+            </View>
+          )}
+          {data.allocations.byRegion.length > 0 && (
+            <View style={{ width: '49%' }}>
+              <PieChart
+                title="Exposition mondiale"
+                slices={data.allocations.byRegion.map((r) => ({
+                  label: r.label,
+                  percentage: r.percentage,
+                  color: r.color,
+                  value: r.value,
+                }))}
+                size={110}
+                labelMap={REGION_LABELS}
+              />
+            </View>
+          )}
+        </View>
+
+        {/* Sector bars (detailed, below pie charts) */}
         <Text style={styles.subsectionTitle}>Principaux secteurs</Text>
         {data.sectorBreakdown.length > 0 ? (
           <SectorBars items={data.sectorBreakdown} />
         ) : (
           <Text style={styles.noteText}>Données sectorielles non disponibles</Text>
         )}
-
-        {/* Regions */}
-        <Text style={styles.subsectionTitle}>Répartition géographique</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={{ ...styles.tableCellHeader, width: '50%' }}>Région</Text>
-            <Text style={{ ...styles.tableCellHeader, width: '25%', textAlign: 'right' }}>Valeur</Text>
-            <Text style={{ ...styles.tableCellHeader, width: '25%', textAlign: 'right' }}>Poids</Text>
-          </View>
-          {data.allocations.byRegion.map((r, i) => (
-            <View key={i} style={styles.tableRow}>
-              <Text style={{ ...styles.tableCell, width: '50%' }}>{REGION_LABELS[r.label] || r.label}</Text>
-              <Text style={{ ...styles.tableCell, width: '25%', textAlign: 'right' }}>{fmt(r.value, ccy)}</Text>
-              <Text style={{ ...styles.tableCell, width: '25%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>{r.percentage.toFixed(1)}%</Text>
-            </View>
-          ))}
-        </View>
 
         {/* Rendements annualisés */}
         {hasReturns && (
@@ -692,55 +788,107 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       </Page>
 
       {/* ── PAGE 5 (conditional): Valorisation intrinsèque ────── */}
-      {hasValuation && valData && (
+      {hasValuation && valData && (() => {
+        // Build lookup: symbol → holding for portfolio-weighted values
+        const holdingMap = new Map(data.portfolio.holdings.map((h) => [h.symbol, h]));
+        const totalPortfolioValue = data.portfolio.totalValue;
+
+        // Compute portfolio-level totals
+        const totalAllocated = valData.reduce((sum, v) => {
+          const h = holdingMap.get(v.symbol);
+          return sum + (h ? h.marketValue : 0);
+        }, 0);
+        const totalIntrinsic = valData.reduce((sum, v) => {
+          const h = holdingMap.get(v.symbol);
+          if (!h || v.avgIntrinsic <= 0) return sum;
+          return sum + h.quantity * v.avgIntrinsic;
+        }, 0);
+
+        return (
         <Page size="LETTER" style={styles.page}>
           <Text style={styles.sectionTitle}>Valorisation intrinseque — Valuation Master Pro</Text>
           <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 8 }}>
-            Analyse multi-methodes: DCF (flux de tresorerie actualises), P/S (prix/ventes) et P/E (prix/benefices)
+            Analyse multi-methodes: DCF, P/S et P/E — Valeurs ponderees par l&apos;allocation du portefeuille
           </Text>
 
-          {/* Main valuation table */}
+          {/* Main valuation table — now with portfolio-weighted columns */}
           <View style={styles.table}>
             <View style={styles.valuationTableHeader}>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%' }}>Symb.</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '14%' }}>Nom</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Prix act.</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>DCF</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>P/S</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>P/E</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Moyenne</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'right' }}>Ecart</Text>
-              <Text style={{ ...styles.valuationHeaderCell, width: '16%', textAlign: 'center' }}>Signal</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '8%' }}>Symb.</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '8%', textAlign: 'right' }}>Poids</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '11%', textAlign: 'right' }}>Alloc. $</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '9%', textAlign: 'right' }}>Prix</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '9%', textAlign: 'right' }}>DCF</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '9%', textAlign: 'right' }}>P/S</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '9%', textAlign: 'right' }}>P/E</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '9%', textAlign: 'right' }}>Moy.</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '11%', textAlign: 'right' }}>Val. intr. $</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '7%', textAlign: 'right' }}>Ecart</Text>
+              <Text style={{ ...styles.valuationHeaderCell, width: '10%', textAlign: 'center' }}>Signal</Text>
             </View>
-            {valData.map((v: ValuationDataItem, i: number) => (
-              <View key={i} style={i % 2 === 0 ? styles.valuationRow : styles.valuationRowAlt}>
-                <Text style={{ ...styles.valuationCell, width: '10%', fontFamily: 'Helvetica-Bold' }}>{v.symbol}</Text>
-                <Text style={{ ...styles.valuationCell, width: '14%' }}>{v.name.substring(0, 18)}</Text>
-                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>{fmtFull(v.currentPrice, ccy)}</Text>
-                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
-                  {v.priceDcf > 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
-                </Text>
-                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
-                  {v.priceSales > 0 ? fmtFull(v.priceSales, ccy) : 'N/D'}
-                </Text>
-                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right' }}>
-                  {v.priceEarnings > 0 ? fmtFull(v.priceEarnings, ccy) : 'N/D'}
-                </Text>
-                <Text style={{ ...styles.valuationCell, width: '10%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>
-                  {fmtFull(v.avgIntrinsic, ccy)}
-                </Text>
-                <Text style={{
-                  ...styles.valuationCell, width: '10%', textAlign: 'right',
-                  color: v.upsidePercent > 10 ? '#10b981' : v.upsidePercent < -10 ? '#ef4444' : '#854d0e',
-                  fontFamily: 'Helvetica-Bold',
-                }}>
-                  {fmtPct(v.upsidePercent)}
-                </Text>
-                <View style={{ width: '16%', alignItems: 'center', justifyContent: 'center' }}>
-                  <ValuationBadge upside={v.upsidePercent} />
+            {valData.map((v: ValuationDataItem, i: number) => {
+              const h = holdingMap.get(v.symbol);
+              const qty = h?.quantity || 0;
+              const weight = h?.weight || 0;
+              const allocatedValue = h?.marketValue || 0;
+              const intrinsicTotal = v.avgIntrinsic > 0 ? qty * v.avgIntrinsic : 0;
+              return (
+                <View key={i} style={i % 2 === 0 ? styles.valuationRow : styles.valuationRowAlt}>
+                  <Text style={{ ...styles.valuationCell, width: '8%', fontFamily: 'Helvetica-Bold' }}>{v.symbol}</Text>
+                  <Text style={{ ...styles.valuationCell, width: '8%', textAlign: 'right' }}>{weight.toFixed(1)}%</Text>
+                  <Text style={{ ...styles.valuationCell, width: '11%', textAlign: 'right' }}>{fmt(allocatedValue, ccy)}</Text>
+                  <Text style={{ ...styles.valuationCell, width: '9%', textAlign: 'right' }}>{fmtFull(v.currentPrice, ccy)}</Text>
+                  <Text style={{ ...styles.valuationCell, width: '9%', textAlign: 'right' }}>
+                    {v.priceDcf > 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
+                  </Text>
+                  <Text style={{ ...styles.valuationCell, width: '9%', textAlign: 'right' }}>
+                    {v.priceSales > 0 ? fmtFull(v.priceSales, ccy) : 'N/D'}
+                  </Text>
+                  <Text style={{ ...styles.valuationCell, width: '9%', textAlign: 'right' }}>
+                    {v.priceEarnings > 0 ? fmtFull(v.priceEarnings, ccy) : 'N/D'}
+                  </Text>
+                  <Text style={{ ...styles.valuationCell, width: '9%', textAlign: 'right', fontFamily: 'Helvetica-Bold' }}>
+                    {fmtFull(v.avgIntrinsic, ccy)}
+                  </Text>
+                  <Text style={{ ...styles.valuationCell, width: '11%', textAlign: 'right', fontFamily: 'Helvetica-Bold',
+                    color: intrinsicTotal > allocatedValue * 1.05 ? '#10b981' : intrinsicTotal < allocatedValue * 0.95 ? '#ef4444' : '#1a2a3a',
+                  }}>
+                    {intrinsicTotal > 0 ? fmt(intrinsicTotal, ccy) : 'N/D'}
+                  </Text>
+                  <Text style={{
+                    ...styles.valuationCell, width: '7%', textAlign: 'right',
+                    color: v.upsidePercent > 10 ? '#10b981' : v.upsidePercent < -10 ? '#ef4444' : '#854d0e',
+                    fontFamily: 'Helvetica-Bold', fontSize: 7,
+                  }}>
+                    {fmtPct(v.upsidePercent)}
+                  </Text>
+                  <View style={{ width: '10%', alignItems: 'center', justifyContent: 'center' }}>
+                    <ValuationBadge upside={v.upsidePercent} />
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
+            {/* Total row */}
+            <View style={{ flexDirection: 'row', backgroundColor: '#f3f6fa', paddingVertical: 5, borderTopWidth: 1.5, borderTopColor: '#03045e', borderTopStyle: 'solid' as const }}>
+              <Text style={{ ...styles.valuationCell, width: '8%', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>TOTAL</Text>
+              <Text style={{ ...styles.valuationCell, width: '8%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
+                {totalPortfolioValue > 0 ? `${((totalAllocated / totalPortfolioValue) * 100).toFixed(0)}%` : ''}
+              </Text>
+              <Text style={{ ...styles.valuationCell, width: '11%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8 }}>
+                {fmt(totalAllocated, ccy)}
+              </Text>
+              <Text style={{ ...styles.valuationCell, width: '45%' }}></Text>
+              <Text style={{ ...styles.valuationCell, width: '11%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8,
+                color: totalIntrinsic > totalAllocated * 1.05 ? '#10b981' : totalIntrinsic < totalAllocated * 0.95 ? '#ef4444' : '#1a2a3a',
+              }}>
+                {totalIntrinsic > 0 ? fmt(totalIntrinsic, ccy) : ''}
+              </Text>
+              <Text style={{ ...styles.valuationCell, width: '17%', textAlign: 'right', fontFamily: 'Helvetica-Bold', fontSize: 8,
+                color: totalIntrinsic > totalAllocated * 1.05 ? '#10b981' : totalIntrinsic < totalAllocated * 0.95 ? '#ef4444' : '#1a2a3a',
+              }}>
+                {totalAllocated > 0 && totalIntrinsic > 0 ? fmtPct(((totalIntrinsic - totalAllocated) / totalAllocated) * 100) : ''}
+              </Text>
+            </View>
           </View>
 
           {/* Reverse DCF */}
@@ -807,7 +955,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
           <PageFooter pageNumber={5} total={totalPages} />
         </Page>
-      )}
+        );
+      })()}
 
       {/* ── PAGE 5+offset: Fiches Descriptives des Titres ─────────────── */}
       <Page size="LETTER" style={styles.page}>
