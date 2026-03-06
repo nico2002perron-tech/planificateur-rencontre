@@ -1,5 +1,8 @@
 import React from 'react';
-import { Document, Page, Text, View, Svg, Path, G, Circle } from '@react-pdf/renderer';
+import path from 'path';
+import { Document, Page, Text, View, Image, Svg, Path, G, Circle } from '@react-pdf/renderer';
+
+const LOGO_PATH = path.join(process.cwd(), 'public', 'logo.png');
 import { styles } from './styles';
 import type {
   FullReportData,
@@ -418,48 +421,153 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   return (
     <Document>
       {/* ── PAGE 1: Cover ──────────────────────────────────────── */}
-      <Page size="LETTER" style={styles.coverPage}>
-        <View style={styles.coverBand} />
-        <View style={{ alignItems: 'center', marginTop: 80 }}>
-          <View style={{
-            width: 70, height: 70, borderRadius: 12,
-            backgroundColor: '#03045e', justifyContent: 'center', alignItems: 'center', marginBottom: 30,
-          }}>
-            <Text style={{ color: 'white', fontSize: 24, fontFamily: 'Helvetica-Bold' }}>GF</Text>
-          </View>
-          <Text style={styles.coverTitle}>Sommaire du portefeuille</Text>
-          <Text style={styles.coverSubtitle}>{data.portfolio.name}</Text>
-          <Text style={styles.coverInfo}>Préparé pour: {data.client.name}</Text>
-          <Text style={styles.coverInfo}>Conseiller: {data.advisor.name}</Text>
-          {data.advisor.title && <Text style={styles.coverInfo}>{data.advisor.title}</Text>}
+      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0 }}>
+        {/* Cyan accent bar at very top */}
+        <View style={{ height: 5, backgroundColor: '#00b4d8' }} />
 
-          {/* Key metrics on cover */}
-          <View style={{ flexDirection: 'row', gap: 20, marginTop: 30 }}>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0' }}>Valeur totale</Text>
-              <Text style={{ fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
+        {/* Dark header section */}
+        <View style={{
+          backgroundColor: '#03045e',
+          paddingHorizontal: 60,
+          paddingTop: 50,
+          paddingBottom: 40,
+          alignItems: 'center',
+        }}>
+          {/* Logo in white card */}
+          <View style={{
+            backgroundColor: '#ffffff',
+            borderRadius: 8,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            marginBottom: 28,
+          }}>
+            <Image src={LOGO_PATH} style={{ width: 260, height: 55 }} />
+          </View>
+
+          {/* Thin cyan separator */}
+          <View style={{ width: 50, height: 2, backgroundColor: '#00b4d8', marginBottom: 22 }} />
+
+          {/* Title */}
+          <Text style={{
+            fontSize: 24,
+            fontFamily: 'Helvetica-Bold',
+            color: '#ffffff',
+            letterSpacing: 1.5,
+            marginBottom: 8,
+            textAlign: 'center',
+          }}>
+            SOMMAIRE DU PORTEFEUILLE
+          </Text>
+          <Text style={{ fontSize: 14, color: '#90e0ef', textAlign: 'center' }}>
+            {data.portfolio.name}
+          </Text>
+        </View>
+
+        {/* White content section */}
+        <View style={{ paddingHorizontal: 60, paddingTop: 35 }}>
+          {/* Client/Advisor info block */}
+          <View style={{
+            borderLeftWidth: 3,
+            borderLeftColor: '#00b4d8',
+            borderLeftStyle: 'solid',
+            paddingLeft: 16,
+            marginBottom: 30,
+          }}>
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Préparé pour
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+                {data.client.name}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Conseiller
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+                {data.advisor.name}
+              </Text>
+            </View>
+            {data.advisor.title && (
+              <View style={{ flexDirection: 'row' }}>
+                <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Titre
+                </Text>
+                <Text style={{ fontSize: 11, color: '#1a2a3a' }}>
+                  {data.advisor.title}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Key metrics cards */}
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 30 }}>
+            <View style={{
+              flex: 1,
+              backgroundColor: '#f3f6fa',
+              borderRadius: 8,
+              padding: 18,
+              alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: 8, color: '#8a9bb0', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Valeur totale
+              </Text>
+              <Text style={{ fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
                 {fmt(data.portfolio.totalValue, ccy)}
               </Text>
             </View>
             {estimatedDividend > 0 && (
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ fontSize: 8, color: '#8a9bb0' }}>Revenu estimé (div.)</Text>
-                <Text style={{ fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#10b981' }}>
+              <View style={{
+                flex: 1,
+                backgroundColor: '#f0fdf4',
+                borderRadius: 8,
+                padding: 18,
+                alignItems: 'center',
+              }}>
+                <Text style={{ fontSize: 8, color: '#8a9bb0', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Revenu estimé (div.)
+                </Text>
+                <Text style={{ fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#10b981' }}>
                   {fmt(estimatedDividend, ccy)}
                 </Text>
               </View>
             )}
           </View>
-          <Text style={{ fontSize: 9, color: '#8a9bb0', marginTop: 8 }}>
-            Indice de référence: S&P/TSX Composite
-          </Text>
 
-          {data.portfolio.modelSource && (
-            <Text style={{ ...styles.coverInfo, marginTop: 10, fontSize: 9, color: '#8a9bb0' }}>
-              Basé sur le modèle: {data.portfolio.modelSource}
+          {/* Additional info */}
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 9, color: '#8a9bb0', marginBottom: 4 }}>
+              Indice de référence: S&P/TSX Composite
             </Text>
-          )}
-          <Text style={{ ...styles.coverInfo, marginTop: 20 }}>{data.generatedAt}</Text>
+            {data.portfolio.modelSource && (
+              <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 4 }}>
+                Basé sur le modèle: {data.portfolio.modelSource}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={{
+          position: 'absolute',
+          bottom: 30,
+          left: 60,
+          right: 60,
+          borderTopWidth: 0.5,
+          borderTopColor: '#e5e7eb',
+          borderTopStyle: 'solid',
+          paddingTop: 10,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+            Groupe Financier Ste-Foy — Rapport confidentiel
+          </Text>
+          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+            {data.generatedAt}
+          </Text>
         </View>
       </Page>
 
@@ -1225,21 +1333,94 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 export function ReportDocument({ data }: { data: ReportData }) {
   return (
     <Document>
-      <Page size="LETTER" style={styles.coverPage}>
-        <View style={styles.coverBand} />
-        <View style={{ alignItems: 'center', marginTop: 100 }}>
+      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0 }}>
+        <View style={{ height: 5, backgroundColor: '#00b4d8' }} />
+        <View style={{
+          backgroundColor: '#03045e',
+          paddingHorizontal: 60,
+          paddingTop: 50,
+          paddingBottom: 40,
+          alignItems: 'center',
+        }}>
           <View style={{
-            width: 70, height: 70, borderRadius: 12,
-            backgroundColor: '#03045e', justifyContent: 'center', alignItems: 'center', marginBottom: 30,
+            backgroundColor: '#ffffff',
+            borderRadius: 8,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            marginBottom: 28,
           }}>
-            <Text style={{ color: 'white', fontSize: 24, fontFamily: 'Helvetica-Bold' }}>GF</Text>
+            <Image src={LOGO_PATH} style={{ width: 260, height: 55 }} />
           </View>
-          <Text style={styles.coverTitle}>Rapport de portefeuille</Text>
-          <Text style={styles.coverSubtitle}>{data.portfolio.name}</Text>
-          <Text style={styles.coverInfo}>Préparé pour: {data.client.name}</Text>
-          <Text style={styles.coverInfo}>Conseiller: {data.advisor.name}</Text>
-          {data.advisor.title && <Text style={styles.coverInfo}>{data.advisor.title}</Text>}
-          <Text style={{ ...styles.coverInfo, marginTop: 20 }}>{data.generatedAt}</Text>
+          <View style={{ width: 50, height: 2, backgroundColor: '#00b4d8', marginBottom: 22 }} />
+          <Text style={{
+            fontSize: 24,
+            fontFamily: 'Helvetica-Bold',
+            color: '#ffffff',
+            letterSpacing: 1.5,
+            marginBottom: 8,
+            textAlign: 'center',
+          }}>
+            RAPPORT DE PORTEFEUILLE
+          </Text>
+          <Text style={{ fontSize: 14, color: '#90e0ef', textAlign: 'center' }}>
+            {data.portfolio.name}
+          </Text>
+        </View>
+        <View style={{ paddingHorizontal: 60, paddingTop: 35 }}>
+          <View style={{
+            borderLeftWidth: 3,
+            borderLeftColor: '#00b4d8',
+            borderLeftStyle: 'solid',
+            paddingLeft: 16,
+            marginBottom: 30,
+          }}>
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Préparé pour
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+                {data.client.name}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Conseiller
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+                {data.advisor.name}
+              </Text>
+            </View>
+            {data.advisor.title && (
+              <View style={{ flexDirection: 'row' }}>
+                <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Titre
+                </Text>
+                <Text style={{ fontSize: 11, color: '#1a2a3a' }}>
+                  {data.advisor.title}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <View style={{
+          position: 'absolute',
+          bottom: 30,
+          left: 60,
+          right: 60,
+          borderTopWidth: 0.5,
+          borderTopColor: '#e5e7eb',
+          borderTopStyle: 'solid',
+          paddingTop: 10,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+            Groupe Financier Ste-Foy — Rapport confidentiel
+          </Text>
+          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+            {data.generatedAt}
+          </Text>
         </View>
       </Page>
 
