@@ -1,6 +1,6 @@
 import React from 'react';
 import path from 'path';
-import { Document, Page, Text, View, Image, Svg, Path, G, Circle } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, Svg, Path, G, Circle, Rect, Defs, LinearGradient, RadialGradient, Stop } from '@react-pdf/renderer';
 
 const LOGO_PATH = path.join(process.cwd(), 'public', 'logo.png');
 import { styles } from './styles';
@@ -421,99 +421,136 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   return (
     <Document>
       {/* ── PAGE 1: Cover ──────────────────────────────────────── */}
-      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0 }}>
-        {/* Cyan accent bar at very top */}
-        <View style={{ height: 5, backgroundColor: '#00b4d8' }} />
+      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0, backgroundColor: '#ffffff' }}>
+        {/* Decorative orb — top right */}
+        <View style={{ position: 'absolute', top: -40, right: -40 }}>
+          <Svg width={240} height={240}>
+            <Defs>
+              <RadialGradient id="covOrbTR" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.1} />
+                <Stop offset="70%" stopColor="#00b4d8" stopOpacity={0.03} />
+                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={120} cy={120} r={120} fill="url(#covOrbTR)" />
+          </Svg>
+        </View>
 
-        {/* Dark header section */}
-        <View style={{
-          backgroundColor: '#03045e',
-          paddingHorizontal: 60,
-          paddingTop: 50,
-          paddingBottom: 40,
-          alignItems: 'center',
-        }}>
-          {/* Logo in white card */}
-          <View style={{
-            backgroundColor: '#ffffff',
-            borderRadius: 8,
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            marginBottom: 28,
-          }}>
-            <Image src={LOGO_PATH} style={{ width: 260, height: 55 }} />
-          </View>
+        {/* Decorative orb — bottom left */}
+        <View style={{ position: 'absolute', bottom: -50, left: -50 }}>
+          <Svg width={280} height={280}>
+            <Defs>
+              <RadialGradient id="covOrbBL" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#0077b6" stopOpacity={0.07} />
+                <Stop offset="70%" stopColor="#0077b6" stopOpacity={0.02} />
+                <Stop offset="100%" stopColor="#0077b6" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={140} cy={140} r={140} fill="url(#covOrbBL)" />
+          </Svg>
+        </View>
 
-          {/* Thin cyan separator */}
-          <View style={{ width: 50, height: 2, backgroundColor: '#00b4d8', marginBottom: 22 }} />
+        {/* Top gradient accent bar */}
+        <Svg width={612} height={5}>
+          <Defs>
+            <LinearGradient id="covTopBar" x1="0" y1="0" x2="612" y2="0">
+              <Stop offset="0%" stopColor="#0077b6" />
+              <Stop offset="50%" stopColor="#00b4d8" />
+              <Stop offset="100%" stopColor="#0077b6" />
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={612} height={5} fill="url(#covTopBar)" />
+        </Svg>
+
+        {/* Main content */}
+        <View style={{ paddingHorizontal: 70, paddingTop: 75, alignItems: 'center' }}>
+          {/* Logo */}
+          <Image src={LOGO_PATH} style={{ width: 300, height: 63, marginBottom: 32 }} />
+
+          {/* Gradient divider */}
+          <Svg width={80} height={4} style={{ marginBottom: 32 }}>
+            <Defs>
+              <LinearGradient id="covDiv" x1="0" y1="0" x2="80" y2="0">
+                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} />
+                <Stop offset="50%" stopColor="#00b4d8" stopOpacity={1} />
+                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={80} height={4} fill="url(#covDiv)" rx={2} />
+          </Svg>
 
           {/* Title */}
           <Text style={{
-            fontSize: 24,
+            fontSize: 28,
             fontFamily: 'Helvetica-Bold',
-            color: '#ffffff',
-            letterSpacing: 1.5,
-            marginBottom: 8,
+            color: '#03045e',
+            letterSpacing: -0.5,
             textAlign: 'center',
+            marginBottom: 8,
           }}>
-            SOMMAIRE DU PORTEFEUILLE
+            Sommaire du portefeuille
           </Text>
-          <Text style={{ fontSize: 14, color: '#90e0ef', textAlign: 'center' }}>
+          <Text style={{
+            fontSize: 14,
+            color: '#586e82',
+            textAlign: 'center',
+            marginBottom: 45,
+          }}>
             {data.portfolio.name}
           </Text>
-        </View>
 
-        {/* White content section */}
-        <View style={{ paddingHorizontal: 60, paddingTop: 35 }}>
-          {/* Client/Advisor info block */}
+          {/* Client / Advisor card */}
           <View style={{
-            borderLeftWidth: 3,
+            width: '100%',
+            backgroundColor: '#f3f6fa',
+            borderRadius: 12,
+            borderLeftWidth: 4,
             borderLeftColor: '#00b4d8',
             borderLeftStyle: 'solid',
-            paddingLeft: 16,
-            marginBottom: 30,
+            padding: 20,
+            marginBottom: 24,
           }}>
-            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+              <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                 Préparé pour
               </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
                 {data.client.name}
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            <View style={{ flexDirection: 'row', marginBottom: data.advisor.title ? 10 : 0 }}>
+              <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                 Conseiller
               </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
                 {data.advisor.name}
               </Text>
             </View>
             {data.advisor.title && (
               <View style={{ flexDirection: 'row' }}>
-                <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   Titre
                 </Text>
-                <Text style={{ fontSize: 11, color: '#1a2a3a' }}>
+                <Text style={{ fontSize: 12, color: '#1a2a3a' }}>
                   {data.advisor.title}
                 </Text>
               </View>
             )}
           </View>
 
-          {/* Key metrics cards */}
-          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 30 }}>
+          {/* Metrics cards */}
+          <View style={{ flexDirection: 'row', gap: 16, width: '100%', marginBottom: 24 }}>
             <View style={{
               flex: 1,
               backgroundColor: '#f3f6fa',
-              borderRadius: 8,
-              padding: 18,
+              borderRadius: 12,
+              padding: 22,
               alignItems: 'center',
             }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: 8, color: '#586e82', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                 Valeur totale
               </Text>
-              <Text style={{ fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
+              <Text style={{ fontSize: 24, fontFamily: 'Helvetica-Bold', color: '#03045e' }}>
                 {fmt(data.portfolio.totalValue, ccy)}
               </Text>
             </View>
@@ -521,14 +558,14 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               <View style={{
                 flex: 1,
                 backgroundColor: '#f0fdf4',
-                borderRadius: 8,
-                padding: 18,
+                borderRadius: 12,
+                padding: 22,
                 alignItems: 'center',
               }}>
-                <Text style={{ fontSize: 8, color: '#8a9bb0', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                <Text style={{ fontSize: 8, color: '#586e82', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                   Revenu estimé (div.)
                 </Text>
-                <Text style={{ fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#10b981' }}>
+                <Text style={{ fontSize: 24, fontFamily: 'Helvetica-Bold', color: '#10b981' }}>
                   {fmt(estimatedDividend, ccy)}
                 </Text>
               </View>
@@ -536,38 +573,37 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
 
           {/* Additional info */}
-          <View style={{ alignItems: 'center' }}>
-            <Text style={{ fontSize: 9, color: '#8a9bb0', marginBottom: 4 }}>
-              Indice de référence: S&P/TSX Composite
+          <Text style={{ fontSize: 9, color: '#8a9bb0', marginBottom: 4 }}>
+            Indice de référence: S&P/TSX Composite
+          </Text>
+          {data.portfolio.modelSource && (
+            <Text style={{ fontSize: 9, color: '#586e82' }}>
+              Basé sur le modèle: {data.portfolio.modelSource}
             </Text>
-            {data.portfolio.modelSource && (
-              <Text style={{ fontSize: 9, color: '#586e82', marginBottom: 4 }}>
-                Basé sur le modèle: {data.portfolio.modelSource}
-              </Text>
-            )}
-          </View>
+          )}
         </View>
 
         {/* Footer */}
-        <View style={{
-          position: 'absolute',
-          bottom: 30,
-          left: 60,
-          right: 60,
-          borderTopWidth: 0.5,
-          borderTopColor: '#e5e7eb',
-          borderTopStyle: 'solid',
-          paddingTop: 10,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
-            Groupe Financier Ste-Foy — Rapport confidentiel
-          </Text>
-          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
-            {data.generatedAt}
-          </Text>
+        <View style={{ position: 'absolute', bottom: 30, left: 70, right: 70 }}>
+          <Svg width={472} height={1} style={{ marginBottom: 10 }}>
+            <Defs>
+              <LinearGradient id="covFoot" x1="0" y1="0" x2="472" y2="0">
+                <Stop offset="0%" stopColor="#e5e7eb" stopOpacity={0} />
+                <Stop offset="20%" stopColor="#e5e7eb" stopOpacity={1} />
+                <Stop offset="80%" stopColor="#e5e7eb" stopOpacity={1} />
+                <Stop offset="100%" stopColor="#e5e7eb" stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={472} height={1} fill="url(#covFoot)" />
+          </Svg>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+              Groupe Financier Ste-Foy — Rapport confidentiel
+            </Text>
+            <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
+              {data.generatedAt}
+            </Text>
+          </View>
         </View>
       </Page>
 
@@ -1333,94 +1369,97 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 export function ReportDocument({ data }: { data: ReportData }) {
   return (
     <Document>
-      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0 }}>
-        <View style={{ height: 5, backgroundColor: '#00b4d8' }} />
-        <View style={{
-          backgroundColor: '#03045e',
-          paddingHorizontal: 60,
-          paddingTop: 50,
-          paddingBottom: 40,
-          alignItems: 'center',
-        }}>
-          <View style={{
-            backgroundColor: '#ffffff',
-            borderRadius: 8,
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            marginBottom: 28,
-          }}>
-            <Image src={LOGO_PATH} style={{ width: 260, height: 55 }} />
-          </View>
-          <View style={{ width: 50, height: 2, backgroundColor: '#00b4d8', marginBottom: 22 }} />
-          <Text style={{
-            fontSize: 24,
-            fontFamily: 'Helvetica-Bold',
-            color: '#ffffff',
-            letterSpacing: 1.5,
-            marginBottom: 8,
-            textAlign: 'center',
-          }}>
-            RAPPORT DE PORTEFEUILLE
+      <Page size="LETTER" style={{ fontFamily: 'Helvetica', padding: 0, backgroundColor: '#ffffff' }}>
+        {/* Decorative orb — top right */}
+        <View style={{ position: 'absolute', top: -40, right: -40 }}>
+          <Svg width={240} height={240}>
+            <Defs>
+              <RadialGradient id="legOrbTR" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.1} />
+                <Stop offset="70%" stopColor="#00b4d8" stopOpacity={0.03} />
+                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={120} cy={120} r={120} fill="url(#legOrbTR)" />
+          </Svg>
+        </View>
+        <View style={{ position: 'absolute', bottom: -50, left: -50 }}>
+          <Svg width={280} height={280}>
+            <Defs>
+              <RadialGradient id="legOrbBL" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#0077b6" stopOpacity={0.07} />
+                <Stop offset="70%" stopColor="#0077b6" stopOpacity={0.02} />
+                <Stop offset="100%" stopColor="#0077b6" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={140} cy={140} r={140} fill="url(#legOrbBL)" />
+          </Svg>
+        </View>
+        <Svg width={612} height={5}>
+          <Defs>
+            <LinearGradient id="legTopBar" x1="0" y1="0" x2="612" y2="0">
+              <Stop offset="0%" stopColor="#0077b6" />
+              <Stop offset="50%" stopColor="#00b4d8" />
+              <Stop offset="100%" stopColor="#0077b6" />
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={612} height={5} fill="url(#legTopBar)" />
+        </Svg>
+        <View style={{ paddingHorizontal: 70, paddingTop: 80, alignItems: 'center' }}>
+          <Image src={LOGO_PATH} style={{ width: 300, height: 63, marginBottom: 32 }} />
+          <Svg width={80} height={4} style={{ marginBottom: 32 }}>
+            <Defs>
+              <LinearGradient id="legDiv" x1="0" y1="0" x2="80" y2="0">
+                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} />
+                <Stop offset="50%" stopColor="#00b4d8" stopOpacity={1} />
+                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={80} height={4} fill="url(#legDiv)" rx={2} />
+          </Svg>
+          <Text style={{ fontSize: 28, fontFamily: 'Helvetica-Bold', color: '#03045e', letterSpacing: -0.5, textAlign: 'center', marginBottom: 8 }}>
+            Rapport de portefeuille
           </Text>
-          <Text style={{ fontSize: 14, color: '#90e0ef', textAlign: 'center' }}>
+          <Text style={{ fontSize: 14, color: '#586e82', textAlign: 'center', marginBottom: 45 }}>
             {data.portfolio.name}
           </Text>
-        </View>
-        <View style={{ paddingHorizontal: 60, paddingTop: 35 }}>
           <View style={{
-            borderLeftWidth: 3,
-            borderLeftColor: '#00b4d8',
-            borderLeftStyle: 'solid',
-            paddingLeft: 16,
-            marginBottom: 30,
+            width: '100%', backgroundColor: '#f3f6fa', borderRadius: 12,
+            borderLeftWidth: 4, borderLeftColor: '#00b4d8', borderLeftStyle: 'solid',
+            padding: 20, marginBottom: 24,
           }}>
-            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Préparé pour
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
-                {data.client.name}
-              </Text>
+            <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+              <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>Préparé pour</Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>{data.client.name}</Text>
             </View>
-            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Conseiller
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>
-                {data.advisor.name}
-              </Text>
+            <View style={{ flexDirection: 'row', marginBottom: data.advisor.title ? 10 : 0 }}>
+              <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>Conseiller</Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#1a2a3a' }}>{data.advisor.name}</Text>
             </View>
             {data.advisor.title && (
               <View style={{ flexDirection: 'row' }}>
-                <Text style={{ fontSize: 8, color: '#8a9bb0', width: 110, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Titre
-                </Text>
-                <Text style={{ fontSize: 11, color: '#1a2a3a' }}>
-                  {data.advisor.title}
-                </Text>
+                <Text style={{ fontSize: 8, color: '#586e82', width: 110, textTransform: 'uppercase', letterSpacing: 0.8 }}>Titre</Text>
+                <Text style={{ fontSize: 12, color: '#1a2a3a' }}>{data.advisor.title}</Text>
               </View>
             )}
           </View>
         </View>
-        <View style={{
-          position: 'absolute',
-          bottom: 30,
-          left: 60,
-          right: 60,
-          borderTopWidth: 0.5,
-          borderTopColor: '#e5e7eb',
-          borderTopStyle: 'solid',
-          paddingTop: 10,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
-            Groupe Financier Ste-Foy — Rapport confidentiel
-          </Text>
-          <Text style={{ fontSize: 8, color: '#8a9bb0' }}>
-            {data.generatedAt}
-          </Text>
+        <View style={{ position: 'absolute', bottom: 30, left: 70, right: 70 }}>
+          <Svg width={472} height={1} style={{ marginBottom: 10 }}>
+            <Defs>
+              <LinearGradient id="legFoot" x1="0" y1="0" x2="472" y2="0">
+                <Stop offset="0%" stopColor="#e5e7eb" stopOpacity={0} />
+                <Stop offset="20%" stopColor="#e5e7eb" stopOpacity={1} />
+                <Stop offset="80%" stopColor="#e5e7eb" stopOpacity={1} />
+                <Stop offset="100%" stopColor="#e5e7eb" stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={472} height={1} fill="url(#legFoot)" />
+          </Svg>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 8, color: '#8a9bb0' }}>Groupe Financier Ste-Foy — Rapport confidentiel</Text>
+            <Text style={{ fontSize: 8, color: '#8a9bb0' }}>{data.generatedAt}</Text>
+          </View>
         </View>
       </Page>
 
