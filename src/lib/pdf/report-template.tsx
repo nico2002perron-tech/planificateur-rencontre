@@ -439,217 +439,244 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
     <Document>
       {/* ── PAGE 1: Cover ──────────────────────────────────────── */}
       <Page size="LETTER" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: '#ffffff' }}>
-        {/* ── Decorative background orbs ── */}
-        <View style={{ position: 'absolute', top: -60, right: -60 }}>
-          <Svg width={300} height={300}>
-            <Defs>
-              <RadialGradient id="cO1" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.12} />
-                <Stop offset="60%" stopColor="#00b4d8" stopOpacity={0.04} />
-                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={150} cy={150} r={150} fill="url(#cO1)" />
-          </Svg>
-        </View>
-        <View style={{ position: 'absolute', bottom: -50, left: -50 }}>
-          <Svg width={260} height={260}>
-            <Defs>
-              <RadialGradient id="cO2" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor="#0077b6" stopOpacity={0.09} />
-                <Stop offset="60%" stopColor="#0077b6" stopOpacity={0.03} />
-                <Stop offset="100%" stopColor="#0077b6" stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={130} cy={130} r={130} fill="url(#cO2)" />
-          </Svg>
-        </View>
-        <View style={{ position: 'absolute', top: 340, left: -25 }}>
-          <Svg width={120} height={120}>
-            <Defs>
-              <RadialGradient id="cO3" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.06} />
-                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={60} cy={60} r={60} fill="url(#cO3)" />
-          </Svg>
-        </View>
-        {/* Thin vertical accent line — right */}
-        <View style={{ position: 'absolute', top: 180, right: 52 }}>
-          <Svg width={2} height={80}>
-            <Defs>
-              <LinearGradient id="cAL" x1="0" y1="0" x2="0" y2="80">
-                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} />
-                <Stop offset="50%" stopColor="#00b4d8" stopOpacity={0.2} />
-                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={2} height={80} fill="url(#cAL)" />
+
+        {/* ═══ BACKGROUND LAYERS ═══ */}
+        {/* Dark navy header block */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 355, backgroundColor: '#03045e' }} />
+
+        {/* Wave boundary — organic curved transition dark→white */}
+        <View style={{ position: 'absolute', top: 315, left: 0 }}>
+          <Svg width={612} height={55} viewBox="0 0 612 55">
+            <Path d="M 0,40 Q 150,0 306,28 Q 460,56 612,12 L 612,55 L 0,55 Z" fill="#ffffff" />
           </Svg>
         </View>
 
-        {/* ── Top gradient accent bar (6pt) ── */}
+        {/* Large decorative ring — right, overlapping boundary */}
+        <View style={{ position: 'absolute', top: 155, right: -50 }}>
+          <Svg width={230} height={230}>
+            <Circle cx={115} cy={115} r={95} fill="none" stroke="#00b4d8" strokeWidth={2} strokeOpacity={0.15} />
+            <Circle cx={115} cy={115} r={72} fill="none" stroke="#00b4d8" strokeWidth={1} strokeOpacity={0.08} />
+          </Svg>
+        </View>
+
+        {/* Medium ring — top left */}
+        <View style={{ position: 'absolute', top: 25, left: -35 }}>
+          <Svg width={140} height={140}>
+            <Circle cx={70} cy={70} r={58} fill="none" stroke="#0077b6" strokeWidth={1.5} strokeOpacity={0.13} />
+          </Svg>
+        </View>
+
+        {/* Small ring — top right area */}
+        <View style={{ position: 'absolute', top: 18, right: 55 }}>
+          <Svg width={44} height={44}>
+            <Circle cx={22} cy={22} r={18} fill="none" stroke="#48cae4" strokeWidth={1} strokeOpacity={0.25} />
+          </Svg>
+        </View>
+
+        {/* Scattered dots on dark section */}
+        <View style={{ position: 'absolute', top: 85, right: 95 }}>
+          <Svg width={6} height={6}><Circle cx={3} cy={3} r={3} fill="#00b4d8" fillOpacity={0.3} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 175, left: 65 }}>
+          <Svg width={5} height={5}><Circle cx={2.5} cy={2.5} r={2.5} fill="#48cae4" fillOpacity={0.25} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 115, left: 140 }}>
+          <Svg width={4} height={4}><Circle cx={2} cy={2} r={2} fill="#90e0ef" fillOpacity={0.3} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 245, right: 160 }}>
+          <Svg width={7} height={7}><Circle cx={3.5} cy={3.5} r={3.5} fill="#00b4d8" fillOpacity={0.2} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 55, left: 210 }}>
+          <Svg width={4} height={4}><Circle cx={2} cy={2} r={2} fill="#90e0ef" fillOpacity={0.35} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 290, left: 100 }}>
+          <Svg width={5} height={5}><Circle cx={2.5} cy={2.5} r={2.5} fill="#48cae4" fillOpacity={0.2} /></Svg>
+        </View>
+
+        {/* Diamond shapes */}
+        <View style={{ position: 'absolute', top: 195, left: 42 }}>
+          <Svg width={16} height={16}><Path d="M 8,0 L 16,8 L 8,16 L 0,8 Z" fill="#00b4d8" fillOpacity={0.12} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 70, right: 170 }}>
+          <Svg width={10} height={10}><Path d="M 5,0 L 10,5 L 5,10 L 0,5 Z" fill="#48cae4" fillOpacity={0.15} /></Svg>
+        </View>
+
+        {/* Cross/plus shapes */}
+        <View style={{ position: 'absolute', top: 275, right: 75 }}>
+          <Svg width={14} height={14}>
+            <Rect x={5} y={0} width={4} height={14} fill="#0077b6" fillOpacity={0.12} rx={1} />
+            <Rect x={0} y={5} width={14} height={4} fill="#0077b6" fillOpacity={0.12} rx={1} />
+          </Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 140, left: 95 }}>
+          <Svg width={10} height={10}>
+            <Rect x={4} y={0} width={2} height={10} fill="#48cae4" fillOpacity={0.15} rx={1} />
+            <Rect x={0} y={4} width={10} height={2} fill="#48cae4" fillOpacity={0.15} rx={1} />
+          </Svg>
+        </View>
+
+        {/* Gradient orb — bottom right (on white section) */}
+        <View style={{ position: 'absolute', bottom: -30, right: -30 }}>
+          <Svg width={200} height={200}>
+            <Defs>
+              <RadialGradient id="cBR" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.07} />
+                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={100} cy={100} r={100} fill="url(#cBR)" />
+          </Svg>
+        </View>
+
+        {/* ═══ CYAN ACCENT BAR ═══ */}
         <Svg width={612} height={6}>
           <Defs>
             <LinearGradient id="cTB" x1="0" y1="0" x2="612" y2="0">
-              <Stop offset="0%" stopColor="#03045e" />
-              <Stop offset="30%" stopColor="#0077b6" />
-              <Stop offset="50%" stopColor="#00b4d8" />
-              <Stop offset="70%" stopColor="#0077b6" />
-              <Stop offset="100%" stopColor="#03045e" />
+              <Stop offset="0%" stopColor="#00b4d8" />
+              <Stop offset="50%" stopColor="#48cae4" />
+              <Stop offset="100%" stopColor="#00b4d8" />
             </LinearGradient>
           </Defs>
           <Rect x={0} y={0} width={612} height={6} fill="url(#cTB)" />
         </Svg>
 
-        {/* ── Main content ── */}
-        <View style={{ paddingHorizontal: 65, paddingTop: 55, alignItems: 'center' }}>
-          {/* Logo */}
-          <Image src={LOGO_PATH} style={{ width: 320, height: 67, marginBottom: 26 }} />
+        {/* ═══ DARK SECTION CONTENT ═══ */}
+        <View style={{ paddingHorizontal: 65, paddingTop: 35, alignItems: 'center' }}>
+          {/* Logo in white card */}
+          <View style={{ backgroundColor: '#ffffff', borderRadius: 12, paddingHorizontal: 22, paddingVertical: 14, marginBottom: 20 }}>
+            <Image src={LOGO_PATH} style={{ width: 280, height: 59 }} />
+          </View>
 
-          {/* Gradient divider (100pt) */}
-          <Svg width={100} height={4} style={{ marginBottom: 26 }}>
-            <Defs>
-              <LinearGradient id="cDv" x1="0" y1="0" x2="100" y2="0">
-                <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} />
-                <Stop offset="30%" stopColor="#0077b6" />
-                <Stop offset="50%" stopColor="#00b4d8" />
-                <Stop offset="70%" stopColor="#0077b6" />
-                <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width={100} height={4} fill="url(#cDv)" rx={2} />
-          </Svg>
+          {/* Cyan divider */}
+          <View style={{ width: 60, height: 3, backgroundColor: '#00b4d8', borderRadius: 2, marginBottom: 18, opacity: 0.7 }} />
 
-          {/* Title — Montserrat ExtraBold */}
+          {/* Title — HUGE white on dark */}
           <Text style={{
-            fontSize: 30,
-            fontFamily: 'Montserrat',
-            fontWeight: 800,
-            color: '#03045e',
-            letterSpacing: -0.8,
-            textAlign: 'center',
-            marginBottom: 14,
+            fontSize: 34, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff',
+            letterSpacing: -1, textAlign: 'center', lineHeight: 1.15, marginBottom: 16,
           }}>
-            Sommaire du portefeuille
+            Sommaire du{'\n'}portefeuille
           </Text>
 
-          {/* Portfolio name — badge pill */}
+          {/* Badge pill — cyan on dark */}
           <View style={{
-            backgroundColor: 'rgba(0, 180, 216, 0.08)',
-            borderWidth: 1,
-            borderColor: 'rgba(0, 119, 182, 0.15)',
-            borderStyle: 'solid',
-            borderRadius: 20,
-            paddingHorizontal: 18,
-            paddingVertical: 6,
-            marginBottom: 36,
+            backgroundColor: 'rgba(0, 180, 216, 0.15)', borderRadius: 20,
+            paddingHorizontal: 22, paddingVertical: 7,
           }}>
-            <Text style={{
-              fontSize: 11,
-              fontFamily: 'Open Sans',
-              fontWeight: 600,
-              color: '#0077b6',
-              letterSpacing: 0.3,
-            }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Open Sans', fontWeight: 600, color: '#90e0ef', letterSpacing: 0.5 }}>
               {data.portfolio.name}
             </Text>
           </View>
+        </View>
 
-          {/* Info — 3 column cards */}
-          <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginBottom: 18 }}>
+        {/* ═══ WHITE SECTION CONTENT ═══ */}
+        <View style={{ paddingHorizontal: 55, paddingTop: 18 }}>
+          {/* Big metric cards */}
+          <View style={{ flexDirection: 'row', gap: 14, marginBottom: 14 }}>
             <View style={{
-              flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
-              borderTopWidth: 3, borderTopColor: '#00b4d8', borderTopStyle: 'solid',
+              flex: 1, backgroundColor: '#f3f6fa', borderRadius: 16, padding: 20,
+              borderLeftWidth: 5, borderLeftColor: '#0077b6', borderLeftStyle: 'solid',
             }}>
-              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
-                Préparé pour
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>
-                {data.client.name}
-              </Text>
-            </View>
-            <View style={{
-              flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
-              borderTopWidth: 3, borderTopColor: '#0077b6', borderTopStyle: 'solid',
-            }}>
-              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
-                Conseiller
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>
-                {data.advisor.name}
-              </Text>
-              {data.advisor.title && (
-                <Text style={{ fontSize: 8, color: '#586e82', marginTop: 3, fontFamily: 'Open Sans' }}>
-                  {data.advisor.title}
-                </Text>
-              )}
-            </View>
-            <View style={{
-              flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
-              borderTopWidth: 3, borderTopColor: '#03045e', borderTopStyle: 'solid',
-            }}>
-              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
-                Indice de référence
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>
-                S&P/TSX
-              </Text>
-              <Text style={{ fontSize: 8, color: '#586e82', marginTop: 3, fontFamily: 'Open Sans' }}>
-                Composite
-              </Text>
-            </View>
-          </View>
-
-          {/* Metrics — accent top line cards */}
-          <View style={{ flexDirection: 'row', gap: 14, width: '100%', marginBottom: 18 }}>
-            <View style={{
-              flex: 1, borderRadius: 14, padding: 20, alignItems: 'center',
-              borderWidth: 1, borderColor: '#e5e7eb', borderStyle: 'solid', backgroundColor: '#fafbfd',
-            }}>
-              <View style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 3, backgroundColor: '#0077b6', borderRadius: 2 }} />
-              <Text style={{ fontSize: 7, color: '#586e82', marginBottom: 8, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>
+              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, fontFamily: 'Open Sans', fontWeight: 600 }}>
                 Valeur totale
               </Text>
-              <Text style={{ fontSize: 26, fontFamily: 'Montserrat', fontWeight: 800, color: '#03045e' }}>
+              <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: '#03045e', marginBottom: 6 }}>
                 {fmt(data.portfolio.totalValue, ccy)}
               </Text>
+              <View style={{ width: 30, height: 2, backgroundColor: '#00b4d8', borderRadius: 1 }} />
             </View>
             {estimatedDividend > 0 && (
               <View style={{
-                flex: 1, borderRadius: 14, padding: 20, alignItems: 'center',
-                borderWidth: 1, borderColor: '#d1fae5', borderStyle: 'solid', backgroundColor: '#f0fdf4',
+                flex: 1, backgroundColor: '#f0fdf4', borderRadius: 16, padding: 20,
+                borderLeftWidth: 5, borderLeftColor: '#10b981', borderLeftStyle: 'solid',
               }}>
-                <View style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 3, backgroundColor: '#10b981', borderRadius: 2 }} />
-                <Text style={{ fontSize: 7, color: '#586e82', marginBottom: 8, marginTop: 4, textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, fontFamily: 'Open Sans', fontWeight: 600 }}>
                   Revenu estimé (div.)
                 </Text>
-                <Text style={{ fontSize: 26, fontFamily: 'Montserrat', fontWeight: 800, color: '#10b981' }}>
+                <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: '#10b981', marginBottom: 6 }}>
                   {fmt(estimatedDividend, ccy)}
                 </Text>
+                <View style={{ width: 30, height: 2, backgroundColor: '#10b981', borderRadius: 1 }} />
               </View>
             )}
           </View>
 
-          {/* Model source badge */}
-          {data.portfolio.modelSource && (
-            <View style={{
-              backgroundColor: 'rgba(3, 4, 94, 0.04)', borderRadius: 8,
-              paddingHorizontal: 14, paddingVertical: 5,
-            }}>
-              <Text style={{ fontSize: 9, color: '#586e82', fontFamily: 'Open Sans' }}>
-                Basé sur le modèle : {data.portfolio.modelSource}
+          {/* Info row — 3 column cards with icon dots */}
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+            <View style={{ flex: 1, backgroundColor: '#f8f9fb', borderRadius: 12, padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Svg width={14} height={14} style={{ marginRight: 6 }}>
+                  <Circle cx={7} cy={7} r={7} fill="#03045e" fillOpacity={0.08} />
+                  <Circle cx={7} cy={7} r={3} fill="#03045e" fillOpacity={0.35} />
+                </Svg>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>
+                  Préparé pour
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>
+                {data.client.name}
               </Text>
             </View>
+            <View style={{ flex: 1, backgroundColor: '#f8f9fb', borderRadius: 12, padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Svg width={14} height={14} style={{ marginRight: 6 }}>
+                  <Circle cx={7} cy={7} r={7} fill="#0077b6" fillOpacity={0.08} />
+                  <Circle cx={7} cy={7} r={3} fill="#0077b6" fillOpacity={0.35} />
+                </Svg>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>
+                  Conseiller
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>
+                {data.advisor.name}
+              </Text>
+              {data.advisor.title && (
+                <Text style={{ fontSize: 8, color: '#586e82', marginTop: 2, fontFamily: 'Open Sans' }}>{data.advisor.title}</Text>
+              )}
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#f8f9fb', borderRadius: 12, padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Svg width={14} height={14} style={{ marginRight: 6 }}>
+                  <Circle cx={7} cy={7} r={7} fill="#00b4d8" fillOpacity={0.08} />
+                  <Circle cx={7} cy={7} r={3} fill="#00b4d8" fillOpacity={0.35} />
+                </Svg>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>
+                  Indice
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>S&P/TSX</Text>
+              <Text style={{ fontSize: 8, color: '#586e82', marginTop: 2, fontFamily: 'Open Sans' }}>Composite</Text>
+            </View>
+          </View>
+
+          {/* Model source */}
+          {data.portfolio.modelSource && (
+            <View style={{ alignItems: 'center', marginBottom: 8 }}>
+              <View style={{ backgroundColor: 'rgba(3, 4, 94, 0.04)', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 5, flexDirection: 'row', alignItems: 'center' }}>
+                <Svg width={10} height={10} style={{ marginRight: 6 }}>
+                  <Circle cx={5} cy={5} r={5} fill="#0077b6" fillOpacity={0.15} />
+                  <Circle cx={5} cy={5} r={2} fill="#0077b6" fillOpacity={0.4} />
+                </Svg>
+                <Text style={{ fontSize: 9, color: '#586e82', fontFamily: 'Open Sans' }}>
+                  Basé sur le modèle : {data.portfolio.modelSource}
+                </Text>
+              </View>
+            </View>
           )}
+
+          {/* Decorative dots row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 8 }}>
+            {[0.12, 0.2, 0.35, 0.55, 0.7, 0.55, 0.35, 0.2, 0.12].map((op, i) => (
+              <Svg key={`dot${i}`} width={6} height={6}><Circle cx={3} cy={3} r={3} fill="#00b4d8" fillOpacity={op} /></Svg>
+            ))}
+          </View>
         </View>
 
-        {/* ── Footer ── */}
-        <View style={{ position: 'absolute', bottom: 28, left: 65, right: 65 }}>
-          <Svg width={482} height={1} style={{ marginBottom: 12 }}>
+        {/* ═══ FOOTER ═══ */}
+        <View style={{ position: 'absolute', bottom: 28, left: 55, right: 55 }}>
+          <Svg width={502} height={1} style={{ marginBottom: 12 }}>
             <Defs>
-              <LinearGradient id="cFt" x1="0" y1="0" x2="482" y2="0">
+              <LinearGradient id="cFt" x1="0" y1="0" x2="502" y2="0">
                 <Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} />
                 <Stop offset="15%" stopColor="#00b4d8" stopOpacity={0.3} />
                 <Stop offset="50%" stopColor="#0077b6" stopOpacity={0.3} />
@@ -657,15 +684,11 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 <Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
               </LinearGradient>
             </Defs>
-            <Rect x={0} y={0} width={482} height={1} fill="url(#cFt)" />
+            <Rect x={0} y={0} width={502} height={1} fill="url(#cFt)" />
           </Svg>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 8, color: '#8a9bb0', fontFamily: 'Open Sans' }}>
-              Groupe Financier Ste-Foy — Rapport confidentiel
-            </Text>
-            <Text style={{ fontSize: 8, color: '#8a9bb0', fontFamily: 'Open Sans' }}>
-              {data.generatedAt}
-            </Text>
+            <Text style={{ fontSize: 8, color: '#8a9bb0', fontFamily: 'Open Sans' }}>Groupe Financier Ste-Foy — Rapport confidentiel</Text>
+            <Text style={{ fontSize: 8, color: '#8a9bb0', fontFamily: 'Open Sans' }}>{data.generatedAt}</Text>
           </View>
         </View>
       </Page>
@@ -1433,50 +1456,103 @@ export function ReportDocument({ data }: { data: ReportData }) {
   return (
     <Document>
       <Page size="LETTER" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: '#ffffff' }}>
-        <View style={{ position: 'absolute', top: -60, right: -60 }}>
-          <Svg width={300} height={300}>
-            <Defs><RadialGradient id="lO1" cx="50%" cy="50%" r="50%"><Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.12} /><Stop offset="60%" stopColor="#00b4d8" stopOpacity={0.04} /><Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} /></RadialGradient></Defs>
-            <Circle cx={150} cy={150} r={150} fill="url(#lO1)" />
+        {/* Dark navy header */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 360, backgroundColor: '#03045e' }} />
+        {/* Wave boundary */}
+        <View style={{ position: 'absolute', top: 320, left: 0 }}>
+          <Svg width={612} height={55} viewBox="0 0 612 55">
+            <Path d="M 0,40 Q 150,0 306,28 Q 460,56 612,12 L 612,55 L 0,55 Z" fill="#ffffff" />
           </Svg>
         </View>
-        <View style={{ position: 'absolute', bottom: -50, left: -50 }}>
-          <Svg width={260} height={260}>
-            <Defs><RadialGradient id="lO2" cx="50%" cy="50%" r="50%"><Stop offset="0%" stopColor="#0077b6" stopOpacity={0.09} /><Stop offset="60%" stopColor="#0077b6" stopOpacity={0.03} /><Stop offset="100%" stopColor="#0077b6" stopOpacity={0} /></RadialGradient></Defs>
-            <Circle cx={130} cy={130} r={130} fill="url(#lO2)" />
+        {/* Large ring — right */}
+        <View style={{ position: 'absolute', top: 160, right: -50 }}>
+          <Svg width={230} height={230}>
+            <Circle cx={115} cy={115} r={95} fill="none" stroke="#00b4d8" strokeWidth={2} strokeOpacity={0.15} />
+            <Circle cx={115} cy={115} r={72} fill="none" stroke="#00b4d8" strokeWidth={1} strokeOpacity={0.08} />
           </Svg>
         </View>
+        {/* Ring — top left */}
+        <View style={{ position: 'absolute', top: 25, left: -35 }}>
+          <Svg width={140} height={140}>
+            <Circle cx={70} cy={70} r={58} fill="none" stroke="#0077b6" strokeWidth={1.5} strokeOpacity={0.13} />
+          </Svg>
+        </View>
+        {/* Dots */}
+        <View style={{ position: 'absolute', top: 85, right: 95 }}>
+          <Svg width={6} height={6}><Circle cx={3} cy={3} r={3} fill="#00b4d8" fillOpacity={0.3} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 175, left: 65 }}>
+          <Svg width={5} height={5}><Circle cx={2.5} cy={2.5} r={2.5} fill="#48cae4" fillOpacity={0.25} /></Svg>
+        </View>
+        <View style={{ position: 'absolute', top: 245, right: 160 }}>
+          <Svg width={7} height={7}><Circle cx={3.5} cy={3.5} r={3.5} fill="#00b4d8" fillOpacity={0.2} /></Svg>
+        </View>
+        {/* Diamond */}
+        <View style={{ position: 'absolute', top: 195, left: 42 }}>
+          <Svg width={16} height={16}><Path d="M 8,0 L 16,8 L 8,16 L 0,8 Z" fill="#00b4d8" fillOpacity={0.12} /></Svg>
+        </View>
+        {/* Cross */}
+        <View style={{ position: 'absolute', top: 275, right: 75 }}>
+          <Svg width={14} height={14}>
+            <Rect x={5} y={0} width={4} height={14} fill="#0077b6" fillOpacity={0.12} rx={1} />
+            <Rect x={0} y={5} width={14} height={4} fill="#0077b6" fillOpacity={0.12} rx={1} />
+          </Svg>
+        </View>
+        {/* Orb — bottom right */}
+        <View style={{ position: 'absolute', bottom: -30, right: -30 }}>
+          <Svg width={200} height={200}>
+            <Defs><RadialGradient id="lBR" cx="50%" cy="50%" r="50%"><Stop offset="0%" stopColor="#00b4d8" stopOpacity={0.07} /><Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} /></RadialGradient></Defs>
+            <Circle cx={100} cy={100} r={100} fill="url(#lBR)" />
+          </Svg>
+        </View>
+        {/* Top bar */}
         <Svg width={612} height={6}>
-          <Defs><LinearGradient id="lTB" x1="0" y1="0" x2="612" y2="0"><Stop offset="0%" stopColor="#03045e" /><Stop offset="30%" stopColor="#0077b6" /><Stop offset="50%" stopColor="#00b4d8" /><Stop offset="70%" stopColor="#0077b6" /><Stop offset="100%" stopColor="#03045e" /></LinearGradient></Defs>
+          <Defs><LinearGradient id="lTB" x1="0" y1="0" x2="612" y2="0"><Stop offset="0%" stopColor="#00b4d8" /><Stop offset="50%" stopColor="#48cae4" /><Stop offset="100%" stopColor="#00b4d8" /></LinearGradient></Defs>
           <Rect x={0} y={0} width={612} height={6} fill="url(#lTB)" />
         </Svg>
-        <View style={{ paddingHorizontal: 65, paddingTop: 65, alignItems: 'center' }}>
-          <Image src={LOGO_PATH} style={{ width: 320, height: 67, marginBottom: 26 }} />
-          <Svg width={100} height={4} style={{ marginBottom: 26 }}>
-            <Defs><LinearGradient id="lDv" x1="0" y1="0" x2="100" y2="0"><Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} /><Stop offset="30%" stopColor="#0077b6" /><Stop offset="50%" stopColor="#00b4d8" /><Stop offset="70%" stopColor="#0077b6" /><Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} /></LinearGradient></Defs>
-            <Rect x={0} y={0} width={100} height={4} fill="url(#lDv)" rx={2} />
-          </Svg>
-          <Text style={{ fontSize: 30, fontFamily: 'Montserrat', fontWeight: 800, color: '#03045e', letterSpacing: -0.8, textAlign: 'center', marginBottom: 14 }}>
-            Rapport de portefeuille
-          </Text>
-          <View style={{ backgroundColor: 'rgba(0, 180, 216, 0.08)', borderWidth: 1, borderColor: 'rgba(0, 119, 182, 0.15)', borderStyle: 'solid', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 6, marginBottom: 40 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Open Sans', fontWeight: 600, color: '#0077b6', letterSpacing: 0.3 }}>{data.portfolio.name}</Text>
+        {/* Dark section content */}
+        <View style={{ paddingHorizontal: 65, paddingTop: 40, alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#ffffff', borderRadius: 12, paddingHorizontal: 22, paddingVertical: 14, marginBottom: 20 }}>
+            <Image src={LOGO_PATH} style={{ width: 280, height: 59 }} />
           </View>
-          <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginBottom: 24 }}>
-            <View style={{ flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14, borderTopWidth: 3, borderTopColor: '#00b4d8', borderTopStyle: 'solid' }}>
-              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>Préparé pour</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>{data.client.name}</Text>
-            </View>
-            <View style={{ flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14, borderTopWidth: 3, borderTopColor: '#0077b6', borderTopStyle: 'solid' }}>
-              <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>Conseiller</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>{data.advisor.name}</Text>
-              {data.advisor.title && <Text style={{ fontSize: 8, color: '#586e82', marginTop: 3, fontFamily: 'Open Sans' }}>{data.advisor.title}</Text>}
-            </View>
+          <View style={{ width: 60, height: 3, backgroundColor: '#00b4d8', borderRadius: 2, marginBottom: 18, opacity: 0.7 }} />
+          <Text style={{ fontSize: 34, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', letterSpacing: -1, textAlign: 'center', lineHeight: 1.15, marginBottom: 16 }}>
+            Rapport de{'\n'}portefeuille
+          </Text>
+          <View style={{ backgroundColor: 'rgba(0, 180, 216, 0.15)', borderRadius: 20, paddingHorizontal: 22, paddingVertical: 7 }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Open Sans', fontWeight: 600, color: '#90e0ef', letterSpacing: 0.5 }}>{data.portfolio.name}</Text>
           </View>
         </View>
-        <View style={{ position: 'absolute', bottom: 28, left: 65, right: 65 }}>
-          <Svg width={482} height={1} style={{ marginBottom: 12 }}>
-            <Defs><LinearGradient id="lFt" x1="0" y1="0" x2="482" y2="0"><Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} /><Stop offset="15%" stopColor="#00b4d8" stopOpacity={0.3} /><Stop offset="50%" stopColor="#0077b6" stopOpacity={0.3} /><Stop offset="85%" stopColor="#00b4d8" stopOpacity={0.3} /><Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} /></LinearGradient></Defs>
-            <Rect x={0} y={0} width={482} height={1} fill="url(#lFt)" />
+        {/* White section content */}
+        <View style={{ paddingHorizontal: 55, paddingTop: 18 }}>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+            <View style={{ flex: 1, backgroundColor: '#f8f9fb', borderRadius: 12, padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Svg width={14} height={14} style={{ marginRight: 6 }}><Circle cx={7} cy={7} r={7} fill="#03045e" fillOpacity={0.08} /><Circle cx={7} cy={7} r={3} fill="#03045e" fillOpacity={0.35} /></Svg>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>Préparé pour</Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>{data.client.name}</Text>
+            </View>
+            <View style={{ flex: 1, backgroundColor: '#f8f9fb', borderRadius: 12, padding: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Svg width={14} height={14} style={{ marginRight: 6 }}><Circle cx={7} cy={7} r={7} fill="#0077b6" fillOpacity={0.08} /><Circle cx={7} cy={7} r={3} fill="#0077b6" fillOpacity={0.35} /></Svg>
+                <Text style={{ fontSize: 7, color: '#586e82', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'Open Sans', fontWeight: 600 }}>Conseiller</Text>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: '#03045e' }}>{data.advisor.name}</Text>
+              {data.advisor.title && <Text style={{ fontSize: 8, color: '#586e82', marginTop: 2, fontFamily: 'Open Sans' }}>{data.advisor.title}</Text>}
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 6 }}>
+            {[0.12, 0.2, 0.35, 0.55, 0.7, 0.55, 0.35, 0.2, 0.12].map((op, i) => (
+              <Svg key={`ld${i}`} width={6} height={6}><Circle cx={3} cy={3} r={3} fill="#00b4d8" fillOpacity={op} /></Svg>
+            ))}
+          </View>
+        </View>
+        {/* Footer */}
+        <View style={{ position: 'absolute', bottom: 28, left: 55, right: 55 }}>
+          <Svg width={502} height={1} style={{ marginBottom: 12 }}>
+            <Defs><LinearGradient id="lFt" x1="0" y1="0" x2="502" y2="0"><Stop offset="0%" stopColor="#00b4d8" stopOpacity={0} /><Stop offset="15%" stopColor="#00b4d8" stopOpacity={0.3} /><Stop offset="50%" stopColor="#0077b6" stopOpacity={0.3} /><Stop offset="85%" stopColor="#00b4d8" stopOpacity={0.3} /><Stop offset="100%" stopColor="#00b4d8" stopOpacity={0} /></LinearGradient></Defs>
+            <Rect x={0} y={0} width={502} height={1} fill="url(#lFt)" />
           </Svg>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Text style={{ fontSize: 8, color: '#8a9bb0', fontFamily: 'Open Sans' }}>Groupe Financier Ste-Foy — Rapport confidentiel</Text>
