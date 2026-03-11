@@ -660,112 +660,167 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   return (
     <Document>
 
-      {/* ═══ PAGE 1: DASHBOARD OVERVIEW ═══════════════════════════ */}
-      <Page size="LETTER" orientation="landscape" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: C.white }}>
-        <AccentBar />
+      {/* ═══ PAGE 1: COVER PAGE — Premium Design ═══════════════════ */}
+      <Page size="LETTER" orientation="landscape" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: '#f7f8fa' }}>
 
-        {/* Header: Logo + Date */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 40, paddingTop: 24 }}>
-          <Image src={LOGO_PATH} style={{ width: 200, height: 42 }} />
-          <Text style={{ fontSize: 8, color: C.textTer }}>{data.generatedAt}</Text>
+        {/* ── Full-width navy header band ── */}
+        <View style={{ backgroundColor: C.navy, height: 180, position: 'relative' }}>
+          {/* Accent gradient line at very top */}
+          <Svg width={792} height={4} style={{ position: 'absolute', top: 0, left: 0 }}>
+            <Defs>
+              <LinearGradient id="coverAccent" x1="0" y1="0" x2="792" y2="0">
+                <Stop offset="0%" stopColor={C.gold} />
+                <Stop offset="25%" stopColor={C.cyan} />
+                <Stop offset="50%" stopColor={C.cyanLight} />
+                <Stop offset="75%" stopColor={C.gold} />
+                <Stop offset="100%" stopColor={C.navy} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={792} height={4} fill="url(#coverAccent)" />
+          </Svg>
+
+          {/* Decorative circles in header */}
+          <Svg width={792} height={180} style={{ position: 'absolute', top: 0, left: 0 }}>
+            <Circle cx={720} cy={40} r={60} fill={C.blue} opacity={0.12} />
+            <Circle cx={750} cy={120} r={35} fill={C.cyan} opacity={0.08} />
+            <Circle cx={60} cy={150} r={45} fill={C.blue} opacity={0.06} />
+            <Circle cx={100} cy={30} r={20} fill={C.cyan} opacity={0.10} />
+          </Svg>
+
+          {/* Logo centered */}
+          <View style={{ alignItems: 'center', paddingTop: 28 }}>
+            <Image src={LOGO_PATH} style={{ width: 220, height: 46 }} />
+          </View>
+
+          {/* Title */}
+          <View style={{ alignItems: 'center', paddingTop: 18 }}>
+            <Text style={{ fontSize: 36, fontFamily: 'Montserrat', fontWeight: 800, color: C.white, letterSpacing: -0.5 }}>
+              Rapport de Portefeuille
+            </Text>
+            <View style={{ width: 80, height: 3, borderRadius: 2, backgroundColor: C.gold, marginTop: 10 }} />
+          </View>
         </View>
 
-        {/* Title + Portfolio Name */}
-        <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 32, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, letterSpacing: -1, marginBottom: 10 }}>
-            Sommaire du portefeuille
-          </Text>
+        {/* ── Portfolio name pill ── */}
+        <View style={{ alignItems: 'center', marginTop: -16 }}>
           <View style={{
-            borderRadius: 20, paddingHorizontal: 24, paddingVertical: 8,
-            backgroundColor: C.goldPale, borderWidth: 1, borderColor: C.gold, borderStyle: 'solid' as const,
+            borderRadius: 24, paddingHorizontal: 32, paddingVertical: 10,
+            backgroundColor: C.white, borderWidth: 1.5, borderColor: C.gold, borderStyle: 'solid' as const,
           }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
-              {data.portfolio.name}
+            <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, letterSpacing: 0.5 }}>
+              {data.portfolio.name} — {data.portfolio.accountType}
             </Text>
           </View>
         </View>
 
-        {/* KPI Cards — 4 in a row */}
-        <View style={{ flexDirection: 'row', gap: 14, paddingHorizontal: 40, marginBottom: 16 }}>
-          <KPICard label="Valeur totale" value={fmt(data.portfolio.totalValue, ccy)} accent={C.navy} />
-          <KPICard
-            label="Gain / Perte"
-            value={fmt(Math.abs(gainLoss), ccy)}
-            sub={fmtPct(gainLossPct)}
-            accent={gainLoss >= 0 ? C.up : C.down}
-          />
-          <KPICard
-            label="Valeur cible 12m"
-            value={fmt(data.priceTargetSummary.totalTargetValue, ccy)}
-            sub={fmtPct(data.priceTargetSummary.totalEstimatedGainPercent)}
-            accent={C.cyan}
-          />
-          {estimatedDividend > 0 ? (
-            <KPICard label="Revenu div. estime" value={fmt(estimatedDividend, ccy)} sub="annuel" accent={C.gold} />
-          ) : (
-            <KPICard
-              label="Positions"
-              value={String(data.portfolio.holdings.length)}
-              sub={data.portfolio.accountType}
-              accent={C.gold}
-            />
-          )}
+        {/* ── Three KPI Cards ── */}
+        <View style={{ flexDirection: 'row', gap: 18, paddingHorizontal: 60, marginTop: 28 }}>
+          {/* Total Value */}
+          <View style={{
+            flex: 1, backgroundColor: C.white, borderRadius: 16, padding: 22,
+            borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+            alignItems: 'center',
+          }}>
+            <View style={{ width: 40, height: 3, borderRadius: 2, backgroundColor: C.navy, marginBottom: 12 }} />
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
+              Valeur totale du portefeuille
+            </Text>
+            <Text style={{ fontSize: 30, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, lineHeight: 1.1 }}>
+              {fmt(data.portfolio.totalValue, ccy)}
+            </Text>
+          </View>
+
+          {/* Potential Gain — always uses cyan, never red */}
+          <View style={{
+            flex: 1, backgroundColor: C.white, borderRadius: 16, padding: 22,
+            borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+            alignItems: 'center',
+          }}>
+            <View style={{ width: 40, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginBottom: 12 }} />
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
+              Gain potentiel (cible 12 mois)
+            </Text>
+            <Text style={{ fontSize: 30, fontFamily: 'Montserrat', fontWeight: 800, color: C.cyan, lineHeight: 1.1 }}>
+              {fmt(data.priceTargetSummary.totalEstimatedGainDollar, ccy)}
+            </Text>
+            <Text style={{ fontSize: 11, color: C.blue, fontFamily: 'Open Sans', fontWeight: 600, marginTop: 6 }}>
+              {fmtPct(data.priceTargetSummary.totalEstimatedGainPercent)}
+            </Text>
+          </View>
+
+          {/* Number of Positions */}
+          <View style={{
+            flex: 1, backgroundColor: C.white, borderRadius: 16, padding: 22,
+            borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+            alignItems: 'center',
+          }}>
+            <View style={{ width: 40, height: 3, borderRadius: 2, backgroundColor: C.gold, marginBottom: 12 }} />
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
+              Nombre de positions
+            </Text>
+            <Text style={{ fontSize: 30, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, lineHeight: 1.1 }}>
+              {data.portfolio.holdings.length}
+            </Text>
+            <Text style={{ fontSize: 9, color: C.textSec, marginTop: 6 }}>
+              titres en portefeuille
+            </Text>
+          </View>
         </View>
 
-        {/* Info Cards — 3 in a row */}
-        <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 40, marginBottom: 12 }}>
-          {/* Client */}
+        {/* ── Prepared For / Prepared By ── */}
+        <View style={{ flexDirection: 'row', gap: 18, paddingHorizontal: 60, marginTop: 24 }}>
+          {/* Préparé pour */}
           <View style={{
-            flex: 1, backgroundColor: C.card, borderRadius: 12, padding: 14,
+            flex: 1, backgroundColor: C.white, borderRadius: 14, padding: 18,
             borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-            borderBottomWidth: 3, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const,
+            borderLeftWidth: 4, borderLeftColor: C.navy, borderLeftStyle: 'solid' as const,
           }}>
-            <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.2, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
               Prepare pour
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{data.client.name}</Text>
-          </View>
-          {/* Advisor */}
-          <View style={{
-            flex: 1, backgroundColor: C.card, borderRadius: 12, padding: 14,
-            borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-            borderBottomWidth: 3, borderBottomColor: C.gold, borderBottomStyle: 'solid' as const,
-          }}>
-            <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.2, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
-              Conseiller
+            <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
+              {data.client.name}
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{data.advisor.name}</Text>
-            {data.advisor.title && <Text style={{ fontSize: 8, color: C.textTer, marginTop: 2 }}>{data.advisor.title}</Text>}
+            {data.client.riskProfile && (
+              <Text style={{ fontSize: 8.5, color: C.textSec, marginTop: 4 }}>
+                Profil: {RISK_LABELS[data.client.riskProfile] || data.client.riskProfile} — Horizon: {data.client.horizon || 'N/D'}
+              </Text>
+            )}
           </View>
-          {/* Benchmark */}
+
+          {/* Préparé par */}
           <View style={{
-            flex: 1, backgroundColor: C.card, borderRadius: 12, padding: 14,
+            flex: 1, backgroundColor: C.white, borderRadius: 14, padding: 18,
             borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-            borderBottomWidth: 3, borderBottomColor: C.cyan, borderBottomStyle: 'solid' as const,
+            borderLeftWidth: 4, borderLeftColor: C.gold, borderLeftStyle: 'solid' as const,
           }}>
-            <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.2, marginBottom: 6, fontFamily: 'Open Sans', fontWeight: 600 }}>
-              Indice de reference
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
+              Prepare par
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>S&P/TSX</Text>
-            <Text style={{ fontSize: 8, color: C.textTer, marginTop: 2 }}>Composite</Text>
+            <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
+              {data.advisor.name}
+            </Text>
+            {data.advisor.title && (
+              <Text style={{ fontSize: 8.5, color: C.textSec, marginTop: 4 }}>{data.advisor.title}</Text>
+            )}
           </View>
         </View>
 
-        {/* Model source */}
-        {data.portfolio.modelSource && (
-          <View style={{ alignItems: 'center', marginBottom: 8 }}>
-            <View style={{
-              backgroundColor: C.goldPale, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 5,
-              borderWidth: 1, borderColor: '#e8dcc8', borderStyle: 'solid' as const,
-            }}>
-              <Text style={{ fontSize: 8, color: '#8a7a5a' }}>
-                Base sur le modele : {data.portfolio.modelSource}
-              </Text>
-            </View>
-          </View>
-        )}
+        {/* ── Bottom bar: date + branding ── */}
+        <View style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          backgroundColor: C.navy, height: 36,
+          flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+          paddingHorizontal: 40,
+        }}>
+          <Text style={{ fontSize: 7.5, color: '#8ba3c7' }}>
+            Groupe Financier Ste-Foy — Confidentiel
+          </Text>
+          <Text style={{ fontSize: 7.5, color: '#8ba3c7' }}>
+            {data.generatedAt}
+          </Text>
+        </View>
 
-        <PageFooter num={1} total={totalPages} />
       </Page>
 
 
