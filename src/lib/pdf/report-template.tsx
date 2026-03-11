@@ -876,9 +876,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {[
               { label: 'Valeur totale', value: fmt(data.portfolio.totalValue, ccy), color: C.navy },
-              { label: 'Cout total', value: fmt(data.portfolio.totalCost, ccy), color: C.blue },
-              { label: 'Gain / Perte', value: `${gainLoss >= 0 ? '+' : ''}${fmt(gainLoss, ccy)}`, color: gainLoss >= 0 ? C.up : C.down },
-              { label: 'Rendement', value: fmtPct(gainLossPct), color: gainLoss >= 0 ? C.up : C.down },
               { label: 'Positions', value: String(data.portfolio.holdings.length), color: C.cyan },
             ].map((kpi, i) => (
               <View key={i} style={{
@@ -954,31 +951,34 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 </Text>
               </View>
               <DonutChart
-                slices={data.sectorBreakdown.map((s, i) => ({
+                slices={data.sectorBreakdown.map((s) => ({
                   label: s.sectorLabel,
                   percentage: s.weight,
-                  color: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length],
+                  color: SECTOR_COLOR_MAP[s.sectorLabel] || '#94a3b8',
                 }))}
-                size={100}
+                size={110}
                 centerValue={`${data.sectorBreakdown.length}`}
                 centerLabel="Secteurs"
               />
-              <View style={{ marginTop: 8 }}>
-                {data.sectorBreakdown.slice(0, 8).map((s, i) => (
-                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
-                    <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length], marginRight: 6, flexShrink: 0 }} />
-                    <Text style={{ fontSize: 7, color: C.text, flex: 1 }}>{s.sectorLabel}</Text>
-                    <Text style={{ fontSize: 6.5, color: C.textTer, marginRight: 4 }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''}</Text>
-                    <View style={{
-                      backgroundColor: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length],
-                      paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6,
-                    }}>
-                      <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.white }}>
-                        {s.weight.toFixed(1)}%
-                      </Text>
+              <View style={{ marginTop: 10 }}>
+                {data.sectorBreakdown.slice(0, 10).map((s, i) => {
+                  const sColor = SECTOR_COLOR_MAP[s.sectorLabel] || '#94a3b8';
+                  return (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5, paddingVertical: 2 }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: sColor, marginRight: 7, flexShrink: 0 }} />
+                      <Text style={{ fontSize: 7.5, color: C.text, flex: 1 }}>{s.sectorLabel}</Text>
+                      <Text style={{ fontSize: 7, color: C.textSec, marginRight: 6 }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''}</Text>
+                      <View style={{
+                        backgroundColor: sColor,
+                        paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+                      }}>
+                        <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.white }}>
+                          {s.weight.toFixed(1)}%
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
@@ -1127,27 +1127,28 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         <View style={styles.table}>
           <View style={styles.th}>
             <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
-            <Text style={{ ...styles.thCell, width: '17%' }}>Nom</Text>
-            <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Qte</Text>
-            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Prix</Text>
-            <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Valeur</Text>
-            <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Poids</Text>
+            <Text style={{ ...styles.thCell, width: '15%' }}>Nom</Text>
+            <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Qte</Text>
+            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Prix</Text>
+            <Text style={{ ...styles.thCell, width: '11%', textAlign: 'right' }}>Valeur</Text>
+            <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Poids</Text>
             <Text style={{ ...styles.thCell, width: '7%' }}>Classe</Text>
-            <Text style={{ ...styles.thCell, width: '24%' }}>Secteur</Text>
-            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Div. / an</Text>
+            <Text style={{ ...styles.thCell, width: '22%' }}>Secteur</Text>
+            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Div. $</Text>
+            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Div. %</Text>
           </View>
           {data.portfolio.holdings.map((h: ReportHolding, i: number) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
               <Text style={{ ...styles.tdBold, width: '7%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '17%' }}>{h.name.substring(0, 22)}</Text>
-              <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
-              <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
-              <Text style={{ ...styles.tdBold, width: '12%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
-              <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
+              <Text style={{ ...styles.td, width: '15%' }}>{h.name.substring(0, 20)}</Text>
+              <Text style={{ ...styles.td, width: '5%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
+              <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
+              <Text style={{ ...styles.tdBold, width: '11%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
+              <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
                 {ASSET_LABELS[h.assetClass]?.substring(0, 8) || h.assetClass}
               </Text>
-              <View style={{ width: '24%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+              <View style={{ width: '22%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 {(() => {
                   if (!h.sectorDisplay) return <Text style={{ fontSize: 7.5, color: C.textTer }}>—</Text>;
                   const sectors = h.sectorDisplay.split(', ');
@@ -1167,26 +1168,37 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                   );
                 })()}
               </View>
-              <Text style={{ ...styles.td, width: '10%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
+              <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
                 {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
+              </Text>
+              <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
+                {h.marketValue > 0 && h.dividendAnnual > 0 ? `${(h.dividendAnnual / h.marketValue * 100).toFixed(2)}%` : '—'}
               </Text>
             </View>
           ))}
           {/* Total row */}
           <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const }}>
-            <Text style={{ ...styles.tdBold, width: '24%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
-            <Text style={{ ...styles.td, width: '6%' }}></Text>
-            <Text style={{ ...styles.td, width: '10%' }}></Text>
-            <Text style={{ ...styles.tdBold, width: '12%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
-            <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>100%</Text>
+            <Text style={{ ...styles.tdBold, width: '22%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
+            <Text style={{ ...styles.td, width: '5%' }}></Text>
+            <Text style={{ ...styles.td, width: '9%' }}></Text>
+            <Text style={{ ...styles.tdBold, width: '11%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
+            <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>100%</Text>
             <Text style={{ ...styles.td, width: '7%' }}></Text>
-            <Text style={{ ...styles.td, width: '24%' }}></Text>
-            <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', color: C.up }}>
-              {(() => {
-                const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
-                return totalDiv > 0 ? fmt(totalDiv, ccy) : '—';
-              })()}
-            </Text>
+            <Text style={{ ...styles.td, width: '22%' }}></Text>
+            {(() => {
+              const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
+              const totalYield = data.portfolio.totalValue > 0 ? (totalDiv / data.portfolio.totalValue) * 100 : 0;
+              return (
+                <>
+                  <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: C.up }}>
+                    {totalDiv > 0 ? fmt(totalDiv, ccy) : '—'}
+                  </Text>
+                  <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: C.up }}>
+                    {totalYield > 0 ? `${totalYield.toFixed(2)}%` : '—'}
+                  </Text>
+                </>
+              );
+            })()}
           </View>
         </View>
 
