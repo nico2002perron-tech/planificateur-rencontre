@@ -691,7 +691,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const hasValuation = valData && valData.length > 0;
   const hasNegativeValuations = hasValuation && valData.some((v) => v.avgIntrinsic < 0 || (v.priceDcf < 0));
   const hasAI = !!ai;
-  const totalPages = 8 + (hasValuation ? 3 : 0);
+  const profilePageCount = Math.max(1, Math.ceil(data.holdingProfiles.length / 4));
+  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -1622,99 +1623,28 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       )}
 
 
-      {/* ═══ PAGE 5+offset: COMPANY PROFILES ══════════════════════ */}
-      <Page size="LETTER" orientation="landscape" style={styles.page}>
-        <AccentBar />
-        <Text style={styles.sectionTitle}>Fiches descriptives des titres</Text>
-        <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 12 }}>
-          {hasAI ? 'Descriptions en francais — Analyse IA + Financial Modeling Prep' : 'Profils detailles — Source: Financial Modeling Prep'}
-        </Text>
-
-        <HoldingCards
-          profiles={data.holdingProfiles.slice(0, 4).map((hp) => ({
-            ...hp,
-            description: ai?.holdingDescriptions?.[hp.symbol] || hp.description,
-          }))}
-          currency={ccy}
-        />
-
-        <PageFooter num={5 + valOffset} total={totalPages} />
-      </Page>
-
-
-      {/* ═══ PAGE 6+offset: PROFILES (suite) + TOP POSITIONS ══════ */}
-      <Page size="LETTER" orientation="landscape" style={styles.page}>
-        <AccentBar />
-        {data.holdingProfiles.length > 4 ? (
-          <>
-            <Text style={styles.sectionTitle}>Fiches descriptives (suite)</Text>
-            <HoldingCards
-              profiles={data.holdingProfiles.slice(4, 8).map((hp) => ({
-                ...hp,
-                description: ai?.holdingDescriptions?.[hp.symbol] || hp.description,
-              }))}
-              currency={ccy}
-            />
-          </>
-        ) : (
-          <>
-            <Text style={styles.sectionTitle}>Top 5 positions & Profil client</Text>
-
-            <View style={{ flexDirection: 'row', gap: 20 }}>
-              {/* Top 5 */}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.subsectionTitle}>Top 5 avoirs</Text>
-                <View style={styles.table}>
-                  <View style={styles.th}>
-                    <Text style={{ ...styles.thCell, width: '5%' }}>#</Text>
-                    <Text style={{ ...styles.thCell, width: '15%' }}>Symbole</Text>
-                    <Text style={{ ...styles.thCell, width: '30%' }}>Nom</Text>
-                    <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Valeur</Text>
-                    <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Poids</Text>
-                  </View>
-                  {data.topPositions.map((t, i) => (
-                    <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                      <Text style={{ ...styles.tdBold, width: '5%' }}>{i + 1}</Text>
-                      <Text style={{ ...styles.tdBold, width: '15%' }}>{t.symbol}</Text>
-                      <Text style={{ ...styles.td, width: '30%' }}>{t.name}</Text>
-                      <Text style={{ ...styles.td, width: '25%', textAlign: 'right' }}>{fmtFull(t.market_value, ccy)}</Text>
-                      <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>{t.weight.toFixed(1)}%</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Client profile */}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.subsectionTitle}>Profil du client</Text>
-                <View style={{ gap: 10 }}>
-                  {[
-                    { label: 'Type', value: data.client.type === 'client' ? 'Client' : 'Prospect' },
-                    { label: 'Profil de risque', value: RISK_LABELS[data.client.riskProfile] || data.client.riskProfile },
-                    { label: 'Horizon', value: data.client.horizon || 'N/D' },
-                  ].map((item, i) => (
-                    <View key={i} style={{
-                      backgroundColor: C.card, borderRadius: 10, padding: 12,
-                      borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-                    }}>
-                      <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600, marginBottom: 3 }}>{item.label}</Text>
-                      <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{item.value}</Text>
-                    </View>
-                  ))}
-                </View>
-                {data.client.objectives && (
-                  <View style={{ ...styles.card, marginTop: 10 }}>
-                    <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600, marginBottom: 3 }}>Objectifs</Text>
-                    <Text style={{ fontSize: 9, color: C.text }}>{data.client.objectives}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          </>
-        )}
-
-        <PageFooter num={6 + valOffset} total={totalPages} />
-      </Page>
+      {/* ═══ COMPANY PROFILES — 4 per page, dynamic pagination ═══ */}
+      {Array.from({ length: profilePageCount }, (_, pi) => {
+        const chunk = data.holdingProfiles.slice(pi * 4, pi * 4 + 4).map((hp) => ({
+          ...hp,
+          description: ai?.holdingDescriptions?.[hp.symbol] || hp.description,
+        }));
+        return (
+          <Page key={`profiles-${pi}`} size="LETTER" orientation="landscape" style={styles.page}>
+            <AccentBar />
+            <Text style={styles.sectionTitle}>
+              {pi === 0 ? 'Fiches descriptives des titres' : 'Fiches descriptives (suite)'}
+            </Text>
+            {pi === 0 && (
+              <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 12 }}>
+                {hasAI ? 'Descriptions en francais — Analyse IA + Financial Modeling Prep' : 'Profils detailles — Source: Yahoo Finance'}
+              </Text>
+            )}
+            <HoldingCards profiles={chunk} currency={ccy} />
+            <PageFooter num={5 + valOffset + pi} total={totalPages} />
+          </Page>
+        );
+      })}
 
 
       {/* ═══ PAGE 7+offset: SCENARIOS & RISK DASHBOARD ════════════ */}
@@ -1794,7 +1724,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         )}
         <AINarrativeBlock label="Interpretation des risques — IA" content={ai?.riskInterpretation} />
 
-        <PageFooter num={7 + valOffset} total={totalPages} />
+        <PageFooter num={5 + valOffset + profilePageCount} total={totalPages} />
       </Page>
 
 
@@ -1872,7 +1802,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         </View>
 
-        <PageFooter num={8 + valOffset} total={totalPages} />
+        <PageFooter num={6 + valOffset + profilePageCount} total={totalPages} />
       </Page>
 
     </Document>
