@@ -689,6 +689,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const ai = data.aiContent;
   const valData = data.valuationData;
   const hasValuation = valData && valData.length > 0;
+  const hasNegativeValuations = hasValuation && valData.some((v) => v.avgIntrinsic < 0 || (v.priceDcf < 0));
   const hasAI = !!ai;
   const totalPages = 8 + (hasValuation ? 1 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
@@ -1373,7 +1374,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         }, 0);
         const totalIntrinsic = valData.reduce((sum, v) => {
           const h = holdingMap.get(v.symbol);
-          if (!h || v.avgIntrinsic <= 0) return sum;
+          if (!h || v.avgIntrinsic === 0) return sum;
           return sum + h.quantity * v.avgIntrinsic;
         }, 0);
 
@@ -1405,31 +1406,41 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 const weight = h?.weight || 0;
                 const allocatedValue = h?.marketValue || 0;
                 const qty = h?.quantity || 0;
-                const intrinsicTotal = v.avgIntrinsic > 0 ? qty * v.avgIntrinsic : 0;
+                const intrinsicTotal = v.avgIntrinsic !== 0 ? qty * v.avgIntrinsic : 0;
+                const isNegative = v.avgIntrinsic < 0;
+                const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
                 return (
                   <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                     <Text style={{ ...styles.tdBold, width: '8%' }}>{v.symbol}</Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{weight.toFixed(1)}%</Text>
                     <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmt(allocatedValue, ccy)}</Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{fmtFull(v.currentPrice, ccy)}</Text>
-                    <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{v.priceDcf > 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}</Text>
+                    <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: v.priceDcf < 0 ? C.down : C.text }}>
+                      {v.priceDcf !== 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
+                    </Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{v.priceSales > 0 ? fmtFull(v.priceSales, ccy) : 'N/D'}</Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{v.priceEarnings > 0 ? fmtFull(v.priceEarnings, ccy) : 'N/D'}</Text>
-                    <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right' }}>{fmtFull(v.avgIntrinsic, ccy)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: isNegative ? C.down : C.text }}>
+                      {noData ? 'N/D' : fmtFull(v.avgIntrinsic, ccy)}
+                    </Text>
                     <Text style={{
                       ...styles.tdBold, width: '10%', textAlign: 'right',
-                      color: intrinsicTotal > allocatedValue * 1.05 ? C.up : intrinsicTotal < allocatedValue * 0.95 ? C.down : C.text,
+                      color: noData ? C.textTer : intrinsicTotal > allocatedValue * 1.05 ? C.up : intrinsicTotal < allocatedValue * 0.95 ? C.down : C.text,
                     }}>
-                      {intrinsicTotal > 0 ? fmt(intrinsicTotal, ccy) : 'N/D'}
+                      {noData ? 'N/D' : fmt(intrinsicTotal, ccy)}
                     </Text>
                     <Text style={{
                       ...styles.td, width: '8%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600, fontSize: 7,
-                      color: v.upsidePercent > 10 ? C.up : v.upsidePercent < -10 ? C.down : '#854d0e',
+                      color: noData ? C.textTer : v.upsidePercent > 10 ? C.up : v.upsidePercent < -10 ? C.down : '#854d0e',
                     }}>
-                      {fmtPct(v.upsidePercent)}
+                      {noData ? '—' : fmtPct(v.upsidePercent)}
                     </Text>
                     <View style={{ width: '12%', alignItems: 'center', justifyContent: 'center' }}>
-                      <ValuationBadge upside={v.upsidePercent} />
+                      {noData ? (
+                        <Text style={{ fontSize: 6.5, color: C.textTer }}>N/D</Text>
+                      ) : (
+                        <ValuationBadge upside={v.upsidePercent} />
+                      )}
                     </View>
                   </View>
                 );
@@ -1446,13 +1457,13 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                   ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8,
                   color: totalIntrinsic > totalAllocated * 1.05 ? C.up : totalIntrinsic < totalAllocated * 0.95 ? C.down : C.text,
                 }}>
-                  {totalIntrinsic > 0 ? fmt(totalIntrinsic, ccy) : ''}
+                  {totalIntrinsic !== 0 ? fmt(totalIntrinsic, ccy) : ''}
                 </Text>
                 <Text style={{
                   ...styles.tdBold, width: '20%', textAlign: 'right', fontSize: 8,
                   color: totalIntrinsic > totalAllocated * 1.05 ? C.up : totalIntrinsic < totalAllocated * 0.95 ? C.down : C.text,
                 }}>
-                  {totalAllocated > 0 && totalIntrinsic > 0 ? fmtPct(((totalIntrinsic - totalAllocated) / totalAllocated) * 100) : ''}
+                  {totalAllocated > 0 && totalIntrinsic !== 0 ? fmtPct(((totalIntrinsic - totalAllocated) / totalAllocated) * 100) : ''}
                 </Text>
               </View>
             </View>
@@ -1466,18 +1477,21 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
                 <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Interpretation</Text>
               </View>
-              {valData.map((v: ValuationDataItem, i: number) => (
-                <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                  <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
-                  <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
-                  <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
-                    {v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
-                  </Text>
-                  <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8 }}>
-                    {v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : 'N/D'}
-                  </Text>
-                </View>
-              ))}
+              {valData.map((v: ValuationDataItem, i: number) => {
+                const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
+                      {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8, color: noData ? C.textTer : v.priceDcf < 0 ? C.down : C.text }}>
+                      {noData ? 'FNB / N/D' : v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : v.priceDcf < 0 ? 'FCF negatif' : 'N/D'}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
             {/* Sensitivity matrices */}
@@ -1511,6 +1525,45 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
 
             <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
+
+            {/* Note for negative DCF / missing data */}
+            {hasNegativeValuations && (
+              <View style={{
+                backgroundColor: '#fffbeb', borderRadius: 8, padding: 10, marginBottom: 6,
+                borderWidth: 1, borderColor: '#fde68a', borderStyle: 'solid' as const,
+                borderLeftWidth: 3, borderLeftColor: '#f59e0b', borderLeftStyle: 'solid' as const,
+              }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#92400e', marginBottom: 3 }}>
+                  Note — Valeurs intrinseques negatives
+                </Text>
+                <Text style={{ fontSize: 7, color: '#78350f', lineHeight: 1.5 }}>
+                  Une valeur intrinseque negative (DCF) indique que l&apos;entreprise genere actuellement des flux de tresorerie
+                  negatifs (free cash flow negatif), ce qui est frequemment le cas pour les entreprises en forte croissance
+                  qui ne sont pas encore rentables. Le modele DCF evalue la rentabilite actuelle et ne prend pas en
+                  compte le potentiel de croissance future. Pour ces titres, d&apos;autres methodes de valorisation
+                  (P/S, comparables) peuvent etre plus appropriees.
+                </Text>
+              </View>
+            )}
+
+            {/* Note for N/D entries (ETFs, etc.) */}
+            {valData.some((v) => v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0) && (
+              <View style={{
+                backgroundColor: '#f0f9ff', borderRadius: 8, padding: 10, marginBottom: 6,
+                borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
+                borderLeftWidth: 3, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
+              }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 3 }}>
+                  Note — Titres sans valorisation (N/D)
+                </Text>
+                <Text style={{ fontSize: 7, color: C.text, lineHeight: 1.5 }}>
+                  Les FNB (fonds negocies en bourse) et certains titres ne disposent pas de donnees financieres
+                  individuelles (revenus, benefices, flux de tresorerie) necessaires aux modeles de valorisation.
+                  Leur valeur est determinee par les actifs sous-jacents qu&apos;ils detiennent.
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.noteText}>
               Les valorisations sont des estimations basees sur des modeles financiers. Elles ne constituent pas des recommandations d&apos;investissement.
             </Text>

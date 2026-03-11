@@ -333,12 +333,12 @@ export async function POST(request: NextRequest) {
               shares
             );
 
-            const validPrices = [priceDcf, priceSales, priceEarnings].filter((p) => p > 0);
-            const avgIntrinsic = validPrices.length > 0
-              ? validPrices.reduce((s, p) => s + p, 0) / validPrices.length
+            const nonZeroPrices = [priceDcf, priceSales, priceEarnings].filter((p) => p !== 0);
+            const avgIntrinsic = nonZeroPrices.length > 0
+              ? nonZeroPrices.reduce((s, p) => s + p, 0) / nonZeroPrices.length
               : 0;
 
-            const upsidePercent = currentPrice > 0 && avgIntrinsic > 0
+            const upsidePercent = currentPrice > 0 && avgIntrinsic !== 0
               ? ((avgIntrinsic - currentPrice) / currentPrice) * 100
               : 0;
 
@@ -384,17 +384,41 @@ export async function POST(request: NextRequest) {
         });
 
         const results = await Promise.all(valuationPromises);
-        const validResults = results.filter((r): r is ValuationDataItem => r !== null && r.avgIntrinsic > 0);
 
-        if (validResults.length > 0) {
-          // Add sensitivity matrix for top 3 positions by weight
+        // Include all results — create placeholders for symbols that failed (ETFs, etc.)
+        const allResults: ValuationDataItem[] = [];
+        for (let si = 0; si < symbols.length; si++) {
+          const r = results[si];
+          if (r) {
+            allResults.push(r);
+          } else {
+            // Placeholder for failed symbols (ETFs, tickers without financial data)
+            const sym = symbols[si];
+            const holdingData = (portfolio.holdings || []).find((h: { symbol: string }) => h.symbol === sym);
+            allResults.push({
+              symbol: sym,
+              name: fmpData.profiles[sym]?.companyName || holdingData?.name || sym,
+              currentPrice: priceMap[sym]?.price || 0,
+              priceDcf: 0,
+              priceSales: 0,
+              priceEarnings: 0,
+              avgIntrinsic: 0,
+              upsidePercent: 0,
+              reverseDcfGrowth: 0,
+              scores: { overall: 0, health: 0, growth: 0, valuation: 0 },
+            } as ValuationDataItem);
+          }
+        }
+
+        if (allResults.length > 0) {
+          // Add sensitivity matrix for top 3 positions by weight (only if they have positive FCF)
           const holdingWeights = reportData.portfolio.holdings
             .sort((a, b) => b.weight - a.weight)
             .slice(0, 3)
             .map((h) => h.symbol);
 
-          for (const item of validResults) {
-            if (holdingWeights.includes(item.symbol)) {
+          for (const item of allResults) {
+            if (holdingWeights.includes(item.symbol) && item.priceDcf > 0) {
               try {
                 const res = await fetch(
                   `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/valuation/stock/${encodeURIComponent(item.symbol)}`,
@@ -416,7 +440,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          valuationData = validResults;
+          valuationData = allResults;
         }
       } catch (err) {
         console.warn('Valuation computation failed, skipping:', err);

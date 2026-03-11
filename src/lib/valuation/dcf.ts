@@ -16,9 +16,9 @@ export function calculateValuation(
 ): [number, number, number] {
   const safeShares = Math.max(shares, 1);
 
-  // DCF
+  // DCF — allows negative FCF (negative intrinsic = unprofitable company)
   let priceDcf = 0;
-  if (fcf > 0 && wacc > 0) {
+  if (fcf !== 0 && wacc > 0) {
     const projections = Array.from({ length: 5 }, (_, i) => fcf * Math.pow(1 + grFcf, i + 1));
     const terminalVal = (projections[4] * 1.03) / Math.max(wacc - 0.03, 1e-6);
     const pvFcf = projections.reduce((sum, val, i) => sum + val / Math.pow(1 + wacc, i + 1), 0);
