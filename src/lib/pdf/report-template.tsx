@@ -691,7 +691,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const hasValuation = valData && valData.length > 0;
   const hasNegativeValuations = hasValuation && valData.some((v) => v.avgIntrinsic < 0 || (v.priceDcf < 0));
   const hasAI = !!ai;
-  const totalPages = 8 + (hasValuation ? 1 : 0);
+  const totalPages = 8 + (hasValuation ? 2 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -701,7 +701,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
     const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
     return sum + w * hp.beta;
   }, 0);
-  const valOffset = hasValuation ? 1 : 0;
+  const valOffset = hasValuation ? 2 : 0;
   const gainLoss = data.portfolio.totalGainLoss;
   const gainLossPct = data.portfolio.totalGainLossPercent;
 
@@ -1374,7 +1374,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         }, 0);
         const totalIntrinsic = valData.reduce((sum, v) => {
           const h = holdingMap.get(v.symbol);
-          if (!h || v.avgIntrinsic === 0) return sum;
+          if (!h || v.avgIntrinsic === 0 || v.priceDcf < 0) return sum;
           return sum + h.quantity * v.avgIntrinsic;
         }, 0);
 
@@ -1406,42 +1406,55 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 const weight = h?.weight || 0;
                 const allocatedValue = h?.marketValue || 0;
                 const qty = h?.quantity || 0;
-                const intrinsicTotal = v.avgIntrinsic !== 0 ? qty * v.avgIntrinsic : 0;
-                const isNegative = v.avgIntrinsic < 0;
                 const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
+                const negDcf = v.priceDcf < 0;
+                const intrinsicTotal = (!negDcf && v.avgIntrinsic !== 0) ? qty * v.avgIntrinsic : 0;
                 return (
                   <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                     <Text style={{ ...styles.tdBold, width: '8%' }}>{v.symbol}</Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{weight.toFixed(1)}%</Text>
                     <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmt(allocatedValue, ccy)}</Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{fmtFull(v.currentPrice, ccy)}</Text>
-                    <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: v.priceDcf < 0 ? C.down : C.text }}>
-                      {v.priceDcf !== 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
+                    <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: negDcf ? C.down : C.text }}>
+                      {negDcf ? 'Neg. *' : v.priceDcf !== 0 ? fmtFull(v.priceDcf, ccy) : 'N/D'}
                     </Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{v.priceSales > 0 ? fmtFull(v.priceSales, ccy) : 'N/D'}</Text>
                     <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{v.priceEarnings > 0 ? fmtFull(v.priceEarnings, ccy) : 'N/D'}</Text>
-                    <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: isNegative ? C.down : C.text }}>
-                      {noData ? 'N/D' : fmtFull(v.avgIntrinsic, ccy)}
-                    </Text>
-                    <Text style={{
-                      ...styles.tdBold, width: '10%', textAlign: 'right',
-                      color: noData ? C.textTer : intrinsicTotal > allocatedValue * 1.05 ? C.up : intrinsicTotal < allocatedValue * 0.95 ? C.down : C.text,
-                    }}>
-                      {noData ? 'N/D' : fmt(intrinsicTotal, ccy)}
-                    </Text>
-                    <Text style={{
-                      ...styles.td, width: '8%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600, fontSize: 7,
-                      color: noData ? C.textTer : v.upsidePercent > 10 ? C.up : v.upsidePercent < -10 ? C.down : '#854d0e',
-                    }}>
-                      {noData ? '—' : fmtPct(v.upsidePercent)}
-                    </Text>
-                    <View style={{ width: '12%', alignItems: 'center', justifyContent: 'center' }}>
-                      {noData ? (
-                        <Text style={{ fontSize: 6.5, color: C.textTer }}>N/D</Text>
-                      ) : (
-                        <ValuationBadge upside={v.upsidePercent} />
-                      )}
-                    </View>
+                    {negDcf ? (
+                      <>
+                        <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: '#b45309', fontSize: 7 }}>—</Text>
+                        <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', color: '#b45309', fontSize: 7 }}>DCF negatif *</Text>
+                        <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>—</Text>
+                        <View style={{ width: '12%', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 6.5, color: '#b45309' }}>Voir note *</Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: noData ? C.textTer : C.text }}>
+                          {noData ? 'N/D' : fmtFull(v.avgIntrinsic, ccy)}
+                        </Text>
+                        <Text style={{
+                          ...styles.tdBold, width: '10%', textAlign: 'right',
+                          color: noData ? C.textTer : intrinsicTotal > allocatedValue * 1.05 ? C.up : intrinsicTotal < allocatedValue * 0.95 ? C.down : C.text,
+                        }}>
+                          {noData ? 'N/D' : fmt(intrinsicTotal, ccy)}
+                        </Text>
+                        <Text style={{
+                          ...styles.td, width: '8%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600, fontSize: 7,
+                          color: noData ? C.textTer : v.upsidePercent > 10 ? C.up : v.upsidePercent < -10 ? C.down : '#854d0e',
+                        }}>
+                          {noData ? '—' : fmtPct(v.upsidePercent)}
+                        </Text>
+                        <View style={{ width: '12%', alignItems: 'center', justifyContent: 'center' }}>
+                          {noData ? (
+                            <Text style={{ fontSize: 6.5, color: C.textTer }}>N/D</Text>
+                          ) : (
+                            <ValuationBadge upside={v.upsidePercent} />
+                          )}
+                        </View>
+                      </>
+                    )}
                   </View>
                 );
               })}
@@ -1468,49 +1481,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </View>
             </View>
 
-            {/* Reverse DCF */}
-            <Text style={styles.subsectionTitle}>DCF inverse — Croissance implicite du marche</Text>
-            <View style={styles.table}>
-              <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '20%' }}>Symbole</Text>
-                <Text style={{ ...styles.thCell, width: '30%' }}>Nom</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Interpretation</Text>
-              </View>
-              {valData.map((v: ValuationDataItem, i: number) => {
-                const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
-                return (
-                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                    <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
-                    <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
-                    <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
-                      {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
-                    </Text>
-                    <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8, color: noData ? C.textTer : v.priceDcf < 0 ? C.down : C.text }}>
-                      {noData ? 'FNB / N/D' : v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : v.priceDcf < 0 ? 'FCF negatif' : 'N/D'}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-
-            {/* Sensitivity matrices */}
-            {(() => {
-              // Only show matrices with meaningful data (positive DCF = profitable company)
-              const validMatrices = valData.filter((v: ValuationDataItem) =>
-                v.sensitivityMatrix && v.priceDcf > 0
-              );
-              if (validMatrices.length === 0) return null;
-              return (
-                <>
-                  <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
-                  {validMatrices.map((v: ValuationDataItem, i: number) => (
-                    <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
-                  ))}
-                </>
-              );
-            })()}
-
             {/* Scorecard */}
             <Text style={styles.subsectionTitle}>Tableau de bord — Scores (0-10)</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
@@ -1531,17 +1501,16 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
             <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
 
-            {/* Note for negative DCF / missing data */}
+            {/* Note for negative DCF — prominently placed under main table */}
             {hasNegativeValuations && (
               <View style={{
-                backgroundColor: '#fffbeb', borderRadius: 8, padding: 10, marginBottom: 6,
-                borderWidth: 1, borderColor: '#fde68a', borderStyle: 'solid' as const,
-                borderLeftWidth: 3, borderLeftColor: '#f59e0b', borderLeftStyle: 'solid' as const,
+                backgroundColor: '#fffbeb', borderRadius: 8, padding: 12, marginBottom: 6, marginTop: 4,
+                borderWidth: 1.5, borderColor: '#f59e0b', borderStyle: 'solid' as const,
               }}>
-                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#92400e', marginBottom: 3 }}>
-                  Note — Valeurs intrinseques negatives
+                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
+                  * Note — Valeurs intrinseques negatives
                 </Text>
-                <Text style={{ fontSize: 7, color: '#78350f', lineHeight: 1.5 }}>
+                <Text style={{ fontSize: 7.5, color: '#78350f', lineHeight: 1.6 }}>
                   Une valeur intrinseque negative (DCF) indique que l&apos;entreprise genere actuellement des flux de tresorerie
                   negatifs (free cash flow negatif), ce qui est frequemment le cas pour les entreprises en forte croissance
                   qui ne sont pas encore rentables. Le modele DCF evalue la rentabilite actuelle et ne prend pas en
@@ -1574,6 +1543,65 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </Text>
 
             <PageFooter num={5} total={totalPages} />
+          </Page>
+        );
+      })()}
+
+      {/* ═══ PAGE 6: DCF INVERSE + SENSIBILITE ══════════════════════ */}
+      {hasValuation && valData && (() => {
+        return (
+          <Page size="LETTER" orientation="landscape" style={styles.page}>
+            <AccentBar />
+            <Text style={styles.sectionTitle}>DCF inverse — Croissance implicite du marche</Text>
+            <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 8 }}>
+              Taux de croissance du FCF que le marche anticipe implicitement au prix actuel
+            </Text>
+
+            <View style={styles.table}>
+              <View style={styles.th}>
+                <Text style={{ ...styles.thCell, width: '20%' }}>Symbole</Text>
+                <Text style={{ ...styles.thCell, width: '30%' }}>Nom</Text>
+                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
+                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Interpretation</Text>
+              </View>
+              {valData.map((v: ValuationDataItem, i: number) => {
+                const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
+                      {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8, color: noData ? C.textTer : v.priceDcf < 0 ? C.down : C.text }}>
+                      {noData ? 'FNB / N/D' : v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : v.priceDcf < 0 ? 'FCF negatif' : 'N/D'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Sensitivity matrices */}
+            {(() => {
+              const validMatrices = valData.filter((v: ValuationDataItem) =>
+                v.sensitivityMatrix && v.priceDcf > 0
+              );
+              if (validMatrices.length === 0) return null;
+              return (
+                <>
+                  <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
+                  {validMatrices.map((v: ValuationDataItem, i: number) => (
+                    <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
+                  ))}
+                </>
+              );
+            })()}
+
+            <Text style={styles.noteText}>
+              Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
+            </Text>
+
+            <PageFooter num={6} total={totalPages} />
           </Page>
         );
       })()}
