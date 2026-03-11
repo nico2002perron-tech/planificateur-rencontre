@@ -10,10 +10,11 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { SymbolSearch } from '@/components/portfolios/SymbolSearch';
 import { useModel, type ModelHolding } from '@/lib/hooks/useModels';
 import { RISK_PROFILES, ASSET_CLASSES, REGIONS } from '@/lib/utils/constants';
 import Link from 'next/link';
-import { Save, Plus, Trash2, ArrowLeft, Rocket } from 'lucide-react';
+import { Save, Trash2, ArrowLeft, Rocket } from 'lucide-react';
 
 const riskLabels: Record<string, string> = {
   CONSERVATEUR: 'Conservateur',
@@ -31,8 +32,6 @@ const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   DYNAMIQUE: 'danger',
 };
 
-const emptyHolding: ModelHolding = { symbol: '', name: '', weight: 0, asset_class: 'EQUITY', region: 'CA' };
-
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -44,14 +43,14 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [riskLevel, setRiskLevel] = useState('EQUILIBRE');
-  const [holdings, setHoldings] = useState<ModelHolding[]>([{ ...emptyHolding }]);
+  const [holdings, setHoldings] = useState<ModelHolding[]>([]);
 
   useEffect(() => {
     if (model) {
       setName(model.name);
       setDescription(model.description || '');
       setRiskLevel(model.risk_level);
-      setHoldings(model.holdings.length > 0 ? model.holdings : [{ ...emptyHolding }]);
+      setHoldings(model.holdings.length > 0 ? model.holdings : []);
     }
   }, [model]);
 
@@ -61,15 +60,44 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
     setHoldings(prev => prev.map((h, i) => i === index ? { ...h, [field]: value } : h));
   }
 
-  async function handleSave() {
-    const validHoldings = holdings.filter(h => h.symbol.trim());
+  function handleSymbolSelect(symbol: string, symbolName: string) {
+    if (holdings.some(h => h.symbol === symbol)) {
+      toast('warning', `${symbol} est déjà dans la composition`);
+      return;
+    }
 
-    if (validHoldings.length > 0) {
-      const weight = validHoldings.reduce((s, h) => s + Number(h.weight), 0);
-      if (Math.abs(weight - 100) > 0.5) {
-        toast('warning', `Le total des pondérations est ${weight.toFixed(1)}% (devrait être 100%)`);
-        return;
-      }
+    let region = 'US';
+    if (symbol.endsWith('.TO') || symbol.endsWith('.V') || symbol.endsWith('.CN')) {
+      region = 'CA';
+    } else if (symbol.includes('.')) {
+      region = 'INTL';
+    }
+
+    setHoldings(prev => [...prev, {
+      symbol,
+      name: symbolName,
+      weight: 0,
+      asset_class: 'EQUITY',
+      region,
+    }]);
+  }
+
+  async function handleSave() {
+    if (holdings.length === 0) {
+      toast('error', 'Ajoutez au moins une position');
+      return;
+    }
+
+    const zeroWeight = holdings.filter(h => !h.weight || h.weight <= 0);
+    if (zeroWeight.length > 0) {
+      toast('error', `${zeroWeight.map(h => h.symbol).join(', ')} — pondération manquante`);
+      return;
+    }
+
+    const weight = holdings.reduce((s, h) => s + Number(h.weight), 0);
+    if (Math.abs(weight - 100) > 0.5) {
+      toast('warning', `Le total des pondérations est ${weight.toFixed(1)}% (devrait être 100%)`);
+      return;
     }
 
     setSaving(true);
@@ -81,7 +109,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
           name,
           description: description || null,
           risk_level: riskLevel,
-          holdings: validHoldings.map(h => ({ ...h, weight: Number(h.weight) })),
+          holdings: holdings.map(h => ({ ...h, weight: Number(h.weight) })),
         }),
       });
       if (!res.ok) throw new Error();
@@ -126,7 +154,15 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
               </>
             ) : (
               <>
-                <Button variant="ghost" onClick={() => { setEditing(false); if (model) { setName(model.name); setDescription(model.description || ''); setRiskLevel(model.risk_level); setHoldings(model.holdings.length > 0 ? model.holdings : [{ ...emptyHolding }]); } }}>
+                <Button variant="ghost" onClick={() => {
+                  setEditing(false);
+                  if (model) {
+                    setName(model.name);
+                    setDescription(model.description || '');
+                    setRiskLevel(model.risk_level);
+                    setHoldings(model.holdings.length > 0 ? model.holdings : []);
+                  }
+                }}>
                   Annuler
                 </Button>
                 <Button loading={saving} onClick={handleSave} icon={<Save className="h-4 w-4" />}>
@@ -155,56 +191,110 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-text-main">
                 Composition
-                <span className={`ml-2 text-sm font-normal ${Math.abs(totalWeight - 100) < 0.5 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  ({totalWeight.toFixed(1)}%)
-                </span>
+                {holdings.length > 0 && (
+                  <span className={`ml-2 text-sm font-normal ${Math.abs(totalWeight - 100) < 0.5 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    ({totalWeight.toFixed(1)}%)
+                  </span>
+                )}
               </h3>
-              <Button type="button" variant="outline" size="sm" onClick={() => setHoldings(prev => [...prev, { ...emptyHolding }])} icon={<Plus className="h-3.5 w-3.5" />}>
-                Ajouter
-              </Button>
             </div>
 
-            <div className="space-y-3">
-              <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-text-muted px-1">
-                <div className="col-span-2">Symbole</div>
-                <div className="col-span-3">Nom</div>
-                <div className="col-span-2">Pondération</div>
-                <div className="col-span-2">Classe</div>
-                <div className="col-span-2">Région</div>
-                <div className="col-span-1"></div>
+            {/* Search bar to add holdings */}
+            <div className="mb-4">
+              <SymbolSearch
+                onSelect={handleSymbolSelect}
+                placeholder="Rechercher un titre à ajouter (ex: RY.TO, AAPL, XBB.TO)..."
+              />
+            </div>
+
+            {holdings.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">
+                Utilisez la barre de recherche ci-dessus pour ajouter des titres
               </div>
-              {holdings.map((h, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-2">
-                    <input className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none" value={h.symbol} onChange={e => updateHolding(i, 'symbol', e.target.value.toUpperCase())} />
-                  </div>
-                  <div className="col-span-3">
-                    <input className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none" value={h.name} onChange={e => updateHolding(i, 'name', e.target.value)} />
-                  </div>
-                  <div className="col-span-2">
-                    <div className="relative">
-                      <input type="number" min="0" max="100" step="0.1" className="w-full px-3 py-2 pr-8 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none" value={h.weight || ''} onChange={e => updateHolding(i, 'weight', parseFloat(e.target.value) || 0)} />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">%</span>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-text-muted px-1">
+                  <div className="col-span-2">Symbole</div>
+                  <div className="col-span-3">Nom</div>
+                  <div className="col-span-2">Pondération</div>
+                  <div className="col-span-2">Classe</div>
+                  <div className="col-span-2">Région</div>
+                  <div className="col-span-1"></div>
+                </div>
+
+                {holdings.map((h, i) => (
+                  <div key={h.symbol} className="grid grid-cols-12 gap-2 items-center bg-bg-light/50 rounded-lg px-1 py-1.5">
+                    <div className="col-span-2">
+                      <span className="px-3 py-2 text-sm font-mono font-semibold text-brand-primary">{h.symbol}</span>
+                    </div>
+                    <div className="col-span-3">
+                      <span className="px-3 py-2 text-sm text-text-main truncate block">{h.name}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          className="w-full px-3 py-2 pr-8 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none bg-white"
+                          value={h.weight || ''}
+                          onChange={e => updateHolding(i, 'weight', parseFloat(e.target.value) || 0)}
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">%</span>
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <select
+                        className="w-full px-2 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:outline-none appearance-none bg-white"
+                        value={h.asset_class}
+                        onChange={e => updateHolding(i, 'asset_class', e.target.value)}
+                      >
+                        {ASSET_CLASSES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <select
+                        className="w-full px-2 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:outline-none appearance-none bg-white"
+                        value={h.region || 'CA'}
+                        onChange={e => updateHolding(i, 'region', e.target.value)}
+                      >
+                        {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-1 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setHoldings(prev => prev.filter((_, j) => j !== i))}
+                        className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="col-span-2">
-                    <select className="w-full px-2 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:outline-none appearance-none" value={h.asset_class} onChange={e => updateHolding(i, 'asset_class', e.target.value)}>
-                      {ASSET_CLASSES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                    </select>
+                ))}
+
+                {/* Weight progress bar */}
+                {holdings.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center justify-between text-sm mb-1.5">
+                      <span className="text-text-muted">Total pondération</span>
+                      <span className={`font-semibold ${Math.abs(totalWeight - 100) < 0.5 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {totalWeight.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          Math.abs(totalWeight - 100) < 0.5 ? 'bg-emerald-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-brand-primary'
+                        }`}
+                        style={{ width: `${Math.min(totalWeight, 100)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="col-span-2">
-                    <select className="w-full px-2 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:outline-none appearance-none" value={h.region || 'CA'} onChange={e => updateHolding(i, 'region', e.target.value)}>
-                      {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="col-span-1 flex justify-center">
-                    <button type="button" onClick={() => holdings.length > 1 && setHoldings(prev => prev.filter((_, j) => j !== i))} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30" disabled={holdings.length <= 1}>
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </div>
+            )}
           </Card>
         </div>
       ) : (

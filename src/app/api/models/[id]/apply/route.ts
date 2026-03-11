@@ -50,6 +50,7 @@ export async function POST(
       weight: number;
       asset_class: string;
       region?: string;
+      sector?: string;
     }[];
 
     if (!modelHoldings || modelHoldings.length === 0) {
@@ -88,7 +89,7 @@ export async function POST(
         quantity: Math.round(quantity * 1000000) / 1000000, // 6 decimal precision
         average_cost: price,
         asset_class: mh.asset_class || 'EQUITY',
-        sector: '',
+        sector: mh.sector || '',
         region: mh.region || 'CA',
       };
     });
