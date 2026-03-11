@@ -60,6 +60,8 @@ export interface ReportHolding {
   gainLossPercent: number;
   assetClass: string;
   sector: string;
+  sectorDisplay: string;
+  dividendAnnual: number;
   region: string;
 }
 
@@ -388,6 +390,19 @@ export function buildFullReportData(
       gainLossPercent,
       assetClass: h.asset_class || 'EQUITY',
       sector: profile?.sector || priceInfo?.sector || h.sector || '',
+      sectorDisplay: (() => {
+        const etfSectors = etfSectorData?.[h.symbol];
+        if (etfSectors && etfSectors.length > 0) {
+          return [...etfSectors]
+            .sort((a, b) => b.weight - a.weight)
+            .slice(0, 3)
+            .map(es => SECTOR_LABELS_FR[es.sector] || es.sector)
+            .join(', ');
+        }
+        const rawSector = profile?.sector || priceInfo?.sector || h.sector || '';
+        return SECTOR_LABELS_FR[rawSector] || rawSector || '';
+      })(),
+      dividendAnnual: (profile?.lastDiv || 0) * h.quantity,
       region: h.region || (profile?.country === 'CA' || profile?.country === 'Canada' ? 'CA' : profile?.country === 'US' || profile?.country === 'United States' ? 'US' : h.region || 'CA'),
     };
   });

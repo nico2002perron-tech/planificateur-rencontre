@@ -1078,7 +1078,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       {/* ═══ PAGE 3: PERFORMANCE & HOLDINGS ═══════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
-        <Text style={styles.sectionTitle}>Rendement & Composition</Text>
+        <Text style={styles.sectionTitle}>Composition du portefeuille</Text>
 
         {hasReturns && (
           <View style={{ marginBottom: 14 }}>
@@ -1107,54 +1107,87 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         <Text style={styles.subsectionTitle}>Composition detaillee</Text>
         <View style={styles.table}>
           <View style={styles.th}>
-            <Text style={{ ...styles.thCell, width: '8%' }}>Symb.</Text>
-            <Text style={{ ...styles.thCell, width: '18%' }}>Nom</Text>
-            <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Qte</Text>
-            <Text style={{ ...styles.thCell, width: '11%', textAlign: 'right' }}>Cout</Text>
-            <Text style={{ ...styles.thCell, width: '11%', textAlign: 'right' }}>Prix</Text>
-            <Text style={{ ...styles.thCell, width: '13%', textAlign: 'right' }}>Valeur</Text>
-            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>Poids</Text>
-            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>G/P %</Text>
-            <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>G/P $</Text>
+            <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
+            <Text style={{ ...styles.thCell, width: '17%' }}>Nom</Text>
+            <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Qte</Text>
+            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Prix</Text>
+            <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Valeur</Text>
+            <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Poids</Text>
             <Text style={{ ...styles.thCell, width: '7%' }}>Classe</Text>
+            <Text style={{ ...styles.thCell, width: '24%' }}>Secteur</Text>
+            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Div. / an</Text>
           </View>
           {data.portfolio.holdings.map((h: ReportHolding, i: number) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
-              <Text style={{ ...styles.tdBold, width: '8%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '18%' }}>{h.name.substring(0, 24)}</Text>
-              <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
-              <Text style={{ ...styles.td, width: '11%', textAlign: 'right' }}>{fmtFull(h.avgCost, ccy)}</Text>
-              <Text style={{ ...styles.td, width: '11%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
-              <Text style={{ ...styles.tdBold, width: '13%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
-              <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
-              <Text style={{ ...styles.td, width: '10%', textAlign: 'right', color: h.gainLossPercent >= 0 ? C.up : C.down }}>
-                {fmtPct(h.gainLossPercent)}
-              </Text>
-              <Text style={{ ...styles.td, width: '7%', textAlign: 'right', color: h.gainLoss >= 0 ? C.up : C.down, fontSize: 7.5 }}>
-                {fmt(h.gainLoss, ccy)}
-              </Text>
+              <Text style={{ ...styles.tdBold, width: '7%' }}>{h.symbol}</Text>
+              <Text style={{ ...styles.td, width: '17%' }}>{h.name.substring(0, 22)}</Text>
+              <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
+              <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
+              <Text style={{ ...styles.tdBold, width: '12%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
+              <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
                 {ASSET_LABELS[h.assetClass]?.substring(0, 8) || h.assetClass}
+              </Text>
+              <Text style={{ ...styles.td, width: '24%', fontSize: 7.5 }}>
+                {h.sectorDisplay || '—'}
+              </Text>
+              <Text style={{ ...styles.td, width: '10%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
+                {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
               </Text>
             </View>
           ))}
           {/* Total row */}
           <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const }}>
-            <Text style={{ ...styles.tdBold, width: '26%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
+            <Text style={{ ...styles.tdBold, width: '24%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
+            <Text style={{ ...styles.td, width: '6%' }}></Text>
+            <Text style={{ ...styles.td, width: '10%' }}></Text>
+            <Text style={{ ...styles.tdBold, width: '12%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
+            <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>100%</Text>
             <Text style={{ ...styles.td, width: '7%' }}></Text>
-            <Text style={{ ...styles.td, width: '11%' }}></Text>
-            <Text style={{ ...styles.td, width: '11%' }}></Text>
-            <Text style={{ ...styles.tdBold, width: '13%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
-            <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>100%</Text>
-            <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', color: gainLoss >= 0 ? C.up : C.down }}>
-              {fmtPct(gainLossPct)}
+            <Text style={{ ...styles.td, width: '24%' }}></Text>
+            <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', color: C.up }}>
+              {(() => {
+                const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
+                return totalDiv > 0 ? fmt(totalDiv, ccy) : '—';
+              })()}
             </Text>
-            <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'right', color: gainLoss >= 0 ? C.up : C.down, fontSize: 7.5 }}>
-              {fmt(gainLoss, ccy)}
-            </Text>
-            <Text style={{ ...styles.td, width: '7%' }}></Text>
           </View>
         </View>
+
+        {/* Summary indicators */}
+        {(() => {
+          const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
+          const divYield = data.portfolio.totalValue > 0 ? (totalDiv / data.portfolio.totalValue) * 100 : 0;
+          const uniqueSectors = new Set(data.portfolio.holdings.map(h => h.sectorDisplay).filter(Boolean)).size;
+          const etfCount = data.portfolio.holdings.filter(h => h.assetClass === 'FIXED_INCOME' || h.symbol.includes('.')).length;
+          return (
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              {totalDiv > 0 && (
+                <View style={{ ...styles.statCard }}>
+                  <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Revenu de dividendes</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.up }}>
+                    {fmt(totalDiv, ccy)} / an
+                  </Text>
+                  {divYield > 0 && <Text style={{ fontSize: 7, color: C.textTer }}>Rendement: {divYield.toFixed(2)}%</Text>}
+                </View>
+              )}
+              <View style={{ ...styles.statCard }}>
+                <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Diversification</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
+                  {uniqueSectors} secteurs
+                </Text>
+                <Text style={{ fontSize: 7, color: C.textTer }}>{data.portfolio.holdings.length} positions</Text>
+              </View>
+              <View style={{ ...styles.statCard }}>
+                <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Beta pondere</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
+                  {data.riskMetrics.beta.toFixed(2)}
+                </Text>
+                <Text style={{ fontSize: 7, color: C.textTer }}>Sensibilite au marche</Text>
+              </View>
+            </View>
+          );
+        })()}
 
         <PageFooter num={3} total={totalPages} />
       </Page>
