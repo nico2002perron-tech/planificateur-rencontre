@@ -362,7 +362,6 @@ export const styles = StyleSheet.create({
   noteText: {
     fontSize: 7,
     color: C.textTer,
-    fontStyle: 'italic' as const,
     marginTop: 6,
   },
 
