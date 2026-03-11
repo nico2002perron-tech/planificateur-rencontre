@@ -8,7 +8,7 @@ import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData 
 import type { ValuationDataItem } from '@/lib/ai/types';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotes, getProfile, getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
-import { getYahooPriceTarget } from '@/lib/yahoo/client';
+import { getYahooPriceTarget, getYahooETFSectors } from '@/lib/yahoo/client';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10 } from '@/lib/valuation/scoring';
@@ -253,6 +253,25 @@ export async function POST(request: NextRequest) {
       .eq('id', session.user.id)
       .single();
 
+    // ── Step 3b: Fetch ETF sector breakdowns from Yahoo ──
+    const etfSectorData: Record<string, { sector: string; weight: number }[]> = {};
+    if (symbols.length > 0) {
+      const etfPromises = symbols.map(async (symbol: string) => {
+        try {
+          const sectors = await getYahooETFSectors(symbol);
+          return { symbol, sectors };
+        } catch {
+          return { symbol, sectors: null };
+        }
+      });
+      const etfResults = await Promise.all(etfPromises);
+      for (const { symbol, sectors } of etfResults) {
+        if (sectors && sectors.length > 0) {
+          etfSectorData[symbol] = sectors;
+        }
+      }
+    }
+
     // ── Step 4: Build full report data ──
     const reportData = buildFullReportData(
       portfolio,
@@ -270,7 +289,8 @@ export async function POST(request: NextRequest) {
         aiEnabled: config?.ai_enabled,
         includeValuation: config?.include_valuation,
       },
-      fmpData
+      fmpData,
+      etfSectorData
     );
 
     // ── Step 5: Compute valuation data (if enabled) ──

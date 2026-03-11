@@ -177,3 +177,63 @@ export async function getYahooEarnings(symbol: string): Promise<YahooEarnings> {
     return { nextEarningsDate: null, epsEstimate: null, revenueEstimate: null };
   }
 }
+
+// ── ETF Sector Breakdown ─────────────────────────────────────────────────────
+
+/**
+ * Yahoo topHoldings sector key → FMP-compatible sector name
+ * (matches the keys used in SECTOR_LABELS_FR in report-data.ts)
+ */
+const YAHOO_SECTOR_MAP: Record<string, string> = {
+  realestate: 'Real Estate',
+  consumer_cyclical: 'Consumer Cyclical',
+  basic_materials: 'Basic Materials',
+  consumer_defensive: 'Consumer Defensive',
+  technology: 'Technology',
+  communication_services: 'Communication Services',
+  financial_services: 'Financial Services',
+  utilities: 'Utilities',
+  industrials: 'Industrials',
+  energy: 'Energy',
+  healthcare: 'Healthcare',
+};
+
+export interface ETFSectorWeight {
+  sector: string;   // FMP-compatible sector name
+  weight: number;   // 0–1 (e.g. 0.318 = 31.8%)
+}
+
+/**
+ * Fetch ETF sector breakdown from Yahoo Finance topHoldings module.
+ * Returns null if the symbol is not an ETF or has no sector data.
+ */
+export async function getYahooETFSectors(symbol: string): Promise<ETFSectorWeight[] | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=topHoldings`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const topHoldings = json?.quoteSummary?.result?.[0]?.topHoldings;
+    if (!topHoldings?.sectorWeightings) return null;
+
+    const weightings = topHoldings.sectorWeightings as Record<string, { raw?: number }>[];
+    if (!Array.isArray(weightings) || weightings.length === 0) return null;
+
+    const sectors: ETFSectorWeight[] = [];
+    for (const entry of weightings) {
+      // Each entry is { "technology": { "raw": 0.318 } }
+      for (const [yahooKey, valObj] of Object.entries(entry)) {
+        const weight = valObj?.raw ?? 0;
+        if (weight > 0) {
+          const sector = YAHOO_SECTOR_MAP[yahooKey] || yahooKey;
+          sectors.push({ sector, weight });
+        }
+      }
+    }
+
+    return sectors.length > 0 ? sectors : null;
+  } catch {
+    return null;
+  }
+}

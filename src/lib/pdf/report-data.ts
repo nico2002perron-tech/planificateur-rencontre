@@ -353,7 +353,8 @@ export function buildFullReportData(
   advisor: { name: string; title: string },
   priceMap: Record<string, PriceInfo>,
   config: { sections?: string[]; projectionYears?: number; modelSource?: string; customTargets?: Record<string, number>; aiEnabled?: boolean; includeValuation?: boolean } = {},
-  fmpData?: EnrichedFMPData
+  fmpData?: EnrichedFMPData,
+  etfSectorData?: Record<string, { sector: string; weight: number }[]>
 ): FullReportData {
   const projYears = config.projectionYears || 5;
   const sections = config.sections || [
@@ -522,16 +523,33 @@ export function buildFullReportData(
     totalEstimatedGainPercent: Math.round(totalEstimatedGainPercent * 100) / 100,
   };
 
-  // ── Sector Breakdown ──
+  // ── Sector Breakdown (with ETF decomposition) ──
   const sectorMap = new Map<string, { holdings: string[]; totalValue: number }>();
   for (const h of holdings) {
-    const sector = h.sector || 'Autre';
-    const existing = sectorMap.get(sector);
-    if (existing) {
-      existing.holdings.push(h.symbol);
-      existing.totalValue += h.marketValue;
+    const etfSectors = etfSectorData?.[h.symbol];
+    if (etfSectors && etfSectors.length > 0) {
+      // ETF: distribute value across its underlying sectors
+      for (const es of etfSectors) {
+        const sectorValue = h.marketValue * es.weight;
+        const sector = es.sector || 'Autre';
+        const existing = sectorMap.get(sector);
+        if (existing) {
+          if (!existing.holdings.includes(h.symbol)) existing.holdings.push(h.symbol);
+          existing.totalValue += sectorValue;
+        } else {
+          sectorMap.set(sector, { holdings: [h.symbol], totalValue: sectorValue });
+        }
+      }
     } else {
-      sectorMap.set(sector, { holdings: [h.symbol], totalValue: h.marketValue });
+      // Stock: single sector
+      const sector = h.sector || 'Autre';
+      const existing = sectorMap.get(sector);
+      if (existing) {
+        existing.holdings.push(h.symbol);
+        existing.totalValue += h.marketValue;
+      } else {
+        sectorMap.set(sector, { holdings: [h.symbol], totalValue: h.marketValue });
+      }
     }
   }
   const sectorBreakdown: SectorBreakdownItem[] = Array.from(sectorMap.entries())
