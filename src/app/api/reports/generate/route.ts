@@ -8,7 +8,7 @@ import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData 
 import type { ValuationDataItem } from '@/lib/ai/types';
 import { createClient } from '@/lib/supabase/server';
 import { getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
-import { getYahooPriceTarget, getYahooETFSectors, getYahooQuotes, getYahooProfile } from '@/lib/yahoo/client';
+import { getYahooPriceTarget, getYahooETFSectors, getYahooQuotes, getYahooProfile, yahooFetch } from '@/lib/yahoo/client';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10 } from '@/lib/valuation/scoring';
@@ -294,29 +294,53 @@ export async function POST(request: NextRequest) {
     );
 
     // ── Step 5: Compute valuation data (if enabled) ──
+    // Fetches financialData directly from Yahoo Finance (no internal API call)
     let valuationData: ValuationDataItem[] | null = null;
     if (config?.include_valuation && symbols.length > 0) {
       try {
+        // Helper to extract raw Yahoo values
+        const rawVal = (obj: unknown): number => {
+          if (obj && typeof obj === 'object' && 'raw' in obj) {
+            const v = Number((obj as { raw: number }).raw);
+            return isFinite(v) ? v : 0;
+          }
+          return 0;
+        };
+
+        // Fetch financial data directly from Yahoo for all symbols
         const valuationPromises = symbols.map(async (symbol: string) => {
           try {
-            const res = await fetch(
-              `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/valuation/stock/${encodeURIComponent(symbol)}`,
-              { headers: { 'User-Agent': 'PlanificateurRencontre/1.0' } }
-            );
+            const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,financialData,defaultKeyStatistics,summaryDetail`;
+            const res = await yahooFetch(url);
             if (!res.ok) return null;
-            const yahoo = await res.json();
+
+            const json = await res.json();
+            const result = json?.quoteSummary?.result?.[0];
+            if (!result) return null;
+
+            const priceData = result.price ?? {};
+            const fd = result.financialData ?? {};
+            const ks = result.defaultKeyStatistics ?? {};
+            const sd = result.summaryDetail ?? {};
+
+            const currentPrice = rawVal(priceData.regularMarketPrice) || rawVal(fd.currentPrice) || priceMap[symbol]?.price || 0;
+            const shares = rawVal(ks.sharesOutstanding) || rawVal(priceData.sharesOutstanding) || 1;
+            const marketCap = rawVal(priceData.marketCap) || shares * currentPrice;
+            const revenue = rawVal(fd.totalRevenue);
+            const fcf = rawVal(fd.freeCashflow);
+            const eps = rawVal(ks.trailingEps);
+            const cash = rawVal(fd.totalCash);
+            const totalDebt = rawVal(fd.totalDebt);
+            const pe = rawVal(sd.trailingPE) || (eps > 0 ? currentPrice / eps : 0);
+            const ps = marketCap > 0 && revenue > 0 ? marketCap / revenue : 0;
+            const revenueGrowth = rawVal(fd.revenueGrowth);
+            const earningsGrowth = rawVal(fd.earningsGrowth);
+            const profitMargin = rawVal(fd.profitMargins);
+            const name = priceData.shortName ?? priceData.longName ?? symbol;
 
             const profile = fmpData.profiles[symbol];
-            const sector = profile?.sector || yahoo.sector || '';
+            const sector = profile?.sector || String(priceData.sector ?? fd.sector ?? '');
             const bench = getBenchmarkData(symbol, sector);
-
-            const revenue = yahoo.revenue || 0;
-            const fcf = yahoo.fcf || 0;
-            const eps = yahoo.eps || 0;
-            const cash = yahoo.cash || 0;
-            const totalDebt = yahoo.totalDebt || 0;
-            const shares = yahoo.sharesOutstanding || 1;
-            const currentPrice = yahoo.currentPrice || priceMap[symbol]?.price || 0;
 
             const [priceDcf, priceSales, priceEarnings] = calculateValuation(
               bench.gr_sales / 100,
@@ -325,12 +349,7 @@ export async function POST(request: NextRequest) {
               bench.wacc / 100,
               bench.ps,
               bench.pe,
-              revenue,
-              fcf,
-              eps,
-              cash,
-              totalDebt,
-              shares
+              revenue, fcf, eps, cash, totalDebt, shares
             );
 
             const nonZeroPrices = [priceDcf, priceSales, priceEarnings].filter((p) => p !== 0);
@@ -348,37 +367,29 @@ export async function POST(request: NextRequest) {
 
             const scores = scoreOutOf10(
               {
-                ticker: symbol,
-                price: currentPrice,
-                pe: yahoo.pe || 0,
-                ps: yahoo.ps || 0,
-                sales_gr: yahoo.revenueGrowth || 0,
-                eps_gr: yahoo.earningsGrowth || 0,
+                ticker: symbol, price: currentPrice, pe, ps,
+                sales_gr: revenueGrowth, eps_gr: earningsGrowth,
                 net_cash: cash - totalDebt,
                 fcf_yield: currentPrice > 0 && shares > 0 ? fcf / (currentPrice * shares) : 0,
-                rule_40: (yahoo.revenueGrowth || 0) * 100 + (yahoo.profitMargin || 0) * 100,
+                rule_40: revenueGrowth * 100 + profitMargin * 100,
               },
               bench
             );
 
             return {
               symbol,
-              name: profile?.companyName || yahoo.name || symbol,
-              currentPrice,
-              priceDcf,
-              priceSales,
-              priceEarnings,
-              avgIntrinsic,
-              upsidePercent,
-              reverseDcfGrowth,
+              name: profile?.companyName || name,
+              currentPrice, priceDcf, priceSales, priceEarnings,
+              avgIntrinsic, upsidePercent, reverseDcfGrowth,
+              // Store raw financial data for sensitivity matrix
+              _fcf: fcf, _cash: cash, _totalDebt: totalDebt, _shares: shares,
               scores: {
-                overall: scores.overall,
-                health: scores.health,
-                growth: scores.growth,
-                valuation: scores.valuation,
+                overall: scores.overall, health: scores.health,
+                growth: scores.growth, valuation: scores.valuation,
               },
-            } as ValuationDataItem;
-          } catch {
+            } as ValuationDataItem & { _fcf: number; _cash: number; _totalDebt: number; _shares: number };
+          } catch (e) {
+            console.warn(`Valuation fetch failed for ${symbol}:`, e);
             return null;
           }
         });
@@ -386,61 +397,46 @@ export async function POST(request: NextRequest) {
         const results = await Promise.all(valuationPromises);
 
         // Include all results — create placeholders for symbols that failed (ETFs, etc.)
-        const allResults: ValuationDataItem[] = [];
+        const allResults: (ValuationDataItem & { _fcf?: number; _cash?: number; _totalDebt?: number; _shares?: number })[] = [];
         for (let si = 0; si < symbols.length; si++) {
           const r = results[si];
           if (r) {
             allResults.push(r);
           } else {
-            // Placeholder for failed symbols (ETFs, tickers without financial data)
             const sym = symbols[si];
             const holdingData = (portfolio.holdings || []).find((h: { symbol: string }) => h.symbol === sym);
             allResults.push({
               symbol: sym,
               name: fmpData.profiles[sym]?.companyName || holdingData?.name || sym,
               currentPrice: priceMap[sym]?.price || 0,
-              priceDcf: 0,
-              priceSales: 0,
-              priceEarnings: 0,
-              avgIntrinsic: 0,
-              upsidePercent: 0,
-              reverseDcfGrowth: 0,
+              priceDcf: 0, priceSales: 0, priceEarnings: 0,
+              avgIntrinsic: 0, upsidePercent: 0, reverseDcfGrowth: 0,
               scores: { overall: 0, health: 0, growth: 0, valuation: 0 },
             } as ValuationDataItem);
           }
         }
 
         if (allResults.length > 0) {
-          // Add sensitivity matrix for top 3 positions by weight (only if they have positive FCF)
-          const holdingWeights = reportData.portfolio.holdings
+          // Add sensitivity matrix for top 3 positions by weight (only if positive DCF)
+          const holdingWeights = [...reportData.portfolio.holdings]
             .sort((a, b) => b.weight - a.weight)
             .slice(0, 3)
             .map((h) => h.symbol);
 
           for (const item of allResults) {
-            if (holdingWeights.includes(item.symbol) && item.priceDcf > 0) {
+            if (holdingWeights.includes(item.symbol) && item.priceDcf > 0 && item._fcf) {
               try {
-                const res = await fetch(
-                  `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/valuation/stock/${encodeURIComponent(item.symbol)}`,
-                  { headers: { 'User-Agent': 'PlanificateurRencontre/1.0' } }
+                const bench = getBenchmarkData(item.symbol, fmpData.profiles[item.symbol]?.sector || '');
+                item.sensitivityMatrix = buildSensitivityMatrix(
+                  bench.wacc, bench.gr_fcf,
+                  item._fcf, item._cash || 0, item._totalDebt || 0, item._shares || 1
                 );
-                if (res.ok) {
-                  const yahoo = await res.json();
-                  const bench = getBenchmarkData(item.symbol, fmpData.profiles[item.symbol]?.sector || '');
-                  item.sensitivityMatrix = buildSensitivityMatrix(
-                    bench.wacc,
-                    bench.gr_fcf,
-                    yahoo.fcf || 0,
-                    yahoo.cash || 0,
-                    yahoo.totalDebt || 0,
-                    yahoo.sharesOutstanding || 1
-                  );
-                }
               } catch { /* skip sensitivity */ }
             }
           }
 
-          valuationData = allResults;
+          // Clean temporary fields before storing
+          valuationData = allResults.map(({ _fcf, _cash, _totalDebt, _shares, ...rest }) => rest as ValuationDataItem);
         }
       } catch (err) {
         console.warn('Valuation computation failed, skipping:', err);
