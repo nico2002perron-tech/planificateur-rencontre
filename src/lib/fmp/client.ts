@@ -153,11 +153,37 @@ export async function getTargetConsensus(symbol: string): Promise<FMPPriceTarget
   return null;
 }
 
-// ─── Search: /stable/search ─────────────────────────────────────
+// ─── Search: /stable/search-symbol + /stable/search-name ────────
+// FMP stable API split search into two endpoints (search-symbol for ticker, search-name for company name)
 
 export async function searchSymbol(query: string): Promise<FMPSearchResult[]> {
-  const data = await fmpFetch<FMPSearchResult[]>('/search', { query, limit: '10' });
-  return Array.isArray(data) ? data : [];
+  // Run both searches in parallel and merge results
+  const [bySymbol, byName] = await Promise.all([
+    fmpFetch<{ symbol: string; name: string; currency: string; exchangeFullName: string; exchange: string }[]>(
+      '/search-symbol', { query, limit: '6' }
+    ).catch(() => [] as { symbol: string; name: string; currency: string; exchangeFullName: string; exchange: string }[]),
+    fmpFetch<{ symbol: string; name: string; currency: string; exchangeFullName: string; exchange: string }[]>(
+      '/search-name', { query, limit: '6' }
+    ).catch(() => [] as { symbol: string; name: string; currency: string; exchangeFullName: string; exchange: string }[]),
+  ]);
+
+  // Merge and deduplicate by symbol
+  const seen = new Set<string>();
+  const results: FMPSearchResult[] = [];
+
+  for (const item of [...(Array.isArray(bySymbol) ? bySymbol : []), ...(Array.isArray(byName) ? byName : [])]) {
+    if (!item?.symbol || seen.has(item.symbol)) continue;
+    seen.add(item.symbol);
+    results.push({
+      symbol: item.symbol,
+      name: item.name,
+      currency: item.currency || '',
+      stockExchange: item.exchangeFullName || '',
+      exchangeShortName: item.exchange || '',
+    });
+  }
+
+  return results.slice(0, 10);
 }
 
 // ─── Sector Performance ─────────────────────────────────────────
