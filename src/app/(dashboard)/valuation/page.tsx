@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import useSWR from 'swr';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -12,7 +13,17 @@ import { Tabs } from '@/components/ui/Tabs';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10, relativeValuationLabel } from '@/lib/valuation/scoring';
-import { TICKER_DB } from '@/lib/valuation/ticker-db';
+
+// ─── TradingView Search Hook ─────────────────────────────────────────────────
+
+interface TVResult { symbol: string; name: string; exchange: string; type: string; logo: string | null; }
+const tvFetcher = (url: string) => fetch(url).then(r => r.json());
+
+function useTradingViewSearch(query: string) {
+  const key = query.length >= 1 ? `/api/search?q=${encodeURIComponent(query)}` : null;
+  const { data, isLoading } = useSWR<TVResult[]>(key, tvFetcher, { dedupingInterval: 3_000, revalidateOnFocus: false });
+  return { results: Array.isArray(data) ? data : [], isLoading };
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,10 +160,21 @@ const TABS = [
 
 export default function ValuationPage() {
   const [search, setSearch]         = useState('');
-  const [tickerInput, setTickerInput] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [data, setData]             = useState<StockData | null>(null);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const { results: tvResults, isLoading: tvLoading } = useTradingViewSearch(search);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   // Hypothèses modifiables
   const [grSales,  setGrSales]  = useState(10);
@@ -173,9 +195,7 @@ export default function ValuationPage() {
   const [screenerMaxPE,    setScreenerMaxPE]    = useState(100);
   const [screenerMinGrowth,setScreenerMinGrowth]= useState(-100);
 
-  const filteredTickers = TICKER_DB.filter(
-    (t) => !t.startsWith('---') && t.toLowerCase().includes(search.toLowerCase())
-  );
+  // TradingView search results are in tvResults (from useTradingViewSearch hook)
 
   const analyze = useCallback(async (ticker: string) => {
     if (!ticker.trim()) return;
@@ -281,45 +301,67 @@ export default function ValuationPage() {
 
       {/* ── Sélecteur ───────────────────────────────────────────── */}
       <Card>
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Recherche rapide</label>
-            <div className="relative">
+        <div ref={searchRef} className="relative">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Rechercher un titre</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Ex: AAPL, MSFT, SHOP, RY.TO…"
+                placeholder="Rechercher par nom ou ticker (ex: Apple, AAPL, RY.TO, SHOP)…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && search.trim()) {
+                    setSearchOpen(false);
+                    analyze(search.trim().toUpperCase());
+                  }
+                }}
+                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
               />
             </div>
-            {search && filteredTickers.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 max-h-52 overflow-y-auto border border-gray-100 rounded-lg shadow-lg bg-white z-50">
-                {filteredTickers.slice(0, 12).map((t) => (
-                  <button key={t} onClick={() => { const s = t.split(' - ')[0].trim(); setTickerInput(s); setSearch(''); analyze(s); }}
-                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0 font-mono">
-                    {t}
+            <button
+              onClick={() => { setSearchOpen(false); analyze(search.trim().toUpperCase()); }}
+              disabled={loading || !search.trim()}
+              className="px-5 py-2.5 bg-brand-primary text-white rounded-lg text-sm font-medium hover:bg-brand-primary/90 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+            >
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Analyser'}
+            </button>
+          </div>
+
+          {/* TradingView autocomplete dropdown */}
+          {searchOpen && search.length >= 1 && (
+            <div className="absolute top-full left-0 right-0 mt-1 max-h-72 overflow-y-auto border border-gray-100 rounded-lg shadow-lg bg-white z-50">
+              {tvLoading ? (
+                <div className="flex items-center justify-center py-4 text-sm text-gray-400">
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Recherche…
+                </div>
+              ) : tvResults.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Aucun résultat — appuyez Entrée pour chercher directement</p>
+              ) : (
+                tvResults.map((r) => (
+                  <button
+                    key={r.symbol}
+                    onClick={() => { setSearch(r.symbol); setSearchOpen(false); analyze(r.symbol); }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0 flex items-center gap-3"
+                  >
+                    {r.logo && (
+                      <img src={r.logo} alt="" className="w-6 h-6 rounded-full object-contain flex-shrink-0 bg-gray-50" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-gray-900">{r.symbol}</span>
+                        <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{r.exchange}</span>
+                        <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{r.type}</span>
+                      </div>
+                      <p className="text-xs text-gray-400 truncate">{r.name}</p>
+                    </div>
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="md:w-60">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ticker manuel</label>
-            <div className="flex gap-2">
-              <input type="text" placeholder="Ex: SHOP.TO, FLT.V"
-                value={tickerInput}
-                onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && analyze(tickerInput)}
-                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
-              />
-              <button onClick={() => analyze(tickerInput)} disabled={loading || !tickerInput}
-                className="px-4 py-2 bg-brand-primary text-white rounded-lg text-sm font-medium hover:bg-brand-primary/90 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
-                {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Analyser'}
-              </button>
+                ))
+              )}
             </div>
-          </div>
+          )}
         </div>
       </Card>
 
@@ -1106,7 +1148,7 @@ export default function ValuationPage() {
                       <tr
                         key={d.symbol}
                         className="border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => { setTickerInput(d.symbol); analyze(d.symbol); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        onClick={() => { setSearch(d.symbol); analyze(d.symbol); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                       >
                         <td className="px-3 py-2.5 font-bold text-brand-dark text-xs font-mono">{d.symbol}</td>
                         <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[140px] truncate">{d.name}</td>
