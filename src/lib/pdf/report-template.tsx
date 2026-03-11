@@ -1495,16 +1495,21 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
 
             {/* Sensitivity matrices */}
-            {valData.filter((v: ValuationDataItem) => v.sensitivityMatrix).length > 0 && (
-              <>
-                <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
-                {valData
-                  .filter((v: ValuationDataItem) => v.sensitivityMatrix)
-                  .map((v: ValuationDataItem, i: number) => (
+            {(() => {
+              // Only show matrices with meaningful data (positive DCF = profitable company)
+              const validMatrices = valData.filter((v: ValuationDataItem) =>
+                v.sensitivityMatrix && v.priceDcf > 0
+              );
+              if (validMatrices.length === 0) return null;
+              return (
+                <>
+                  <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
+                  {validMatrices.map((v: ValuationDataItem, i: number) => (
                     <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
                   ))}
-              </>
-            )}
+                </>
+              );
+            })()}
 
             {/* Scorecard */}
             <Text style={styles.subsectionTitle}>Tableau de bord — Scores (0-10)</Text>
