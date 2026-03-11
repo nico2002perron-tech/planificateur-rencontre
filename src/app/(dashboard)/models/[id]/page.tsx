@@ -10,11 +10,11 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { SymbolSearch } from '@/components/portfolios/SymbolSearch';
+import { useSymbolSearch } from '@/lib/hooks/useQuotes';
 import { useModel, type ModelHolding } from '@/lib/hooks/useModels';
 import { RISK_PROFILES, ASSET_CLASSES, REGIONS } from '@/lib/utils/constants';
 import Link from 'next/link';
-import { Save, Trash2, ArrowLeft, Rocket } from 'lucide-react';
+import { Save, Trash2, Plus, Search, ArrowLeft, Rocket } from 'lucide-react';
 
 const riskLabels: Record<string, string> = {
   CONSERVATEUR: 'Conservateur',
@@ -31,6 +31,63 @@ const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   CROISSANCE: 'danger',
   DYNAMIQUE: 'danger',
 };
+
+function detectRegion(symbol: string): string {
+  if (symbol.endsWith('.TO') || symbol.endsWith('.V') || symbol.endsWith('.CN')) return 'CA';
+  if (symbol.includes('.')) return 'INTL';
+  return 'US';
+}
+
+function InlineSymbolSearch({ onSelect }: { onSelect: (symbol: string, name: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const { results, isLoading } = useSymbolSearch(query);
+
+  return (
+    <div className="relative flex-1">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+        <input
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm placeholder:text-text-light focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none"
+          placeholder="Rechercher un titre (ex: RY.TO, AAPL, XBB.TO)..."
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => query && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
+        />
+      </div>
+      {open && query.length >= 1 && (
+        <div className="absolute z-20 top-full mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-100 max-h-64 overflow-y-auto">
+          {isLoading ? (
+            <p className="text-sm text-text-muted text-center py-4">Recherche en cours...</p>
+          ) : results.length === 0 ? (
+            <p className="text-sm text-text-muted text-center py-4">Aucun résultat</p>
+          ) : (
+            results.map((r: { symbol: string; name: string; exchangeShortName: string }) => (
+              <button
+                key={r.symbol}
+                type="button"
+                className="w-full text-left px-4 py-2.5 hover:bg-bg-light transition-colors flex items-center justify-between"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(r.symbol, r.name);
+                  setQuery('');
+                  setOpen(false);
+                }}
+              >
+                <div>
+                  <span className="font-semibold text-sm text-brand-primary font-mono">{r.symbol}</span>
+                  <span className="text-xs text-text-muted ml-2">{r.name}</span>
+                </div>
+                <span className="text-xs text-text-light">{r.exchangeShortName}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -50,7 +107,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
       setName(model.name);
       setDescription(model.description || '');
       setRiskLevel(model.risk_level);
-      setHoldings(model.holdings.length > 0 ? model.holdings : []);
+      setHoldings(model.holdings.length > 0 ? [...model.holdings] : []);
     }
   }, [model]);
 
@@ -60,41 +117,39 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
     setHoldings(prev => prev.map((h, i) => i === index ? { ...h, [field]: value } : h));
   }
 
-  function handleSymbolSelect(symbol: string, symbolName: string) {
-    if (holdings.some(h => h.symbol === symbol)) {
+  function handleSearchSelect(symbol: string, symbolName: string) {
+    if (holdings.some(h => h.symbol.toUpperCase() === symbol.toUpperCase())) {
       toast('warning', `${symbol} est déjà dans la composition`);
       return;
     }
-
-    let region = 'US';
-    if (symbol.endsWith('.TO') || symbol.endsWith('.V') || symbol.endsWith('.CN')) {
-      region = 'CA';
-    } else if (symbol.includes('.')) {
-      region = 'INTL';
-    }
-
     setHoldings(prev => [...prev, {
       symbol,
       name: symbolName,
       weight: 0,
       asset_class: 'EQUITY',
-      region,
+      region: detectRegion(symbol),
     }]);
   }
 
+  function addManualHolding() {
+    setHoldings(prev => [...prev, { symbol: '', name: '', weight: 0, asset_class: 'EQUITY', region: 'CA' }]);
+  }
+
   async function handleSave() {
-    if (holdings.length === 0) {
-      toast('error', 'Ajoutez au moins une position');
+    const validHoldings = holdings.filter(h => h.symbol.trim());
+
+    if (validHoldings.length === 0) {
+      toast('error', 'Ajoutez au moins une position avec un symbole');
       return;
     }
 
-    const zeroWeight = holdings.filter(h => !h.weight || h.weight <= 0);
+    const zeroWeight = validHoldings.filter(h => !h.weight || h.weight <= 0);
     if (zeroWeight.length > 0) {
       toast('error', `${zeroWeight.map(h => h.symbol).join(', ')} — pondération manquante`);
       return;
     }
 
-    const weight = holdings.reduce((s, h) => s + Number(h.weight), 0);
+    const weight = validHoldings.reduce((s, h) => s + Number(h.weight), 0);
     if (Math.abs(weight - 100) > 0.5) {
       toast('warning', `Le total des pondérations est ${weight.toFixed(1)}% (devrait être 100%)`);
       return;
@@ -109,7 +164,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
           name,
           description: description || null,
           risk_level: riskLevel,
-          holdings: holdings.map(h => ({ ...h, weight: Number(h.weight) })),
+          holdings: validHoldings.map(h => ({ ...h, weight: Number(h.weight) })),
         }),
       });
       if (!res.ok) throw new Error();
@@ -160,7 +215,7 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
                     setName(model.name);
                     setDescription(model.description || '');
                     setRiskLevel(model.risk_level);
-                    setHoldings(model.holdings.length > 0 ? model.holdings : []);
+                    setHoldings(model.holdings.length > 0 ? [...model.holdings] : []);
                   }
                 }}>
                   Annuler
@@ -199,17 +254,17 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
               </h3>
             </div>
 
-            {/* Search bar to add holdings */}
-            <div className="mb-4">
-              <SymbolSearch
-                onSelect={handleSymbolSelect}
-                placeholder="Rechercher un titre à ajouter (ex: RY.TO, AAPL, XBB.TO)..."
-              />
+            {/* Search + manual add */}
+            <div className="flex gap-2 mb-4">
+              <InlineSymbolSearch onSelect={handleSearchSelect} />
+              <Button type="button" variant="outline" size="sm" onClick={addManualHolding} icon={<Plus className="h-3.5 w-3.5" />}>
+                Manuel
+              </Button>
             </div>
 
             {holdings.length === 0 ? (
-              <div className="text-center py-8 text-text-muted text-sm">
-                Utilisez la barre de recherche ci-dessus pour ajouter des titres
+              <div className="text-center py-8 text-text-muted text-sm border border-dashed border-gray-200 rounded-lg">
+                Recherchez un titre ci-dessus ou ajoutez-en un manuellement
               </div>
             ) : (
               <div className="space-y-2">
@@ -223,12 +278,34 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
 
                 {holdings.map((h, i) => (
-                  <div key={h.symbol} className="grid grid-cols-12 gap-2 items-center bg-bg-light/50 rounded-lg px-1 py-1.5">
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center bg-bg-light/50 rounded-lg px-1 py-1.5">
                     <div className="col-span-2">
-                      <span className="px-3 py-2 text-sm font-mono font-semibold text-brand-primary">{h.symbol}</span>
+                      {h.symbol ? (
+                        <span className="px-3 py-2 text-sm font-mono font-semibold text-brand-primary">{h.symbol}</span>
+                      ) : (
+                        <input
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none bg-white"
+                          placeholder="RY.TO"
+                          value={h.symbol}
+                          onChange={e => {
+                            const sym = e.target.value.toUpperCase();
+                            updateHolding(i, 'symbol', sym);
+                            updateHolding(i, 'region', detectRegion(sym));
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="col-span-3">
-                      <span className="px-3 py-2 text-sm text-text-main truncate block">{h.name}</span>
+                      {h.symbol && h.name ? (
+                        <span className="px-3 py-2 text-sm text-text-main truncate block">{h.name}</span>
+                      ) : (
+                        <input
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none bg-white"
+                          placeholder="Nom du titre"
+                          value={h.name}
+                          onChange={e => updateHolding(i, 'name', e.target.value)}
+                        />
+                      )}
                     </div>
                     <div className="col-span-2">
                       <div className="relative">
@@ -275,24 +352,22 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
                 ))}
 
                 {/* Weight progress bar */}
-                {holdings.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="flex items-center justify-between text-sm mb-1.5">
-                      <span className="text-text-muted">Total pondération</span>
-                      <span className={`font-semibold ${Math.abs(totalWeight - 100) < 0.5 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {totalWeight.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          Math.abs(totalWeight - 100) < 0.5 ? 'bg-emerald-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-brand-primary'
-                        }`}
-                        style={{ width: `${Math.min(totalWeight, 100)}%` }}
-                      />
-                    </div>
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="text-text-muted">Total pondération</span>
+                    <span className={`font-semibold ${Math.abs(totalWeight - 100) < 0.5 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {totalWeight.toFixed(1)}%
+                    </span>
                   </div>
-                )}
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        Math.abs(totalWeight - 100) < 0.5 ? 'bg-emerald-500' : totalWeight > 100 ? 'bg-red-500' : 'bg-brand-primary'
+                      }`}
+                      style={{ width: `${Math.min(totalWeight, 100)}%` }}
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </Card>
