@@ -302,87 +302,140 @@ function PerformanceBarChart({ returns }: { returns: AnnualReturn[] }) {
   );
 }
 
-/** Projection Area Chart (NEW — fintech-style) */
+/** Projection Area Chart (fintech-style with gradient fills + value labels) */
 function ProjectionChart({ projections, totalValue, ccy }: {
   projections: { year: number; bull: number; base: number; bear: number }[];
   totalValue: number; ccy: string;
 }) {
   if (projections.length === 0) return null;
 
-  const chartW = 660;
-  const chartH = 120;
+  const chartW = 580;
+  const chartH = 150;
+  const padL = 0;
+  const padT = 12;
+  const padB = 8;
+  const drawH = chartH - padT - padB;
   const allVals = [totalValue, ...projections.flatMap((p) => [p.bull, p.base, p.bear])];
-  const maxVal = Math.max(...allVals);
-  const minVal = Math.min(...allVals) * 0.95;
+  const maxVal = Math.max(...allVals) * 1.03;
+  const minVal = Math.min(...allVals) * 0.97;
   const range = maxVal - minVal || 1;
   const xStep = chartW / projections.length;
 
   function yPos(val: number): number {
-    return 10 + (chartH - 20) * (1 - (val - minVal) / range);
+    return padT + drawH * (1 - (val - minVal) / range);
   }
   function xPos(i: number): number {
-    return (i + 1) * xStep;
+    return padL + (i + 1) * xStep;
   }
 
+  const startX = padL;
   const startY = yPos(totalValue);
+
   function buildLine(key: 'bull' | 'base' | 'bear'): string {
-    let d = `M 0 ${startY}`;
+    let d = `M ${startX} ${startY}`;
     projections.forEach((p, i) => { d += ` L ${xPos(i)} ${yPos(p[key])}`; });
     return d;
   }
+  function buildFill(key: 'bull' | 'base' | 'bear'): string {
+    return buildLine(key) + ` L ${xPos(projections.length - 1)} ${padT + drawH} L ${startX} ${padT + drawH} Z`;
+  }
 
-  const baseFill = buildLine('base') + ` L ${xPos(projections.length - 1)} ${chartH} L 0 ${chartH} Z`;
+  const last = projections[projections.length - 1];
+
+  // Y-axis label values (4 ticks)
+  const yTicks = [0, 0.33, 0.66, 1].map((pct) => ({
+    val: minVal + range * pct,
+    y: padT + drawH * (1 - pct),
+  }));
 
   return (
     <View style={{ marginBottom: 14 }}>
-      <Svg width={chartW} height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
-        {/* Grid lines */}
-        {[0.25, 0.5, 0.75].map((pct, i) => {
-          const y = 10 + (chartH - 20) * (1 - pct);
-          return <Rect key={i} x={0} y={y} width={chartW} height={0.5} fill="#e2e8f0" />;
-        })}
-        {/* Area fill under base line */}
-        <Defs>
-          <LinearGradient id="areaFill" x1="0" y1="0" x2="0" y2={String(chartH)}>
-            <Stop offset="0%" stopColor={C.cyan} stopOpacity={0.12} />
-            <Stop offset="100%" stopColor={C.cyan} stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <Path d={baseFill} fill="url(#areaFill)" />
-        {/* Lines */}
-        <Path d={buildLine('bull')} stroke={C.up} strokeWidth={2} fill="none" />
-        <Path d={buildLine('base')} stroke={C.cyan} strokeWidth={2} fill="none" />
-        <Path d={buildLine('bear')} stroke={C.down} strokeWidth={2} fill="none" />
-        {/* Endpoint dots */}
-        {projections.length > 0 && (() => {
-          const last = projections.length - 1;
-          return (
-            <G>
-              <Circle cx={xPos(last)} cy={yPos(projections[last].bull)} r={3} fill={C.up} />
-              <Circle cx={xPos(last)} cy={yPos(projections[last].base)} r={3} fill={C.cyan} />
-              <Circle cx={xPos(last)} cy={yPos(projections[last].bear)} r={3} fill={C.down} />
-            </G>
-          );
-        })()}
-      </Svg>
+      <View style={{ flexDirection: 'row' }}>
+        {/* Y-axis labels */}
+        <View style={{ width: 58, justifyContent: 'space-between', paddingTop: padT, paddingBottom: padB }}>
+          {[...yTicks].reverse().map((t, i) => (
+            <Text key={i} style={{ fontSize: 6.5, color: C.textTer, textAlign: 'right', paddingRight: 6 }}>
+              {fmt(t.val, ccy)}
+            </Text>
+          ))}
+        </View>
+
+        {/* Chart SVG */}
+        <Svg width={chartW} height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
+          {/* Grid lines */}
+          {yTicks.map((t, i) => (
+            <Rect key={i} x={0} y={t.y} width={chartW} height={0.5} fill="#e2e8f0" />
+          ))}
+
+          {/* Gradient fills */}
+          <Defs>
+            <LinearGradient id="bullFill" x1="0" y1="0" x2="0" y2={String(chartH)}>
+              <Stop offset="0%" stopColor={C.up} stopOpacity={0.08} />
+              <Stop offset="100%" stopColor={C.up} stopOpacity={0} />
+            </LinearGradient>
+            <LinearGradient id="baseFill" x1="0" y1="0" x2="0" y2={String(chartH)}>
+              <Stop offset="0%" stopColor={C.cyan} stopOpacity={0.10} />
+              <Stop offset="100%" stopColor={C.cyan} stopOpacity={0} />
+            </LinearGradient>
+            <LinearGradient id="bearFill" x1="0" y1="0" x2="0" y2={String(chartH)}>
+              <Stop offset="0%" stopColor={C.down} stopOpacity={0.06} />
+              <Stop offset="100%" stopColor={C.down} stopOpacity={0} />
+            </LinearGradient>
+          </Defs>
+          <Path d={buildFill('bull')} fill="url(#bullFill)" />
+          <Path d={buildFill('base')} fill="url(#baseFill)" />
+          <Path d={buildFill('bear')} fill="url(#bearFill)" />
+
+          {/* Lines */}
+          <Path d={buildLine('bull')} stroke={C.up} strokeWidth={2} fill="none" />
+          <Path d={buildLine('base')} stroke={C.cyan} strokeWidth={2.5} fill="none" />
+          <Path d={buildLine('bear')} stroke={C.down} strokeWidth={2} fill="none" />
+
+          {/* Start point */}
+          <Circle cx={startX} cy={startY} r={3} fill={C.navy} />
+
+          {/* Endpoint dots */}
+          <Circle cx={xPos(projections.length - 1)} cy={yPos(last.bull)} r={4} fill={C.up} />
+          <Circle cx={xPos(projections.length - 1)} cy={yPos(last.base)} r={4} fill={C.cyan} />
+          <Circle cx={xPos(projections.length - 1)} cy={yPos(last.bear)} r={4} fill={C.down} />
+        </Svg>
+
+        {/* End value labels (right side) */}
+        <View style={{ width: 75, justifyContent: 'space-between', paddingTop: padT, paddingBottom: padB }}>
+          <View style={{ alignItems: 'flex-start', paddingLeft: 6 }}>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.up }}>{fmt(last.bull, ccy)}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-start', paddingLeft: 6 }}>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan }}>{fmt(last.base, ccy)}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-start', paddingLeft: 6 }}>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.down }}>{fmt(last.bear, ccy)}</Text>
+          </View>
+        </View>
+      </View>
+
       {/* X axis labels */}
-      <View style={{ flexDirection: 'row', marginTop: 3 }}>
+      <View style={{ flexDirection: 'row', marginTop: 3, paddingLeft: 58 }}>
+        <View style={{ width: 30, alignItems: 'center' }}>
+          <Text style={{ fontSize: 7, color: C.textTer }}>Depart</Text>
+        </View>
         {projections.map((p, i) => (
           <View key={i} style={{ flex: 1, alignItems: 'center' }}>
             <Text style={{ fontSize: 7, color: C.textTer }}>An {p.year}</Text>
           </View>
         ))}
       </View>
+
       {/* Legend */}
-      <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 6 }}>
+      <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 8 }}>
         {[
-          { color: C.up, label: `Optimiste: ${fmt(projections[projections.length - 1]?.bull || 0, ccy)}` },
-          { color: C.cyan, label: `Base: ${fmt(projections[projections.length - 1]?.base || 0, ccy)}` },
-          { color: C.down, label: `Pessimiste: ${fmt(projections[projections.length - 1]?.bear || 0, ccy)}` },
+          { color: C.up, label: 'Optimiste' },
+          { color: C.cyan, label: 'Scenario de base' },
+          { color: C.down, label: 'Pessimiste' },
         ].map((l, i) => (
           <View key={i} style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 12, height: 3, borderRadius: 2, backgroundColor: l.color, marginRight: 4 }} />
-            <Text style={{ fontSize: 7, color: C.textSec }}>{l.label}</Text>
+            <View style={{ width: 14, height: 3, borderRadius: 2, backgroundColor: l.color, marginRight: 5 }} />
+            <Text style={{ fontSize: 7.5, color: C.textSec }}>{l.label}</Text>
           </View>
         ))}
       </View>
@@ -426,23 +479,27 @@ function ScenarioCard({ name, value, returnPct, totalValue, ccy, variant }: {
   );
 }
 
-/** Risk Indicator Card */
-function RiskCard({ label, value, sub, color }: {
-  label: string; value: string; sub?: string; color?: string;
+/** Risk Indicator Card with description */
+function RiskCard({ label, value, desc, color }: {
+  label: string; value: string; desc?: string; color?: string;
 }) {
   return (
     <View style={{
       flex: 1, backgroundColor: C.card, borderRadius: 12,
       borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-      padding: 14, alignItems: 'center' as const,
+      padding: 14,
     }}>
-      <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 6 }}>
+      <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 6, textAlign: 'center' }}>
         {label}
       </Text>
-      <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: color || C.navy }}>
+      <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: color || C.navy, textAlign: 'center', marginBottom: desc ? 6 : 0 }}>
         {value}
       </Text>
-      {sub && <Text style={{ fontSize: 8, color: C.textSec, marginTop: 3 }}>{sub}</Text>}
+      {desc && (
+        <View style={{ borderTopWidth: 1, borderTopColor: C.cardBorder, borderTopStyle: 'solid' as const, paddingTop: 6 }}>
+          <Text style={{ fontSize: 7, color: C.textSec, lineHeight: 1.4 }}>{desc}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1254,18 +1311,38 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         <AccentBar />
         <Text style={styles.sectionTitle}>Scenarios & Risque</Text>
 
-        {/* Risk metric cards */}
+        {/* Risk metric cards with explanations */}
         <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-          <RiskCard label="Volatilite" value={`${data.riskMetrics.volatility.toFixed(1)}%`} />
-          <RiskCard label="Ratio Sharpe" value={data.riskMetrics.sharpe.toFixed(2)} />
-          <RiskCard label="Drawdown max" value={`-${data.riskMetrics.maxDrawdown.toFixed(1)}%`} color={C.down} />
-          <RiskCard label="Beta" value={data.riskMetrics.beta.toFixed(2)} />
+          <RiskCard
+            label="Volatilite"
+            value={`${data.riskMetrics.volatility.toFixed(1)}%`}
+            desc="Mesure l'amplitude des variations du portefeuille. Plus elle est elevee, plus les rendements fluctuent."
+          />
+          <RiskCard
+            label="Ratio Sharpe"
+            value={data.riskMetrics.sharpe.toFixed(2)}
+            desc={`Rendement obtenu par unite de risque. Au-dessus de 1.0 = excellent, sous 0.5 = faible compensation du risque pris.`}
+          />
+          <RiskCard
+            label="Drawdown max"
+            value={`-${data.riskMetrics.maxDrawdown.toFixed(1)}%`}
+            color={C.down}
+            desc="Perte maximale estimee entre un sommet et un creux. Represente le pire scenario historique probable."
+          />
+          <RiskCard
+            label="Beta"
+            value={data.riskMetrics.beta.toFixed(2)}
+            desc={`Sensibilite au marche. Beta de 1.0 = suit le marche. Sous 1.0 = moins volatile, au-dessus = plus reactif.`}
+          />
         </View>
 
-        {/* Scenario cards — Bear / Base / Bull */}
+        {/* Scenario cards — mapped by name for correct colors */}
         <View style={{ flexDirection: 'row', gap: 14, marginBottom: 16 }}>
-          {data.scenarios.map((s, i) => {
-            const variant = i === 0 ? 'bear' : i === 1 ? 'base' : 'bull';
+          {data.scenarios.map((s) => {
+            const variant: 'bear' | 'base' | 'bull' =
+              ('type' in s && (s as { type: string }).type) ? (s as { type: 'bear' | 'base' | 'bull' }).type :
+              s.name.toLowerCase().includes('pessim') ? 'bear' :
+              s.name.toLowerCase().includes('optim') ? 'bull' : 'base';
             return (
               <ScenarioCard
                 key={s.name}
@@ -1274,7 +1351,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 returnPct={s.annualizedReturn}
                 totalValue={data.portfolio.totalValue}
                 ccy={ccy}
-                variant={variant as 'bear' | 'base' | 'bull'}
+                variant={variant}
               />
             );
           })}
@@ -1507,14 +1584,17 @@ export function ReportDocument({ data }: { data: ReportData }) {
         <AccentBar />
         <Text style={styles.sectionTitle}>Risque & Scenarios</Text>
         <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-          <RiskCard label="Volatilite" value={`${data.riskMetrics.volatility.toFixed(1)}%`} />
-          <RiskCard label="Sharpe" value={data.riskMetrics.sharpe.toFixed(2)} />
-          <RiskCard label="Drawdown max" value={`-${data.riskMetrics.maxDrawdown.toFixed(1)}%`} color={C.down} />
-          <RiskCard label="Beta" value={data.riskMetrics.beta.toFixed(2)} />
+          <RiskCard label="Volatilite" value={`${data.riskMetrics.volatility.toFixed(1)}%`} desc="Amplitude des variations du portefeuille." />
+          <RiskCard label="Sharpe" value={data.riskMetrics.sharpe.toFixed(2)} desc="Rendement par unite de risque." />
+          <RiskCard label="Drawdown max" value={`-${data.riskMetrics.maxDrawdown.toFixed(1)}%`} color={C.down} desc="Perte maximale estimee sommet-a-creux." />
+          <RiskCard label="Beta" value={data.riskMetrics.beta.toFixed(2)} desc="Sensibilite aux mouvements du marche." />
         </View>
         <View style={{ flexDirection: 'row', gap: 14 }}>
-          {data.scenarios.map((s, i) => {
-            const variant = i === 0 ? 'bear' : i === 1 ? 'base' : 'bull';
+          {data.scenarios.map((s) => {
+            const variant: 'bear' | 'base' | 'bull' =
+              ('type' in s && (s as { type: string }).type) ? (s as { type: 'bear' | 'base' | 'bull' }).type :
+              s.name.toLowerCase().includes('pessim') ? 'bear' :
+              s.name.toLowerCase().includes('optim') ? 'bull' : 'base';
             return (
               <ScenarioCard
                 key={s.name}
@@ -1523,7 +1603,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
                 returnPct={s.annualizedReturn}
                 totalValue={data.portfolio.totalValue}
                 ccy={data.portfolio.currency}
-                variant={variant as 'bear' | 'base' | 'bull'}
+                variant={variant}
               />
             );
           })}
