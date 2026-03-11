@@ -201,14 +201,16 @@ function DonutChart({ slices, size = 90, title, labelMap, centerLabel, centerVal
             </View>
           )}
         </View>
-        <View style={{ maxWidth: 120 }}>
+        <View style={{ maxWidth: 140, minWidth: 90 }}>
           {filtered.slice(0, 6).map((s, i) => (
-            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: s.color, marginRight: 5 }} />
-              <Text style={{ fontSize: 7, color: C.text, flex: 1 }}>
-                {(labelMap ? labelMap[s.label] || s.label : s.label).substring(0, 16)}
-              </Text>
-              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginLeft: 4 }}>
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: s.color, marginRight: 5, flexShrink: 0 }} />
+              <View style={{ flex: 1, marginRight: 4 }}>
+                <Text style={{ fontSize: 7, color: C.text }}>
+                  {(labelMap ? labelMap[s.label] || s.label : s.label).substring(0, 18)}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, flexShrink: 0 }}>
                 {s.percentage.toFixed(1)}%
               </Text>
             </View>
@@ -898,10 +900,11 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               {/* Asset class detail rows */}
               {data.allocations.byAssetClass.map((a, i) => (
                 <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: a.color, marginRight: 5 }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: a.color, marginRight: 5, flexShrink: 0 }} />
                     <Text style={{ fontSize: 7.5, color: C.text }}>{ASSET_LABELS[a.label] || a.label}</Text>
                   </View>
+                  <Text style={{ fontSize: 7.5, color: C.textSec, marginRight: 6 }}>{a.percentage.toFixed(1)}%</Text>
                   <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(a.value, ccy)}</Text>
                 </View>
               ))}
@@ -1032,7 +1035,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
         {/* AI Narratives */}
         <AINarrativeBlock label="Sommaire executif — Analyse IA" content={ai?.executiveSummary} />
-        <AINarrativeBlock label="Commentaire d'allocation — Analyse IA" content={ai?.allocationComment} />
+{/* allocationComment removed — redundant with executiveSummary */}
 
         <PageFooter num={2} total={totalPages} />
       </Page>
