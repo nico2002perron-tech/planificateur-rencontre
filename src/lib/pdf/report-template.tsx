@@ -147,16 +147,18 @@ function KPICard({ label, value, sub, accent = C.cyan }: {
   );
 }
 
-/** Modern Donut Chart (SVG) */
+/** Modern Donut Chart (SVG) — with optional center label */
 interface PieSlice { label: string; percentage: number; color: string; value?: number; }
 
-function DonutChart({ slices, size = 90, title, labelMap }: {
-  slices: PieSlice[]; size?: number; title: string;
+function DonutChart({ slices, size = 90, title, labelMap, centerLabel, centerValue }: {
+  slices: PieSlice[]; size?: number; title?: string;
   labelMap?: Record<string, string>;
+  centerLabel?: string; centerValue?: string;
 }) {
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 2;
+  const innerR = r * 0.58;
   const filtered = slices.filter((s) => s.percentage > 0);
   if (filtered.length === 0) return null;
 
@@ -179,18 +181,26 @@ function DonutChart({ slices, size = 90, title, labelMap }: {
 
   return (
     <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 6 }}>{title}</Text>
+      {title && <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 6 }}>{title}</Text>}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-          {arcs.map((arc, i) =>
-            arc.full ? (
-              <Circle key={i} cx={cx} cy={cy} r={r} fill={arc.color} />
-            ) : (
-              <Path key={i} d={arc.d} fill={arc.color} />
-            )
+        <View style={{ width: size, height: size, position: 'relative' }}>
+          <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {arcs.map((arc, i) =>
+              arc.full ? (
+                <Circle key={i} cx={cx} cy={cy} r={r} fill={arc.color} />
+              ) : (
+                <Path key={i} d={arc.d} fill={arc.color} />
+              )
+            )}
+            <Circle cx={cx} cy={cy} r={innerR} fill={C.white} />
+          </Svg>
+          {centerValue && (
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ fontSize: size > 100 ? 11 : 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>{centerValue}</Text>
+              {centerLabel && <Text style={{ fontSize: size > 100 ? 6 : 5, color: C.textTer, marginTop: 1 }}>{centerLabel}</Text>}
+            </View>
           )}
-          <Circle cx={cx} cy={cy} r={r * 0.58} fill={C.white} />
-        </Svg>
+        </View>
         <View style={{ maxWidth: 120 }}>
           {filtered.slice(0, 6).map((s, i) => (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
@@ -205,6 +215,16 @@ function DonutChart({ slices, size = 90, title, labelMap }: {
           ))}
         </View>
       </View>
+    </View>
+  );
+}
+
+/** Horizontal weight bar for top positions */
+function WeightBar({ weight, color, maxWeight }: { weight: number; color: string; maxWeight: number }) {
+  const pct = maxWeight > 0 ? (weight / maxWeight) * 100 : 0;
+  return (
+    <View style={{ flex: 1, height: 8, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' as const }}>
+      <View style={{ height: '100%', width: `${Math.max(pct, 2)}%`, backgroundColor: color, borderRadius: 4 }} />
     </View>
   );
 }
@@ -819,72 +839,194 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       </Page>
 
 
-      {/* ═══ PAGE 2: ALLOCATION & STRUCTURE ═══════════════════════ */}
+      {/* ═══ PAGE 2: ALLOCATION DASHBOARD ═══════════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
-        <Text style={styles.sectionTitle}>Allocation du portefeuille</Text>
 
-        {/* Allocation bar */}
-        <AllocationBar slices={data.allocations.byAssetClass} />
-
-        {/* Two-column: Table + Donuts */}
-        <View style={{ flexDirection: 'row', gap: 20, marginBottom: 12 }}>
-          {/* Left: Asset class table */}
-          <View style={{ flex: 1 }}>
-            <View style={styles.table}>
-              <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '50%' }}>Classe d&apos;actif</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Valeur</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Poids</Text>
+        {/* ── Header row: Title + 4 mini KPI stats ── */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 }}>
+          <Text style={styles.sectionTitle}>Allocation du portefeuille</Text>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {[
+              { label: 'Valeur totale', value: fmt(data.portfolio.totalValue, ccy), color: C.navy },
+              { label: 'Cout total', value: fmt(data.portfolio.totalCost, ccy), color: C.blue },
+              { label: 'Gain / Perte', value: `${gainLoss >= 0 ? '+' : ''}${fmt(gainLoss, ccy)}`, color: gainLoss >= 0 ? C.up : C.down },
+              { label: 'Positions', value: String(data.portfolio.holdings.length), color: C.cyan },
+            ].map((kpi, i) => (
+              <View key={i} style={{
+                backgroundColor: '#f3f6fa', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+                borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+                alignItems: 'center', minWidth: 95,
+              }}>
+                <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
+                  {kpi.label}
+                </Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: kpi.color }}>
+                  {kpi.value}
+                </Text>
               </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── Main dashboard: 3 columns ── */}
+        <View style={{ flexDirection: 'row', gap: 14, marginBottom: 12 }}>
+
+          {/* ▌ COL 1: Large donut (asset class) + allocation bar ▌ */}
+          <View style={{
+            width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
+            borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+          }}>
+            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
+              Repartition par classe d&apos;actif
+            </Text>
+            <DonutChart
+              slices={data.allocations.byAssetClass.map((a) => ({
+                label: a.label,
+                percentage: a.percentage,
+                color: a.color,
+                value: a.value,
+              }))}
+              size={120}
+              centerValue={fmt(data.portfolio.totalValue, ccy)}
+              centerLabel="Total"
+              labelMap={ASSET_LABELS}
+            />
+            {/* Stacked allocation bar */}
+            <View style={{ marginTop: 12 }}>
+              <AllocationBar slices={data.allocations.byAssetClass} />
+              {/* Asset class detail rows */}
               {data.allocations.byAssetClass.map((a, i) => (
-                <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                  <View style={{ width: '50%', flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: a.color, marginRight: 6 }} />
-                    <Text style={styles.td}>{ASSET_LABELS[a.label] || a.label}</Text>
+                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: a.color, marginRight: 5 }} />
+                    <Text style={{ fontSize: 7.5, color: C.text }}>{ASSET_LABELS[a.label] || a.label}</Text>
                   </View>
-                  <Text style={{ ...styles.td, width: '25%', textAlign: 'right' }}>{fmt(a.value, ccy)}</Text>
-                  <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>{a.percentage.toFixed(1)}%</Text>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(a.value, ccy)}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* ▌ COL 2: Sector cards + Region bars ▌ */}
+          <View style={{ width: '36%', gap: 10 }}>
+            {/* Sector breakdown cards */}
+            <View style={{
+              backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
+              borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+            }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
+                Exposition sectorielle
+              </Text>
+              {data.sectorBreakdown.slice(0, 6).map((s, i) => (
+                <View key={i} style={{
+                  flexDirection: 'row', alignItems: 'center', marginBottom: 6,
+                  backgroundColor: C.white, borderRadius: 8, padding: 8,
+                  borderWidth: 1, borderColor: '#edf0f4', borderStyle: 'solid' as const,
+                }}>
+                  <View style={{
+                    width: 28, height: 28, borderRadius: 8, backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                    justifyContent: 'center', alignItems: 'center', marginRight: 8, opacity: 0.15,
+                  }} />
+                  {/* Colored dot overlay */}
+                  <View style={{
+                    position: 'absolute', left: 17, top: 14,
+                    width: 10, height: 10, borderRadius: 5,
+                    backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                  }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{s.sectorLabel}</Text>
+                    <Text style={{ fontSize: 6.5, color: C.textTer }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''} — {fmt(s.totalValue, ccy)}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{s.weight.toFixed(0)}%</Text>
+                  </View>
                 </View>
               ))}
             </View>
 
-            {/* Sector bars */}
-            <Text style={styles.subsectionTitle}>Principaux secteurs</Text>
-            {data.sectorBreakdown.length > 0 ? (
-              <SectorBars items={data.sectorBreakdown} />
-            ) : (
-              <Text style={styles.noteText}>Donnees sectorielles non disponibles</Text>
-            )}
+            {/* Region progress bars */}
+            <View style={{
+              backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
+              borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+            }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
+                Exposition geographique
+              </Text>
+              {data.allocations.byRegion.map((r, i) => (
+                <View key={i} style={{ marginBottom: i < data.allocations.byRegion.length - 1 ? 8 : 0 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
+                      {REGION_LABELS[r.label] || r.label}
+                    </Text>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                      {r.percentage.toFixed(1)}% — {fmt(r.value, ccy)}
+                    </Text>
+                  </View>
+                  <View style={{ height: 10, backgroundColor: '#e2e8f0', borderRadius: 5, overflow: 'hidden' as const }}>
+                    <View style={{ height: '100%', width: `${Math.max(r.percentage, 2)}%`, backgroundColor: r.color, borderRadius: 5 }} />
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
 
-          {/* Right: Donut charts */}
-          <View style={{ flex: 1, gap: 16 }}>
-            {data.sectorBreakdown.length > 0 && (
-              <DonutChart
-                title="Exposition sectorielle"
-                slices={data.sectorBreakdown.map((s, i) => ({
-                  label: s.sectorLabel,
-                  percentage: s.weight,
-                  color: SECTOR_COLORS[i % SECTOR_COLORS.length],
-                  value: s.totalValue,
-                }))}
-                size={100}
-              />
-            )}
-            {data.allocations.byRegion.length > 0 && (
-              <DonutChart
-                title="Exposition geographique"
-                slices={data.allocations.byRegion.map((r) => ({
-                  label: r.label,
-                  percentage: r.percentage,
-                  color: r.color,
-                  value: r.value,
-                }))}
-                size={100}
-                labelMap={REGION_LABELS}
-              />
-            )}
+          {/* ▌ COL 3: Top 5 positions ranking ▌ */}
+          <View style={{
+            width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
+            borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+          }}>
+            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
+              Top {Math.min(data.topPositions.length, 5)} positions
+            </Text>
+            {(() => {
+              const maxW = data.topPositions.length > 0 ? data.topPositions[0].weight : 1;
+              return data.topPositions.slice(0, 5).map((pos, i) => (
+                <View key={i} style={{
+                  backgroundColor: C.white, borderRadius: 10, padding: 10, marginBottom: 6,
+                  borderWidth: 1, borderColor: '#edf0f4', borderStyle: 'solid' as const,
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{
+                        width: 20, height: 20, borderRadius: 10,
+                        backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                        justifyContent: 'center', alignItems: 'center', marginRight: 7,
+                      }}>
+                        <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>
+                          {i + 1}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{pos.symbol}</Text>
+                        <Text style={{ fontSize: 6.5, color: C.textTer }}>{pos.name}</Text>
+                      </View>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{pos.weight.toFixed(1)}%</Text>
+                      <Text style={{ fontSize: 6.5, color: C.textTer }}>{fmt(pos.market_value, ccy)}</Text>
+                    </View>
+                  </View>
+                  <WeightBar weight={pos.weight} color={SECTOR_COLORS[i % SECTOR_COLORS.length]} maxWeight={maxW} />
+                </View>
+              ));
+            })()}
+
+            {/* Concentration indicator */}
+            {data.topPositions.length > 0 && (() => {
+              const top5Weight = data.topPositions.slice(0, 5).reduce((s, p) => s + p.weight, 0);
+              return (
+                <View style={{
+                  marginTop: 4, backgroundColor: top5Weight > 50 ? '#fff7ed' : '#f0fdf4',
+                  borderRadius: 8, padding: 8, alignItems: 'center',
+                  borderWidth: 1, borderColor: top5Weight > 50 ? '#fed7aa' : '#bbf7d0', borderStyle: 'solid' as const,
+                }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: top5Weight > 50 ? '#9a3412' : '#166534' }}>
+                    Concentration top 5: {top5Weight.toFixed(1)}%
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
         </View>
 
