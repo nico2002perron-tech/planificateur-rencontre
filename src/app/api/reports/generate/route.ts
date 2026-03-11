@@ -338,14 +338,15 @@ export async function POST(request: NextRequest) {
             const profitMargin = rawVal(fd.profitMargins);
             const name = priceData.shortName ?? priceData.longName ?? symbol;
 
-            const profile = fmpData.profiles[symbol];
-            const sector = profile?.sector || String(priceData.sector ?? fd.sector ?? '');
+            // Match sector resolution from /api/valuation/stock/[ticker] (price module)
+            // so PDF values match the Valuation Master Pro page exactly
+            const sector = String(priceData.sector ?? priceData.industry ?? '');
             const bench = getBenchmarkData(symbol, sector);
 
             const [priceDcf, priceSales, priceEarnings] = calculateValuation(
               bench.gr_sales / 100,
               bench.gr_fcf / 100,
-              bench.gr_eps / 100,
+              0.1,              // grEps hardcoded to 10% — matches Valuation page
               bench.wacc / 100,
               bench.ps,
               bench.pe,
@@ -376,18 +377,19 @@ export async function POST(request: NextRequest) {
               bench
             );
 
+            const profile = fmpData.profiles[symbol];
             return {
               symbol,
               name: profile?.companyName || name,
               currentPrice, priceDcf, priceSales, priceEarnings,
               avgIntrinsic, upsidePercent, reverseDcfGrowth,
               // Store raw financial data for sensitivity matrix
-              _fcf: fcf, _cash: cash, _totalDebt: totalDebt, _shares: shares,
+              _fcf: fcf, _cash: cash, _totalDebt: totalDebt, _shares: shares, _sector: sector,
               scores: {
                 overall: scores.overall, health: scores.health,
                 growth: scores.growth, valuation: scores.valuation,
               },
-            } as ValuationDataItem & { _fcf: number; _cash: number; _totalDebt: number; _shares: number };
+            } as ValuationDataItem & { _fcf: number; _cash: number; _totalDebt: number; _shares: number; _sector: string };
           } catch (e) {
             console.warn(`Valuation fetch failed for ${symbol}:`, e);
             return null;
@@ -397,7 +399,7 @@ export async function POST(request: NextRequest) {
         const results = await Promise.all(valuationPromises);
 
         // Include all results — create placeholders for symbols that failed (ETFs, etc.)
-        const allResults: (ValuationDataItem & { _fcf?: number; _cash?: number; _totalDebt?: number; _shares?: number })[] = [];
+        const allResults: (ValuationDataItem & { _fcf?: number; _cash?: number; _totalDebt?: number; _shares?: number; _sector?: string })[] = [];
         for (let si = 0; si < symbols.length; si++) {
           const r = results[si];
           if (r) {
@@ -426,7 +428,7 @@ export async function POST(request: NextRequest) {
           for (const item of allResults) {
             if (holdingWeights.includes(item.symbol) && item.priceDcf > 0 && item._fcf) {
               try {
-                const bench = getBenchmarkData(item.symbol, fmpData.profiles[item.symbol]?.sector || '');
+                const bench = getBenchmarkData(item.symbol, item._sector || '');
                 item.sensitivityMatrix = buildSensitivityMatrix(
                   bench.wacc, bench.gr_fcf,
                   item._fcf, item._cash || 0, item._totalDebt || 0, item._shares || 1
@@ -436,7 +438,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Clean temporary fields before storing
-          valuationData = allResults.map(({ _fcf, _cash, _totalDebt, _shares, ...rest }) => rest as ValuationDataItem);
+          valuationData = allResults.map(({ _fcf, _cash, _totalDebt, _shares, _sector, ...rest }) => rest as ValuationDataItem);
         }
       } catch (err) {
         console.warn('Valuation computation failed, skipping:', err);
