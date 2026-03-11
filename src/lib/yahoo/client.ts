@@ -178,6 +178,140 @@ export async function getYahooEarnings(symbol: string): Promise<YahooEarnings> {
   }
 }
 
+// ── Yahoo Profile (replaces FMP getProfile) ─────────────────────────────────
+
+export interface YahooProfileData {
+  symbol: string;
+  companyName: string;
+  description: string;
+  sector: string;
+  industry: string;
+  country: string;
+  beta: number;
+  lastDiv: number;       // Annual dividend per share (dividendRate)
+  dividendYield: number; // e.g. 0.025 = 2.5%
+  mktCap: number;
+  exchange: string;
+}
+
+/**
+ * Fetch company profile from Yahoo Finance (replaces FMP getProfile).
+ * Modules: price + summaryDetail + assetProfile + defaultKeyStatistics
+ */
+export async function getYahooProfile(symbol: string): Promise<YahooProfileData | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const r = json?.quoteSummary?.result?.[0];
+    if (!r) return null;
+
+    const price = r.price ?? {};
+    const sd = r.summaryDetail ?? {};
+    const ap = r.assetProfile ?? {};
+    const ks = r.defaultKeyStatistics ?? {};
+
+    const raw = (obj: unknown): number => {
+      if (obj && typeof obj === 'object' && 'raw' in obj) {
+        const v = Number((obj as { raw: number }).raw);
+        return isFinite(v) ? v : 0;
+      }
+      return 0;
+    };
+
+    return {
+      symbol,
+      companyName: price.shortName ?? price.longName ?? '',
+      description: typeof ap.longBusinessSummary === 'string' ? ap.longBusinessSummary : '',
+      sector: ap.sector ?? '',
+      industry: ap.industry ?? '',
+      country: ap.country ?? '',
+      beta: raw(ks.beta) || raw(sd.beta) || 0,
+      lastDiv: raw(sd.dividendRate),           // Annual dividend per share
+      dividendYield: raw(sd.dividendYield),    // e.g. 0.025
+      mktCap: raw(price.marketCap) || raw(sd.marketCap),
+      exchange: price.exchangeName ?? price.exchange ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batch-fetch Yahoo profiles (max 6 concurrent).
+ */
+export async function getYahooProfiles(symbols: string[]): Promise<Map<string, YahooProfileData>> {
+  const BATCH = 6;
+  const result = new Map<string, YahooProfileData>();
+
+  for (let i = 0; i < symbols.length; i += BATCH) {
+    const batch = symbols.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map((s) => getYahooProfile(s)));
+    batch.forEach((s, j) => {
+      if (results[j]) result.set(s, results[j]!);
+    });
+  }
+
+  return result;
+}
+
+// ── Yahoo Quotes (replaces FMP getQuotes) ────────────────────────────────────
+
+export interface YahooQuote {
+  symbol: string;
+  price: number;
+  name: string;
+  currency: string;
+  sector?: string;
+}
+
+/**
+ * Fetch current prices from Yahoo Finance (replaces FMP getQuotes).
+ */
+export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
+  if (symbols.length === 0) return [];
+
+  const BATCH = 6;
+  const results: YahooQuote[] = [];
+
+  for (let i = 0; i < symbols.length; i += BATCH) {
+    const batch = symbols.slice(i, i + BATCH);
+    const batchResults = await Promise.all(
+      batch.map(async (symbol) => {
+        try {
+          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price`;
+          const res = await yahooFetch(url);
+          if (!res.ok) return null;
+
+          const json = await res.json();
+          const p = json?.quoteSummary?.result?.[0]?.price;
+          if (!p) return null;
+
+          const currentPrice = p.regularMarketPrice?.raw ?? 0;
+          if (currentPrice <= 0) return null;
+
+          return {
+            symbol,
+            price: Math.round(currentPrice * 100) / 100,
+            name: p.shortName ?? p.longName ?? '',
+            currency: p.currency ?? '',
+            sector: undefined,
+          } as YahooQuote;
+        } catch {
+          return null;
+        }
+      })
+    );
+    for (const r of batchResults) {
+      if (r) results.push(r);
+    }
+  }
+
+  return results;
+}
+
 // ── ETF Sector Breakdown ─────────────────────────────────────────────────────
 
 /**

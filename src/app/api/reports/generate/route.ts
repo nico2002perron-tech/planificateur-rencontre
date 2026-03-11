@@ -7,8 +7,8 @@ import { buildFullReportData } from '@/lib/pdf/report-data';
 import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData } from '@/lib/pdf/report-data';
 import type { ValuationDataItem } from '@/lib/ai/types';
 import { createClient } from '@/lib/supabase/server';
-import { getQuotes, getProfile, getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
-import { getYahooPriceTarget, getYahooETFSectors } from '@/lib/yahoo/client';
+import { getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
+import { getYahooPriceTarget, getYahooETFSectors, getYahooQuotes, getYahooProfile } from '@/lib/yahoo/client';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10 } from '@/lib/valuation/scoring';
@@ -73,11 +73,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fetch fresh quotes from FMP for missing symbols
+      // Fetch fresh quotes from Yahoo Finance for missing symbols
       const missingSymbols = symbols.filter((s: string) => !priceMap[s]);
       if (missingSymbols.length > 0) {
         try {
-          const freshQuotes = await getQuotes(missingSymbols);
+          const freshQuotes = await getYahooQuotes(missingSymbols);
           for (const q of freshQuotes) {
             priceMap[q.symbol] = {
               price: q.price,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
             };
           }
         } catch (e) {
-          console.warn('FMP quotes fetch failed, using cache only:', e);
+          console.warn('Yahoo quotes fetch failed, using cache only:', e);
         }
       }
     }
@@ -99,22 +99,22 @@ export async function POST(request: NextRequest) {
     };
 
     if (symbols.length > 0) {
-      // Fetch profiles for all holdings in parallel
+      // Fetch profiles from Yahoo Finance (replaces FMP getProfile)
       const profilePromises = symbols.map(async (symbol: string) => {
         try {
-          const profile = await getProfile(symbol);
-          if (profile) {
+          const yProfile = await getYahooProfile(symbol);
+          if (yProfile) {
             const data: FMPProfileData = {
-              symbol: profile.symbol,
-              companyName: profile.companyName,
-              description: profile.description,
-              sector: profile.sector,
-              industry: profile.industry,
-              country: profile.country,
-              beta: profile.beta,
-              lastDiv: profile.lastDiv,
-              mktCap: profile.mktCap,
-              exchange: profile.exchangeShortName || profile.exchange,
+              symbol: yProfile.symbol,
+              companyName: yProfile.companyName,
+              description: yProfile.description,
+              sector: yProfile.sector,
+              industry: yProfile.industry,
+              country: yProfile.country,
+              beta: yProfile.beta,
+              lastDiv: yProfile.lastDiv,
+              mktCap: yProfile.mktCap,
+              exchange: yProfile.exchange,
             };
             return { symbol, data };
           }
