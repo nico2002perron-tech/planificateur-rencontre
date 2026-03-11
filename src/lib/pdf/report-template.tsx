@@ -1372,6 +1372,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           const h = holdingMap.get(v.symbol);
           return sum + (h ? h.marketValue : 0);
         }, 0);
+        // Totals only for stocks with valid DCF (exclude negative DCF + N/D)
+        const totalAllocatedValid = valData.reduce((sum, v) => {
+          const h = holdingMap.get(v.symbol);
+          if (!h || v.priceDcf < 0 || (v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0)) return sum;
+          return sum + h.marketValue;
+        }, 0);
         const totalIntrinsic = valData.reduce((sum, v) => {
           const h = holdingMap.get(v.symbol);
           if (!h || v.avgIntrinsic === 0 || v.priceDcf < 0) return sum;
@@ -1458,7 +1464,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                   </View>
                 );
               })}
-              {/* Total */}
+              {/* Total — only stocks with valid DCF (excludes negative DCF + N/D) */}
               <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 6, paddingHorizontal: 6, borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const }}>
                 <Text style={{ ...styles.tdBold, width: '8%', fontSize: 8 }}>TOTAL</Text>
                 <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'right', fontSize: 8 }}>
@@ -1468,15 +1474,15 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 <Text style={{ ...styles.td, width: '45%' }}></Text>
                 <Text style={{
                   ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8,
-                  color: totalIntrinsic > totalAllocated * 1.05 ? C.up : totalIntrinsic < totalAllocated * 0.95 ? C.down : C.text,
+                  color: totalIntrinsic > totalAllocatedValid * 1.05 ? C.up : totalIntrinsic < totalAllocatedValid * 0.95 ? C.down : C.text,
                 }}>
                   {totalIntrinsic !== 0 ? fmt(totalIntrinsic, ccy) : ''}
                 </Text>
                 <Text style={{
                   ...styles.tdBold, width: '20%', textAlign: 'right', fontSize: 8,
-                  color: totalIntrinsic > totalAllocated * 1.05 ? C.up : totalIntrinsic < totalAllocated * 0.95 ? C.down : C.text,
+                  color: totalIntrinsic > totalAllocatedValid * 1.05 ? C.up : totalIntrinsic < totalAllocatedValid * 0.95 ? C.down : C.text,
                 }}>
-                  {totalAllocated > 0 && totalIntrinsic !== 0 ? fmtPct(((totalIntrinsic - totalAllocated) / totalAllocated) * 100) : ''}
+                  {totalAllocatedValid > 0 && totalIntrinsic !== 0 ? fmtPct(((totalIntrinsic - totalAllocatedValid) / totalAllocatedValid) * 100) : ''}
                 </Text>
               </View>
             </View>
