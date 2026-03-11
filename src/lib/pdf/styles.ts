@@ -1,527 +1,325 @@
 import { StyleSheet } from '@react-pdf/renderer';
 
+// ─── Design Tokens (exported for inline SVG, gradients, etc.) ───
+export const C = {
+  // Brand
+  navy: '#03045e',
+  blue: '#0077b6',
+  cyan: '#00b4d8',
+  cyanLight: '#48cae4',
+  cyanPale: '#e0f7fa',
+  gold: '#c5a365',
+  goldPale: '#fdf8f0',
+
+  // Surface
+  white: '#ffffff',
+  card: '#f8fafc',
+  cardBorder: '#e2e8f0',
+  panel: '#f1f5f9',
+
+  // Text
+  text: '#0f172a',
+  textSec: '#475569',
+  textTer: '#94a3b8',
+  textMuted: '#cbd5e1',
+
+  // Semantic
+  up: '#10b981',
+  upBg: '#ecfdf5',
+  upBorder: '#a7f3d0',
+  down: '#ef4444',
+  downBg: '#fef2f2',
+  downBorder: '#fecaca',
+  warn: '#f59e0b',
+  warnBg: '#fffbeb',
+  warnBorder: '#fde68a',
+
+  // Table
+  thBg: '#0f172a',
+  thText: '#ffffff',
+  trAlt: '#f8fafc',
+  border: '#e2e8f0',
+};
+
+// ─── Reusable Styles ────────────────────────────────────────────
 export const styles = StyleSheet.create({
+
+  /* ── Page ─────────────────────────────────────────────── */
   page: {
-    fontFamily: 'Helvetica',
-    fontSize: 10,
-    padding: 40,
-    color: '#1a2a3a',
-  },
-  coverPage: {
-    fontFamily: 'Helvetica',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
-    padding: 60,
-  },
-  coverBand: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 8,
-    backgroundColor: '#03045e',
-  },
-  coverTitle: {
-    fontSize: 28,
-    fontFamily: 'Helvetica-Bold',
-    color: '#03045e',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  coverSubtitle: {
-    fontSize: 14,
-    color: '#586e82',
-    marginBottom: 30,
-    textAlign: 'center',
-  },
-  coverInfo: {
-    fontSize: 11,
-    color: '#586e82',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  coverLogo: {
-    width: 80,
-    height: 80,
-    marginBottom: 30,
+    fontFamily: 'Open Sans',
+    fontSize: 9,
+    color: C.text,
+    backgroundColor: C.white,
+    padding: 36,
+    paddingTop: 44,
+    paddingBottom: 50,
   },
 
-  // Section headers
+  /* ── Typography ───────────────────────────────────────── */
   sectionTitle: {
     fontSize: 16,
-    fontFamily: 'Helvetica-Bold',
-    color: '#03045e',
-    marginBottom: 12,
-    paddingBottom: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: '#00b4d8',
-    borderBottomStyle: 'solid',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1a2a3a',
-    marginBottom: 8,
+    fontFamily: 'Montserrat',
+    fontWeight: 700,
+    color: C.navy,
+    marginBottom: 14,
   },
   subsectionTitle: {
     fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
-    color: '#03045e',
-    marginBottom: 6,
+    fontFamily: 'Montserrat',
+    fontWeight: 700,
+    color: C.navy,
+    marginBottom: 8,
     marginTop: 12,
   },
-
-  // Table
-  table: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#f3f6fa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid',
-    paddingVertical: 6,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f0f0f0',
-    borderBottomStyle: 'solid',
-    paddingVertical: 5,
-  },
-  tableRowAlt: {
-    flexDirection: 'row',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f0f0f0',
-    borderBottomStyle: 'solid',
-    paddingVertical: 5,
-    backgroundColor: '#fafbfc',
-  },
-  tableCell: {
-    fontSize: 9,
-    paddingHorizontal: 4,
-  },
-  tableCellHeader: {
-    fontSize: 8,
-    fontFamily: 'Helvetica-Bold',
-    color: '#586e82',
-    paddingHorizontal: 4,
-    textTransform: 'uppercase',
+  label: {
+    fontSize: 7,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    color: C.textTer,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
 
-  // Cards
+  /* ── KPI ──────────────────────────────────────────────── */
+  kpiValue: {
+    fontSize: 26,
+    fontFamily: 'Montserrat',
+    fontWeight: 800,
+    color: C.navy,
+    lineHeight: 1.1,
+  },
+  kpiLabel: {
+    fontSize: 7,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    color: C.textTer,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+
+  /* ── Cards ────────────────────────────────────────────── */
   card: {
-    backgroundColor: '#f3f6fa',
-    borderRadius: 6,
-    padding: 12,
+    backgroundColor: C.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    borderStyle: 'solid' as const,
+    padding: 16,
     marginBottom: 10,
   },
-  cardLabel: {
-    fontSize: 8,
-    color: '#586e82',
-    marginBottom: 2,
+
+  /* ── Tables ───────────────────────────────────────────── */
+  table: {
+    width: '100%',
+    marginBottom: 14,
   },
-  cardValue: {
-    fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1a2a3a',
+  th: {
+    flexDirection: 'row' as const,
+    backgroundColor: C.thBg,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  thCell: {
+    fontSize: 7,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    color: C.thText,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    paddingHorizontal: 4,
+  },
+  tr: {
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    borderBottomStyle: 'solid' as const,
+  },
+  trAlt: {
+    flexDirection: 'row' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    backgroundColor: C.trAlt,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    borderBottomStyle: 'solid' as const,
+  },
+  td: {
+    fontSize: 8.5,
+    paddingHorizontal: 4,
+    color: C.text,
+  },
+  tdBold: {
+    fontSize: 8.5,
+    paddingHorizontal: 4,
+    color: C.text,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
   },
 
-  // Stats row
+  /* ── Stats Row ────────────────────────────────────────── */
   statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+    flexDirection: 'row' as const,
+    gap: 12,
+    marginBottom: 14,
   },
-  statBox: {
+  statCard: {
     flex: 1,
-    backgroundColor: '#f3f6fa',
-    borderRadius: 6,
-    padding: 10,
-    alignItems: 'center',
+    backgroundColor: C.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    borderStyle: 'solid' as const,
+    padding: 14,
+    alignItems: 'center' as const,
   },
 
-  // Allocation bar (horizontal stacked bar)
-  allocationBar: {
-    flexDirection: 'row',
-    height: 16,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  allocationBarSegment: {
-    height: '100%',
+  /* ── Allocation Bar ───────────────────────────────────── */
+  allocBar: {
+    flexDirection: 'row' as const,
+    height: 10,
+    borderRadius: 5,
+    overflow: 'hidden' as const,
+    marginBottom: 10,
   },
 
-  // Legend
-  legendContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+  /* ── Legend ────────────────────────────────────────────── */
+  legendWrap: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
     marginBottom: 12,
   },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-    marginBottom: 4,
-  },
-  colorSwatch: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-    marginRight: 4,
-  },
-  legendText: {
-    fontSize: 8,
-    color: '#586e82',
-  },
 
-  // Stress test
-  stressTestRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f0f0f0',
-    borderBottomStyle: 'solid',
-  },
-
-  // Note
-  noteText: {
-    fontSize: 7,
-    color: '#8a9bb0',
-    fontStyle: 'italic',
-    marginTop: 6,
-  },
-
-  // Bullets
-  bullet: {
-    flexDirection: 'row',
-    marginBottom: 4,
-  },
-  bulletDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#00b4d8',
-    marginRight: 8,
-    marginTop: 4,
-  },
-  bulletText: {
-    fontSize: 10,
-    flex: 1,
-    color: '#1a2a3a',
-  },
-
-  // Footer
-  footer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 40,
-    right: 40,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 0.5,
-    borderTopColor: '#e5e7eb',
-    borderTopStyle: 'solid',
-    paddingTop: 8,
-  },
-  footerText: {
-    fontSize: 7,
-    color: '#8a9bb0',
-  },
-
-  // Positive/negative values
-  positive: {
-    color: '#10b981',
-  },
-  negative: {
-    color: '#ef4444',
-  },
-
-  // Disclaimer
-  disclaimer: {
-    fontSize: 7,
-    color: '#8a9bb0',
-    lineHeight: 1.5,
-    marginTop: 20,
-  },
-
-  // ─── Performance Chart (bar chart via Views) ──────────────────
-  chartContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 120,
-    gap: 6,
-    marginBottom: 8,
-    paddingLeft: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid',
-  },
-  chartBarGroup: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  chartBar: {
-    width: 18,
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
-  },
-  chartBarGreen: {
-    backgroundColor: '#00b4d8',
-  },
-  chartBarRed: {
-    backgroundColor: '#ef4444',
-  },
-  chartBarBench: {
-    backgroundColor: '#c4c4c4',
-  },
-  chartLabel: {
-    fontSize: 7,
-    color: '#586e82',
-    textAlign: 'center',
-    marginTop: 3,
-  },
-
-  // ─── Target Table (Cours Cibles) ──────────────────────────────
-  targetTableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#03045e',
-    paddingVertical: 6,
-  },
-  targetHeaderCell: {
-    fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#ffffff',
-    paddingHorizontal: 3,
-    textTransform: 'uppercase',
-  },
-  targetRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid',
-    paddingVertical: 5,
-  },
-  targetRowAlt: {
-    flexDirection: 'row',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid',
-    paddingVertical: 5,
-    backgroundColor: '#f8f9fb',
-  },
-  targetCell: {
-    fontSize: 8,
-    paddingHorizontal: 3,
-  },
-  targetTotalRow: {
-    flexDirection: 'row',
-    backgroundColor: '#f3f6fa',
-    paddingVertical: 6,
-    borderTopWidth: 1.5,
-    borderTopColor: '#03045e',
-    borderTopStyle: 'solid',
-  },
-  targetPositive: {
-    color: '#10b981',
-    fontFamily: 'Helvetica-Bold',
-  },
-  targetNegative: {
-    color: '#ef4444',
-    fontFamily: 'Helvetica-Bold',
-  },
-
-  // ─── Holding Cards (Fiches descriptives) ──────────────────────
-  holdingCard: {
-    backgroundColor: '#f8f9fb',
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#00b4d8',
-    borderLeftStyle: 'solid',
-  },
-  holdingCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  holdingCardTitle: {
-    fontSize: 11,
-    fontFamily: 'Helvetica-Bold',
-    color: '#03045e',
-  },
-  holdingCardSymbol: {
-    fontSize: 9,
-    color: '#586e82',
-  },
-  holdingDescription: {
-    fontSize: 8,
-    color: '#3a4a5a',
-    lineHeight: 1.4,
-    marginBottom: 6,
-  },
-  holdingMetaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 4,
-  },
-  holdingMeta: {
-    width: '30%',
-  },
-  holdingMetaLabel: {
-    fontSize: 7,
-    color: '#8a9bb0',
-    marginBottom: 1,
-  },
-  holdingMetaValue: {
-    fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1a2a3a',
-  },
-
-  // ─── Sector Bars (horizontal) ─────────────────────────────────
-  sectorBarContainer: {
-    marginBottom: 4,
-  },
-  sectorBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+  /* ── Sector Bars ──────────────────────────────────────── */
+  sectorRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 5,
   },
   sectorLabel: {
-    width: '30%',
-    fontSize: 9,
-    color: '#1a2a3a',
+    width: '28%',
+    fontSize: 8.5,
+    color: C.text,
   },
   sectorBarOuter: {
     flex: 1,
-    height: 12,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginHorizontal: 6,
+    height: 8,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 4,
+    overflow: 'hidden' as const,
+    marginHorizontal: 8,
   },
   sectorBarInner: {
     height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#00b4d8',
-  },
-  sectorPercent: {
-    width: '10%',
-    fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: '#03045e',
-    textAlign: 'right',
-  },
-
-  // ─── Summary Pie Row ──────────────────────────────────────────
-  pieSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f0f0f0',
-    borderBottomStyle: 'solid',
-  },
-
-  // ─── AI Narrative Blocks ────────────────────────────────────────
-  aiNarrativeBlock: {
-    backgroundColor: '#f8fafb',
-    borderLeftWidth: 3,
-    borderLeftColor: '#00b4d8',
-    borderLeftStyle: 'solid' as const,
     borderRadius: 4,
-    padding: 10,
+  },
+  sectorPct: {
+    width: '10%',
+    fontSize: 8.5,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    color: C.navy,
+    textAlign: 'right' as const,
+  },
+
+  /* ── Holding Cards ────────────────────────────────────── */
+  holdingCard: {
+    backgroundColor: C.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    borderStyle: 'solid' as const,
+    borderLeftWidth: 3,
+    borderLeftColor: C.cyan,
+    borderLeftStyle: 'solid' as const,
+    padding: 14,
+    marginBottom: 10,
+  },
+
+  /* ── AI Block ─────────────────────────────────────────── */
+  aiBlock: {
+    backgroundColor: '#f0fafb',
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 10,
     marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: C.cyan,
+    borderLeftStyle: 'solid' as const,
   },
-  aiNarrativeLabel: {
+  aiLabel: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#00b4d8',
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    color: C.cyan,
     textTransform: 'uppercase' as const,
-    marginBottom: 4,
     letterSpacing: 0.5,
+    marginBottom: 4,
   },
-  aiNarrative: {
-    fontSize: 9,
-    color: '#1a2a3a',
+  aiText: {
+    fontSize: 8.5,
+    color: C.text,
     lineHeight: 1.5,
   },
 
-  // ─── Valuation Page ──────────────────────────────────────────────
-  valuationTableHeader: {
+  /* ── Footer ───────────────────────────────────────────── */
+  footer: {
+    position: 'absolute' as const,
+    bottom: 14,
+    left: 36,
+    right: 36,
     flexDirection: 'row' as const,
-    backgroundColor: '#03045e',
-    paddingVertical: 5,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: C.cardBorder,
+    borderTopStyle: 'solid' as const,
   },
-  valuationHeaderCell: {
+  footerText: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    color: '#ffffff',
-    paddingHorizontal: 3,
+    color: C.textMuted,
   },
-  valuationRow: {
-    flexDirection: 'row' as const,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid' as const,
-    paddingVertical: 4,
-  },
-  valuationRowAlt: {
-    flexDirection: 'row' as const,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#e5e7eb',
-    borderBottomStyle: 'solid' as const,
-    paddingVertical: 4,
-    backgroundColor: '#f8f9fb',
-  },
-  valuationCell: {
-    fontSize: 8,
-    paddingHorizontal: 3,
-  },
-  badgeUndervalued: {
-    backgroundColor: '#d1fae5',
+
+  /* ── Badges ───────────────────────────────────────────── */
+  badgeUp: {
+    backgroundColor: C.upBg,
     color: '#065f46',
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    paddingHorizontal: 4,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 3,
+    borderRadius: 4,
   },
-  badgeOvervalued: {
-    backgroundColor: '#fee2e2',
+  badgeDown: {
+    backgroundColor: C.downBg,
     color: '#991b1b',
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    paddingHorizontal: 4,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 3,
+    borderRadius: 4,
   },
-  badgeFairValue: {
-    backgroundColor: '#fef9c3',
+  badgeNeutral: {
+    backgroundColor: C.warnBg,
     color: '#854d0e',
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
-    paddingHorizontal: 4,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 3,
+    borderRadius: 4,
   },
+
+  /* ── Sensitivity Matrix ───────────────────────────────── */
   sensitivityCell: {
     fontSize: 7,
     textAlign: 'center' as const,
@@ -531,17 +329,20 @@ export const styles = StyleSheet.create({
   },
   sensitivityHeader: {
     fontSize: 7,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
     textAlign: 'center' as const,
     paddingVertical: 3,
     paddingHorizontal: 2,
     width: '20%',
-    backgroundColor: '#f3f6fa',
-    color: '#03045e',
+    backgroundColor: '#f1f5f9',
+    color: C.navy,
   },
+
+  /* ── Score Bar ────────────────────────────────────────── */
   scoreBarOuter: {
     height: 6,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f1f5f9',
     borderRadius: 3,
     overflow: 'hidden' as const,
     flex: 1,
@@ -552,13 +353,28 @@ export const styles = StyleSheet.create({
     borderRadius: 3,
   },
 
-  // Spacing
+  /* ── Disclaimer ───────────────────────────────────────── */
+  disclaimer: {
+    fontSize: 7,
+    color: C.textTer,
+    lineHeight: 1.5,
+  },
+  noteText: {
+    fontSize: 7,
+    color: C.textTer,
+    fontStyle: 'italic' as const,
+    marginTop: 6,
+  },
+
+  /* ── Utilities ────────────────────────────────────────── */
+  row: { flexDirection: 'row' as const },
+  bold: { fontFamily: 'Open Sans', fontWeight: 600 },
+  up: { color: C.up },
+  down: { color: C.down },
   mb4: { marginBottom: 4 },
   mb8: { marginBottom: 8 },
+  mb12: { marginBottom: 12 },
   mb16: { marginBottom: 16 },
-  mb24: { marginBottom: 24 },
-  textRight: { textAlign: 'right' },
-  textCenter: { textAlign: 'center' },
-  bold: { fontFamily: 'Helvetica-Bold' },
-  row: { flexDirection: 'row' },
+  textRight: { textAlign: 'right' as const },
+  textCenter: { textAlign: 'center' as const },
 });
