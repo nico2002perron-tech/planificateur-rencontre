@@ -287,6 +287,10 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-2">
       {holdings.map((h, i) => (
         <div key={h.symbol} className="flex items-center gap-3 bg-gray-50/80 rounded-xl px-4 py-3 group hover:bg-gray-50 transition-colors">
+          {/* Number */}
+          <span className="w-7 h-7 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
+            {i + 1}
+          </span>
           <div className="w-16 flex-shrink-0">
             <span className="font-mono font-bold text-sm text-brand-primary">{h.symbol}</span>
           </div>
