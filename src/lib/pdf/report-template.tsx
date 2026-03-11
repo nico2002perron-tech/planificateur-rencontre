@@ -106,6 +106,25 @@ const SECTOR_DONUT_COLORS = [
   '#d97706', '#6366f1',
 ];
 
+/** Fixed color per sector name — consistent across all pages */
+const SECTOR_COLOR_MAP: Record<string, string> = {
+  'Technologie': '#00b4d8',
+  'Services financiers': '#03045e',
+  'Énergie': '#e76f51',
+  'Santé': '#2a9d8f',
+  'Industriels': '#7c3aed',
+  'Matériaux de base': '#f59e0b',
+  'Communications': '#0077b6',
+  'Consommation cyclique': '#ec4899',
+  'Consommation défensive': '#059669',
+  'Biens de consommation': '#059669',
+  'Services publics': '#8b5cf6',
+  'Immobilier': '#d97706',
+  'Militaire': '#6366f1',
+  'Défense': '#6366f1',
+  'Aérospatiale & Défense': '#6366f1',
+};
+
 // ─── Sub-Components ─────────────────────────────────────────────
 
 /** Thin gradient accent bar — top of every page */
@@ -1128,9 +1147,26 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
                 {ASSET_LABELS[h.assetClass]?.substring(0, 8) || h.assetClass}
               </Text>
-              <Text style={{ ...styles.td, width: '24%', fontSize: 7.5 }}>
-                {h.sectorDisplay || '—'}
-              </Text>
+              <View style={{ width: '24%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                {(() => {
+                  if (!h.sectorDisplay) return <Text style={{ fontSize: 7.5, color: C.textTer }}>—</Text>;
+                  const sectors = h.sectorDisplay.split(', ');
+                  return (
+                    <>
+                      <View style={{ flexDirection: 'row', marginRight: 4, flexShrink: 0 }}>
+                        {sectors.map((s: string, j: number) => (
+                          <View key={j} style={{
+                            width: 6, height: 6, borderRadius: 3,
+                            backgroundColor: SECTOR_COLOR_MAP[s.trim()] || '#94a3b8',
+                            marginRight: 2,
+                          }} />
+                        ))}
+                      </View>
+                      <Text style={{ fontSize: 7, color: C.text, flex: 1 }}>{h.sectorDisplay}</Text>
+                    </>
+                  );
+                })()}
+              </View>
               <Text style={{ ...styles.td, width: '10%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
                 {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
               </Text>
