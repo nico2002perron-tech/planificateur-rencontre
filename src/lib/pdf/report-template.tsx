@@ -691,7 +691,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const hasValuation = valData && valData.length > 0;
   const hasNegativeValuations = hasValuation && valData.some((v) => v.avgIntrinsic < 0 || (v.priceDcf < 0));
   const hasAI = !!ai;
-  const totalPages = 8 + (hasValuation ? 2 : 0);
+  const totalPages = 8 + (hasValuation ? 3 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -701,7 +701,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
     const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
     return sum + w * hp.beta;
   }, 0);
-  const valOffset = hasValuation ? 2 : 0;
+  const valOffset = hasValuation ? 3 : 0;
   const gainLoss = data.portfolio.totalGainLoss;
   const gainLossPct = data.portfolio.totalGainLossPercent;
 
@@ -1481,30 +1481,10 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </View>
             </View>
 
-            {/* Scorecard */}
-            <Text style={styles.subsectionTitle}>Tableau de bord — Scores (0-10)</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              {valData.slice(0, 6).map((v: ValuationDataItem, i: number) => (
-                <View key={i} style={{
-                  width: '31%', backgroundColor: C.card, borderRadius: 10, padding: 10,
-                  borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-                }}>
-                  <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 4 }}>
-                    {v.symbol} — {v.scores.overall.toFixed(1)}/10
-                  </Text>
-                  <ScoreBar label="Sante" score={v.scores.health} />
-                  <ScoreBar label="Croissance" score={v.scores.growth} />
-                  <ScoreBar label="Valorisation" score={v.scores.valuation} />
-                </View>
-              ))}
-            </View>
-
-            <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
-
             {/* Note for negative DCF — prominently placed under main table */}
             {hasNegativeValuations && (
               <View style={{
-                backgroundColor: '#fffbeb', borderRadius: 8, padding: 12, marginBottom: 6, marginTop: 4,
+                backgroundColor: '#fffbeb', borderRadius: 8, padding: 12, marginTop: 8, marginBottom: 4,
                 borderWidth: 1.5, borderColor: '#f59e0b', borderStyle: 'solid' as const,
               }}>
                 <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
@@ -1523,7 +1503,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             {/* Note for N/D entries (ETFs, etc.) */}
             {valData.some((v) => v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0) && (
               <View style={{
-                backgroundColor: '#f0f9ff', borderRadius: 8, padding: 10, marginBottom: 6,
+                backgroundColor: '#f0f9ff', borderRadius: 8, padding: 10, marginBottom: 4,
                 borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
                 borderLeftWidth: 3, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
               }}>
@@ -1547,64 +1527,93 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         );
       })()}
 
-      {/* ═══ PAGE 6: DCF INVERSE + SENSIBILITE ══════════════════════ */}
-      {hasValuation && valData && (() => {
-        return (
-          <Page size="LETTER" orientation="landscape" style={styles.page}>
-            <AccentBar />
-            <Text style={styles.sectionTitle}>DCF inverse — Croissance implicite du marche</Text>
-            <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 8 }}>
-              Taux de croissance du FCF que le marche anticipe implicitement au prix actuel
-            </Text>
+      {/* ═══ PAGE 6: DCF INVERSE (seul) ══════════════════════════════ */}
+      {hasValuation && valData && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          <AccentBar />
+          <Text style={styles.sectionTitle}>DCF inverse — Croissance implicite du marche</Text>
+          <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 8 }}>
+            Taux de croissance du FCF que le marche anticipe implicitement au prix actuel
+          </Text>
 
-            <View style={styles.table}>
-              <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '20%' }}>Symbole</Text>
-                <Text style={{ ...styles.thCell, width: '30%' }}>Nom</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
-                <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Interpretation</Text>
-              </View>
-              {valData.map((v: ValuationDataItem, i: number) => {
-                const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
-                return (
-                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                    <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
-                    <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
-                    <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
-                      {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
-                    </Text>
-                    <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8, color: noData ? C.textTer : v.priceDcf < 0 ? C.down : C.text }}>
-                      {noData ? 'FNB / N/D' : v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : v.priceDcf < 0 ? 'FCF negatif' : 'N/D'}
-                    </Text>
-                  </View>
-                );
-              })}
+          <View style={styles.table}>
+            <View style={styles.th}>
+              <Text style={{ ...styles.thCell, width: '20%' }}>Symbole</Text>
+              <Text style={{ ...styles.thCell, width: '30%' }}>Nom</Text>
+              <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Croissance impl.</Text>
+              <Text style={{ ...styles.thCell, width: '25%', textAlign: 'right' }}>Interpretation</Text>
             </View>
-
-            {/* Sensitivity matrices */}
-            {(() => {
-              const validMatrices = valData.filter((v: ValuationDataItem) =>
-                v.sensitivityMatrix && v.priceDcf > 0
-              );
-              if (validMatrices.length === 0) return null;
+            {valData.map((v: ValuationDataItem, i: number) => {
+              const noData = v.priceDcf === 0 && v.priceSales === 0 && v.priceEarnings === 0;
               return (
-                <>
-                  <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
-                  {validMatrices.map((v: ValuationDataItem, i: number) => (
-                    <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
-                  ))}
-                </>
+                <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                  <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
+                  <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
+                  <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
+                    {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
+                  </Text>
+                  <Text style={{ ...styles.td, width: '25%', textAlign: 'right', fontSize: 8, color: noData ? C.textTer : v.priceDcf < 0 ? C.down : C.text }}>
+                    {noData ? 'FNB / N/D' : v.reverseDcfGrowth > 0.15 ? 'Optimiste' : v.reverseDcfGrowth > 0.05 ? 'Raisonnable' : v.reverseDcfGrowth > 0 ? 'Conservateur' : v.priceDcf < 0 ? 'FCF negatif' : 'N/D'}
+                  </Text>
+                </View>
               );
-            })()}
+            })}
+          </View>
 
-            <Text style={styles.noteText}>
-              Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
-            </Text>
+          <Text style={styles.noteText}>
+            Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
+          </Text>
 
-            <PageFooter num={6} total={totalPages} />
-          </Page>
-        );
-      })()}
+          <PageFooter num={6} total={totalPages} />
+        </Page>
+      )}
+
+      {/* ═══ PAGE 7: SCORES + SENSIBILITE + IA ═══════════════════════ */}
+      {hasValuation && valData && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          <AccentBar />
+          <Text style={styles.sectionTitle}>Tableau de bord — Scores (0-10)</Text>
+          <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 8 }}>
+            Evaluation multi-criteres: sante financiere, croissance et valorisation
+          </Text>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {valData.slice(0, 6).map((v: ValuationDataItem, i: number) => (
+              <View key={i} style={{
+                width: '31%', backgroundColor: C.card, borderRadius: 10, padding: 10,
+                borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+              }}>
+                <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 4 }}>
+                  {v.symbol} — {v.scores.overall.toFixed(1)}/10
+                </Text>
+                <ScoreBar label="Sante" score={v.scores.health} />
+                <ScoreBar label="Croissance" score={v.scores.growth} />
+                <ScoreBar label="Valorisation" score={v.scores.valuation} />
+              </View>
+            ))}
+          </View>
+
+          {/* Sensitivity matrices */}
+          {(() => {
+            const validMatrices = valData.filter((v: ValuationDataItem) =>
+              v.sensitivityMatrix && v.priceDcf > 0
+            );
+            if (validMatrices.length === 0) return null;
+            return (
+              <>
+                <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
+                {validMatrices.map((v: ValuationDataItem, i: number) => (
+                  <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
+                ))}
+              </>
+            );
+          })()}
+
+          <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
+
+          <PageFooter num={7} total={totalPages} />
+        </Page>
+      )}
 
 
       {/* ═══ PAGE 5+offset: COMPANY PROFILES ══════════════════════ */}
