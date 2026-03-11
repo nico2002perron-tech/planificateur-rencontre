@@ -100,6 +100,12 @@ const REGION_LABELS: Record<string, string> = {
 
 const SECTOR_COLORS = ['#00b4d8', '#03045e', '#0077b6', '#48cae4', '#90e0ef', '#023e8a', '#0096c7', '#2a9d8f', '#264653', '#e76f51'];
 
+const SECTOR_DONUT_COLORS = [
+  '#00b4d8', '#03045e', '#e76f51', '#2a9d8f', '#7c3aed',
+  '#f59e0b', '#0077b6', '#ec4899', '#059669', '#8b5cf6',
+  '#d97706', '#6366f1',
+];
+
 // ─── Sub-Components ─────────────────────────────────────────────
 
 /** Thin gradient accent bar — top of every page */
@@ -845,25 +851,26 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
 
-        {/* ── Header row: Title + 4 mini KPI stats ── */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 }}>
+        {/* ── Header row: Title + 5 KPI stats ── */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
           <Text style={styles.sectionTitle}>Allocation du portefeuille</Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
             {[
               { label: 'Valeur totale', value: fmt(data.portfolio.totalValue, ccy), color: C.navy },
               { label: 'Cout total', value: fmt(data.portfolio.totalCost, ccy), color: C.blue },
               { label: 'Gain / Perte', value: `${gainLoss >= 0 ? '+' : ''}${fmt(gainLoss, ccy)}`, color: gainLoss >= 0 ? C.up : C.down },
+              { label: 'Rendement', value: fmtPct(gainLossPct), color: gainLoss >= 0 ? C.up : C.down },
               { label: 'Positions', value: String(data.portfolio.holdings.length), color: C.cyan },
             ].map((kpi, i) => (
               <View key={i} style={{
-                backgroundColor: '#f3f6fa', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+                backgroundColor: '#f3f6fa', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7,
                 borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
-                alignItems: 'center', minWidth: 95,
+                alignItems: 'center', minWidth: 85,
               }}>
-                <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
+                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 2 }}>
                   {kpi.label}
                 </Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: kpi.color }}>
+                <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: kpi.color }}>
                   {kpi.value}
                 </Text>
               </View>
@@ -879,9 +886,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
           }}>
-            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
-              Repartition par classe d&apos;actif
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginRight: 8 }} />
+              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                Classes d&apos;actif
+              </Text>
+            </View>
             <DonutChart
               slices={data.allocations.byAssetClass.map((a) => ({
                 label: a.label,
@@ -911,41 +921,46 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
           </View>
 
-          {/* ▌ COL 2: Sector cards + Region bars ▌ */}
+          {/* ▌ COL 2: Sector Donut + Geographic ▌ */}
           <View style={{ width: '36%', gap: 10 }}>
-            {/* Sector breakdown cards */}
+            {/* Sector donut chart */}
             <View style={{
               backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
               borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
             }}>
-              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
-                Exposition sectorielle
-              </Text>
-              {data.sectorBreakdown.slice(0, 6).map((s, i) => (
-                <View key={i} style={{
-                  flexDirection: 'row', alignItems: 'center', marginBottom: 6,
-                  backgroundColor: C.white, borderRadius: 8, padding: 8,
-                  borderWidth: 1, borderColor: '#edf0f4', borderStyle: 'solid' as const,
-                }}>
-                  <View style={{
-                    width: 28, height: 28, borderRadius: 8, backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
-                    justifyContent: 'center', alignItems: 'center', marginRight: 8, opacity: 0.15,
-                  }} />
-                  {/* Colored dot overlay */}
-                  <View style={{
-                    position: 'absolute', left: 17, top: 14,
-                    width: 10, height: 10, borderRadius: 5,
-                    backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
-                  }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{s.sectorLabel}</Text>
-                    <Text style={{ fontSize: 6.5, color: C.textTer }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''} — {fmt(s.totalValue, ccy)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.gold, marginRight: 8 }} />
+                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                  Exposition sectorielle
+                </Text>
+              </View>
+              <DonutChart
+                slices={data.sectorBreakdown.map((s, i) => ({
+                  label: s.sectorLabel,
+                  percentage: s.weight,
+                  color: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length],
+                }))}
+                size={100}
+                centerValue={`${data.sectorBreakdown.length}`}
+                centerLabel="Secteurs"
+              />
+              <View style={{ marginTop: 8 }}>
+                {data.sectorBreakdown.slice(0, 8).map((s, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
+                    <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length], marginRight: 6, flexShrink: 0 }} />
+                    <Text style={{ fontSize: 7, color: C.text, flex: 1 }}>{s.sectorLabel}</Text>
+                    <Text style={{ fontSize: 6.5, color: C.textTer, marginRight: 4 }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''}</Text>
+                    <View style={{
+                      backgroundColor: SECTOR_DONUT_COLORS[i % SECTOR_DONUT_COLORS.length],
+                      paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6,
+                    }}>
+                      <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.white }}>
+                        {s.weight.toFixed(1)}%
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{s.weight.toFixed(0)}%</Text>
-                  </View>
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
 
             {/* Region progress bars */}
@@ -953,21 +968,24 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
               borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
             }}>
-              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
-                Exposition geographique
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.blue, marginRight: 8 }} />
+                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                  Exposition geographique
+                </Text>
+              </View>
               {data.allocations.byRegion.map((r, i) => (
-                <View key={i} style={{ marginBottom: i < data.allocations.byRegion.length - 1 ? 8 : 0 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
+                <View key={i} style={{ marginBottom: i < data.allocations.byRegion.length - 1 ? 6 : 0 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
                       {REGION_LABELS[r.label] || r.label}
                     </Text>
-                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                    <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
                       {r.percentage.toFixed(1)}% — {fmt(r.value, ccy)}
                     </Text>
                   </View>
-                  <View style={{ height: 10, backgroundColor: '#e2e8f0', borderRadius: 5, overflow: 'hidden' as const }}>
-                    <View style={{ height: '100%', width: `${Math.max(r.percentage, 2)}%`, backgroundColor: r.color, borderRadius: 5 }} />
+                  <View style={{ height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' as const }}>
+                    <View style={{ height: '100%', width: `${Math.max(r.percentage, 2)}%`, backgroundColor: r.color, borderRadius: 4 }} />
                   </View>
                 </View>
               ))}
@@ -979,9 +997,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
           }}>
-            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 10 }}>
-              Top {Math.min(data.topPositions.length, 5)} positions
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.navy, marginRight: 8 }} />
+              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                Top {Math.min(data.topPositions.length, 5)} positions
+              </Text>
+            </View>
             {(() => {
               const maxW = data.topPositions.length > 0 ? data.topPositions[0].weight : 1;
               return data.topPositions.slice(0, 5).map((pos, i) => (
@@ -1033,9 +1054,22 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         </View>
 
-        {/* AI Narratives */}
-        <AINarrativeBlock label="Sommaire executif — Analyse IA" content={ai?.executiveSummary} />
-{/* allocationComment removed — redundant with executiveSummary */}
+        {/* AI Executive Summary — enhanced dashboard integration */}
+        {ai?.executiveSummary && (
+          <View style={{
+            backgroundColor: '#f0f9ff', borderRadius: 12, padding: 14, marginTop: 2,
+            borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
+            borderLeftWidth: 4, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <View style={{ width: 20, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginRight: 6 }} />
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+                Sommaire executif — Analyse IA
+              </Text>
+            </View>
+            <Text style={{ fontSize: 8.5, color: C.text, lineHeight: 1.5 }}>{ai.executiveSummary}</Text>
+          </View>
+        )}
 
         <PageFooter num={2} total={totalPages} />
       </Page>

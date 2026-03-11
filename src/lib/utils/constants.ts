@@ -45,6 +45,7 @@ export const SECTORS = [
   { value: 'UTILITIES', label: 'Services publics' },
   { value: 'REAL_ESTATE', label: 'Immobilier' },
   { value: 'TELECOM', label: 'Télécommunications' },
+  { value: 'MILITARY', label: 'Militaire' },
 ] as const;
 
 export const BENCHMARK_DEFAULTS = [

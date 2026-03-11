@@ -236,6 +236,10 @@ const SECTOR_LABELS_FR: Record<string, string> = {
   'Basic Materials': 'Matériaux de base',
   'Communication Services': 'Communications',
   'Consumer Staples': 'Biens de consommation',
+  'Military': 'Militaire',
+  'Defense': 'Défense',
+  'Aerospace & Defense': 'Aérospatiale & Défense',
+  'Militaire': 'Militaire',
 };
 
 // ─── Risk Estimates by Asset Class ──────────────────────────────

@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import useSWR from 'swr';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,12 +10,38 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useClients } from '@/lib/hooks/useClients';
 import { usePortfolios } from '@/lib/hooks/usePortfolio';
-import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp, X, Sparkles, BarChart3,
+  TrendingUp, X, Sparkles, BarChart3, Pencil,
 } from 'lucide-react';
+
+interface YahooPrice {
+  symbol: string;
+  price: number;
+  currency: string;
+  name: string;
+}
+
+const priceFetcher = (url: string) => fetch(url).then(r => r.json());
+
+function useYahooPrices(symbols: string[]) {
+  const key = symbols.length > 0
+    ? `/api/prices?symbols=${symbols.join(',')}`
+    : null;
+
+  const { data, isLoading } = useSWR<YahooPrice[]>(key, priceFetcher, {
+    dedupingInterval: 60_000,
+    revalidateOnFocus: false,
+  });
+
+  const pricesMap = new Map<string, YahooPrice>();
+  if (Array.isArray(data)) {
+    data.forEach(p => { if (p.price > 0) pricesMap.set(p.symbol, p); });
+  }
+
+  return { prices: pricesMap, isLoading };
+}
 
 const REPORT_SECTIONS = [
   { key: 'summary', label: 'Sommaire du portefeuille (Morningstar)', default: true },
@@ -107,8 +134,8 @@ function NewReportWizard() {
   // Get symbols for FMP fetch
   const holdingSymbols = useMemo(() => portfolioHoldings.map((h) => h.symbol), [portfolioHoldings]);
 
-  // Fetch real-time prices
-  const { quotes, quotesMap, isLoading: quotesLoading } = useQuotes(step >= 2 ? holdingSymbols : []);
+  // Fetch real-time prices from Yahoo Finance
+  const { prices: yahooPrices, isLoading: pricesLoading } = useYahooPrices(step >= 2 ? holdingSymbols : []);
 
   // Fetch price targets
   const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(step >= 2 ? holdingSymbols : []);
@@ -116,25 +143,25 @@ function NewReportWizard() {
   // Compute verification table data
   const verificationData = useMemo(() => {
     return portfolioHoldings.map((h) => {
-      const quote = quotesMap.get(h.symbol);
+      const yahoo = yahooPrices.get(h.symbol);
       const target = targets[h.symbol];
-      const currentPrice = quote?.price || h.average_cost;
+      const currentPrice = yahoo?.price || h.average_cost;
       const marketValue = h.quantity * currentPrice;
       const apiTargetPrice = target?.targetConsensus || 0;
       const apiSource = target?.source || null;
-      // Custom target only used when no API target exists
       const hasApiTarget = apiTargetPrice > 0;
-      const targetPrice = hasApiTarget ? apiTargetPrice : (customTargets[h.symbol] ?? 0);
-      const hasCustomTarget = !hasApiTarget && h.symbol in customTargets;
+      // Custom target ALWAYS overrides API target when set
+      const hasCustomTarget = h.symbol in customTargets;
+      const targetPrice = hasCustomTarget ? customTargets[h.symbol] : (hasApiTarget ? apiTargetPrice : 0);
       const gainPercent = targetPrice > 0 && currentPrice > 0
         ? ((targetPrice - currentPrice) / currentPrice) * 100
         : 0;
-      const sector = quote?.exchange || h.sector || '';
+      const sector = h.sector || '';
       return {
         symbol: h.symbol,
-        name: quote?.company_name || h.name,
+        name: yahoo?.name || h.name,
         currentPrice,
-        hasFmpPrice: !!quote,
+        hasYahooPrice: !!yahoo,
         targetPrice,
         apiTargetPrice,
         apiSource,
@@ -145,7 +172,7 @@ function NewReportWizard() {
         marketValue,
       };
     });
-  }, [portfolioHoldings, quotesMap, targets, customTargets]);
+  }, [portfolioHoldings, yahooPrices, targets, customTargets]);
 
   const totalCurrentValue = verificationData.reduce((sum, v) => sum + v.marketValue, 0);
   const totalTargetValue = verificationData.reduce((sum, v) => {
@@ -154,7 +181,7 @@ function NewReportWizard() {
   const totalEstimatedGain = totalTargetValue - totalCurrentValue;
   const totalEstimatedGainPct = totalCurrentValue > 0 ? (totalEstimatedGain / totalCurrentValue) * 100 : 0;
 
-  const fmpPriceCount = verificationData.filter((v) => v.hasFmpPrice).length;
+  const yahooPriceCount = verificationData.filter((v) => v.hasYahooPrice).length;
   const targetCount = verificationData.filter((v) => v.targetPrice > 0).length;
 
   function toggleSection(key: string) {
@@ -373,16 +400,16 @@ function NewReportWizard() {
             <>
               {/* Status badges */}
               <div className="flex flex-wrap gap-2 mb-4">
-                {quotesLoading || targetsLoading ? (
+                {pricesLoading || targetsLoading ? (
                   <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs">
-                    <Spinner size="sm" /> Chargement des données FMP...
+                    <Spinner size="sm" /> Chargement des prix Yahoo Finance...
                   </span>
                 ) : (
                   <>
-                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${fmpPriceCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${yahooPriceCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                       }`}>
-                      {fmpPriceCount > 0 ? <Wifi className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                      {fmpPriceCount}/{holdingSymbols.length} prix temps réel
+                      {yahooPriceCount > 0 ? <Wifi className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                      {yahooPriceCount}/{holdingSymbols.length} prix temps réel
                     </span>
                     <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${targetCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-text-muted'
                       }`}>
@@ -411,8 +438,8 @@ function NewReportWizard() {
                       <tr key={v.symbol} className="border-b border-gray-50 hover:bg-gray-50/50">
                         <td className="py-2.5">
                           <span className="font-mono font-semibold text-brand-primary">{v.symbol}</span>
-                          {v.hasFmpPrice ? (
-                            <span className="ml-1.5 px-1 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700">FMP</span>
+                          {v.hasYahooPrice ? (
+                            <span className="ml-1.5 px-1 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700">Yahoo</span>
                           ) : (
                             <span className="ml-1.5 px-1 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700">Coût</span>
                           )}
@@ -448,30 +475,56 @@ function NewReportWizard() {
                                 }}
                               />
                             </div>
-                          ) : v.hasApiTarget ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="font-semibold">{formatCurrencyFull(v.targetPrice)}</span>
-                              <span className={`ml-1 px-1 py-0.5 rounded text-[10px] ${v.apiSource === 'yahoo'
-                                ? 'bg-purple-100 text-purple-700'
-                                : 'bg-blue-100 text-blue-700'
-                                }`}>
-                                {v.apiSource === 'yahoo' ? 'Yahoo' : 'FMP'}
-                              </span>
-                            </div>
                           ) : v.hasCustomTarget ? (
                             <div className="flex items-center justify-end gap-1">
                               <span className="font-semibold text-brand-primary">{formatCurrencyFull(v.targetPrice)}</span>
                               <span className="ml-1 px-1 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700">Manuel</span>
                               <button
-                                onClick={() => setCustomTargets((prev) => {
-                                  const next = { ...prev };
-                                  delete next[v.symbol];
-                                  return next;
-                                })}
-                                className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                                title="Supprimer"
+                                onClick={() => setEditingTarget(v.symbol)}
+                                className="p-0.5 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
+                                title="Modifier"
                               >
-                                <X className="h-3 w-3" />
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              {v.hasApiTarget && (
+                                <button
+                                  onClick={() => setCustomTargets((prev) => {
+                                    const next = { ...prev };
+                                    delete next[v.symbol];
+                                    return next;
+                                  })}
+                                  className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                  title="Restaurer Yahoo"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                              {!v.hasApiTarget && (
+                                <button
+                                  onClick={() => setCustomTargets((prev) => {
+                                    const next = { ...prev };
+                                    delete next[v.symbol];
+                                    return next;
+                                  })}
+                                  className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                  title="Supprimer"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          ) : v.hasApiTarget ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="font-semibold">{formatCurrencyFull(v.targetPrice)}</span>
+                              <span className="ml-1 px-1 py-0.5 rounded text-[10px] bg-purple-100 text-purple-700">
+                                Yahoo
+                              </span>
+                              <button
+                                onClick={() => setEditingTarget(v.symbol)}
+                                className="p-0.5 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
+                                title="Modifier manuellement"
+                              >
+                                <Pencil className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
@@ -659,9 +712,9 @@ function NewReportWizard() {
               <span className="text-text-main">{selectedPortfolio?.holdings_count || 0}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-text-muted">Prix FMP temps réel</span>
-              <span className={`font-semibold ${fmpPriceCount > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                {fmpPriceCount}/{holdingSymbols.length}
+              <span className="text-text-muted">Prix Yahoo temps réel</span>
+              <span className={`font-semibold ${yahooPriceCount > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {yahooPriceCount}/{holdingSymbols.length}
               </span>
             </div>
             <div className="flex justify-between text-sm">
