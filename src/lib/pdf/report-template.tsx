@@ -634,51 +634,6 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
   );
 }
 
-/** Sensitivity Matrix */
-function SensitivityMatrix({ matrix, symbol, currentPrice }: {
-  matrix: { rows: string[]; cols: string[]; data: number[][] };
-  symbol: string; currentPrice: number;
-}) {
-  return (
-    <View wrap={false} style={{ marginBottom: 10 }}>
-      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 4 }}>
-        Matrice de sensibilite — {symbol} (prix actuel: {fmtFull(currentPrice)})
-      </Text>
-      <View style={{ flexDirection: 'row' }}>
-        <View style={{ ...styles.sensitivityHeader, backgroundColor: C.navy }}>
-          <Text style={{ fontSize: 7, color: C.white, fontFamily: 'Open Sans', fontWeight: 600 }}>WACC \ Cr.</Text>
-        </View>
-        {matrix.cols.map((col, ci) => (
-          <View key={ci} style={styles.sensitivityHeader}>
-            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{col}</Text>
-          </View>
-        ))}
-      </View>
-      {matrix.rows.map((row, ri) => (
-        <View key={ri} style={{ flexDirection: 'row', backgroundColor: ri % 2 === 0 ? C.white : C.card }}>
-          <View style={{ ...styles.sensitivityHeader, backgroundColor: ri % 2 === 0 ? C.panel : '#e8edf4' }}>
-            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{row}</Text>
-          </View>
-          {matrix.data[ri].map((val, ci) => {
-            const isCenter = ri === 2 && ci === 2;
-            const color = val > currentPrice * 1.1 ? C.up : val < currentPrice * 0.9 ? C.down : C.text;
-            return (
-              <View key={ci} style={{
-                ...styles.sensitivityCell,
-                backgroundColor: isCenter ? C.cyanPale : undefined,
-              }}>
-                <Text style={{ fontSize: 7, color, fontFamily: isCenter ? 'Open Sans' : 'Open Sans', fontWeight: isCenter ? 600 : 400 }}>
-                  {fmtFull(val)}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 
 // ═══════════════════════════════════════════════════════════════════
 // ██ FULL REPORT DOCUMENT — Modern Fintech Dashboard Style        ██
@@ -1600,21 +1555,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             ))}
           </View>
 
-          {/* Sensitivity matrices */}
-          {(() => {
-            const validMatrices = valData.filter((v: ValuationDataItem) =>
-              v.sensitivityMatrix && v.priceDcf > 0
-            );
-            if (validMatrices.length === 0) return null;
-            return (
-              <>
-                <Text style={styles.subsectionTitle}>Matrices de sensibilite (top positions)</Text>
-                {validMatrices.map((v: ValuationDataItem, i: number) => (
-                  <SensitivityMatrix key={i} matrix={v.sensitivityMatrix!} symbol={v.symbol} currentPrice={v.currentPrice} />
-                ))}
-              </>
-            );
-          })()}
 
           <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
 

@@ -319,26 +319,6 @@ export const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  /* ── Sensitivity Matrix ───────────────────────────────── */
-  sensitivityCell: {
-    fontSize: 7,
-    textAlign: 'center' as const,
-    paddingVertical: 3,
-    paddingHorizontal: 2,
-    width: '20%',
-  },
-  sensitivityHeader: {
-    fontSize: 7,
-    fontFamily: 'Open Sans',
-    fontWeight: 600,
-    textAlign: 'center' as const,
-    paddingVertical: 3,
-    paddingHorizontal: 2,
-    width: '20%',
-    backgroundColor: '#f1f5f9',
-    color: C.navy,
-  },
-
   /* ── Score Bar ────────────────────────────────────────── */
   scoreBarOuter: {
     height: 6,

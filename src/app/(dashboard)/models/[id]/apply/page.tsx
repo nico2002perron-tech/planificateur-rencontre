@@ -218,10 +218,13 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
                       ) : (
                         <div className="relative inline-block">
                           <span className="absolute left-1 top-1/2 -translate-y-1/2 text-xs text-text-muted">$</span>
-                          <input type="number" min={0.01} step={0.01}
+                          <input type="number" min={0} step="any"
                             className="w-24 pl-5 pr-2 py-1 rounded border border-amber-300 text-sm text-right focus:border-brand-primary focus:outline-none"
                             placeholder="0.00"
-                            onChange={e => setManualPrices(prev => ({ ...prev, [row.symbol]: Number(e.target.value) || 0 }))}
+                            onChange={e => {
+                              const val = parseFloat(e.target.value);
+                              setManualPrices(prev => ({ ...prev, [row.symbol]: isNaN(val) ? 0 : val }));
+                            }}
                           />
                         </div>
                       )}
