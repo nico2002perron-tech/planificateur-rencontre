@@ -73,11 +73,21 @@ export interface YahooEarnings {
   revenueEstimate: number | null;
 }
 
+// ── Symbol conversion (Canadian REITs: EIF.UN.TO → EIF-UN.TO) ─────────────────
+
+/** Convert dot-separated unit symbols to Yahoo format (e.g. EIF.UN.TO → EIF-UN.TO) */
+function toYahooSymbol(symbol: string): string {
+  // Match patterns like X.UN.TO, X.PR.A.TO, X.DB.TO etc.
+  return symbol.replace(/\.([A-Z]{1,3})\.TO$/i, '-$1.TO')
+               .replace(/\.([A-Z]{1,3})\.V$/i, '-$1.V');
+}
+
 // ── Prix cible 1 an ───────────────────────────────────────────────────────────
 
 export async function getYahooPriceTarget(symbol: string): Promise<YahooPriceTarget> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=financialData`;
+    const ySym = toYahooSymbol(symbol);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=financialData`;
     const res = await yahooFetch(url);
     if (!res.ok) return { targetLow: null, targetMean: null, targetHigh: null, numAnalysts: 0, recommendationKey: 'none' };
 
@@ -150,7 +160,8 @@ export async function getYahooNews(symbol: string, count = 8): Promise<YahooNews
 
 export async function getYahooEarnings(symbol: string): Promise<YahooEarnings> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents,earningsTrend`;
+    const ySym = toYahooSymbol(symbol);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=calendarEvents,earningsTrend`;
     const res = await yahooFetch(url);
     if (!res.ok) return { nextEarningsDate: null, epsEstimate: null, revenueEstimate: null };
 
@@ -200,7 +211,8 @@ export interface YahooProfileData {
  */
 export async function getYahooProfile(symbol: string): Promise<YahooProfileData | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics`;
+    const ySym = toYahooSymbol(symbol);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics`;
     const res = await yahooFetch(url);
     if (!res.ok) return null;
 
@@ -281,7 +293,8 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
     const batchResults = await Promise.all(
       batch.map(async (symbol) => {
         try {
-          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price`;
+          const ySym = toYahooSymbol(symbol);
+          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price`;
           const res = await yahooFetch(url);
           if (!res.ok) return null;
 
@@ -343,7 +356,8 @@ export interface ETFSectorWeight {
  */
 export async function getYahooETFSectors(symbol: string): Promise<ETFSectorWeight[] | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=topHoldings`;
+    const ySym = toYahooSymbol(symbol);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=topHoldings`;
     const res = await yahooFetch(url);
     if (!res.ok) return null;
 
