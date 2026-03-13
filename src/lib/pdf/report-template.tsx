@@ -651,6 +651,9 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
+  const totalGainWithDiv = data.priceTargetSummary.totalEstimatedGainDollar + estimatedDividend;
+  const totalGainPctWithDiv = data.priceTargetSummary.totalCurrentValue > 0
+    ? (totalGainWithDiv / data.priceTargetSummary.totalCurrentValue) * 100 : 0;
   const coveredCount = data.holdingProfiles.filter((hp) => hp.targetPrice > 0).length;
   const totalAnalysts = data.holdingProfiles.reduce((sum, hp) => sum + hp.numberOfAnalysts, 0);
   const weightedBeta = data.holdingProfiles.reduce((sum, hp) => {
@@ -752,14 +755,19 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
           }}>
             <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
-              Gain potentiel (12 mois)
+              Gain potentiel total (12 mois)
             </Text>
             <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.blue, lineHeight: 1.1 }}>
-              {fmt(data.priceTargetSummary.totalEstimatedGainDollar, ccy)}
+              {fmt(totalGainWithDiv, ccy)}
             </Text>
             <Text style={{ fontSize: 10, color: C.cyan, fontFamily: 'Open Sans', fontWeight: 600, marginTop: 5 }}>
-              soit {fmtPct(data.priceTargetSummary.totalEstimatedGainPercent)}
+              soit {fmtPct(totalGainPctWithDiv)}
             </Text>
+            {estimatedDividend > 0 && (
+              <Text style={{ fontSize: 7, color: C.textSec, marginTop: 3 }}>
+                incl. {fmt(estimatedDividend, ccy)} en dividendes
+              </Text>
+            )}
           </View>
 
           {/* Number of Positions */}
@@ -1213,95 +1221,147 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 8, paddingHorizontal: 6,
               borderRadius: 6, marginBottom: 8,
             }}>
-              <Text style={{ ...styles.tdBold, width: '7%' }}></Text>
-              <Text style={{ ...styles.tdBold, width: '15%', fontSize: 9 }}>TOTAL</Text>
-              <Text style={{ ...styles.td, width: '8%' }}></Text>
-              <Text style={{ ...styles.td, width: '10%' }}></Text>
-              <Text style={{ ...styles.td, width: '10%' }}></Text>
-              <Text style={{ ...styles.tdBold, width: '14%', textAlign: 'right', fontSize: 9 }}>{fmt(data.priceTargetSummary.totalCurrentValue, ccy)}</Text>
-              <Text style={{ ...styles.tdBold, width: '14%', textAlign: 'right', fontSize: 9 }}>{fmt(data.priceTargetSummary.totalTargetValue, ccy)}</Text>
+              <Text style={{ ...styles.tdBold, width: '5%' }}></Text>
+              <Text style={{ ...styles.tdBold, width: '11%', fontSize: 9 }}>TOTAL</Text>
+              <Text style={{ ...styles.td, width: '6%' }}></Text>
+              <Text style={{ ...styles.td, width: '7%' }}></Text>
+              <Text style={{ ...styles.td, width: '7%' }}></Text>
+              <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8 }}>{fmt(data.priceTargetSummary.totalCurrentValue, ccy)}</Text>
+              <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8 }}>{fmt(data.priceTargetSummary.totalTargetValue, ccy)}</Text>
+              <Text style={{ ...styles.td, width: '5%' }}></Text>
+              <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'right', fontSize: 8, color: C.up }}>
+                {estimatedDividend > 0 ? fmt(estimatedDividend, ccy) : '—'}
+              </Text>
+              <Text style={{ ...styles.td, width: '5%' }}></Text>
               <Text style={{
-                ...styles.tdBold, width: '12%', textAlign: 'right', fontSize: 9,
-                color: data.priceTargetSummary.totalEstimatedGainDollar >= 0 ? C.up : C.down,
+                ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8,
+                color: totalGainWithDiv >= 0 ? C.up : C.down,
               }}>
-                {fmt(data.priceTargetSummary.totalEstimatedGainDollar, ccy)}
+                {fmt(totalGainWithDiv, ccy)}
               </Text>
               <Text style={{
-                ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 9,
-                color: data.priceTargetSummary.totalEstimatedGainPercent >= 0 ? C.up : C.down,
+                ...styles.tdBold, width: '7%', textAlign: 'right', fontSize: 8,
+                color: totalGainPctWithDiv >= 0 ? C.up : C.down,
               }}>
-                {fmtPct(data.priceTargetSummary.totalEstimatedGainPercent)}
+                {fmtPct(totalGainPctWithDiv)}
               </Text>
             </View>
 
             {/* Table */}
             <View style={styles.table}>
               <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '7%' }}>Qte</Text>
-                <Text style={{ ...styles.thCell, width: '15%' }}>Description</Text>
-                <Text style={{ ...styles.thCell, width: '8%' }}>Symb.</Text>
-                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Prix</Text>
-                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Cible</Text>
-                <Text style={{ ...styles.thCell, width: '14%', textAlign: 'right' }}>Valeur act.</Text>
-                <Text style={{ ...styles.thCell, width: '14%', textAlign: 'right' }}>Val. cible 12m</Text>
-                <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Gain esp. $</Text>
-                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Var. %</Text>
+                <Text style={{ ...styles.thCell, width: '5%' }}>Qte</Text>
+                <Text style={{ ...styles.thCell, width: '11%' }}>Description</Text>
+                <Text style={{ ...styles.thCell, width: '6%' }}>Symb.</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Prix</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Cible</Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Val. act.</Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Val. cible</Text>
+                <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Div./act</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Rev. div $</Text>
+                <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Rend.</Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Gain total $</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Rend. tot.</Text>
               </View>
-              {data.holdingProfiles.map((hp: HoldingProfile, i: number) => (
-                <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                  <Text style={{ ...styles.td, width: '7%' }}>{fmtNum(hp.quantity)}</Text>
-                  <Text style={{ ...styles.td, width: '15%' }}>{hp.companyName.substring(0, 24)}</Text>
-                  <Text style={{ ...styles.tdBold, width: '8%' }}>{hp.symbol}</Text>
-                  <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
-                  <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>
-                    {hp.targetPrice > 0 ? fmtFull(hp.targetPrice, ccy) : 'N/D'}
-                  </Text>
-                  <Text style={{ ...styles.td, width: '14%', textAlign: 'right' }}>{fmt(hp.currentPrice * hp.quantity, ccy)}</Text>
-                  <Text style={{ ...styles.td, width: '14%', textAlign: 'right' }}>
-                    {hp.targetPrice > 0 ? fmt(hp.quantity * hp.targetPrice, ccy) : 'N/D'}
-                  </Text>
-                  <Text style={{
-                    ...styles.td, width: '12%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
-                    color: hp.estimatedGainDollar >= 0 ? C.up : C.down,
-                  }}>
-                    {hp.targetPrice > 0 ? fmt(hp.estimatedGainDollar, ccy) : '—'}
-                  </Text>
-                  <Text style={{
-                    ...styles.td, width: '10%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
-                    color: hp.estimatedGainPercent >= 0 ? C.up : C.down,
-                  }}>
-                    {hp.targetPrice > 0 ? fmtPct(hp.estimatedGainPercent) : '—'}
-                  </Text>
-                </View>
-              ))}
+              {data.holdingProfiles.map((hp: HoldingProfile, i: number) => {
+                const divIncome = hp.lastDiv * hp.quantity;
+                const divYield = hp.currentPrice > 0 ? (hp.lastDiv / hp.currentPrice) * 100 : 0;
+                const priceGain = hp.targetPrice > 0 ? hp.estimatedGainDollar : 0;
+                const totalGain = priceGain + divIncome;
+                const currentVal = hp.currentPrice * hp.quantity;
+                const totalReturnPct = currentVal > 0 ? (totalGain / currentVal) * 100 : 0;
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.td, width: '5%' }}>{fmtNum(hp.quantity)}</Text>
+                    <Text style={{ ...styles.td, width: '11%', fontSize: 7.5 }}>{hp.companyName.substring(0, 20)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '6%' }}>{hp.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
+                    <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>
+                      {hp.targetPrice > 0 ? fmtFull(hp.targetPrice, ccy) : 'N/D'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmt(currentVal, ccy)}</Text>
+                    <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>
+                      {hp.targetPrice > 0 ? fmt(hp.quantity * hp.targetPrice, ccy) : 'N/D'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '5%', textAlign: 'right', color: hp.lastDiv > 0 ? C.up : C.textTer }}>
+                      {hp.lastDiv > 0 ? fmtFull(hp.lastDiv, ccy) : '—'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '7%', textAlign: 'right', color: divIncome > 0 ? C.up : C.textTer }}>
+                      {divIncome > 0 ? fmt(divIncome, ccy) : '—'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '5%', textAlign: 'right', fontSize: 7, color: divYield > 0 ? C.up : C.textTer }}>
+                      {divYield > 0 ? `${divYield.toFixed(1)}%` : '—'}
+                    </Text>
+                    <Text style={{
+                      ...styles.td, width: '10%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
+                      color: totalGain >= 0 ? C.up : C.down,
+                    }}>
+                      {(hp.targetPrice > 0 || divIncome > 0) ? fmt(totalGain, ccy) : '—'}
+                    </Text>
+                    <Text style={{
+                      ...styles.td, width: '7%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
+                      color: totalReturnPct >= 0 ? C.up : C.down,
+                    }}>
+                      {(hp.targetPrice > 0 || divIncome > 0) ? fmtPct(totalReturnPct) : '—'}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
-            {/* Summary indicators */}
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-              <View style={{ ...styles.statCard }}>
-                <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Couverture analystes</Text>
-                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
-                  {coveredCount}/{data.holdingProfiles.length} titres
-                </Text>
-                {totalAnalysts > 0 && <Text style={{ fontSize: 7, color: C.textTer }}>{totalAnalysts} analystes</Text>}
-              </View>
-              {estimatedDividend > 0 && (
-                <View style={{ ...styles.statCard }}>
-                  <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Revenu de dividende</Text>
-                  <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.up }}>
-                    {fmt(estimatedDividend, ccy)} / an
-                  </Text>
+            {/* Gain summary — 3 lines: appreciation, dividends, total */}
+            {(() => {
+              const priceGainDollar = data.priceTargetSummary.totalEstimatedGainDollar;
+              const currentVal = data.priceTargetSummary.totalCurrentValue;
+              const priceGainPct = currentVal > 0 ? (priceGainDollar / currentVal) * 100 : 0;
+              const divPct = currentVal > 0 ? (estimatedDividend / currentVal) * 100 : 0;
+              return (
+                <View style={{
+                  backgroundColor: C.card, borderRadius: 10, padding: 12, marginTop: 8,
+                  borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+                }}>
+                  {/* Row 1: Price appreciation */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 8, color: C.textSec }}>Gains esperes en $ (sans dividende)</Text>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: priceGainDollar >= 0 ? C.up : C.down }}>
+                        {fmt(priceGainDollar, ccy)}
+                      </Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: priceGainPct >= 0 ? C.up : C.down }}>
+                        {fmtPct(priceGainPct)}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Row 2: Dividends only */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 8, color: C.textSec }}>Gains esperes (seulement en dividendes)</Text>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: estimatedDividend > 0 ? C.up : C.textTer }}>
+                        {estimatedDividend > 0 ? fmt(estimatedDividend, ccy) : '—'}
+                      </Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: divPct > 0 ? C.up : C.textTer }}>
+                        {divPct > 0 ? fmtPct(divPct) : '—'}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Row 3: Total — bold, with top border */}
+                  <View style={{
+                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                    borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const, paddingTop: 6,
+                  }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Gains esperes total</Text>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: totalGainWithDiv >= 0 ? C.up : C.down }}>
+                        {fmt(totalGainWithDiv, ccy)}
+                      </Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: totalGainPctWithDiv >= 0 ? C.up : C.down }}>
+                        {fmtPct(totalGainPctWithDiv)}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              )}
-              {weightedBeta > 0 && (
-                <View style={{ ...styles.statCard }}>
-                  <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Beta pondere</Text>
-                  <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
-                    {weightedBeta.toFixed(2)}
-                  </Text>
-                </View>
-              )}
-            </View>
+              );
+            })()}
           </>
         ) : (
           <View style={styles.card}>
