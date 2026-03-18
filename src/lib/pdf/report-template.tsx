@@ -33,6 +33,7 @@ import type {
   AnnualReturn,
   SectorBreakdownItem,
   ValuationDataItem,
+  BenchmarkComparisonData,
 } from './report-data';
 
 // ─── Backward compat: keep old interface exported ───────────────
@@ -635,6 +636,228 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
 }
 
 
+/** Benchmark Comparison Line Chart — TradingView-inspired style */
+function BenchmarkComparisonChart({ data }: { data: BenchmarkComparisonData }) {
+  const allSeries = [data.portfolio, ...data.indices];
+  const allPoints = allSeries.flatMap((s) => s.points.map((p) => p.value));
+  if (allPoints.length === 0) return null;
+
+  const chartW = 660;
+  const chartH = 220;
+  const padL = 5;
+  const padR = 5;
+  const padT = 16;
+  const padB = 14;
+  const drawW = chartW - padL - padR;
+  const drawH = chartH - padT - padB;
+
+  const maxVal = Math.max(...allPoints) * 1.05;
+  const minVal = Math.min(...allPoints, 100) * 0.95;
+  const range = maxVal - minVal || 1;
+
+  // Use portfolio dates as reference X axis
+  const dates = data.portfolio.points.map((p) => p.date);
+  const dateCount = dates.length;
+  if (dateCount < 2) return null;
+
+  function xPos(i: number): number {
+    return padL + (i / (dateCount - 1)) * drawW;
+  }
+  function yPos(val: number): number {
+    return padT + drawH * (1 - (val - minVal) / range);
+  }
+
+  // Y-axis grid: 5 ticks
+  const yTicks = Array.from({ length: 5 }, (_, i) => {
+    const pct = i / 4;
+    return { val: minVal + range * pct, y: padT + drawH * (1 - pct) };
+  });
+
+  // X-axis labels: show ~6 year labels
+  const startYear = parseInt(dates[0].substring(0, 4));
+  const endYear = parseInt(dates[dates.length - 1].substring(0, 4));
+  const yearStep = Math.max(1, Math.round((endYear - startYear) / 6));
+  const xLabels: { label: string; x: number }[] = [];
+  for (let y = startYear; y <= endYear; y += yearStep) {
+    const idx = dates.findIndex((d) => d.startsWith(String(y)));
+    if (idx >= 0) {
+      xLabels.push({ label: String(y), x: xPos(idx) });
+    }
+  }
+  // Always add the last year
+  const lastIdx = dates.length - 1;
+  const lastYear = dates[lastIdx].substring(0, 4);
+  if (!xLabels.find((l) => l.label === lastYear)) {
+    xLabels.push({ label: lastYear, x: xPos(lastIdx) });
+  }
+
+  // Build SVG path for a series
+  function buildPath(seriesKey: string): string {
+    const series = allSeries.find((s) => s.key === seriesKey);
+    if (!series) return '';
+    const dateMap = new Map(series.points.map((p) => [p.date, p.value]));
+    let d = '';
+    let started = false;
+    for (let i = 0; i < dateCount; i++) {
+      const val = dateMap.get(dates[i]);
+      if (val != null) {
+        d += started ? ` L ${xPos(i)} ${yPos(val)}` : `M ${xPos(i)} ${yPos(val)}`;
+        started = true;
+      }
+    }
+    return d;
+  }
+
+  // Build gradient fill under portfolio line
+  function buildPortfolioFill(): string {
+    const series = data.portfolio;
+    const dateMap = new Map(series.points.map((p) => [p.date, p.value]));
+    let d = '';
+    let firstX = 0;
+    let lastX = 0;
+    let started = false;
+    for (let i = 0; i < dateCount; i++) {
+      const val = dateMap.get(dates[i]);
+      if (val != null) {
+        const x = xPos(i);
+        const y = yPos(val);
+        if (!started) {
+          firstX = x;
+          d = `M ${x} ${y}`;
+          started = true;
+        } else {
+          d += ` L ${x} ${y}`;
+        }
+        lastX = x;
+      }
+    }
+    const bottom = padT + drawH;
+    d += ` L ${lastX} ${bottom} L ${firstX} ${bottom} Z`;
+    return d;
+  }
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row' }}>
+        {/* Y-axis labels */}
+        <View style={{ width: 40, justifyContent: 'space-between', paddingTop: padT, paddingBottom: padB }}>
+          {[...yTicks].reverse().map((t, i) => (
+            <Text key={i} style={{ fontSize: 6.5, color: C.textTer, textAlign: 'right', paddingRight: 4 }}>
+              {t.val.toFixed(0)} $
+            </Text>
+          ))}
+        </View>
+
+        {/* Chart SVG */}
+        <Svg width={chartW} height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
+          {/* Background */}
+          <Rect x={padL} y={padT} width={drawW} height={drawH} fill="#fafbfc" rx={4} />
+
+          {/* Horizontal grid lines */}
+          {yTicks.map((t, i) => (
+            <Rect key={i} x={padL} y={t.y} width={drawW} height={0.5} fill="#e2e8f0" opacity={0.7} />
+          ))}
+
+          {/* Base 100 reference line — dashed effect with small segments */}
+          {(() => {
+            const y100 = yPos(100);
+            const segments = [];
+            for (let x = padL; x < padL + drawW; x += 8) {
+              segments.push(
+                <Rect key={x} x={x} y={y100} width={4} height={0.8} fill="#94a3b8" opacity={0.5} />
+              );
+            }
+            return segments;
+          })()}
+
+          {/* Gradient fill under portfolio */}
+          <Defs>
+            <LinearGradient id="benchPortFill" x1="0" y1="0" x2="0" y2={String(chartH)}>
+              <Stop offset="0%" stopColor={data.portfolio.color} stopOpacity={0.12} />
+              <Stop offset="100%" stopColor={data.portfolio.color} stopOpacity={0.01} />
+            </LinearGradient>
+          </Defs>
+          <Path d={buildPortfolioFill()} fill="url(#benchPortFill)" />
+
+          {/* Index lines — drawn first (behind portfolio) */}
+          {data.indices.map((idx) => (
+            <Path
+              key={idx.key}
+              d={buildPath(idx.key)}
+              stroke={idx.color}
+              strokeWidth={1.8}
+              fill="none"
+              opacity={0.85}
+            />
+          ))}
+
+          {/* Portfolio line — on top, thicker */}
+          <Path
+            d={buildPath('portfolio')}
+            stroke={data.portfolio.color}
+            strokeWidth={2.5}
+            fill="none"
+          />
+
+          {/* Endpoint dots */}
+          {allSeries.map((s) => {
+            const lastPt = s.points[s.points.length - 1];
+            if (!lastPt) return null;
+            const idx = dates.indexOf(lastPt.date);
+            if (idx < 0) return null;
+            return (
+              <G key={s.key}>
+                <Circle cx={xPos(idx)} cy={yPos(lastPt.value)} r={4.5} fill={C.white} />
+                <Circle cx={xPos(idx)} cy={yPos(lastPt.value)} r={3.5} fill={s.color} />
+              </G>
+            );
+          })}
+
+          {/* Start point marker */}
+          <Circle cx={xPos(0)} cy={yPos(100)} r={3} fill={C.navy} opacity={0.4} />
+        </Svg>
+
+        {/* End value labels */}
+        <View style={{ width: 70, justifyContent: 'center', gap: 6, paddingLeft: 6 }}>
+          {allSeries.map((s) => (
+            <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <View style={{ width: 8, height: 3, borderRadius: 1.5, backgroundColor: s.color }} />
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: s.color }}>
+                {s.finalValue.toFixed(0)} $
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* X-axis labels */}
+      <View style={{ position: 'relative', height: 14, marginLeft: 40 }}>
+        {xLabels.map((l, i) => (
+          <Text key={i} style={{
+            position: 'absolute', left: l.x - 12, top: 2,
+            fontSize: 6.5, color: C.textTer, width: 30, textAlign: 'center',
+          }}>
+            {l.label}
+          </Text>
+        ))}
+      </View>
+
+      {/* Legend */}
+      <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 6 }}>
+        {allSeries.map((s) => (
+          <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: s.color, marginRight: 5 }} />
+            <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textSec }}>
+              {s.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 // ██ FULL REPORT DOCUMENT — Modern Fintech Dashboard Style        ██
 // ═══════════════════════════════════════════════════════════════════
@@ -645,9 +868,11 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const valData = data.valuationData;
   const hasValuation = valData && valData.length > 0;
   const hasNegativeValuations = hasValuation && valData.some((v) => v.avgIntrinsic < 0 || (v.priceDcf < 0));
+  const benchData = data.benchmarkComparison;
+  const hasBenchmark = !!benchData;
   const hasAI = !!ai;
   const profilePageCount = Math.max(1, Math.ceil(data.holdingProfiles.length / 4));
-  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0);
+  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0) + (hasBenchmark ? 1 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -655,12 +880,15 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const totalGainPctWithDiv = data.priceTargetSummary.totalCurrentValue > 0
     ? (totalGainWithDiv / data.priceTargetSummary.totalCurrentValue) * 100 : 0;
   const coveredCount = data.holdingProfiles.filter((hp) => hp.targetPrice > 0).length;
+  const consensusCount = data.holdingProfiles.filter((hp) => hp.targetSource === 'consensus').length;
+  const estimatedCount = data.holdingProfiles.filter((hp) => hp.targetSource === 'estimated').length;
   const totalAnalysts = data.holdingProfiles.reduce((sum, hp) => sum + hp.numberOfAnalysts, 0);
   const weightedBeta = data.holdingProfiles.reduce((sum, hp) => {
     const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
     return sum + w * hp.beta;
   }, 0);
   const valOffset = hasValuation ? 3 : 0;
+  const benchOffset = hasBenchmark ? 1 : 0;
   const gainLoss = data.portfolio.totalGainLoss;
   const gainLossPct = data.portfolio.totalGainLossPercent;
 
@@ -1209,10 +1437,22 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       {/* ═══ PAGE 4: ANALYST PRICE TARGETS ════════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
-        <Text style={styles.sectionTitle}>Cours cibles des analystes</Text>
-        <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 10 }}>
-          Estimations consensus — Source: Yahoo Finance / Financial Modeling Prep
-        </Text>
+        <Text style={styles.sectionTitle}>Cours cibles (12 mois)</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <Text style={{ fontSize: 8, color: C.textSec }}>
+            Sources: Yahoo Finance / Financial Modeling Prep / Valorisation interne
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: C.up }} />
+              <Text style={{ fontSize: 6.5, color: C.textSec }}>Consensus analystes</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: C.cyan }} />
+              <Text style={{ fontSize: 6.5, color: C.textSec }}>Estime (valorisation)</Text>
+            </View>
+          </View>
+        </View>
 
         {hasTargets ? (
           <>
@@ -1276,9 +1516,17 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                     <Text style={{ ...styles.td, width: '11%', fontSize: 7.5 }}>{hp.companyName.substring(0, 20)}</Text>
                     <Text style={{ ...styles.tdBold, width: '6%' }}>{hp.symbol}</Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
-                    <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>
-                      {hp.targetPrice > 0 ? fmtFull(hp.targetPrice, ccy) : 'N/D'}
-                    </Text>
+                    <View style={{ width: '7%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
+                      {hp.targetPrice > 0 && (
+                        <View style={{
+                          width: 5, height: 5, borderRadius: 1.5,
+                          backgroundColor: hp.targetSource === 'estimated' ? C.cyan : C.up,
+                        }} />
+                      )}
+                      <Text style={{ ...styles.td, textAlign: 'right' }}>
+                        {hp.targetPrice > 0 ? fmtFull(hp.targetPrice, ccy) : 'N/D'}
+                      </Text>
+                    </View>
                     <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmt(currentVal, ccy)}</Text>
                     <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>
                       {hp.targetPrice > 0 ? fmt(hp.quantity * hp.targetPrice, ccy) : 'N/D'}
@@ -1372,7 +1620,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         )}
 
         <Text style={styles.noteText}>
-          Les cours cibles sont des estimations consensus et ne constituent pas une garantie de rendement futur.
+          Les cours cibles consensus proviennent des analystes (Yahoo Finance / FMP). Les cours cibles estimes sont calcules par valorisation interne (DCF, P/S, P/E). Aucun cours cible ne constitue une garantie de rendement futur.
         </Text>
         <AINarrativeBlock label="Analyse des cours cibles — IA" content={ai?.targetAnalysis} />
 
@@ -1380,7 +1628,60 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       </Page>
 
 
-      {/* ═══ PAGE 5 (conditional): VALUATION ══════════════════════ */}
+      {/* ═══ PAGE 5 (conditional): BENCHMARK COMPARISON ═══════════ */}
+      {hasBenchmark && benchData && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          <AccentBar />
+          <Text style={styles.sectionTitle}>Comparaison de performance</Text>
+          <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 4 }}>
+            Croissance normalisee (base 100 $) — Donnees mensuelles ajustees (total return incluant dividendes)
+          </Text>
+
+          {/* Period badge */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <View style={{
+              backgroundColor: C.cyanPale, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4,
+            }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+                Periode: {benchData.startDate.substring(0, 7)} a {benchData.endDate.substring(0, 7)}
+              </Text>
+            </View>
+            {[benchData.portfolio, ...benchData.indices].map((s) => (
+              <View key={s.key} style={{
+                backgroundColor: '#f8fafc', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
+                borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+              }}>
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: s.color }}>
+                  {s.label}: {s.finalValue.toFixed(0)} $ ({s.finalValue >= 100 ? '+' : ''}{(s.finalValue - 100).toFixed(1)} %)
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Chart */}
+          <BenchmarkComparisonChart data={benchData} />
+
+          {/* Summary text */}
+          <View style={{
+            backgroundColor: C.card, borderRadius: 10, padding: 14, marginTop: 14,
+            borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
+            borderLeftWidth: 3, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
+          }}>
+            <Text style={{ fontSize: 8.5, color: C.text, lineHeight: 1.6 }}>
+              {benchData.summaryText}
+            </Text>
+          </View>
+
+          <Text style={styles.noteText}>
+            Source: Yahoo Finance (adjusted close). Les rendements passes ne sont pas garants des rendements futurs.
+            La comparaison est a titre illustratif et suppose un investissement initial de 100 $ maintenu sans modification.
+          </Text>
+
+          <PageFooter num={5} total={totalPages} />
+        </Page>
+      )}
+
+      {/* ═══ PAGE 5+bench (conditional): VALUATION ══════════════════════ */}
       {hasValuation && valData && (() => {
         const holdingMap = new Map(data.portfolio.holdings.map((h) => [h.symbol, h]));
         const totalPortfolioValue = data.portfolio.totalValue;
@@ -1544,7 +1845,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               Les valorisations sont des estimations basees sur des modeles financiers. Elles ne constituent pas des recommandations d&apos;investissement.
             </Text>
 
-            <PageFooter num={5} total={totalPages} />
+            <PageFooter num={5 + benchOffset} total={totalPages} />
           </Page>
         );
       })()}
@@ -1586,7 +1887,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
           </Text>
 
-          <PageFooter num={6} total={totalPages} />
+          <PageFooter num={6 + benchOffset} total={totalPages} />
         </Page>
       )}
 
@@ -1618,7 +1919,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
           <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
 
-          <PageFooter num={7} total={totalPages} />
+          <PageFooter num={7 + benchOffset} total={totalPages} />
         </Page>
       )}
 
@@ -1641,7 +1942,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </Text>
             )}
             <HoldingCards profiles={chunk} currency={ccy} />
-            <PageFooter num={5 + valOffset + pi} total={totalPages} />
+            <PageFooter num={5 + valOffset + benchOffset + pi} total={totalPages} />
           </Page>
         );
       })}
@@ -1724,7 +2025,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         )}
         <AINarrativeBlock label="Interpretation des risques — IA" content={ai?.riskInterpretation} />
 
-        <PageFooter num={5 + valOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={5 + valOffset + benchOffset + profilePageCount} total={totalPages} />
       </Page>
 
 
@@ -1749,9 +2050,10 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               Les prix et donnees de marche proviennent de Financial Modeling Prep (FMP)
               et sont consideres fiables mais leur exactitude ne peut etre garantie.{'\n'}
               {'\n'}
-              4. COURS CIBLES DES ANALYSTES{'\n'}
-              Les cours cibles sont des estimations consensus des analystes financiers
-              compilees par Yahoo Finance et FMP. Ils ne constituent pas une garantie de rendement futur.{'\n'}
+              4. COURS CIBLES{'\n'}
+              Les cours cibles consensus proviennent des analystes (Yahoo Finance / FMP).
+              Les cours cibles estimes sont calcules par valorisation interne (DCF, P/S, P/E).
+              Aucun cours cible ne constitue une garantie de rendement futur.{'\n'}
               {'\n'}
               5. METRIQUES DE RISQUE{'\n'}
               Les metriques de risque (volatilite, Sharpe, beta, drawdown) sont des estimations basees sur les
@@ -1774,7 +2076,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               {'\n'}
               9. SOURCES DES DONNEES{'\n'}
               Prix de marche: Financial Modeling Prep (FMP){'\n'}
-              Cours cibles: Yahoo Finance / FMP{'\n'}
+              Cours cibles: Yahoo Finance / FMP / Valorisation interne (DCF, P/S, P/E){'\n'}
               Profils d&apos;entreprise: FMP Company Profile{'\n'}
               {hasValuation ? 'Valorisation: Valuation Master Pro (DCF, P/S, P/E)\n' : ''}
               {'\n'}
@@ -1802,7 +2104,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         </View>
 
-        <PageFooter num={6 + valOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={6 + valOffset + benchOffset + profilePageCount} total={totalPages} />
       </Page>
 
     </Document>

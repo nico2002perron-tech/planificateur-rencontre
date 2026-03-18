@@ -76,7 +76,7 @@ export interface YahooEarnings {
 // ── Symbol conversion (Canadian REITs: EIF.UN.TO → EIF-UN.TO) ─────────────────
 
 /** Convert dot-separated unit symbols to Yahoo format (e.g. EIF.UN.TO → EIF-UN.TO) */
-function toYahooSymbol(symbol: string): string {
+export function toYahooSymbol(symbol: string): string {
   // Match patterns like X.UN.TO, X.PR.A.TO, X.DB.TO etc.
   return symbol.replace(/\.([A-Z]{1,3})\.TO$/i, '-$1.TO')
                .replace(/\.([A-Z]{1,3})\.V$/i, '-$1.V');
@@ -323,6 +323,60 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
   }
 
   return results;
+}
+
+// ── Historical Chart Data (10y monthly) ─────────────────────────────
+
+export interface YahooChartPoint {
+  date: string;     // YYYY-MM-DD
+  adjClose: number; // Adjusted close (includes dividends/splits)
+}
+
+/**
+ * Fetch monthly adjusted close prices from Yahoo Finance chart API.
+ * Used for benchmark comparison (S&P 500, TSX) and portfolio simulation.
+ * @param symbol Yahoo symbol (e.g. ^GSPC, ^GSPTSE, AAPL)
+ * @param years Number of years of history (default 10)
+ * @returns Array of monthly { date, adjClose } sorted ascending
+ */
+export async function getYahooHistoricalChart(
+  symbol: string,
+  years = 10
+): Promise<YahooChartPoint[]> {
+  try {
+    const ySym = toYahooSymbol(symbol);
+    const range = years <= 5 ? '5y' : years <= 10 ? '10y' : 'max';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?range=${range}&interval=1mo&includeAdjustedClose=true`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return [];
+
+    const timestamps: number[] = result.timestamp ?? [];
+    const adjCloseArr: number[] =
+      result.indicators?.adjclose?.[0]?.adjclose ??
+      result.indicators?.quote?.[0]?.close ??
+      [];
+
+    if (timestamps.length === 0 || adjCloseArr.length === 0) return [];
+
+    const points: YahooChartPoint[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const adj = adjCloseArr[i];
+      if (adj == null || !isFinite(adj) || adj <= 0) continue;
+      const d = new Date(timestamps[i] * 1000);
+      points.push({
+        date: d.toISOString().split('T')[0],
+        adjClose: Math.round(adj * 100) / 100,
+      });
+    }
+
+    return points.sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
 }
 
 // ── ETF Sector Breakdown ─────────────────────────────────────────────────────

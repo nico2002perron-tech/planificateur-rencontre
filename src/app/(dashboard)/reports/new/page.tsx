@@ -13,8 +13,13 @@ import { usePortfolios } from '@/lib/hooks/usePortfolio';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp, X, Sparkles, BarChart3, Pencil,
+  TrendingUp, X, Sparkles, BarChart3, Pencil, LineChart,
 } from 'lucide-react';
+
+const BENCHMARK_OPTIONS = [
+  { key: 'sp500', label: 'S&P 500', description: 'Indice des 500 plus grandes entreprises americaines' },
+  { key: 'tsx', label: 'S&P/TSX Composite', description: 'Indice principal de la Bourse de Toronto' },
+];
 
 interface YahooPrice {
   symbol: string;
@@ -88,6 +93,7 @@ function NewReportWizard() {
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [includeValuation, setIncludeValuation] = useState(false);
+  const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([]);
 
   // Filter portfolios by selected client
   const filteredPortfolios = useMemo(() => {
@@ -210,6 +216,7 @@ function NewReportWizard() {
             custom_targets: Object.keys(customTargets).length > 0 ? customTargets : undefined,
             ai_enabled: aiEnabled,
             include_valuation: includeValuation,
+            benchmarks: selectedBenchmarks.length > 0 ? selectedBenchmarks : undefined,
           },
         }),
       });
@@ -656,7 +663,7 @@ function NewReportWizard() {
               </div>
             </label>
 
-            <label className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+            <label className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200 mb-2">
               <input
                 type="checkbox"
                 checked={includeValuation}
@@ -671,6 +678,37 @@ function NewReportWizard() {
                 </p>
               </div>
             </label>
+
+            {/* Benchmark comparison */}
+            <div className="border border-gray-200 rounded-lg px-3 py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <LineChart className="h-4 w-4 text-emerald-600" />
+                <span className="text-sm text-text-main font-medium">Comparaison avec indices de reference (10 ans)</span>
+              </div>
+              <p className="text-xs text-text-muted mb-3 ml-6">
+                Graphique de croissance normalisee (base 100 $) comparant le portefeuille aux indices selectionnes
+              </p>
+              <div className="ml-6 space-y-1.5">
+                {BENCHMARK_OPTIONS.map((b) => (
+                  <label key={b.key} className="flex items-center gap-2.5 cursor-pointer hover:bg-gray-50 rounded px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedBenchmarks.includes(b.key)}
+                      onChange={() => {
+                        setSelectedBenchmarks((prev) =>
+                          prev.includes(b.key) ? prev.filter((k) => k !== b.key) : [...prev, b.key]
+                        );
+                      }}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-brand-primary focus:ring-brand-primary"
+                    />
+                    <div>
+                      <span className="text-sm text-text-main">{b.label}</span>
+                      <span className="text-xs text-text-muted ml-2">{b.description}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-between mt-6">
@@ -729,7 +767,7 @@ function NewReportWizard() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Pages</span>
-              <span className="font-semibold text-brand-primary">{8 + (includeValuation ? 1 : 0)} pages (style Morningstar)</span>
+              <span className="font-semibold text-brand-primary">{8 + (includeValuation ? 3 : 0) + (selectedBenchmarks.length > 0 ? 1 : 0)} pages (style Morningstar)</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-text-muted">Analyses IA</span>
@@ -746,6 +784,17 @@ function NewReportWizard() {
               {includeValuation ? (
                 <span className="flex items-center gap-1 font-semibold text-cyan-600">
                   <BarChart3 className="h-3 w-3" /> Incluse
+                </span>
+              ) : (
+                <span className="text-text-muted">Non incluse</span>
+              )}
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Comparaison indices</span>
+              {selectedBenchmarks.length > 0 ? (
+                <span className="flex items-center gap-1 font-semibold text-emerald-600">
+                  <LineChart className="h-3 w-3" />
+                  {selectedBenchmarks.map((k) => BENCHMARK_OPTIONS.find((b) => b.key === k)?.label).join(', ')}
                 </span>
               ) : (
                 <span className="text-text-muted">Non incluse</span>

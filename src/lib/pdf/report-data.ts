@@ -10,7 +10,8 @@ import {
   type ScenarioResult,
 } from '@/lib/calculations/scenarios';
 import type { AIReportContent, ValuationDataItem } from '@/lib/ai/types';
-export type { AIReportContent, ValuationDataItem };
+import type { BenchmarkComparisonData } from './benchmark-data';
+export type { AIReportContent, ValuationDataItem, BenchmarkComparisonData };
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ export interface HoldingProfile {
   costBasis: number;
   estimatedGainPercent: number;
   estimatedGainDollar: number;
+  targetSource: 'consensus' | 'estimated' | 'manual' | 'none';
 }
 
 export interface HistoricalPoint {
@@ -220,6 +222,7 @@ export interface FullReportData {
   };
   aiContent?: AIReportContent | null;
   valuationData?: ValuationDataItem[] | null;
+  benchmarkComparison?: BenchmarkComparisonData | null;
 }
 
 // ─── Sector Labels (FR) ─────────────────────────────────────────
@@ -492,11 +495,17 @@ export function buildFullReportData(
   const holdingProfiles: HoldingProfile[] = holdings.map((h) => {
     const profile = fmpData?.profiles[h.symbol];
     const target = fmpData?.targets[h.symbol];
-    const targetPrice = config.customTargets?.[h.symbol] ?? target?.targetConsensus ?? 0;
+    const customTarget = config.customTargets?.[h.symbol];
+    const targetPrice = customTarget ?? target?.targetConsensus ?? 0;
     const gainDollar = targetPrice > 0 ? h.quantity * (targetPrice - h.currentPrice) : 0;
     const gainPercent = h.currentPrice > 0 && targetPrice > 0
       ? ((targetPrice - h.currentPrice) / h.currentPrice) * 100
       : 0;
+
+    // Determine target source
+    let targetSource: 'consensus' | 'estimated' | 'manual' | 'none' = 'none';
+    if (customTarget != null && customTarget > 0) targetSource = 'manual';
+    else if (target?.targetConsensus && target.targetConsensus > 0) targetSource = 'consensus';
 
     return {
       symbol: h.symbol,
@@ -518,6 +527,7 @@ export function buildFullReportData(
       costBasis: h.costBasis,
       estimatedGainPercent: Math.round(gainPercent * 100) / 100,
       estimatedGainDollar: Math.round(gainDollar * 100) / 100,
+      targetSource,
     };
   });
 

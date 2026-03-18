@@ -8,7 +8,9 @@ import type { EnrichedFMPData, FMPProfileData, FMPTargetData, FMPHistoricalData 
 import type { ValuationDataItem } from '@/lib/ai/types';
 import { createClient } from '@/lib/supabase/server';
 import { getTargetConsensus, getHistoricalPrices } from '@/lib/fmp/client';
-import { getYahooPriceTarget, getYahooETFSectors, getYahooQuotes, getYahooProfile, yahooFetch } from '@/lib/yahoo/client';
+import { getYahooPriceTarget, getYahooETFSectors, getYahooQuotes, getYahooProfile, getYahooHistoricalChart, yahooFetch, toYahooSymbol } from '@/lib/yahoo/client';
+import { AVAILABLE_BENCHMARKS, buildBenchmarkComparison } from '@/lib/pdf/benchmark-data';
+import type { BenchmarkComparisonData } from '@/lib/pdf/benchmark-data';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10 } from '@/lib/valuation/scoring';
@@ -310,7 +312,8 @@ export async function POST(request: NextRequest) {
         // Fetch financial data directly from Yahoo for all symbols
         const valuationPromises = symbols.map(async (symbol: string) => {
           try {
-            const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,financialData,defaultKeyStatistics,summaryDetail`;
+            const ySym = toYahooSymbol(symbol);
+            const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,financialData,defaultKeyStatistics,summaryDetail`;
             const res = await yahooFetch(url);
             if (!res.ok) return null;
 
@@ -445,6 +448,174 @@ export async function POST(request: NextRequest) {
       }
     }
     reportData.valuationData = valuationData;
+
+    // ── Step 5b: Estimated targets for holdings without analyst consensus ──
+    // Uses existing valuationData if available, else computes lightweight valuation
+    {
+      const symbolsWithoutTarget = reportData.holdingProfiles
+        .filter(hp => hp.targetSource === 'none')
+        .map(hp => hp.symbol);
+
+      if (symbolsWithoutTarget.length > 0) {
+        // Build a map from existing valuationData
+        const valMap = new Map<string, number>();
+        if (valuationData) {
+          for (const v of valuationData) {
+            if (v.avgIntrinsic > 0) valMap.set(v.symbol, v.avgIntrinsic);
+          }
+        }
+
+        // For symbols not in valuationData, compute lightweight valuation
+        const needsComputation = symbolsWithoutTarget.filter(s => !valMap.has(s));
+        if (needsComputation.length > 0) {
+          const rawVal = (obj: unknown): number => {
+            if (obj && typeof obj === 'object' && 'raw' in obj) {
+              const v = Number((obj as { raw: number }).raw);
+              return isFinite(v) ? v : 0;
+            }
+            return 0;
+          };
+
+          const estPromises = needsComputation.map(async (symbol) => {
+            try {
+              const ySym = toYahooSymbol(symbol);
+              const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,financialData,defaultKeyStatistics,summaryDetail`;
+              const res = await yahooFetch(url);
+              if (!res.ok) return { symbol, estimate: 0 };
+
+              const json = await res.json();
+              const result = json?.quoteSummary?.result?.[0];
+              if (!result) return { symbol, estimate: 0 };
+
+              const priceData = result.price ?? {};
+              const fd = result.financialData ?? {};
+              const ks = result.defaultKeyStatistics ?? {};
+
+              const currentPrice = rawVal(priceData.regularMarketPrice) || priceMap[symbol]?.price || 0;
+              const shares = rawVal(ks.sharesOutstanding) || rawVal(priceData.sharesOutstanding) || 1;
+              const revenue = rawVal(fd.totalRevenue);
+              const fcf = rawVal(fd.freeCashflow);
+              const eps = rawVal(ks.trailingEps);
+              const cash = rawVal(fd.totalCash);
+              const totalDebt = rawVal(fd.totalDebt);
+
+              if (revenue === 0 && fcf === 0 && eps <= 0) return { symbol, estimate: 0 };
+
+              const sector = String(priceData.sector ?? priceData.industry ?? '');
+              const bench = getBenchmarkData(symbol, sector);
+
+              const [priceDcf, priceSales, priceEarnings] = calculateValuation(
+                bench.gr_sales / 100, bench.gr_fcf / 100, 0.1,
+                bench.wacc / 100, bench.ps, bench.pe,
+                revenue, fcf, eps, cash, totalDebt, shares
+              );
+
+              const nonZero = [priceDcf, priceSales, priceEarnings].filter(p => p > 0);
+              const avgIntrinsic = nonZero.length > 0
+                ? nonZero.reduce((s, p) => s + p, 0) / nonZero.length
+                : 0;
+
+              return { symbol, estimate: avgIntrinsic > 0 ? Math.round(avgIntrinsic * 100) / 100 : 0 };
+            } catch {
+              return { symbol, estimate: 0 };
+            }
+          });
+
+          const estResults = await Promise.all(estPromises);
+          for (const { symbol, estimate } of estResults) {
+            if (estimate > 0) valMap.set(symbol, estimate);
+          }
+        }
+
+        // Inject estimated targets into holdingProfiles
+        let changed = false;
+        for (const hp of reportData.holdingProfiles) {
+          if (hp.targetSource === 'none' && valMap.has(hp.symbol)) {
+            const estimate = valMap.get(hp.symbol)!;
+            hp.targetPrice = estimate;
+            hp.targetSource = 'estimated';
+            hp.estimatedGainDollar = Math.round(hp.quantity * (estimate - hp.currentPrice) * 100) / 100;
+            hp.estimatedGainPercent = hp.currentPrice > 0
+              ? Math.round(((estimate - hp.currentPrice) / hp.currentPrice) * 10000) / 100
+              : 0;
+            changed = true;
+          }
+        }
+
+        // Recalculate priceTargetSummary if any targets were added
+        if (changed) {
+          let totalTargetValue = 0;
+          for (const hp of reportData.holdingProfiles) {
+            totalTargetValue += hp.targetPrice > 0
+              ? hp.quantity * hp.targetPrice
+              : hp.quantity * hp.currentPrice;
+          }
+          const totalCurrentValue = reportData.priceTargetSummary.totalCurrentValue;
+          const gainDollar = totalTargetValue - totalCurrentValue;
+          reportData.priceTargetSummary = {
+            totalCurrentValue,
+            totalTargetValue,
+            totalEstimatedGainDollar: Math.round(gainDollar * 100) / 100,
+            totalEstimatedGainPercent: totalCurrentValue > 0
+              ? Math.round((gainDollar / totalCurrentValue) * 10000) / 100
+              : 0,
+          };
+        }
+      }
+    }
+
+    // ── Step 5c: Benchmark comparison (if benchmarks selected) ──
+    let benchmarkComparison: BenchmarkComparisonData | null = null;
+    const selectedBenchmarkKeys: string[] = config?.benchmarks ?? [];
+    if (selectedBenchmarkKeys.length > 0 && symbols.length > 0) {
+      try {
+        const selectedBenchmarks = AVAILABLE_BENCHMARKS.filter((b) =>
+          selectedBenchmarkKeys.includes(b.key)
+        );
+
+        // Fetch 10-year monthly data for each selected index + all holdings in parallel
+        const indexFetches = selectedBenchmarks.map(async (bench) => {
+          const points = await getYahooHistoricalChart(bench.symbol, 10);
+          return { key: bench.key, points };
+        });
+
+        const holdingFetches = symbols.map(async (symbol: string) => {
+          const points = await getYahooHistoricalChart(symbol, 10);
+          return { symbol, points };
+        });
+
+        const [indexResults, holdingResults] = await Promise.all([
+          Promise.all(indexFetches),
+          Promise.all(holdingFetches),
+        ]);
+
+        const indexHistories: Record<string, import('@/lib/yahoo/client').YahooChartPoint[]> = {};
+        for (const { key, points } of indexResults) {
+          if (points.length > 0) indexHistories[key] = points;
+        }
+
+        const holdingHistories: Record<string, import('@/lib/yahoo/client').YahooChartPoint[]> = {};
+        for (const { symbol, points } of holdingResults) {
+          if (points.length > 0) holdingHistories[symbol] = points;
+        }
+
+        // Build holding weights from portfolio
+        const holdingWeights = reportData.portfolio.holdings.map((h) => ({
+          symbol: h.symbol,
+          weight: h.weight,
+        }));
+
+        benchmarkComparison = buildBenchmarkComparison(
+          holdingWeights,
+          holdingHistories,
+          indexHistories,
+          selectedBenchmarks
+        );
+      } catch (err) {
+        console.warn('Benchmark comparison failed, skipping:', err);
+      }
+    }
+    reportData.benchmarkComparison = benchmarkComparison;
 
     // ── Step 6: Generate AI content (if enabled) ──
     if (config?.ai_enabled && process.env.GROQ_API_KEY) {
