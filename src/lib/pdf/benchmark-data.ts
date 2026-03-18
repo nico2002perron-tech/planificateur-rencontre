@@ -25,6 +25,13 @@ export interface BenchmarkSeries {
   color: string;
   points: GrowthPoint[];
   finalValue: number; // Last normalized value (e.g. 234.5 = +134.5%)
+  cagr: number;       // Compound Annual Growth Rate (e.g. 9.5 = 9.5%)
+  totalReturn: number; // Total return % (e.g. 147.2 = +147.2%)
+}
+
+export interface BenchmarkAnnualReturn {
+  year: number;
+  returns: Record<string, number>; // key → return % for that year
 }
 
 export interface BenchmarkComparisonData {
@@ -32,6 +39,7 @@ export interface BenchmarkComparisonData {
   indices: BenchmarkSeries[];
   startDate: string;
   endDate: string;
+  annualReturns: BenchmarkAnnualReturn[];
   /** Pre-computed text for the PDF */
   summaryText: string;
 }
@@ -55,6 +63,41 @@ function normalizeToBase100(points: YahooChartPoint[]): GrowthPoint[] {
     date: p.date,
     value: Math.round(((p.adjClose / base) * 100) * 100) / 100,
   }));
+}
+
+/** Compute CAGR from a normalized series (base 100) */
+function computeCAGR(points: GrowthPoint[]): number {
+  if (points.length < 2) return 0;
+  const startVal = points[0].value;
+  const endVal = points[points.length - 1].value;
+  if (startVal <= 0) return 0;
+  const startDate = new Date(points[0].date);
+  const endDate = new Date(points[points.length - 1].date);
+  const years = (endDate.getTime() - startDate.getTime()) / (365.25 * 24 * 3600 * 1000);
+  if (years <= 0) return 0;
+  return (Math.pow(endVal / startVal, 1 / years) - 1) * 100;
+}
+
+/** Compute annual returns for a series grouped by calendar year */
+function computeSeriesAnnualReturns(points: GrowthPoint[]): Record<number, number> {
+  if (points.length < 2) return {};
+  const byYear = new Map<number, { first: number; last: number }>();
+  for (const p of points) {
+    const year = parseInt(p.date.substring(0, 4));
+    const existing = byYear.get(year);
+    if (!existing) {
+      byYear.set(year, { first: p.value, last: p.value });
+    } else {
+      existing.last = p.value;
+    }
+  }
+  const result: Record<number, number> = {};
+  for (const [year, { first, last }] of byYear) {
+    if (first > 0) {
+      result[year] = Math.round(((last - first) / first) * 10000) / 100;
+    }
+  }
+  return result;
 }
 
 /**
@@ -161,6 +204,8 @@ export function buildBenchmarkComparison(
       color: bench.color,
       points: normalized,
       finalValue: normalized[normalized.length - 1].value,
+      cagr: 0,          // computed after alignment
+      totalReturn: 0,    // computed after alignment
     });
   }
 
@@ -211,25 +256,78 @@ export function buildBenchmarkComparison(
     ? portfolioPoints[portfolioPoints.length - 1].value
     : 100;
 
+  // ── 4. Compute CAGR + total return for each series ──
+  const portfolioCagr = computeCAGR(portfolioPoints);
+  const portfolioTotalReturn = portfolioFinal - 100;
+
   const portfolioSeries: BenchmarkSeries = {
     key: 'portfolio',
     label: 'Portefeuille',
     color: '#00b4d8', // brand cyan
     points: portfolioPoints,
     finalValue: portfolioFinal,
+    cagr: Math.round(portfolioCagr * 100) / 100,
+    totalReturn: Math.round(portfolioTotalReturn * 100) / 100,
   };
 
-  // ── 4. Build summary text ──
+  for (const idx of indexSeries) {
+    idx.cagr = Math.round(computeCAGR(idx.points) * 100) / 100;
+    idx.totalReturn = Math.round((idx.finalValue - 100) * 100) / 100;
+  }
+
+  // ── 5. Compute annual returns for all series ──
+  const allSeriesFinal = [portfolioSeries, ...indexSeries];
+  const annualReturnsByKey: Record<string, Record<number, number>> = {};
+  for (const s of allSeriesFinal) {
+    annualReturnsByKey[s.key] = computeSeriesAnnualReturns(s.points);
+  }
+
+  // Collect all years across all series, sorted
+  const allYearsSet = new Set<number>();
+  for (const returns of Object.values(annualReturnsByKey)) {
+    for (const year of Object.keys(returns)) allYearsSet.add(parseInt(year));
+  }
+  const allYears = [...allYearsSet].sort();
+
+  // Skip first and last year if they're partial (less than 6 months of data)
+  const filteredYears = allYears.filter((year) => {
+    // Check portfolio has enough data for this year
+    const yearPoints = portfolioPoints.filter((p) => p.date.startsWith(String(year)));
+    return yearPoints.length >= 6;
+  });
+
+  const annualReturns: BenchmarkAnnualReturn[] = filteredYears.map((year) => {
+    const returns: Record<string, number> = {};
+    for (const s of allSeriesFinal) {
+      returns[s.key] = annualReturnsByKey[s.key][year] ?? 0;
+    }
+    return { year, returns };
+  });
+
+  // ── 6. Build summary text ──
   const startDate = portfolioPoints[0]?.date || '';
   const endDate = portfolioPoints[portfolioPoints.length - 1]?.date || '';
   const startYear = startDate.substring(0, 4);
   const endYear = endDate.substring(0, 4);
+
+  // Find best index to compare
+  const bestIndex = indexSeries.reduce((best, idx) =>
+    idx.cagr > best.cagr ? idx : best, indexSeries[0]);
+  const outperformance = Math.round((portfolioCagr - bestIndex.cagr) * 100) / 100;
 
   let summaryText = `A titre illustratif, un investissement de 100 $ dans ce portefeuille depuis ${startYear} aurait atteint une valeur de ${portfolioFinal.toFixed(0)} $`;
   for (const idx of indexSeries) {
     summaryText += `, comparativement a ${idx.finalValue.toFixed(0)} $ pour le ${idx.label}`;
   }
   summaryText += ` en date de ${endYear}. `;
+
+  if (outperformance > 0.5) {
+    summaryText += `Le portefeuille a surpasse le ${bestIndex.label} de ${outperformance.toFixed(1)} % par annee en moyenne (CAGR: ${portfolioCagr.toFixed(1)} % vs ${bestIndex.cagr.toFixed(1)} %). `;
+  } else if (outperformance < -0.5) {
+    summaryText += `Le ${bestIndex.label} a surpasse le portefeuille de ${Math.abs(outperformance).toFixed(1)} % par annee en moyenne (CAGR: ${bestIndex.cagr.toFixed(1)} % vs ${portfolioCagr.toFixed(1)} %). `;
+  } else {
+    summaryText += `Le portefeuille a offert un rendement comparable au ${bestIndex.label} (CAGR: ${portfolioCagr.toFixed(1)} % vs ${bestIndex.cagr.toFixed(1)} %). `;
+  }
   summaryText += 'Ces resultats sont bases sur les rendements historiques ajustes (total return) et ne garantissent pas les rendements futurs.';
 
   return {
@@ -237,6 +335,7 @@ export function buildBenchmarkComparison(
     indices: indexSeries,
     startDate,
     endDate,
+    annualReturns,
     summaryText,
   };
 }
