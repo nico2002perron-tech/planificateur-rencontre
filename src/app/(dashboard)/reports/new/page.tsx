@@ -17,8 +17,9 @@ import {
 } from 'lucide-react';
 
 const BENCHMARK_OPTIONS = [
-  { key: 'sp500', label: 'S&P 500', description: 'Indice des 500 plus grandes entreprises americaines' },
-  { key: 'tsx', label: 'S&P/TSX Composite', description: 'Indice principal de la Bourse de Toronto' },
+  { key: 'sp500_usd', label: 'S&P 500 (USD)', description: 'En dollars americains — rendement brut sans effet de change' },
+  { key: 'sp500_cad', label: 'S&P 500 (CAD)', description: 'Via XUS.TO — rendement reel pour un investisseur canadien' },
+  { key: 'tsx', label: 'S&P/TSX Composite', description: 'Indice principal de la Bourse de Toronto (CAD)' },
 ];
 
 interface YahooPrice {

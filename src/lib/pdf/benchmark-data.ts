@@ -39,7 +39,8 @@ export interface BenchmarkComparisonData {
 // ─── Available Benchmarks ────────────────────────────────────────
 
 export const AVAILABLE_BENCHMARKS: BenchmarkIndex[] = [
-  { key: 'sp500', label: 'S&P 500', symbol: '^GSPC', color: '#ef4444' },
+  { key: 'sp500_usd', label: 'S&P 500 (USD)', symbol: '^GSPC', color: '#ef4444' },
+  { key: 'sp500_cad', label: 'S&P 500 (CAD)', symbol: 'XUS.TO', color: '#dc2626' },
   { key: 'tsx', label: 'S&P/TSX', symbol: '^GSPTSE', color: '#f59e0b' },
 ];
 
