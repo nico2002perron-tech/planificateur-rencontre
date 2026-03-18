@@ -643,7 +643,7 @@ function BenchmarkComparisonChart({ data }: { data: BenchmarkComparisonData }) {
   if (allPoints.length === 0) return null;
 
   const chartW = 660;
-  const chartH = 220;
+  const chartH = 150;
   const padL = 5;
   const padR = 5;
   const padT = 16;
@@ -831,11 +831,11 @@ function BenchmarkComparisonChart({ data }: { data: BenchmarkComparisonData }) {
       </View>
 
       {/* X-axis labels */}
-      <View style={{ position: 'relative', height: 14, marginLeft: 40 }}>
+      <View style={{ position: 'relative', height: 12, marginLeft: 40 }}>
         {xLabels.map((l, i) => (
           <Text key={i} style={{
-            position: 'absolute', left: l.x - 12, top: 2,
-            fontSize: 6.5, color: C.textTer, width: 30, textAlign: 'center',
+            position: 'absolute', left: l.x - 12, top: 1,
+            fontSize: 6, color: C.textTer, width: 30, textAlign: 'center',
           }}>
             {l.label}
           </Text>
@@ -843,7 +843,7 @@ function BenchmarkComparisonChart({ data }: { data: BenchmarkComparisonData }) {
       </View>
 
       {/* Legend */}
-      <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 6 }}>
+      <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 3 }}>
         {allSeries.map((s) => (
           <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 16, height: 3, borderRadius: 2, backgroundColor: s.color, marginRight: 5 }} />
@@ -1656,20 +1656,20 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </View>
             </View>
 
-            {/* KPI cards row */}
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+            {/* KPI cards row — compact */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
               {/* Portfolio final value */}
               <View style={{
-                flex: 1, backgroundColor: '#f0fafb', borderRadius: 12, padding: 12,
+                flex: 1, backgroundColor: '#f0fafb', borderRadius: 10, padding: 8, paddingVertical: 7,
                 borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
               }}>
-                <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
+                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 2 }}>
                   Portefeuille
                 </Text>
-                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: C.cyan }}>
+                <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: C.cyan }}>
                   {benchData.portfolio.finalValue.toFixed(0)} $
                 </Text>
-                <Text style={{ fontSize: 8, color: C.textSec, marginTop: 3 }}>
+                <Text style={{ fontSize: 7, color: C.textSec, marginTop: 2 }}>
                   CAGR: {benchData.portfolio.cagr.toFixed(1)} % / an
                 </Text>
               </View>
@@ -1677,16 +1677,16 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               {/* Each index */}
               {benchData.indices.map((idx) => (
                 <View key={idx.key} style={{
-                  flex: 1, backgroundColor: C.card, borderRadius: 12, padding: 12,
+                  flex: 1, backgroundColor: C.card, borderRadius: 10, padding: 8, paddingVertical: 7,
                   borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
                 }}>
-                  <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
+                  <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 2 }}>
                     {idx.label}
                   </Text>
-                  <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: idx.color }}>
+                  <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: idx.color }}>
                     {idx.finalValue.toFixed(0)} $
                   </Text>
-                  <Text style={{ fontSize: 8, color: C.textSec, marginTop: 3 }}>
+                  <Text style={{ fontSize: 7, color: C.textSec, marginTop: 2 }}>
                     CAGR: {idx.cagr.toFixed(1)} % / an
                   </Text>
                 </View>
@@ -1695,21 +1695,21 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               {/* Surperformance badge */}
               <View style={{
                 flex: 1, backgroundColor: outperf > 0.5 ? C.upBg : outperf < -0.5 ? C.downBg : C.warnBg,
-                borderRadius: 12, padding: 12,
+                borderRadius: 10, padding: 8, paddingVertical: 7,
                 borderWidth: 1,
                 borderColor: outperf > 0.5 ? C.upBorder : outperf < -0.5 ? C.downBorder : C.warnBorder,
                 borderStyle: 'solid' as const,
               }}>
-                <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
-                  {outperf > 0.5 ? 'Surperformance' : outperf < -0.5 ? 'Sous-performance' : 'Performance comparable'}
+                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 2 }}>
+                  {outperf > 0.5 ? 'Surperformance' : outperf < -0.5 ? 'Sous-performance' : 'Perf. comparable'}
                 </Text>
                 <Text style={{
-                  fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800,
+                  fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800,
                   color: outperf > 0.5 ? C.up : outperf < -0.5 ? C.down : C.warn,
                 }}>
                   {outperf >= 0 ? '+' : ''}{outperf.toFixed(1)} %
                 </Text>
-                <Text style={{ fontSize: 8, color: C.textSec, marginTop: 3 }}>
+                <Text style={{ fontSize: 7, color: C.textSec, marginTop: 2 }}>
                   vs {bestIndex.label} / an
                 </Text>
               </View>
@@ -1718,33 +1718,36 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             {/* Chart */}
             <BenchmarkComparisonChart data={benchData} />
 
-            {/* Annual Returns Table */}
+            {/* Annual Returns Table — compact horizontal */}
             {benchData.annualReturns.length > 0 && (
-              <View style={{ marginTop: 10 }}>
-                <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, marginBottom: 6 }}>
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                   Rendements annuels
                 </Text>
                 <View style={styles.table}>
                   {/* Header */}
-                  <View style={styles.th}>
-                    <Text style={{ ...styles.thCell, width: 52 }}>Annee</Text>
+                  <View style={{ ...styles.th, paddingVertical: 5 }}>
+                    <Text style={{ ...styles.thCell, width: 48, fontSize: 6.5 }}>Annee</Text>
                     {allBenchSeries.map((s) => (
-                      <Text key={s.key} style={{ ...styles.thCell, flex: 1, textAlign: 'center' }}>{s.label}</Text>
+                      <Text key={s.key} style={{ ...styles.thCell, flex: 1, textAlign: 'center', fontSize: 6.5 }}>{s.label}</Text>
                     ))}
                   </View>
                   {/* Rows */}
                   {benchData.annualReturns.map((ar, i) => (
-                    <View key={ar.year} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                      <Text style={{ ...styles.tdBold, width: 52 }}>{ar.year}</Text>
+                    <View key={ar.year} style={{
+                      flexDirection: 'row', paddingVertical: 3.5, paddingHorizontal: 6,
+                      backgroundColor: i % 2 === 0 ? C.white : C.trAlt,
+                      borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' as const,
+                    }}>
+                      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, width: 48, paddingHorizontal: 4 }}>{ar.year}</Text>
                       {allBenchSeries.map((s) => {
                         const ret = ar.returns[s.key] ?? 0;
-                        // Find best return this year
                         const allReturns = allBenchSeries.map((ss) => ar.returns[ss.key] ?? 0);
                         const isBest = ret === Math.max(...allReturns) && ret !== 0;
                         return (
                           <Text key={s.key} style={{
-                            ...styles.td, flex: 1, textAlign: 'center',
-                            fontFamily: isBest ? 'Open Sans' : 'Open Sans',
+                            fontSize: 8, flex: 1, textAlign: 'center', paddingHorizontal: 4,
+                            fontFamily: 'Open Sans',
                             fontWeight: isBest ? 600 : 400,
                             color: ret > 0 ? C.up : ret < 0 ? C.down : C.textTer,
                           }}>
@@ -1756,13 +1759,13 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                   ))}
                   {/* CAGR total row */}
                   <View style={{
-                    flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 6, paddingHorizontal: 6,
+                    flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 4, paddingHorizontal: 6,
                     borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
                   }}>
-                    <Text style={{ ...styles.tdBold, width: 52, fontSize: 8 }}>CAGR</Text>
+                    <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, width: 48, paddingHorizontal: 4 }}>CAGR</Text>
                     {allBenchSeries.map((s) => (
                       <Text key={s.key} style={{
-                        ...styles.tdBold, flex: 1, textAlign: 'center', fontSize: 8,
+                        fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, flex: 1, textAlign: 'center', paddingHorizontal: 4,
                         color: s.cagr > 0 ? C.up : C.down,
                       }}>
                         {s.cagr.toFixed(1)} % / an
@@ -1773,20 +1776,19 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </View>
             )}
 
-            {/* Summary text */}
+            {/* Summary + disclaimer combined */}
             <View style={{
-              backgroundColor: C.card, borderRadius: 10, padding: 12, marginTop: 6,
+              backgroundColor: C.card, borderRadius: 8, padding: 10, marginTop: 6,
               borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
               borderLeftWidth: 3, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
             }}>
-              <Text style={{ fontSize: 8, color: C.text, lineHeight: 1.5 }}>
+              <Text style={{ fontSize: 7.5, color: C.text, lineHeight: 1.5 }}>
                 {benchData.summaryText}
               </Text>
+              <Text style={{ fontSize: 6.5, color: C.textTer, marginTop: 4 }}>
+                Source: Yahoo Finance (adjusted close). Les rendements passes ne sont pas garants des rendements futurs.
+              </Text>
             </View>
-
-            <Text style={{ ...styles.noteText, marginTop: 4 }}>
-              Source: Yahoo Finance (adjusted close). Les rendements passes ne sont pas garants des rendements futurs.
-            </Text>
 
             <PageFooter num={5} total={totalPages} />
           </Page>
