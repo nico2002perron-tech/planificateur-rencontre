@@ -4,15 +4,14 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import useSWR from 'swr';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { parseCroesusData, ASSET_TYPE_CONFIG, type ParseResult, type ParsedHolding, type AssetType } from '@/lib/parsers/croesus-parser';
+import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult, type ParsedHolding, type AssetType } from '@/lib/parsers/croesus-parser';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
-  Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, Clock,
+  Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -37,6 +36,17 @@ const ASSET_ICONS: Record<AssetType, typeof TrendingUp> = {
   PREFERRED: Shield,
   CASH: Wallet,
   OTHER: DollarSign,
+};
+
+const ACCOUNT_COLORS: Record<string, string> = {
+  A: 'bg-gray-100 text-gray-700',
+  E: 'bg-orange-50 text-orange-700',
+  W: 'bg-emerald-50 text-emerald-700',
+  S: 'bg-blue-50 text-blue-700',
+  T: 'bg-purple-50 text-purple-700',
+  Y: 'bg-purple-50 text-purple-600',
+  P: 'bg-rose-50 text-rose-700',
+  F: 'bg-cyan-50 text-cyan-700',
 };
 
 interface YahooPrice {
@@ -92,7 +102,6 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
 
   return (
     <div className="space-y-6">
-      {/* Hero zone */}
       <div
         className={`
           relative rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer
@@ -127,7 +136,7 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
             value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
             onPaste={handlePaste}
-            placeholder="Ctrl+V pour coller les données de Croesus...&#10;&#10;Exemple (Qté, Description, Symbole, Prix marché, Val. compt., Val. marché, Durée Mod., Int. courus):&#10;150    Banque Royale du Canada    RY    165,20    22 500,00    24 780,00        125,50&#10;50 000    Canada 3,5% 2028-06-01    CAN 3.5 28    101,25    50 000,00    50 625,00    2,85    875,00&#10;500    iShares Core Cdn Bond    XBB    27,85    14 200,00    13 925,00        45,20"
+            placeholder={"Ctrl+V pour coller les données de Croesus...\n\nFormat détecté automatiquement:\nQté | Description | Compte | Symbole | PRU | Prix marché | Val. compt. | Val. marché | Dur. Mod. | Int. courus | Revenu"}
             className="w-full h-40 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-mono
               text-text-main placeholder-text-muted/50 resize-none
               focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary
@@ -136,7 +145,6 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
         </div>
       </div>
 
-      {/* Manual paste button */}
       {textValue.trim() && (
         <div className="flex justify-center">
           <Button
@@ -149,7 +157,6 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
         </div>
       )}
 
-      {/* Tips */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
           { icon: '1', title: 'Sélectionnez', desc: 'Dans Croesus, sélectionnez toutes les lignes de positions du client' },
@@ -202,9 +209,7 @@ function CategoryCard({ type, count, value, active, onClick }: {
         <p className="text-xs text-text-muted">{config.label}{count > 1 ? 's' : ''}</p>
         <p className="text-sm font-bold text-text-main">{count} position{count > 1 ? 's' : ''}</p>
       </div>
-      {value > 0 && (
-        <p className="text-xs font-semibold text-text-muted whitespace-nowrap">{formatCurrency(value)}</p>
-      )}
+      <p className="text-xs font-semibold text-text-muted whitespace-nowrap">{formatCurrency(value)}</p>
     </button>
   );
 }
@@ -221,12 +226,13 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
 
-  // Apply symbol overrides
+  // Apply symbol overrides — use index as stable key since same symbol can appear in multiple accounts
   const holdings = useMemo(() => {
-    return result.holdings.map(h => ({
+    return result.holdings.map((h, idx) => ({
       ...h,
-      symbol: symbolOverrides[h.symbol] || h.symbol,
-      _originalSymbol: h.symbol,
+      symbol: symbolOverrides[`${idx}_${h.symbol}`] || h.symbol,
+      _key: `${idx}_${h.symbol}_${h.accountType}`,
+      _originalKey: `${idx}_${h.symbol}`,
     }));
   }, [result.holdings, symbolOverrides]);
 
@@ -236,11 +242,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     return holdings.filter(h => h.assetType === activeFilter);
   }, [holdings, activeFilter]);
 
-  // Get priceable symbols (equities + ETFs + preferred)
+  // Get priceable symbols (equities + ETFs + preferred — deduplicated)
   const priceableSymbols = useMemo(() => {
-    return holdings
-      .filter(h => ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType))
-      .map(h => h.symbol);
+    const symbols = new Set<string>();
+    holdings.forEach(h => {
+      if (['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType)) {
+        symbols.add(h.symbol);
+      }
+    });
+    return Array.from(symbols);
   }, [holdings]);
 
   // Fetch prices & targets
@@ -254,23 +264,24 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     if (!showTargets) return new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
     const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
 
-    holdings.forEach(h => {
-      if (!['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType)) return;
+    priceableSymbols.forEach(sym => {
+      const holding = holdings.find(h => h.symbol === sym);
+      if (!holding) return;
 
-      const yahoo = prices.get(h.symbol);
-      const target = targets[h.symbol];
-      const currentPrice = yahoo?.price || h.marketPrice;
-      const hasCustom = h.symbol in customTargets;
+      const yahoo = prices.get(sym);
+      const target = targets[sym];
+      const currentPrice = yahoo?.price || holding.marketPrice;
+      const hasCustom = sym in customTargets;
       const apiTarget = target?.targetConsensus || 0;
-      const targetPrice = hasCustom ? customTargets[h.symbol] : (apiTarget > 0 ? apiTarget : 0);
+      const targetPrice = hasCustom ? customTargets[sym] : (apiTarget > 0 ? apiTarget : 0);
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
       const source = hasCustom ? 'Manuel' : (apiTarget > 0 ? 'Analyste' : 'N/D');
 
-      map.set(h.symbol, { currentPrice, targetPrice, gainPct, source });
+      map.set(sym, { currentPrice, targetPrice, gainPct, source });
     });
 
     return map;
-  }, [showTargets, holdings, prices, targets, customTargets]);
+  }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols]);
 
   // Category values
   const categoryValues = useMemo(() => {
@@ -290,7 +301,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
     holdings.forEach(h => {
       const data = targetData.get(h.symbol);
-      if (data) {
+      if (data && ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType)) {
         totalCurrent += h.quantity * data.currentPrice;
         if (data.targetPrice > 0) {
           totalTarget += h.quantity * data.targetPrice;
@@ -298,9 +309,6 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         } else {
           totalTarget += h.quantity * data.currentPrice;
         }
-      } else {
-        totalCurrent += h.marketValue;
-        totalTarget += h.marketValue;
       }
     });
 
@@ -313,11 +321,11 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const handleExportTargets = useCallback(() => {
     if (targetData.size === 0) return;
 
-    const lines = ['Symbole\tNom\tPrix actuel\tCours cible\tGain estimé %\tSource'];
+    const lines = ['Symbole\tNom\tCompte\tPrix actuel\tCours cible\tGain estimé %\tSource\tRevenu annuel'];
     holdings.forEach(h => {
       const data = targetData.get(h.symbol);
       if (data) {
-        lines.push(`${h.symbol}\t${h.name}\t${data.currentPrice.toFixed(2)}\t${data.targetPrice > 0 ? data.targetPrice.toFixed(2) : 'N/D'}\t${data.targetPrice > 0 ? data.gainPct.toFixed(1) + '%' : 'N/D'}\t${data.source}`);
+        lines.push(`${h.symbol}\t${h.name}\t${h.accountLabel}\t${data.currentPrice.toFixed(2)}\t${data.targetPrice > 0 ? data.targetPrice.toFixed(2) : 'N/D'}\t${data.targetPrice > 0 ? data.gainPct.toFixed(1) + '%' : 'N/D'}\t${data.source}\t${h.annualIncome > 0 ? h.annualIncome.toFixed(2) : ''}`);
       }
     });
 
@@ -357,7 +365,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             </p>
             <p className="text-xs text-text-muted">
               Valeur marchande: {formatCurrency(result.summary.totalMarketValue)}
-              {result.summary.currencies.length > 0 && ` — ${result.summary.currencies.join(', ')}`}
+              {result.summary.totalAnnualIncome > 0 && (
+                <> — Revenu annuel: <span className="font-semibold text-emerald-600">{formatCurrency(result.summary.totalAnnualIncome)}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -367,6 +377,22 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           </Button>
         </div>
       </div>
+
+      {/* Account type badges */}
+      {result.summary.accountTypes.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {result.summary.accountTypes.map(code => {
+            const label = ACCOUNT_TYPE_MAP[code] || code;
+            const count = holdings.filter(h => h.accountType === code).length;
+            const colorClass = ACCOUNT_COLORS[code] || 'bg-gray-100 text-gray-700';
+            return (
+              <span key={code} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${colorClass}`}>
+                {label} ({count})
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Category cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -407,42 +433,50 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-text-muted bg-gray-50/50">
-                <th className="text-left py-3 px-4 font-semibold text-xs">Type</th>
-                <th className="text-left py-3 px-4 font-semibold text-xs">Symbole</th>
-                <th className="text-left py-3 px-4 font-semibold text-xs">Description</th>
-                <th className="text-right py-3 px-4 font-semibold text-xs">Qté</th>
-                <th className="text-right py-3 px-4 font-semibold text-xs">Prix marché</th>
-                <th className="text-right py-3 px-4 font-semibold text-xs">Valeur</th>
+                <th className="text-left py-3 px-3 font-semibold text-xs">Type</th>
+                <th className="text-center py-3 px-2 font-semibold text-xs">Compte</th>
+                <th className="text-left py-3 px-3 font-semibold text-xs">Symbole</th>
+                <th className="text-left py-3 px-3 font-semibold text-xs">Description</th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Qté</th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">PRU</th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Prix marché</th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Val. marché</th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Revenu</th>
                 {showTargets && (
                   <>
-                    <th className="text-right py-3 px-4 font-semibold text-xs">Cours cible</th>
-                    <th className="text-right py-3 px-4 font-semibold text-xs">Gain est.</th>
+                    <th className="text-right py-3 px-3 font-semibold text-xs">Cours cible</th>
+                    <th className="text-right py-3 px-3 font-semibold text-xs">Gain est.</th>
                   </>
                 )}
-                <th className="text-center py-3 px-4 font-semibold text-xs">Dev.</th>
               </tr>
             </thead>
             <tbody>
               {filteredHoldings.map((h) => {
                 const config = ASSET_TYPE_CONFIG[h.assetType];
                 const Icon = ASSET_ICONS[h.assetType];
-                const isExpanded = expandedRow === h.symbol;
+                const rowKey = h._key;
+                const isExpanded = expandedRow === rowKey;
                 const td = targetData.get(h.symbol);
-                const originalSymbol = (h as ParsedHolding & { _originalSymbol: string })._originalSymbol;
+                const acctColor = ACCOUNT_COLORS[h.accountType] || 'bg-gray-100 text-gray-700';
 
                 return (
                   <tr
-                    key={h.symbol + h.name}
+                    key={rowKey}
                     className={`border-b border-gray-50 transition-colors ${isExpanded ? 'bg-gray-50/80' : 'hover:bg-gray-50/50'}`}
                   >
-                    <td className="py-2.5 px-4">
+                    <td className="py-2.5 px-3">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.bg} ${config.color}`}>
                         <Icon className="h-3 w-3" />
                         {config.label}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4">
-                      {editingSymbol === originalSymbol ? (
+                    <td className="py-2.5 px-2 text-center">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${acctColor}`}>
+                        {h.accountLabel}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {editingSymbol === h._originalKey ? (
                         <input
                           type="text"
                           autoFocus
@@ -451,7 +485,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
-                              if (val) setSymbolOverrides(prev => ({ ...prev, [originalSymbol]: val }));
+                              if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
                               setEditingSymbol(null);
                             } else if (e.key === 'Escape') {
                               setEditingSymbol(null);
@@ -459,15 +493,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                           }}
                           onBlur={(e) => {
                             const val = e.target.value.trim().toUpperCase();
-                            if (val) setSymbolOverrides(prev => ({ ...prev, [originalSymbol]: val }));
+                            if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
                             setEditingSymbol(null);
                           }}
                         />
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono font-semibold text-brand-primary">{h.symbol}</span>
+                        <div className="flex items-center gap-1 group">
+                          <span className="font-mono font-semibold text-brand-primary text-xs">{h.symbol}</span>
                           <button
-                            onClick={() => setEditingSymbol(originalSymbol)}
+                            onClick={() => setEditingSymbol(h._originalKey)}
                             className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
                             title="Modifier le symbole"
                           >
@@ -476,20 +510,20 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                         </div>
                       )}
                     </td>
-                    <td className="py-2.5 px-4">
+                    <td className="py-2.5 px-3">
                       <button
-                        onClick={() => setExpandedRow(isExpanded ? null : h.symbol)}
+                        onClick={() => setExpandedRow(isExpanded ? null : rowKey)}
                         className="flex items-center gap-1 text-left text-text-main hover:text-brand-primary transition-colors"
                       >
-                        <span className="truncate max-w-[200px]">{h.name}</span>
+                        <span className="truncate max-w-[200px] text-xs">{h.name}</span>
                         {(h.couponRate || h.maturityDate || h.modifiedDuration || h.accruedInterest) && (
                           isExpanded
                             ? <ChevronUp className="h-3 w-3 text-text-muted flex-shrink-0" />
                             : <ChevronDown className="h-3 w-3 text-text-muted flex-shrink-0" />
                         )}
                       </button>
-                      {isExpanded && (h.couponRate || h.maturityDate || h.modifiedDuration || h.accruedInterest || h.sector) && (
-                        <div className="mt-1.5 flex flex-wrap gap-2">
+                      {isExpanded && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
                           {h.couponRate !== undefined && h.couponRate > 0 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
                               Coupon: {h.couponRate.toFixed(2)}%
@@ -505,40 +539,41 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                               Durée mod: {h.modifiedDuration.toFixed(2)}
                             </span>
                           )}
-                          {h.yieldToMaturity !== undefined && h.yieldToMaturity > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                              Rend: {h.yieldToMaturity.toFixed(2)}%
-                            </span>
-                          )}
                           {h.accruedInterest !== undefined && h.accruedInterest !== 0 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700">
                               Int. courus: {formatCurrencyFull(h.accruedInterest)}
                             </span>
                           )}
-                          {h.sector && (
+                          {h.averageCost > 0 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-text-muted">
-                              {h.sector}
+                              Val. compt: {formatCurrency(h.bookValue)}
                             </span>
                           )}
                         </div>
                       )}
                     </td>
-                    <td className="py-2.5 px-4 text-right font-medium tabular-nums">
-                      {h.quantity > 0 ? h.quantity.toLocaleString('fr-CA') : '—'}
+                    <td className="py-2.5 px-3 text-right font-medium tabular-nums text-xs">
+                      {h.quantity !== 0 ? h.quantity.toLocaleString('fr-CA') : '—'}
                     </td>
-                    <td className="py-2.5 px-4 text-right tabular-nums">
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs text-text-muted">
+                      {h.averageCost > 0 ? formatCurrencyFull(h.averageCost) : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs">
                       {showTargets && td ? (
                         <span className="font-semibold">{formatCurrencyFull(td.currentPrice)}</span>
                       ) : (
                         h.marketPrice > 0 ? formatCurrencyFull(h.marketPrice) : '—'
                       )}
                     </td>
-                    <td className="py-2.5 px-4 text-right font-semibold tabular-nums">
-                      {h.marketValue > 0 ? formatCurrency(h.marketValue) : '—'}
+                    <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${h.marketValue < 0 ? 'text-red-500' : ''}`}>
+                      {h.marketValue !== 0 ? formatCurrency(h.marketValue) : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs text-emerald-600">
+                      {h.annualIncome > 0 ? formatCurrency(h.annualIncome) : '—'}
                     </td>
                     {showTargets && (
                       <>
-                        <td className="py-2.5 px-4 text-right">
+                        <td className="py-2.5 px-3 text-right">
                           {td ? (
                             editingTarget === h.symbol ? (
                               <input
@@ -564,7 +599,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                               />
                             ) : td.targetPrice > 0 ? (
                               <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold">{formatCurrencyFull(td.targetPrice)}</span>
+                                <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
                                 <span className={`text-[10px] px-1 py-0.5 rounded ${
                                   td.source === 'Manuel' ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'
                                 }`}>
@@ -597,16 +632,13 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                             <span className="text-text-muted text-xs">—</span>
                           )}
                         </td>
-                        <td className={`py-2.5 px-4 text-right font-semibold tabular-nums ${
+                        <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${
                           td && td.gainPct > 0 ? 'text-emerald-600' : td && td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'
                         }`}>
                           {td && td.targetPrice > 0 ? formatPercent(td.gainPct) : '—'}
                         </td>
                       </>
                     )}
-                    <td className="py-2.5 px-4 text-center">
-                      <span className="text-xs text-text-muted">{h.currency}</span>
-                    </td>
                   </tr>
                 );
               })}
@@ -672,8 +704,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-xs text-blue-700">
           Les cours cibles proviennent du consensus des analystes (Yahoo Finance). Vous pouvez modifier
-          manuellement n&apos;importe quel cours cible en cliquant sur le bouton &quot;Saisir&quot; ou l&apos;icône de crayon.
-          Cliquez sur un symbole pour le corriger si nécessaire (ex: ajouter .TO pour la Bourse de Toronto).
+          manuellement n&apos;importe quel cours cible en cliquant sur &quot;Saisir&quot; ou l&apos;icône de crayon.
+          Les symboles sont aussi modifiables si la correspondance automatique n&apos;est pas bonne.
         </p>
       </div>
     </div>

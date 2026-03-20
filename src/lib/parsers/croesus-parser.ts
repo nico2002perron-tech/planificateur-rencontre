@@ -1,8 +1,21 @@
 /**
  * Croesus Portfolio Data Parser
  *
- * Parses tab-separated (or CSV) data copied from Croesus portfolio management system.
- * Handles equities, fixed income, ETFs, funds, and cash positions.
+ * Parses tab-separated data copied from Croesus portfolio management system.
+ * Handles equities, fixed income, ETFs, funds, cash/margin positions.
+ *
+ * Expected Croesus column order (11 columns):
+ *   0: Quantité          — e.g. 58 000 or (131 167,99) for negatives
+ *   1: Description        — e.g. FORD CRED CB 2.961%16SP26
+ *   2: Type de compte     — A/E/W/S/T/Y/P/F (Comptant/Marge/CELI/REER/FERR/...)
+ *   3: Symbole            — e.g. T482B6 (CUSIP), CJ, ENB, 1CAD, AP.UN
+ *   4: PRU (coût moyen)   — e.g. 91,672
+ *   5: Prix au marché     — e.g. 99,808
+ *   6: Valeur comptable   — e.g. 53 169,50
+ *   7: Valeur de marché   — e.g. 57 888,64
+ *   8: Durée Mod.         — e.g. 0,48 or n/d
+ *   9: Intérêts courus    — e.g. 14,00 (accrued interest / dividends)
+ *  10: Revenu annuel      — e.g. 1 717,38 (annual coupon or dividend income)
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -20,6 +33,9 @@ export interface ParsedHolding {
   currency: string;
   assetType: AssetType;
   weight: number;
+  accountType: string;       // Raw code: A, E, W, S, T, Y, P, F
+  accountLabel: string;      // Human label: Comptant, Marge, CELI, ...
+  annualIncome: number;      // Annual dividend or coupon income
   // Fixed income specifics
   couponRate?: number;
   maturityDate?: string;
@@ -44,9 +60,24 @@ export interface ParseResult {
     cash: number;
     other: number;
     totalMarketValue: number;
+    totalAnnualIncome: number;
     currencies: string[];
+    accountTypes: string[];
   };
 }
+
+// ─── Account type mapping ────────────────────────────────────────────────────
+
+export const ACCOUNT_TYPE_MAP: Record<string, string> = {
+  A: 'Comptant',
+  E: 'Marge',
+  W: 'CELI',
+  S: 'REER',
+  T: 'FERR',
+  Y: 'FERR conj.',
+  P: 'FRV',
+  F: 'Devise',
+};
 
 // ─── Column detection patterns ───────────────────────────────────────────────
 
@@ -60,12 +91,14 @@ interface ColumnMapping {
   averageCost: number;
   currency: number;
   assetType: number;
+  accountType: number;
   sector: number;
   couponRate: number;
   maturityDate: number;
   yieldToMaturity: number;
   modifiedDuration: number;
   accruedInterest: number;
+  annualIncome: number;
   weight: number;
 }
 
@@ -74,42 +107,47 @@ const HEADER_PATTERNS: Record<keyof ColumnMapping, RegExp[]> = {
   name: [/desc/i, /nom/i, /name/i, /libell/i, /security/i, /instrument/i],
   quantity: [/qt[eéè]/i, /quant/i, /nb\.?\s*parts/i, /units?/i, /nombre/i, /shares/i, /^qty$/i],
   marketPrice: [/prix\s*(du\s*)?march/i, /market\s*price/i, /cours/i, /^prix$/i, /price/i, /dernier\s*prix/i],
-  marketValue: [/val(eur)?\.?\s*march/i, /market\s*val/i, /val\.?\s*march/i, /mv/i, /montant/i],
+  marketValue: [/val(eur)?\.?\s*(de\s*)?march/i, /market\s*val/i, /val\.?\s*march/i, /mv/i],
   bookValue: [/val(eur)?\.?\s*compt/i, /book\s*val/i, /co[uû]t\s*total/i, /val\.?\s*livre/i, /bv/i],
-  averageCost: [/co[uû]t\s*(moy|unit)/i, /avg\.?\s*cost/i, /prix\s*(moy|achat|co[uû]t)/i, /cost\s*per/i, /pru/i],
+  averageCost: [/co[uû]t\s*(moy|unit)/i, /avg\.?\s*cost/i, /prix\s*(moy|achat|co[uû]t)/i, /cost\s*per/i, /pru/i, /prix\s*rev/i],
   currency: [/dev/i, /curr/i, /monnaie/i, /^ccy$/i, /devise/i],
-  assetType: [/type/i, /cat[eé]g/i, /class/i, /asset/i, /sous.?type/i],
+  assetType: [/type\s*(d'actif|actif)/i, /cat[eé]g/i, /class/i, /asset/i, /sous.?type/i],
+  accountType: [/type\s*(de\s*)?compte/i, /account/i, /acct/i, /r[eé]gime/i],
   sector: [/sect/i, /industry/i, /indust/i, /gics/i],
   couponRate: [/coupon/i, /taux/i, /rate/i],
   maturityDate: [/[eé]ch[eé]ance/i, /matur/i, /expir/i, /date.*fin/i],
   yieldToMaturity: [/rend/i, /yield/i, /ytm/i, /yld/i],
   modifiedDuration: [/dur[eé]e\s*mod/i, /mod\.?\s*dur/i, /duration/i, /dur\.?\s*mod/i],
-  accruedInterest: [/int[eé]r[eê]ts?\s*cour/i, /accrued/i, /int\.?\s*cour/i, /dividende/i, /int\.\s*courus/i],
+  accruedInterest: [/int[eé]r[eê]ts?\s*cour/i, /accrued/i, /int\.?\s*cour/i, /int\.\s*cour/i],
+  annualIncome: [/revenu/i, /income/i, /dividende/i, /distrib/i, /annual/i],
   weight: [/poids/i, /weight/i, /pond[eé]r/i, /alloc/i, /%\s*port/i, /proportion/i],
 };
 
 // ─── Asset type classification ───────────────────────────────────────────────
 
 const FIXED_INCOME_KEYWORDS = [
-  /obligat/i, /bond/i, /d[eé]bentur/i, /gic/i, /cpg/i,
+  /obligat/i, /bond/i, /d[eé]bentur/i, /\bgic\b/i, /\bcpg\b/i,
   /strip/i, /coupon\s*z/i, /z[eé]ro/i, /tr[eé]sor/i, /treasury/i,
-  /hypoth/i, /mortgage/i, /bill/i, /note\b/i, /govt/i, /gouv/i,
-  /canada\s*\d/i, /prov\s/i, /municipal/i, /corp\s*\d/i,
-  /\d+[\.,]\d+%?\s*\d{4}/i,  // pattern like "3.5% 2027" or "3,5 2027"
-  /revenu\s*fixe/i, /fixed\s*income/i, /income\s*fund/i,
+  /hypoth/i, /mortgage/i, /\bbill\b/i, /\bnote\b/i, /govt/i, /gouv/i,
+  /prov\s/i, /municipal/i,
+  /\bcb\b/i,              // "CB" = Convertible Bond or Corporate Bond in Croesus
+  /\bics\b/i,             // "ICS" = Infrastructure/Institutional Certificate Series
+  /\bred\b/i,             // "RED" = redeemable (corporate bonds)
+  /\d+[.,]\d+%\s*\d{2}/i, // pattern like "2.961%16SP26" or "4.5% 15JA30"
+  /revenu\s*fixe/i, /fixed\s*income/i,
 ];
 
 const ETF_KEYWORDS = [
-  /\betf\b/i, /\bfnb\b/i, /ishares/i, /vanguard/i, /bmo\s*etf/i,
+  /\betf\b/i, /\bfnb\b/i, /ishares/i, /vanguard/i, /bmo\s*(mid|etf)/i,
   /horizons/i, /invesco/i, /spdr/i, /proshares/i, /wisdomtree/i,
+  /purpose/i, /harvest/i, /global\s*x/i, /ci\s*first/i,
 ];
 
 const FUND_KEYWORDS = [
-  /fonds/i, /fund/i, /mutual/i, /commun/i, /s[eé]rie/i, /series/i,
-  /class[e]?\s*[a-f]/i, /cat[eé]gorie/i, /portefeuille\s/i,
-  /mandat/i, /strat[eé]g/i, /dynamique/i, /fiera/i, /mackenzie/i,
+  /fonds/i, /\bfund\b/i, /mutual/i, /commun/i, /s[eé]rie\s/i, /series\s/i,
+  /cat[eé]gorie\s/i, /mandat/i, /mackenzie/i,
   /manulife/i, /manuvie/i, /desjardins/i, /ia\s*clarington/i,
-  /ci\s*invest/i, /rbc\s*\w+\s*fund/i, /td\s*\w+\s*fund/i,
+  /ci\s*invest/i,
 ];
 
 const PREFERRED_KEYWORDS = [
@@ -118,61 +156,66 @@ const PREFERRED_KEYWORDS = [
 ];
 
 const CASH_KEYWORDS = [
-  /encaisse/i, /cash/i, /liquidit/i, /esp[eè]ces/i, /money\s*market/i,
-  /march[eé]\s*mon[eé]t/i, /\bcad\b.*\bcash\b/i, /\busd\b.*\bcash\b/i,
-  /compte\s/i, /d[eé]p[oô]t/i,
+  /solde\s*(du\s*)?compte/i,  // "SOLDE DU COMPTE CAD/USD"
+  /^1cad$/i, /^1usd$/i,       // Cash symbols in Croesus
+  /encaisse/i, /\bcash\b/i, /liquidit/i, /esp[eè]ces/i,
+  /money\s*market/i, /march[eé]\s*mon[eé]t/i,
 ];
 
 const TSX_SUFFIXES_NEEDED = [
-  // Well-known Canadian stocks that need .TO
-  /^(RY|TD|BNS|BMO|CM|SLF|MFC|GWO|IAG|POW|FFH|CNR|CNQ|CP|TRP|ENB|SU|CVE|IMO|HSE|ABX|K|AEM|FNV|WPM|SHOP|CSU|OTEX|BB|L|ATD|DOL|MRU|SAP|EMP|WN|GIL|CCL|MG|QSR|TFI|WSP|SNC|STN|BAM|BN|BIP|BEP|BEPC|BIPC|FTS|EMA|AQN|NPI|RNW|INE|SPB|IPL|KEY|PPL|GEI|ARX|WCP|ERF|BTE|VET|TVE|MEG|POU|AAV|NVA|CR|TOU|PSK|SGY|CEU|CPG|FRU|PEY|PXT|SES|PNE|WHC|BIR|CJ|KEL|WTE|HWO|ESI|PD|SVM|FR|ELD|EDV|MAG|AG|SSL|CG|GMIN|NGT|LUG|DPM|OGC|TXG|KNT|ARTG|BTO|OR|EQX|LUN|HBM|FM|CS|IVN|ERO|TECK|CCO|NXE|FCX|DML|URC|FIND|EFR|LAC|LAM|LGD|SKE|CGL|GLXY)$/i,
+  /^(RY|TD|BNS|BMO|CM|SLF|MFC|GWO|IAG|POW|FFH|CNR|CNQ|CP|TRP|ENB|SU|CVE|IMO|HSE|ABX|K|AEM|FNV|WPM|SHOP|CSU|OTEX|BB|L|ATD|DOL|MRU|EMP|WN|GIL|CCL|MG|QSR|TFI|WSP|SNC|STN|BAM|BN|BIP|BEP|BEPC|BIPC|FTS|EMA|AQN|NPI|RNW|INE|SPB|IPL|KEY|PPL|GEI|ARX|WCP|ERF|BTE|VET|TVE|MEG|POU|AAV|NVA|CR|TOU|PSK|SGY|CEU|CPG|FRU|PEY|PXT|SES|PNE|WHC|BIR|CJ|KEL|WTE|HWO|ESI|PD|SVM|FR|ELD|EDV|MAG|AG|SSL|CG|GMIN|NGT|LUG|DPM|OGC|TXG|KNT|ARTG|BTO|OR|EQX|LUN|HBM|FM|CS|IVN|ERO|TECK|CCO|NXE|DML|URC|FIND|EFR|LAC|LAM|LGD|SKE|CGL|GLXY|DFY|SOBO|FSZ|TLG)$/i,
 ];
 
-// ─── Parser ──────────────────────────────────────────────────────────────────
-
-function detectSeparator(lines: string[]): string {
-  // Try first few lines to detect separator
-  const sample = lines.slice(0, 5).join('\n');
-  const tabCount = (sample.match(/\t/g) || []).length;
-  const semiCount = (sample.match(/;/g) || []).length;
-  const commaCount = (sample.match(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/g) || []).length;
-
-  if (tabCount >= semiCount && tabCount >= commaCount && tabCount > 0) return '\t';
-  if (semiCount >= commaCount && semiCount > 0) return ';';
-  if (commaCount > 0) return ',';
-  return '\t'; // default
-}
+// ─── Number parsing ──────────────────────────────────────────────────────────
 
 function parseNumber(value: string): number {
-  if (!value || value.trim() === '' || value.trim() === '—' || value.trim() === '-') return 0;
+  if (!value) return 0;
   let cleaned = value.trim();
-  // Remove currency symbols and spaces
-  cleaned = cleaned.replace(/[$€£¥]/g, '').replace(/\s/g, '');
-  // Handle French number format: 1 234,56 → 1234.56
-  // If comma is used as decimal separator (and period as thousands)
+  // Handle n/d, N/D, n/a, N/A, —, -
+  if (/^(n\/[da]|—|-)$/i.test(cleaned)) return 0;
+  if (cleaned === '') return 0;
+
+  // Handle accounting-style negatives: (131 167,99) → -131167.99
+  let isNegative = false;
+  if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+    isNegative = true;
+    cleaned = cleaned.slice(1, -1);
+  } else if (cleaned.startsWith('-')) {
+    isNegative = true;
+    cleaned = cleaned.slice(1);
+  }
+
+  // Remove currency symbols
+  cleaned = cleaned.replace(/[$€£¥]/g, '');
+  // Remove spaces (thousands separator in French: "53 169,50")
+  cleaned = cleaned.replace(/\s/g, '');
+
+  // Handle French number format
   if (cleaned.includes(',') && !cleaned.includes('.')) {
-    // "1234,56" → "1234.56"
+    // "53169,50" → "53169.50"
     cleaned = cleaned.replace(',', '.');
   } else if (cleaned.includes(',') && cleaned.includes('.')) {
-    // "1,234.56" - comma is thousands separator
+    // "1,234.56" — comma is thousands separator
     cleaned = cleaned.replace(/,/g, '');
   }
+
   // Remove remaining non-numeric chars except . and -
-  cleaned = cleaned.replace(/[^0-9.\-]/g, '');
+  cleaned = cleaned.replace(/[^0-9.]/g, '');
   const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  if (isNaN(num)) return 0;
+  return isNegative ? -num : num;
 }
 
 function parsePercentage(value: string): number {
   const cleaned = value.replace('%', '').trim();
   const num = parseNumber(cleaned);
-  // If value was like "5.25%" return 5.25, if "0.0525" return 5.25
   return Math.abs(num) < 1 ? num * 100 : num;
 }
 
+// ─── Row parsing helpers ─────────────────────────────────────────────────────
+
 function splitRow(line: string, separator: string): string[] {
   if (separator === ',') {
-    // Handle quoted CSV fields
     const fields: string[] = [];
     let current = '';
     let inQuotes = false;
@@ -191,6 +234,43 @@ function splitRow(line: string, separator: string): string[] {
     return fields;
   }
   return line.split(separator).map(f => f.trim());
+}
+
+function detectSeparator(lines: string[]): string {
+  const sample = lines.slice(0, 5).join('\n');
+  const tabCount = (sample.match(/\t/g) || []).length;
+  const semiCount = (sample.match(/;/g) || []).length;
+  // Only count commas NOT inside parentheses (to avoid matching "(131,99)")
+  const commaCount = (sample.match(/,(?=(?:[^"(]*["(][^")]*[")]*)*[^"(]*$)/g) || []).length;
+
+  if (tabCount >= semiCount && tabCount >= commaCount && tabCount > 0) return '\t';
+  if (semiCount >= commaCount && semiCount > 0) return ';';
+  if (commaCount > 3) return ',';
+  return '\t';
+}
+
+function isHeaderRow(fields: string[]): boolean {
+  // A header row should have mostly text words (not numbers, not single letters, not n/d)
+  let headerLikeCount = 0;
+  let dataLikeCount = 0;
+
+  for (const f of fields) {
+    const trimmed = f.trim();
+    if (!trimmed) continue;
+    // Data-like: numbers, parenthesized numbers, n/d, single letters (account codes), currency-like
+    if (
+      /^\(?[\d\s,.\-$€£%]+\)?$/.test(trimmed) || // numbers, possibly with parens
+      /^[A-Z]$/i.test(trimmed) ||                  // single letter (account type code)
+      /^n\/[da]$/i.test(trimmed) ||                 // n/d or n/a
+      /^1[A-Z]{3}$/i.test(trimmed)                  // 1CAD, 1USD
+    ) {
+      dataLikeCount++;
+    } else if (trimmed.length >= 2) {
+      headerLikeCount++;
+    }
+  }
+
+  return headerLikeCount > dataLikeCount && headerLikeCount >= 3;
 }
 
 function detectColumns(headerFields: string[]): Partial<ColumnMapping> {
@@ -214,30 +294,19 @@ function detectColumns(headerFields: string[]): Partial<ColumnMapping> {
   return mapping;
 }
 
-function isHeaderRow(fields: string[]): boolean {
-  // A header row should have mostly text, not numbers
-  let textCount = 0;
-  let numberCount = 0;
-  for (const f of fields) {
-    const trimmed = f.trim();
-    if (!trimmed) continue;
-    if (/^-?[\d\s,.$€£%]+$/.test(trimmed)) {
-      numberCount++;
-    } else {
-      textCount++;
-    }
-  }
-  return textCount > numberCount && textCount >= 2;
-}
+// ─── Asset type classification ───────────────────────────────────────────────
 
-function classifyAssetType(symbol: string, name: string, typeField: string): AssetType {
+function classifyAssetType(symbol: string, name: string, typeField: string, modifiedDuration: number): AssetType {
   const combined = `${symbol} ${name} ${typeField}`;
 
-  // Cash first (most specific)
+  // Cash first — SOLDE DU COMPTE, 1CAD, 1USD
   if (CASH_KEYWORDS.some(kw => kw.test(combined))) return 'CASH';
 
-  // Fixed income
-  if (FIXED_INCOME_KEYWORDS.some(kw => kw.test(combined))) return 'FIXED_INCOME';
+  // If modified duration > 0, it's fixed income
+  if (modifiedDuration > 0) return 'FIXED_INCOME';
+
+  // Fixed income keywords
+  if (FIXED_INCOME_KEYWORDS.some(kw => kw.test(name))) return 'FIXED_INCOME';
 
   // Preferred shares
   if (PREFERRED_KEYWORDS.some(kw => kw.test(combined))) return 'PREFERRED';
@@ -255,59 +324,88 @@ function classifyAssetType(symbol: string, name: string, typeField: string): Ass
   if (typeLower.includes('fond') || typeLower.includes('fund')) return 'FUND';
   if (typeLower.includes('etf') || typeLower.includes('fnb')) return 'ETF';
 
-  // Default: if has a clean symbol pattern, probably equity
-  if (/^[A-Z]{1,5}(\.[A-Z]{1,2})?$/.test(symbol.trim())) return 'EQUITY';
+  // Default: if symbol looks like a ticker (1-5 uppercase letters, optional .XX suffix), probably equity
+  if (/^[A-Z]{1,5}(\.[A-Z]{1,3})?$/.test(symbol.trim())) return 'EQUITY';
 
   return 'OTHER';
 }
 
+// ─── Bond detail extraction from description ─────────────────────────────────
+
 /**
  * Extract coupon rate and maturity date from a bond description.
- * Examples:
- *   "Canada 3,500% 2028-06-01"  → { coupon: 3.5, maturity: "2028-06-01" }
- *   "Ontario 4.65 15jun2027"    → { coupon: 4.65, maturity: "15jun2027" }
- *   "CIBC 5,25% 2026-03-15"    → { coupon: 5.25, maturity: "2026-03-15" }
- *   "TD 3.75 01-Dec-2029"      → { coupon: 3.75, maturity: "01-Dec-2029" }
+ * Croesus formats like:
+ *   "FORD CRED CB 2.961%16SP26"     → coupon=2.961, maturity="16SP26" (Sep 2026)
+ *   "COAST CAP 7.005%   28SP26"     → coupon=7.005, maturity="28SP26"
+ *   "VIDEOTRON RED 4.5% 15JA30"     → coupon=4.5, maturity="15JA30" (Jan 2030)
+ *   "LEVIS ICS   4.2%   23AU34"     → coupon=4.2, maturity="23AU34" (Aug 2034)
+ *   "SEPT-ILES ICS 4.25% 8SP35"     → coupon=4.25, maturity="8SP35"
+ *   "Canada 3,500% 2028-06-01"      → coupon=3.5, maturity="2028-06-01"
  */
 function extractBondDetails(description: string): { coupon?: number; maturity?: string } {
   const result: { coupon?: number; maturity?: string } = {};
 
-  // Try to find coupon rate: "3,500%" or "3.5%" or standalone decimal like "4.65"
-  const couponMatch = description.match(/(\d+[.,]\d+)\s*%/) ||
-    description.match(/\b(\d+[.,]\d{1,3})\b(?=\s+\d{2,4}[\s\-])/);
+  // Coupon: "2.961%" or "4,5%" or "3,500%"
+  const couponMatch = description.match(/(\d+[.,]\d+)\s*%/);
   if (couponMatch) {
     result.coupon = parseFloat(couponMatch[1].replace(',', '.'));
   }
 
-  // Try to find maturity date in various formats
-  // YYYY-MM-DD
-  const isoDate = description.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-  if (isoDate) {
-    result.maturity = isoDate[1];
+  // Maturity — Croesus compact format: "16SP26" (DDmmYY), "15JA30", "23AU34", "8SP35"
+  const croesusDate = description.match(/\b(\d{1,2})(JA|FE|MR|AL|MA|JN|JL|AU|SP|OC|NO|DE)(\d{2})\b/i);
+  if (croesusDate) {
+    const monthMap: Record<string, string> = {
+      JA: 'jan', FE: 'fév', MR: 'mar', AL: 'avr', MA: 'mai', JN: 'jun',
+      JL: 'jul', AU: 'aoû', SP: 'sep', OC: 'oct', NO: 'nov', DE: 'déc',
+    };
+    const day = croesusDate[1];
+    const monthCode = croesusDate[2].toUpperCase();
+    const year = parseInt(croesusDate[3]) + 2000;
+    result.maturity = `${day} ${monthMap[monthCode] || monthCode} ${year}`;
   } else {
-    // DD-Mon-YYYY or DDmonYYYY
-    const altDate = description.match(/\b(\d{1,2}[\s\-]?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|janv?|f[eé]vr?|mars?|avr|mai|juin|juil|ao[uû]t|sept?|oct|nov|d[eé]c)[a-z]*[\s\-]?\d{4})\b/i);
-    if (altDate) {
-      result.maturity = altDate[1];
+    // ISO date: 2028-06-01
+    const isoDate = description.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+    if (isoDate) {
+      result.maturity = isoDate[1];
     } else {
-      // Just a year like "2028" at the end
+      // Just a year
       const yearOnly = description.match(/\b(20[2-9]\d)\b/);
-      if (yearOnly) {
-        result.maturity = yearOnly[1];
-      }
+      if (yearOnly) result.maturity = yearOnly[1];
     }
   }
 
   return result;
 }
 
-function normalizeSymbol(symbol: string, name: string): string {
+// ─── Symbol normalization ────────────────────────────────────────────────────
+
+function normalizeSymbol(symbol: string, name: string, assetType: AssetType): string {
+  // Don't touch cash symbols
+  if (assetType === 'CASH') return symbol;
+
+  // Don't touch bond CUSIP-like symbols (alphanumeric codes like T482B6, R37092, Q445C1)
+  if (assetType === 'FIXED_INCOME' && /^[A-Z]\d{2,}[A-Z0-9]*$/i.test(symbol.trim())) {
+    return symbol.trim().toUpperCase();
+  }
+
   let s = symbol.trim().toUpperCase();
 
-  // Remove common Croesus prefixes
+  // Remove common exchange prefixes
   s = s.replace(/^(TSE:|TSX:|TOR:|CVE:|NEO:|XTSE:|XTOR:)/i, '');
   s = s.replace(/^(NYSE:|NYSEARCA:|NASDAQ:|NMS:|XNYS:|XNAS:)/i, '');
   s = s.replace(/^(US\.|CA\.)/i, '');
+
+  // Handle .UN (REIT trust units): AP.UN → AP-UN.TO for Yahoo Finance
+  if (s.match(/\.UN$/)) {
+    s = s.replace('.UN', '-UN.TO');
+    return s;
+  }
+
+  // Preferred shares: BNS.PR.I → BNS-PI.TO
+  if (s.match(/\.PR\.[A-Z]$/)) {
+    s = s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
+    return s;
+  }
 
   // If it's a known Canadian stock without .TO suffix, add it
   const baseSymbol = s.replace(/\.(TO|V|CN|NE)$/, '');
@@ -315,22 +413,20 @@ function normalizeSymbol(symbol: string, name: string): string {
     s = `${baseSymbol}.TO`;
   }
 
-  // Replace Croesus preferred share notation
-  // e.g., "BNS.PR.I" → "BNS-PI.TO"
-  s = s.replace(/\.PR\.([A-Z])/, '-P$1.TO');
-
   return s;
 }
+
+// ─── Skip detection ──────────────────────────────────────────────────────────
 
 function isSkippableLine(line: string): boolean {
   const trimmed = line.trim().toLowerCase();
   if (!trimmed) return true;
-  // Skip total/subtotal lines
+  // Skip total/subtotal lines (but only if the line starts with those words)
   if (/^(total|sous.?total|sub.?total|grand\s*total|s\/total)/i.test(trimmed)) return true;
   // Skip separator lines
-  if (/^[-=_]+$/.test(trimmed)) return true;
-  // Skip lines that are just dates or page numbers
-  if (/^(page\s*\d|date|imprim|print|rapport|report|portefeuille|portfolio|client)/i.test(trimmed)) return true;
+  if (/^[-=_\s]+$/.test(trimmed)) return true;
+  // Skip page headers (but NOT "SOLDE" — those are cash positions)
+  if (/^(page\s*\d|imprim|print)/i.test(trimmed)) return true;
   return false;
 }
 
@@ -349,7 +445,7 @@ export function parseCroesusData(rawText: string): ParseResult {
       holdings: [],
       detectedHeaders: [],
       warnings: ['Aucune donnée détectée. Copiez les positions depuis Croesus et collez-les ici.'],
-      summary: { equities: 0, fixedIncome: 0, etfs: 0, funds: 0, preferred: 0, cash: 0, other: 0, totalMarketValue: 0, currencies: [] },
+      summary: { equities: 0, fixedIncome: 0, etfs: 0, funds: 0, preferred: 0, cash: 0, other: 0, totalMarketValue: 0, totalAnnualIncome: 0, currencies: [], accountTypes: [] },
     };
   }
 
@@ -373,47 +469,50 @@ export function parseCroesusData(rawText: string): ParseResult {
       }
     }
   } else {
-    // No headers detected — try positional guessing
-    // Primary: Nicolas's Croesus order: Qté, Description, Symbole, Prix marché, Val comptable, Val marché, Durée Mod., Int. courus
-    warnings.push('En-têtes non détectés — ordre Croesus appliqué automatiquement (Qté, Desc, Symbole, Prix, Val. compt., Val. marché, Dur. Mod., Int. courus).');
-    if (firstFields.length >= 6) {
+    // No headers detected — apply Nicolas's Croesus column order (11 columns)
+    if (firstFields.length >= 8) {
       columnMapping = {
         quantity: 0,
         name: 1,
-        symbol: 2,
-        marketPrice: 3,
-        bookValue: 4,
+        accountType: 2,
+        symbol: 3,
+        averageCost: 4,
+        marketPrice: 5,
+        bookValue: 6,
+        marketValue: 7,
+      };
+      if (firstFields.length >= 9) columnMapping.modifiedDuration = 8;
+      if (firstFields.length >= 10) columnMapping.accruedInterest = 9;
+      if (firstFields.length >= 11) columnMapping.annualIncome = 10;
+    } else if (firstFields.length >= 6) {
+      columnMapping = {
+        quantity: 0,
+        name: 1,
+        accountType: 2,
+        symbol: 3,
+        marketPrice: 4,
         marketValue: 5,
       };
-      if (firstFields.length >= 7) columnMapping.modifiedDuration = 6;
-      if (firstFields.length >= 8) columnMapping.accruedInterest = 7;
-    } else if (firstFields.length === 5) {
+    } else if (firstFields.length >= 4) {
       columnMapping = {
         quantity: 0,
         name: 1,
         symbol: 2,
         marketPrice: 3,
-        marketValue: 4,
       };
-    } else if (firstFields.length >= 3) {
-      // Minimal fallback
-      columnMapping = {
-        quantity: 0,
-        name: 1,
-        symbol: 2,
-      };
-      if (firstFields.length >= 4) columnMapping.marketPrice = 3;
+      if (firstFields.length >= 5) columnMapping.marketValue = 4;
     }
   }
 
-  // We need at minimum symbol + (name or quantity)
+  // Validate we have a symbol column
   if (columnMapping.symbol === undefined) {
     // Last resort: find the column that looks most like symbols
-    const sample = allLines.slice(dataStartIndex, dataStartIndex + 5);
-    for (let col = 0; col < 10; col++) {
+    const sample = allLines.slice(dataStartIndex, Math.min(dataStartIndex + 10, allLines.length));
+    for (let col = 0; col < 15; col++) {
       const values = sample.map(l => splitRow(l, separator)[col] || '').filter(Boolean);
-      const symbolLike = values.filter(v => /^[A-Z]{1,6}(\.[A-Z]{1,3})?$/i.test(v.trim()));
-      if (symbolLike.length >= values.length * 0.5 && symbolLike.length >= 2) {
+      if (values.length === 0) continue;
+      const symbolLike = values.filter(v => /^[A-Z0-9]{1,8}(\.[A-Z]{1,3})?$/i.test(v.trim()));
+      if (symbolLike.length >= values.length * 0.4 && symbolLike.length >= 2) {
         columnMapping.symbol = col;
         break;
       }
@@ -425,12 +524,12 @@ export function parseCroesusData(rawText: string): ParseResult {
       holdings: [],
       detectedHeaders,
       warnings: ['Impossible de détecter la colonne des symboles. Vérifiez le format des données.'],
-      summary: { equities: 0, fixedIncome: 0, etfs: 0, funds: 0, preferred: 0, cash: 0, other: 0, totalMarketValue: 0, currencies: [] },
+      summary: { equities: 0, fixedIncome: 0, etfs: 0, funds: 0, preferred: 0, cash: 0, other: 0, totalMarketValue: 0, totalAnnualIncome: 0, currencies: [], accountTypes: [] },
     };
   }
 
   // Parse data rows
-  const currencySet = new Set<string>();
+  const accountTypesSet = new Set<string>();
 
   for (let i = dataStartIndex; i < allLines.length; i++) {
     const line = allLines[i];
@@ -444,36 +543,37 @@ export function parseCroesusData(rawText: string): ParseResult {
     };
 
     const rawSymbol = getField('symbol');
-    if (!rawSymbol || rawSymbol.length > 30) continue; // Skip invalid
+    if (!rawSymbol || rawSymbol.length > 30) continue;
 
     const name = getField('name') || rawSymbol;
     const typeField = getField('assetType');
+    const accountCode = getField('accountType').toUpperCase();
 
     // Parse modified duration early — helps classify fixed income
     const modDurStr = getField('modifiedDuration');
-    const modifiedDuration = modDurStr ? parseNumber(modDurStr) : 0;
+    const modifiedDuration = (modDurStr && !/^n\/[da]$/i.test(modDurStr.trim())) ? parseNumber(modDurStr) : 0;
 
-    // Parse accrued interest / dividends
-    const accruedStr = getField('accruedInterest');
-    const accruedInterest = accruedStr ? parseNumber(accruedStr) : 0;
+    // Classify asset type
+    const assetType = classifyAssetType(rawSymbol, name, typeField, modifiedDuration);
 
-    // If modified duration > 0, it's almost certainly fixed income
-    let assetType = classifyAssetType(rawSymbol, name, typeField);
-    if (modifiedDuration > 0 && assetType !== 'CASH') {
-      assetType = 'FIXED_INCOME';
-    }
+    // Normalize symbol
+    const symbol = normalizeSymbol(rawSymbol, name, assetType);
 
-    const symbol = assetType === 'CASH' ? rawSymbol : normalizeSymbol(rawSymbol, name);
-
+    // Parse numbers
     const quantity = parseNumber(getField('quantity'));
+    const averageCost = parseNumber(getField('averageCost'));
     const marketPrice = parseNumber(getField('marketPrice'));
-    const marketValue = parseNumber(getField('marketValue')) || (quantity * marketPrice);
     const bookValue = parseNumber(getField('bookValue'));
-    const averageCost = parseNumber(getField('averageCost')) || (quantity > 0 ? bookValue / quantity : 0);
-    const currency = getField('currency').toUpperCase() || 'CAD';
-    const weight = parseNumber(getField('weight'));
+    const marketValue = parseNumber(getField('marketValue')) || (quantity * marketPrice);
+    const annualIncome = parseNumber(getField('annualIncome'));
 
-    if (currency) currencySet.add(currency || 'CAD');
+    // Accrued interest / dividends
+    const accruedStr = getField('accruedInterest');
+    const accruedInterest = (accruedStr && !/^n\/[da]$/i.test(accruedStr.trim())) ? parseNumber(accruedStr) : 0;
+
+    // Account type
+    const accountLabel = ACCOUNT_TYPE_MAP[accountCode] || accountCode;
+    if (accountCode) accountTypesSet.add(accountCode);
 
     const holding: ParsedHolding = {
       symbol,
@@ -482,10 +582,13 @@ export function parseCroesusData(rawText: string): ParseResult {
       marketPrice,
       marketValue,
       bookValue,
-      averageCost,
-      currency: currency || 'CAD',
+      averageCost: averageCost || (quantity !== 0 ? bookValue / quantity : 0),
+      currency: 'CAD',
       assetType,
-      weight,
+      weight: 0,
+      accountType: accountCode,
+      accountLabel,
+      annualIncome,
       rawRow: line,
     };
 
@@ -512,6 +615,14 @@ export function parseCroesusData(rawText: string): ParseResult {
     holdings.push(holding);
   }
 
+  // Compute weights
+  const totalPositiveValue = holdings.reduce((sum, h) => sum + Math.max(0, h.marketValue), 0);
+  if (totalPositiveValue > 0) {
+    holdings.forEach(h => {
+      h.weight = (h.marketValue / totalPositiveValue) * 100;
+    });
+  }
+
   // Build summary
   const summary = {
     equities: holdings.filter(h => h.assetType === 'EQUITY').length,
@@ -522,7 +633,9 @@ export function parseCroesusData(rawText: string): ParseResult {
     cash: holdings.filter(h => h.assetType === 'CASH').length,
     other: holdings.filter(h => h.assetType === 'OTHER').length,
     totalMarketValue: holdings.reduce((sum, h) => sum + h.marketValue, 0),
-    currencies: Array.from(currencySet),
+    totalAnnualIncome: holdings.reduce((sum, h) => sum + h.annualIncome, 0),
+    currencies: ['CAD'],
+    accountTypes: Array.from(accountTypesSet),
   };
 
   if (holdings.length === 0) {
