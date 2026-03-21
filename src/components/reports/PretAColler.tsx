@@ -321,7 +321,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       const apiTarget = target?.targetConsensus || 0;
       const targetPrice = hasCustom ? customTargets[sym] : (apiTarget > 0 ? apiTarget : 0);
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
-      const source = hasCustom ? 'Manuel' : (apiTarget > 0 ? 'Analyste' : 'N/D');
+      const apiSource = target?.source;
+      const source = hasCustom ? 'Manuel' : (apiTarget > 0 ? (apiSource === 'historical' ? 'Est. hist.' : 'Analyste') : 'N/D');
 
       map.set(sym, { currentPrice, targetPrice, gainPct, source });
     });
@@ -725,7 +726,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                               <div className="flex items-center justify-end gap-1">
                                 <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
                                 <span className={`text-[10px] px-1 py-0.5 rounded ${
-                                  td.source === 'Manuel' ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'
+                                  td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
+                                    : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
+                                    : 'bg-purple-100 text-purple-700'
                                 }`}>
                                   {td.source}
                                 </span>
@@ -828,9 +831,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-blue-50/50 border border-blue-100">
         <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-xs text-blue-700">
-          Les cours cibles proviennent du consensus des analystes (Yahoo Finance). Vous pouvez modifier
-          manuellement n&apos;importe quel cours cible en cliquant sur &quot;Saisir&quot; ou l&apos;icône de crayon.
-          Les symboles sont aussi modifiables si la correspondance automatique n&apos;est pas bonne.
+          Les cours cibles proviennent du consensus des analystes (Yahoo Finance). Pour les titres sans couverture analyste,
+          une estimation basée sur le rendement historique 12 mois est utilisée (identifiée &quot;Est. hist.&quot;).
+          Vous pouvez modifier manuellement n&apos;importe quel cours cible en cliquant sur &quot;Saisir&quot; ou l&apos;icône de crayon.
         </p>
       </div>
     </div>

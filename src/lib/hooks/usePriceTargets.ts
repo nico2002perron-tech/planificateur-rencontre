@@ -11,7 +11,7 @@ export interface PriceTargetConsensus {
   targetHigh: number;
   targetLow: number;
   numberOfAnalysts: number;
-  source: 'yahoo' | 'fmp' | 'manual';
+  source: 'yahoo' | 'fmp' | 'manual' | 'historical';
 }
 
 export function usePriceTargetConsensus(symbols: string[]) {
