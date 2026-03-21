@@ -11,7 +11,7 @@ import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
-  Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info,
+  Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, FileText,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -226,6 +226,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Apply symbol overrides — use index as stable key since same symbol can appear in multiple accounts
   const holdings = useMemo(() => {
@@ -319,28 +320,89 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length };
   }, [showTargets, targetData, holdings, priceableSymbols.length]);
 
-  const handleExportTargets = useCallback(() => {
-    if (targetData.size === 0) return;
+  const handleDownloadPdf = useCallback(async () => {
+    setGeneratingPdf(true);
+    try {
+      // Build PDF data payload
+      const pdfHoldings = holdings.map(h => {
+        const td = targetData.get(h.symbol);
+        return {
+          symbol: h.symbol,
+          name: h.name,
+          quantity: h.quantity,
+          averageCost: h.averageCost,
+          marketPrice: h.marketPrice,
+          marketValue: h.marketValue,
+          bookValue: h.bookValue,
+          assetType: h.assetType,
+          accountType: h.accountType,
+          accountLabel: h.accountLabel,
+          annualIncome: h.annualIncome,
+          currentPrice: td?.currentPrice || h.marketPrice,
+          targetPrice: td?.targetPrice || 0,
+          gainPct: td?.gainPct || 0,
+          targetSource: td?.source || '',
+          couponRate: h.couponRate,
+          maturityDate: h.maturityDate,
+          modifiedDuration: h.modifiedDuration,
+          accruedInterest: h.accruedInterest,
+        };
+      });
 
-    const lines = ['Symbole\tNom\tCompte\tPrix actuel\tCours cible\tGain estimé %\tSource\tRevenu annuel'];
-    holdings.forEach(h => {
-      const data = targetData.get(h.symbol);
-      if (data) {
-        lines.push(`${h.symbol}\t${h.name}\t${h.accountLabel}\t${data.currentPrice.toFixed(2)}\t${data.targetPrice > 0 ? data.targetPrice.toFixed(2) : 'N/D'}\t${data.targetPrice > 0 ? data.gainPct.toFixed(1) + '%' : 'N/D'}\t${data.source}\t${h.annualIncome > 0 ? h.annualIncome.toFixed(2) : ''}`);
+      const equities = pdfHoldings.filter(h => ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType));
+      const totalCurrentValue = equities.reduce((s, h) => s + h.quantity * (h.currentPrice || h.marketPrice), 0);
+      const totalTargetValue = equities.reduce((s, h) => {
+        const price = h.targetPrice > 0 ? h.targetPrice : (h.currentPrice || h.marketPrice);
+        return s + h.quantity * price;
+      }, 0);
+
+      const payload = {
+        holdings: pdfHoldings,
+        generatedAt: new Date().toISOString(),
+        summary: {
+          totalMarketValue: result.summary.totalMarketValue,
+          totalBookValue: holdings.reduce((s, h) => s + h.bookValue, 0),
+          totalAnnualIncome: result.summary.totalAnnualIncome,
+          totalCurrentValue,
+          totalTargetValue,
+          totalGain: totalTargetValue - totalCurrentValue,
+          totalGainPct: totalCurrentValue > 0 ? ((totalTargetValue - totalCurrentValue) / totalCurrentValue) * 100 : 0,
+          equityCount: result.summary.equities + result.summary.etfs + (result.summary.preferred || 0),
+          fixedIncomeCount: result.summary.fixedIncome,
+          cashCount: result.summary.cash,
+          otherCount: result.summary.funds + result.summary.other,
+          pricesFound: prices.size,
+          targetsFound: Array.from(targetData.values()).filter(t => t.targetPrice > 0).length,
+        },
+      };
+
+      const res = await fetch('/api/exports/price-targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur de génération');
       }
-    });
 
-    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.tsv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('success', 'Cours cibles exportés');
-  }, [targetData, holdings, toast]);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('success', 'PDF téléchargé');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Erreur de génération PDF');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }, [holdings, targetData, prices, result.summary, toast]);
 
   return (
     <div className="space-y-6">
@@ -691,11 +753,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           </div>
         ) : (
           <Button
-            onClick={handleExportTargets}
-            variant="outline"
-            icon={<Download className="h-4 w-4" />}
+            onClick={handleDownloadPdf}
+            loading={generatingPdf}
+            icon={<FileText className="h-4 w-4" />}
+            size="lg"
           >
-            Exporter les cours cibles (TSV)
+            Télécharger le PDF
           </Button>
         )}
       </div>
