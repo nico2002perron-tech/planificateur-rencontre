@@ -383,6 +383,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         : (yahoo?.price || holding.marketPrice);
       const hasCustom = sym in customTargets;
 
+      // Debug CDR holdings
+      if (isCDR) {
+        console.log(`[CDR client] ${sym}: isCDR=${holding.isCDR}, inCdrMap=${sym in cdrMap}, underlying=${cdrMap[sym]}, currency=${holding.currency}`);
+        console.log(`[CDR client] ${sym}: target=`, target, `currentPrice=${currentPrice}, cdrGainPct=${target?.cdrGainPct}`);
+      }
+
       let targetPrice: number;
       let source: string;
 
@@ -399,6 +405,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       } else {
         targetPrice = 0;
         source = 'N/D';
+      }
+
+      if (isCDR) {
+        console.log(`[CDR client] ${sym}: RESULT → targetPrice=${targetPrice}, source=${source}`);
       }
 
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
@@ -830,6 +840,11 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                       ) : (
                         <div className="flex items-center gap-1 group">
                           <span className="font-mono font-semibold text-brand-primary text-xs">{h.symbol}</span>
+                          {h.isCDR && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium" title={`CDR → sous-jacent: ${h.underlyingSymbol || '?'}, devise: ${h.currency}`}>
+                              CDR→{h.underlyingSymbol || '?'}
+                            </span>
+                          )}
                           <button
                             onClick={() => setEditingSymbol(h._originalKey)}
                             className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
