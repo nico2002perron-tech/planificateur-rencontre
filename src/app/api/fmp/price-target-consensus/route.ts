@@ -146,13 +146,23 @@ async function lookupCDRTarget(
 ): Promise<{ symbol: string; data: PriceTargetConsensus | null }> {
   try {
     // 1. Get the US underlying's current price and target
-    const underlyingResult = await lookupTarget(underlyingSymbol);
+    //    Try the symbol as-is first, then without class suffix (V-A → V)
+    let underlyingResult = await lookupTarget(underlyingSymbol);
+    let resolvedUnderlying = underlyingSymbol;
     if (!underlyingResult.data || underlyingResult.data.targetConsensus <= 0) {
-      return { symbol: cdrSymbol, data: null };
+      // Try without class suffix: V-A → V, BRK-B stays BRK-B (tried as-is already)
+      const withoutClass = underlyingSymbol.replace(/-[A-Z]{1,2}$/, '');
+      if (withoutClass !== underlyingSymbol) {
+        underlyingResult = await lookupTarget(withoutClass);
+        resolvedUnderlying = withoutClass;
+      }
+      if (!underlyingResult.data || underlyingResult.data.targetConsensus <= 0) {
+        return { symbol: cdrSymbol, data: null };
+      }
     }
 
     // 2. Get the US underlying's current price to compute gain %
-    const ySym = toYahooSymbol(underlyingSymbol);
+    const ySym = toYahooSymbol(resolvedUnderlying);
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price`;
     const res = await yahooFetch(url);
     if (!res.ok) return { symbol: cdrSymbol, data: null };
@@ -189,7 +199,7 @@ async function lookupCDRTarget(
         targetLow: basePrice > 0 ? Math.round(basePrice * (1 + gainPctLow) * 100) / 100 : 0,
         numberOfAnalysts: underlyingResult.data.numberOfAnalysts,
         source: cdrSource,
-        resolvedSymbol: `${underlyingSymbol} (CDR)`,
+        resolvedSymbol: `${resolvedUnderlying} (CDR)`,
         cdrGainPct: gainPct, // Always pass gain % so client can apply to Croesus price
       },
     };

@@ -665,8 +665,8 @@ export function parseCroesusData(rawText: string): ParseResult {
     if (/C\$H(DG|ED)|CDR\$?H|CDR/i.test(name)) {
       holding.isCDR = true;
       // The symbol in Croesus is the base US ticker (META, AMZN, GOOGL, etc.)
-      // The CDR trades on NEO with .NE suffix on Yahoo Finance
-      const baseSymbol = symbol.replace(/\.(NE|NEO)$/i, '');
+      // Strip exchange suffix (.NE) and class share suffix (-A from V-A → V for Visa)
+      const baseSymbol = symbol.replace(/\.(NE|NEO)$/i, '').replace(/-[A-Z]{1,2}$/, '');
       holding.underlyingSymbol = baseSymbol;
     }
 
