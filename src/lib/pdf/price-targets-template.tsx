@@ -286,17 +286,15 @@ function EquityTablePage({ holdings, pageNum, subtitle }: { holdings: PriceTarge
       <View style={styles.table}>
         {/* Header */}
         <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '6%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '8%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '20%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Qté</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>PRU</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Prix</Text>
-          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Cible</Text>
+          <Text style={[styles.thCell, { width: '7%' }]}>Cpte</Text>
+          <Text style={[styles.thCell, { width: '10%' }]}>Symbole</Text>
+          <Text style={[styles.thCell, { width: '25%' }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Qté</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>PRU</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Prix</Text>
+          <Text style={[styles.thCell, { width: '12%', textAlign: 'right' }]}>Val. marché</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Cible</Text>
           <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Gain est.</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Source</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Rev. ann.</Text>
         </View>
 
         {/* Rows */}
@@ -306,28 +304,22 @@ function EquityTablePage({ holdings, pageNum, subtitle }: { holdings: PriceTarge
 
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={rowStyle} wrap={false}>
-              <Text style={[styles.td, { width: '6%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '8%', color: C.cyan, fontSize: 7.5 }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '20%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
-              <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
-              <Text style={[styles.td, { width: '9%', textAlign: 'right', color: C.textSec }]}>
+              <Text style={[styles.td, { width: '7%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
+              <Text style={[styles.tdBold, { width: '10%', color: C.cyan, fontSize: 7.5 }]}>{h.symbol}</Text>
+              <Text style={[styles.td, { width: '25%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
+              <Text style={[styles.td, { width: '8%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
+              <Text style={[styles.td, { width: '10%', textAlign: 'right', color: C.textSec }]}>
                 {h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}
               </Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right' }]}>
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>
                 {(h.currentPrice || h.marketPrice) > 0 ? fmtFull(h.currentPrice || h.marketPrice) : '—'}
               </Text>
-              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: h.targetPrice ? C.blue : C.textTer }]}>
+              <Text style={[styles.tdBold, { width: '12%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', color: h.targetPrice ? C.blue : C.textTer }]}>
                 {h.targetPrice ? fmtFull(h.targetPrice) : '—'}
               </Text>
               <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: gainColor }]}>
                 {h.targetPrice ? fmtPct(h.gainPct ?? 0) : '—'}
-              </Text>
-              <Text style={[styles.td, { width: '7%', textAlign: 'right', fontSize: 7, color: C.textSec }]}>
-                {h.targetSource || '—'}
-              </Text>
-              <Text style={[styles.td, { width: '8%', textAlign: 'right', color: h.annualIncome > 0 ? C.up : C.textTer }]}>
-                {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
               </Text>
             </View>
           );
