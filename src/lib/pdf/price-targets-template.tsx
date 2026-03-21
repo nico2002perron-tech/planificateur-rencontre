@@ -85,6 +85,49 @@ function fmtPct(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
 }
 
+// ─── Maturity color scale ────────────────────────────────────────────────────
+
+const MATURITY_BANDS = [
+  { maxYears: 1,  label: '< 1 an',   color: '#dc2626', bg: '#fef2f2' },  // red
+  { maxYears: 2,  label: '1–2 ans',  color: '#ea580c', bg: '#fff7ed' },  // orange
+  { maxYears: 3,  label: '2–3 ans',  color: '#d97706', bg: '#fffbeb' },  // amber
+  { maxYears: 5,  label: '3–5 ans',  color: '#16a34a', bg: '#f0fdf4' },  // green
+  { maxYears: Infinity, label: '5+ ans', color: '#2563eb', bg: '#eff6ff' }, // blue
+] as const;
+
+const MONTH_PARSE: Record<string, number> = {
+  jan: 0, fév: 1, mar: 2, avr: 3, mai: 4, jun: 5,
+  jul: 6, aoû: 7, sep: 8, oct: 9, nov: 10, déc: 11,
+};
+
+function parseMaturityDate(dateStr?: string): Date | null {
+  if (!dateStr) return null;
+
+  // ISO: "2028-06-01"
+  const iso = dateStr.match(/^(20\d{2})-(\d{2})-(\d{2})$/);
+  if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+
+  // French: "16 sep 2026"
+  const fr = dateStr.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
+  if (fr) {
+    const month = MONTH_PARSE[fr[2].toLowerCase()];
+    if (month !== undefined) return new Date(+fr[3], month, +fr[1]);
+  }
+
+  // Year only: "2034"
+  const yr = dateStr.match(/^(20\d{2})$/);
+  if (yr) return new Date(+yr[1], 6, 1); // mid-year estimate
+
+  return null;
+}
+
+function getMaturityBand(dateStr?: string) {
+  const matDate = parseMaturityDate(dateStr);
+  if (!matDate) return null;
+  const yearsToMat = (matDate.getTime() - Date.now()) / (365.25 * 24 * 3600 * 1000);
+  return MATURITY_BANDS.find(b => yearsToMat < b.maxYears) || MATURITY_BANDS[MATURITY_BANDS.length - 1];
+}
+
 const ASSET_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   EQUITY: { label: 'Action', color: C.blue },
   FIXED_INCOME: { label: 'Rev. fixe', color: C.gold },
@@ -303,14 +346,27 @@ function FixedIncomeTablePage({ holdings, pageNum }: { holdings: PriceTargetHold
     <Page size="A4" style={styles.page}>
       <Text style={styles.sectionTitle}>Revenus fixes</Text>
 
+      {/* Maturity color legend */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+        <Text style={{ fontSize: 7.5, color: C.textSec, fontFamily: 'Open Sans', fontWeight: 600, marginRight: 4 }}>
+          Échéance :
+        </Text>
+        {MATURITY_BANDS.map((band) => (
+          <View key={band.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: band.color }} />
+            <Text style={{ fontSize: 7, color: C.textSec }}>{band.label}</Text>
+          </View>
+        ))}
+      </View>
+
       <View style={styles.table}>
         <View style={styles.th}>
           <Text style={[styles.thCell, { width: '6%' }]}>Cpte</Text>
           <Text style={[styles.thCell, { width: '8%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '24%' }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '22%' }]}>Description</Text>
           <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Qté / VN</Text>
           <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Coupon</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Échéance</Text>
+          <Text style={[styles.thCell, { width: '12%', textAlign: 'right' }]}>Échéance</Text>
           <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Dur. mod.</Text>
           <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
           <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Int. cour.</Text>
@@ -319,18 +375,24 @@ function FixedIncomeTablePage({ holdings, pageNum }: { holdings: PriceTargetHold
 
         {holdings.map((h, i) => {
           const rowStyle = i % 2 === 1 ? styles.trAlt : styles.tr;
+          const band = getMaturityBand(h.maturityDate);
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={rowStyle} wrap={false}>
               <Text style={[styles.td, { width: '6%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
               <Text style={[styles.td, { width: '8%', fontSize: 7, color: C.gold, fontFamily: 'Open Sans', fontWeight: 600 }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '24%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
+              <Text style={[styles.td, { width: '22%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '9%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: C.gold }]}>
                 {h.couponRate ? `${h.couponRate.toFixed(2)}%` : '—'}
               </Text>
-              <Text style={[styles.td, { width: '10%', textAlign: 'right', fontSize: 7.5 }]}>
-                {h.maturityDate || '—'}
-              </Text>
+              <View style={{ width: '12%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 4 }}>
+                {band && (
+                  <View style={{ width: 4, height: 12, borderRadius: 1, backgroundColor: band.color, marginRight: 4 }} />
+                )}
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: band ? band.color : C.textTer }}>
+                  {h.maturityDate || '—'}
+                </Text>
+              </View>
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>
                 {h.modifiedDuration ? h.modifiedDuration.toFixed(2) : '—'}
               </Text>

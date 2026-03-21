@@ -38,6 +38,50 @@ const ASSET_ICONS: Record<AssetType, typeof TrendingUp> = {
   OTHER: DollarSign,
 };
 
+// ─── Maturity color scale ────────────────────────────────────────────────────
+
+const MATURITY_BANDS = [
+  { maxYears: 1,  label: '< 1 an',  color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-red-200',    dot: 'bg-red-500' },
+  { maxYears: 2,  label: '1–2 ans', color: 'text-orange-600', bg: 'bg-orange-50',  border: 'border-orange-200', dot: 'bg-orange-500' },
+  { maxYears: 3,  label: '2–3 ans', color: 'text-amber-600',  bg: 'bg-amber-50',   border: 'border-amber-200',  dot: 'bg-amber-500' },
+  { maxYears: 5,  label: '3–5 ans', color: 'text-green-600',  bg: 'bg-green-50',   border: 'border-green-200',  dot: 'bg-green-500' },
+  { maxYears: Infinity, label: '5+ ans', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200',   dot: 'bg-blue-500' },
+] as const;
+
+const MONTH_PARSE: Record<string, number> = {
+  jan: 0, fév: 1, mar: 2, avr: 3, mai: 4, jun: 5,
+  jul: 6, aoû: 7, sep: 8, oct: 9, nov: 10, déc: 11,
+};
+
+function getMaturityBand(dateStr?: string) {
+  if (!dateStr) return null;
+
+  let matDate: Date | null = null;
+
+  // ISO: "2028-06-01"
+  const iso = dateStr.match(/^(20\d{2})-(\d{2})-(\d{2})$/);
+  if (iso) matDate = new Date(+iso[1], +iso[2] - 1, +iso[3]);
+
+  // French: "16 sep 2026"
+  if (!matDate) {
+    const fr = dateStr.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
+    if (fr) {
+      const month = MONTH_PARSE[fr[2].toLowerCase()];
+      if (month !== undefined) matDate = new Date(+fr[3], month, +fr[1]);
+    }
+  }
+
+  // Year only: "2034"
+  if (!matDate) {
+    const yr = dateStr.match(/^(20\d{2})$/);
+    if (yr) matDate = new Date(+yr[1], 6, 1);
+  }
+
+  if (!matDate) return null;
+  const yearsToMat = (matDate.getTime() - Date.now()) / (365.25 * 24 * 3600 * 1000);
+  return MATURITY_BANDS.find(b => yearsToMat < b.maxYears) || MATURITY_BANDS[MATURITY_BANDS.length - 1];
+}
+
 const ACCOUNT_COLORS: Record<string, string> = {
   A: 'bg-gray-100 text-gray-700',
   E: 'bg-orange-50 text-orange-700',
@@ -490,6 +534,19 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         ))}
       </div>
 
+      {/* Maturity legend (shown when fixed income visible) */}
+      {(activeFilter === 'ALL' || activeFilter === 'FIXED_INCOME') && result.summary.fixedIncome > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+          <span className="text-xs font-semibold text-text-muted">Échéance :</span>
+          {MATURITY_BANDS.map((band) => (
+            <div key={band.label} className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 rounded-sm ${band.dot}`} />
+              <span className={`text-xs font-medium ${band.color}`}>{band.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Holdings table */}
       <Card padding="none">
         <div className="overflow-x-auto">
@@ -592,11 +649,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                               Coupon: {h.couponRate.toFixed(2)}%
                             </span>
                           )}
-                          {h.maturityDate && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
-                              Éch: {h.maturityDate}
-                            </span>
-                          )}
+                          {h.maturityDate && (() => {
+                            const band = getMaturityBand(h.maturityDate);
+                            return (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border inline-flex items-center gap-1 ${band ? `${band.bg} ${band.color} ${band.border}` : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                {band && <span className={`inline-block w-1.5 h-1.5 rounded-full ${band.dot}`} />}
+                                Éch: {h.maturityDate}
+                              </span>
+                            );
+                          })()}
                           {h.modifiedDuration !== undefined && h.modifiedDuration > 0 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
                               Durée mod: {h.modifiedDuration.toFixed(2)}
