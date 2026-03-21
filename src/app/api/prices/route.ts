@@ -29,9 +29,9 @@ async function tryFetchPrice(sym: string): Promise<{ price: number; currency: st
 }
 
 /**
- * GET /api/prices?symbols=AAPL,ENB,XBB.TO
+ * GET /api/prices?symbols=AAPL,ENB.TO,XBB.TO
  * Returns current prices from Yahoo Finance.
- * For symbols without exchange suffix, tries as-is first then with .TO.
+ * Symbols arrive pre-formatted from the parser (CAD already have .TO, USD have no suffix).
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('symbols')?.trim();
@@ -44,26 +44,8 @@ export async function GET(request: NextRequest) {
     const results = await Promise.all(
       symbols.map(async (symbol) => {
         const empty = { symbol, price: 0, currency: '', name: '' };
-
-        // If symbol already has exchange suffix, try directly
-        if (/\.(TO|V|CN|NE)$/.test(symbol)) {
-          const data = await tryFetchPrice(symbol);
-          return data ? { symbol, ...data } : empty;
-        }
-
-        // Try as-is first (US stocks: AAPL, MSFT)
-        const asIs = await tryFetchPrice(symbol);
-        if (asIs) return { symbol, ...asIs };
-
-        // Try with .TO (Canadian stocks: ENB → ENB.TO)
-        const withTO = await tryFetchPrice(`${symbol}.TO`);
-        if (withTO) return { symbol, ...withTO };
-
-        // Try with .NE (CDRs on NEO: META → META.NE)
-        const withNE = await tryFetchPrice(`${symbol}.NE`);
-        if (withNE) return { symbol, ...withNE };
-
-        return empty;
+        const data = await tryFetchPrice(symbol);
+        return data ? { symbol, ...data } : empty;
       })
     );
 

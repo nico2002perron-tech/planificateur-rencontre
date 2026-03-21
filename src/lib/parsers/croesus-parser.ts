@@ -414,14 +414,16 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType, cur
   // Already has an exchange suffix → done
   if (/\.(TO|V|CN|NE)$/.test(s)) return s;
 
-  // Handle .UN (REIT trust units): AP.UN → AP-UN.TO for Yahoo Finance
+  // Handle .UN (REIT trust units): AP.UN → AP-UN.TO (CAD only)
   if (s.match(/\.UN$/)) {
-    return s.replace('.UN', '-UN.TO');
+    s = s.replace('.UN', '-UN');
+    return isCAD ? `${s}.TO` : s;
   }
 
-  // Preferred shares: BNS.PR.I → BNS-PI.TO
+  // Preferred shares: BNS.PR.I → BNS-PI.TO (CAD only)
   if (s.match(/\.PR\.[A-Z]$/)) {
-    return s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
+    s = s.replace(/\.PR\.([A-Z])$/, '-P$1');
+    return isCAD ? `${s}.TO` : s;
   }
 
   // Class shares: GIB.A → GIB-A (Yahoo format with dash)
@@ -436,7 +438,7 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType, cur
 
   // Use currency to determine exchange suffix:
   // CAD → Toronto Stock Exchange (.TO)
-  // USD/other → US exchange (no suffix needed)
+  // USD → US exchange (no suffix, NEVER .TO)
   if (isCAD && /^[A-Z]{1,6}(-[A-Z]{1,2})?$/.test(s)) {
     return `${s}.TO`;
   }

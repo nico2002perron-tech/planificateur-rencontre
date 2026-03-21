@@ -85,17 +85,12 @@ async function estimateFromHistory(sym: string): Promise<PriceTargetConsensus | 
 }
 
 /**
- * Build a list of symbol variants to try on Yahoo Finance.
- * e.g. "ENB" → ["ENB", "ENB.TO"]
- *      "ENB.TO" → ["ENB.TO"]
- *      "GIB-A" → ["GIB-A", "GIB-A.TO"]
- *      "AAPL" → ["AAPL", "AAPL.TO"] (AAPL.TO will fail gracefully)
+ * The parser already adds .TO for CAD symbols based on the currency column.
+ * So symbols arrive pre-formatted: ENB.TO (CAD), AAPL (USD).
+ * No need to guess — just use the symbol as-is.
  */
 function getSymbolVariants(symbol: string): string[] {
-  // Already has an exchange suffix → don't add another
-  if (/\.(TO|V|CN|NE)$/.test(symbol)) return [symbol];
-  // Try as-is first (works for US stocks), then with .TO (for Canadian)
-  return [symbol, `${symbol}.TO`];
+  return [symbol];
 }
 
 /**
