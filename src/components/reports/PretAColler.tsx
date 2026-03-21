@@ -289,10 +289,11 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   }, [holdings, activeFilter]);
 
   // Get priceable symbols (equities + ETFs + preferred — deduplicated)
+  // All non-cash, non-fixed-income symbols are priceable (equities, ETFs, preferred, funds)
   const priceableSymbols = useMemo(() => {
     const symbols = new Set<string>();
     holdings.forEach(h => {
-      if (['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType)) {
+      if (!['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)) {
         symbols.add(h.symbol);
       }
     });
@@ -351,7 +352,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
     holdings.forEach(h => {
       const data = targetData.get(h.symbol);
-      if (data && ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType)) {
+      if (data && !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)) {
         totalCurrent += h.quantity * data.currentPrice;
         if (data.targetPrice > 0) {
           totalTarget += h.quantity * data.targetPrice;
@@ -401,7 +402,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         };
       });
 
-      const equities = pdfHoldings.filter(h => ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType));
+      const equities = pdfHoldings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType));
       const totalCurrentValue = equities.reduce((s, h) => s + h.quantity * (h.currentPrice || h.marketPrice), 0);
       const totalTargetValue = equities.reduce((s, h) => {
         const price = h.targetPrice > 0 ? h.targetPrice : (h.currentPrice || h.marketPrice);

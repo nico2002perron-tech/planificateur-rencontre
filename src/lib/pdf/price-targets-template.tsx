@@ -478,7 +478,7 @@ function CashTablePage({ holdings, pageNum }: { holdings: PriceTargetHolding[]; 
 // ─── Main Document ───────────────────────────────────────────────────────────
 
 export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) {
-  const equities = data.holdings.filter(h => ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType));
+  const equities = data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType));
   const fixedIncome = data.holdings.filter(h => h.assetType === 'FIXED_INCOME');
   const cashOther = data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType));
 

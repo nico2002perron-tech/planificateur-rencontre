@@ -144,11 +144,16 @@ const ETF_KEYWORDS = [
   /purpose/i, /harvest/i, /global\s*x/i, /ci\s*first/i,
 ];
 
+// Keywords that ALONE indicate a fund (generic fund terms)
 const FUND_KEYWORDS = [
   /fonds/i, /\bfund\b/i, /mutual/i, /commun/i, /s[eé]rie\s/i, /series\s/i,
-  /cat[eé]gorie\s/i, /mandat/i, /mackenzie/i,
-  /manulife/i, /manuvie/i, /desjardins/i, /ia\s*clarington/i,
-  /ci\s*invest/i,
+  /cat[eé]gorie\s/i, /mandat/i,
+];
+
+// Fund manager names — only trigger FUND if description ALSO contains a generic fund term
+const FUND_MANAGER_NAMES = [
+  /mackenzie/i, /manulife/i, /manuvie/i, /desjardins/i,
+  /ia\s*clarington/i, /ci\s*invest/i, /fidelity/i, /dynamique/i,
 ];
 
 const PREFERRED_KEYWORDS = [
@@ -311,8 +316,15 @@ function classifyAssetType(symbol: string, name: string, typeField: string, modi
   // ETFs (before funds, as ETFs can match fund patterns)
   if (ETF_KEYWORDS.some(kw => kw.test(combined))) return 'ETF';
 
-  // Mutual funds
+  // Mutual funds — generic fund terms are strong signals
   if (FUND_KEYWORDS.some(kw => kw.test(combined))) return 'FUND';
+
+  // Fund manager names alone are NOT enough (MFC = Manulife the stock, not a fund).
+  // Only classify as FUND if the name also contains a generic fund term.
+  if (FUND_MANAGER_NAMES.some(kw => kw.test(name))) {
+    if (FUND_KEYWORDS.some(kw => kw.test(name))) return 'FUND';
+    // Manager name without fund term → likely the stock (MFC, DSG, IAG, etc.)
+  }
 
   // Type field analysis
   const typeLower = typeField.toLowerCase();
