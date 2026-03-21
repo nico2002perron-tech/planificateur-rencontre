@@ -2,8 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { yahooFetch } from '@/lib/yahoo/client';
 
 /**
- * GET /api/prices?symbols=AAPL,RY.TO,XBB.TO
- * Returns current prices from Yahoo Finance for a list of symbols.
+ * Try fetching price for a single Yahoo symbol.
+ * Returns the price data or null if not found.
+ */
+async function tryFetchPrice(sym: string): Promise<{ price: number; currency: string; name: string } | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=price`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const price = json?.quoteSummary?.result?.[0]?.price;
+    if (!price) return null;
+
+    const currentPrice = price.regularMarketPrice?.raw ?? 0;
+    if (currentPrice <= 0) return null;
+
+    return {
+      price: Math.round(currentPrice * 100) / 100,
+      currency: price.currency ?? '',
+      name: price.shortName ?? price.longName ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GET /api/prices?symbols=AAPL,ENB,XBB.TO
+ * Returns current prices from Yahoo Finance.
+ * For symbols without exchange suffix, tries as-is first then with .TO.
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('symbols')?.trim();
@@ -13,32 +41,25 @@ export async function GET(request: NextRequest) {
   if (symbols.length === 0) return NextResponse.json([]);
 
   try {
-    // Yahoo Finance quoteSummary for each symbol in parallel (batched)
     const results = await Promise.all(
       symbols.map(async (symbol) => {
-        try {
-          // Map .TO → .TO (Yahoo uses same format)
-          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price`;
-          const res = await yahooFetch(url);
-          if (!res.ok) return { symbol, price: 0, currency: '', name: '' };
+        const empty = { symbol, price: 0, currency: '', name: '' };
 
-          const json = await res.json();
-          const price = json?.quoteSummary?.result?.[0]?.price;
-          if (!price) return { symbol, price: 0, currency: '', name: '' };
-
-          const currentPrice = price.regularMarketPrice?.raw ?? 0;
-          const curr = price.currency ?? '';
-          const shortName = price.shortName ?? price.longName ?? '';
-
-          return {
-            symbol,
-            price: Math.round(currentPrice * 100) / 100,
-            currency: curr,
-            name: shortName,
-          };
-        } catch {
-          return { symbol, price: 0, currency: '', name: '' };
+        // If symbol already has exchange suffix, try directly
+        if (/\.(TO|V|CN|NE)$/.test(symbol)) {
+          const data = await tryFetchPrice(symbol);
+          return data ? { symbol, ...data } : empty;
         }
+
+        // Try as-is first (US stocks: AAPL, MSFT)
+        const asIs = await tryFetchPrice(symbol);
+        if (asIs) return { symbol, ...asIs };
+
+        // Try with .TO (Canadian stocks: ENB → ENB.TO)
+        const withTO = await tryFetchPrice(`${symbol}.TO`);
+        if (withTO) return { symbol, ...withTO };
+
+        return empty;
       })
     );
 

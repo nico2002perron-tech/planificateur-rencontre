@@ -417,15 +417,10 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType): st
     return s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
   }
 
-  // Class shares: GIB.A → GIB-A.TO, X.B → X-B.TO, LNR.DB → LNR-DB.TO
+  // Class shares: GIB.A → GIB-A, X.B → X-B (Yahoo format with dash)
+  // Exchange suffix (.TO) will be resolved by the API at lookup time
   if (s.match(/\.[A-Z]{1,2}$/)) {
-    return s.replace(/\.([A-Z]{1,2})$/, '-$1.TO');
-  }
-
-  // Croesus is a Canadian platform: all short equity symbols without a
-  // suffix are Canadian. Add .TO for Yahoo Finance compatibility.
-  if (/^[A-Z]{1,5}$/.test(s)) {
-    s = `${s}.TO`;
+    return s.replace(/\.([A-Z]{1,2})$/, '-$1');
   }
 
   return s;
