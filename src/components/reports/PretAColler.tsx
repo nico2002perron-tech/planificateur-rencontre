@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import useSWR from 'swr';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -261,26 +261,78 @@ function CategoryCard({ type, count, value, active, onClick }: {
 
 // ─── Results view ────────────────────────────────────────────────────────────
 
+interface AICorrection {
+  symbol: string;
+  assetType: AssetType;
+  reason?: string;
+}
+
 function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => void }) {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
   const [symbolOverrides, setSymbolOverrides] = useState<Record<string, string>>({});
+  const [typeOverrides, setTypeOverrides] = useState<Record<string, AssetType>>({});
   const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [aiCorrections, setAiCorrections] = useState<AICorrection[]>([]);
+  const [aiChecking, setAiChecking] = useState(false);
+  const [aiChecked, setAiChecked] = useState(false);
 
-  // Apply symbol overrides — use index as stable key since same symbol can appear in multiple accounts
+  // AI classification check — runs once on mount
+  const aiCheckRan = useRef(false);
+  useEffect(() => {
+    if (aiCheckRan.current) return;
+    aiCheckRan.current = true;
+
+    const runAiCheck = async () => {
+      setAiChecking(true);
+      try {
+        const payload = result.holdings.map(h => ({
+          symbol: h.symbol,
+          name: h.name,
+          assetType: h.assetType,
+          modifiedDuration: h.modifiedDuration,
+          couponRate: h.couponRate,
+          maturityDate: h.maturityDate,
+        }));
+
+        const res = await fetch('/api/ai/classify-holdings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ holdings: payload }),
+        });
+
+        if (res.ok) {
+          const { corrections } = await res.json();
+          if (corrections && corrections.length > 0) {
+            setAiCorrections(corrections);
+          }
+        }
+      } catch {
+        // Silently fail — AI check is optional
+      } finally {
+        setAiChecking(false);
+        setAiChecked(true);
+      }
+    };
+
+    runAiCheck();
+  }, [result.holdings]);
+
+  // Apply symbol & type overrides
   const holdings = useMemo(() => {
     return result.holdings.map((h, idx) => ({
       ...h,
       symbol: symbolOverrides[`${idx}_${h.symbol}`] || h.symbol,
+      assetType: typeOverrides[h.symbol] || h.assetType,
       _key: `${idx}_${h.symbol}_${h.accountType}`,
       _originalKey: `${idx}_${h.symbol}`,
     }));
-  }, [result.holdings, symbolOverrides]);
+  }, [result.holdings, symbolOverrides, typeOverrides]);
 
   // Filtered holdings
   const filteredHoldings = useMemo(() => {
@@ -466,6 +518,72 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           <div className="text-sm text-amber-800">
             {result.warnings.map((w, i) => <p key={i}>{w}</p>)}
           </div>
+        </div>
+      )}
+
+      {/* AI classification check */}
+      {aiChecking && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200">
+          <Spinner size="sm" />
+          <span className="text-sm text-indigo-700 font-medium">Vérification IA des classifications en cours...</span>
+        </div>
+      )}
+
+      {aiChecked && aiCorrections.length > 0 && (
+        <div className="px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+            <span className="text-sm font-bold text-indigo-900">
+              IA — {aiCorrections.length} correction{aiCorrections.length > 1 ? 's' : ''} suggérée{aiCorrections.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {aiCorrections.map((c) => {
+              const newConfig = ASSET_TYPE_CONFIG[c.assetType as AssetType];
+              const applied = typeOverrides[c.symbol] === c.assetType;
+              return (
+                <div key={c.symbol} className="flex items-center gap-2 text-xs">
+                  <span className="font-mono font-semibold text-brand-primary">{c.symbol}</span>
+                  <span className="text-text-muted">→</span>
+                  <span className={`px-1.5 py-0.5 rounded font-semibold ${newConfig?.bg || ''} ${newConfig?.color || ''}`}>
+                    {newConfig?.label || c.assetType}
+                  </span>
+                  {c.reason && <span className="text-text-muted italic">({c.reason})</span>}
+                  {applied ? (
+                    <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
+                      <Check className="h-3 w-3" /> Appliqué
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setTypeOverrides(prev => ({ ...prev, [c.symbol]: c.assetType as AssetType }))}
+                      className="px-2 py-0.5 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+                    >
+                      Appliquer
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {aiCorrections.length > 0 && !aiCorrections.every(c => typeOverrides[c.symbol] === c.assetType) && (
+            <button
+              onClick={() => {
+                const overrides: Record<string, AssetType> = { ...typeOverrides };
+                aiCorrections.forEach(c => { overrides[c.symbol] = c.assetType as AssetType; });
+                setTypeOverrides(overrides);
+              }}
+              className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              Appliquer toutes les corrections
+            </button>
+          )}
+        </div>
+      )}
+
+      {aiChecked && aiCorrections.length === 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+          <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+          <span className="text-sm text-emerald-700 font-medium">IA — Classifications vérifiées, tout semble correct</span>
         </div>
       )}
 
