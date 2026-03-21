@@ -46,6 +46,7 @@ const ACCOUNT_COLORS: Record<string, string> = {
   T: 'bg-purple-50 text-purple-700',
   Y: 'bg-purple-50 text-purple-600',
   P: 'bg-rose-50 text-rose-700',
+  N: 'bg-amber-50 text-amber-700',
   F: 'bg-cyan-50 text-cyan-700',
 };
 

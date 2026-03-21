@@ -76,6 +76,7 @@ export const ACCOUNT_TYPE_MAP: Record<string, string> = {
   T: 'FERR',
   Y: 'FERR conj.',
   P: 'FRV',
+  N: 'RERI/CRI',
   F: 'Devise',
 };
 
