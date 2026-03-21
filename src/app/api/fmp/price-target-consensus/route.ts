@@ -135,6 +135,76 @@ async function lookupTarget(symbol: string): Promise<{ symbol: string; data: Pri
   return { symbol, data: null };
 }
 
+/**
+ * CDR lookup: fetch the US underlying's target, then apply
+ * the % gain to the CDR's current NEO price.
+ */
+async function lookupCDRTarget(
+  cdrSymbol: string,
+  underlyingSymbol: string
+): Promise<{ symbol: string; data: PriceTargetConsensus | null }> {
+  try {
+    // 1. Get the US underlying's current price and target
+    const underlyingResult = await lookupTarget(underlyingSymbol);
+    if (!underlyingResult.data || underlyingResult.data.targetConsensus <= 0) {
+      return { symbol: cdrSymbol, data: null };
+    }
+
+    // 2. Get the US underlying's current price to compute gain %
+    const ySym = toYahooSymbol(underlyingSymbol);
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return { symbol: cdrSymbol, data: null };
+    const json = await res.json();
+    const usPrice = json?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw;
+    if (!usPrice || usPrice <= 0) return { symbol: cdrSymbol, data: null };
+
+    // 3. Compute the % gain from the US underlying
+    const usTarget = underlyingResult.data.targetConsensus;
+    const gainPct = (usTarget - usPrice) / usPrice;
+
+    // 4. Get the CDR's current NEO price
+    const neoSymbol = `${cdrSymbol.replace(/\.(NE|NEO)$/i, '')}.NE`;
+    const neoUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(neoSymbol)}?modules=price`;
+    const neoRes = await yahooFetch(neoUrl);
+    let cdrPrice = 0;
+    if (neoRes.ok) {
+      const neoJson = await neoRes.json();
+      cdrPrice = neoJson?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw ?? 0;
+    }
+
+    // If we couldn't get the NEO price, try the symbol as-is
+    if (cdrPrice <= 0) {
+      const directUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(cdrSymbol)}?modules=price`;
+      const directRes = await yahooFetch(directUrl);
+      if (directRes.ok) {
+        const directJson = await directRes.json();
+        cdrPrice = directJson?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw ?? 0;
+      }
+    }
+
+    if (cdrPrice <= 0) return { symbol: cdrSymbol, data: null };
+
+    // 5. Apply the US gain % to the CDR price
+    const cdrTarget = Math.round(cdrPrice * (1 + gainPct) * 100) / 100;
+    const cdrSource = underlyingResult.data.source;
+
+    return {
+      symbol: cdrSymbol,
+      data: {
+        targetConsensus: cdrTarget,
+        targetHigh: Math.round(cdrPrice * (1 + (underlyingResult.data.targetHigh - usPrice) / usPrice) * 100) / 100,
+        targetLow: Math.round(cdrPrice * (1 + (underlyingResult.data.targetLow - usPrice) / usPrice) * 100) / 100,
+        numberOfAnalysts: underlyingResult.data.numberOfAnalysts,
+        source: cdrSource,
+        resolvedSymbol: `${underlyingSymbol} (CDR)`,
+      },
+    };
+  } catch {
+    return { symbol: cdrSymbol, data: null };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -142,6 +212,13 @@ export async function GET(request: NextRequest) {
   const symbolsParam = request.nextUrl.searchParams.get('symbols');
   if (!symbolsParam) {
     return NextResponse.json({ error: 'symbols parameter required' }, { status: 400 });
+  }
+
+  // Parse CDR map: { "META": "META", "AMZN": "AMZN" } (cdr symbol → US underlying)
+  let cdrMap: Record<string, string> = {};
+  const cdrsParam = request.nextUrl.searchParams.get('cdrs');
+  if (cdrsParam) {
+    try { cdrMap = JSON.parse(cdrsParam); } catch { /* ignore */ }
   }
 
   const symbols = symbolsParam.split(',').map((s) => s.trim()).filter(Boolean);
@@ -152,7 +229,16 @@ export async function GET(request: NextRequest) {
   try {
     const result: Record<string, PriceTargetConsensus> = {};
 
-    const results = await Promise.all(symbols.map((sym) => lookupTarget(sym).catch(() => ({ symbol: sym, data: null }))));
+    const results = await Promise.all(
+      symbols.map((sym) => {
+        // If this symbol is a CDR, use the CDR-specific lookup
+        const underlying = cdrMap[sym];
+        if (underlying) {
+          return lookupCDRTarget(sym, underlying).catch(() => ({ symbol: sym, data: null }));
+        }
+        return lookupTarget(sym).catch(() => ({ symbol: sym, data: null }));
+      })
+    );
 
     for (const { symbol, data } of results) {
       if (data) {

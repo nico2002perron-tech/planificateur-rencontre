@@ -340,21 +340,24 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     return holdings.filter(h => h.assetType === activeFilter);
   }, [holdings, activeFilter]);
 
-  // Get priceable symbols (equities + ETFs + preferred — deduplicated)
-  // All non-cash, non-fixed-income symbols are priceable (equities, ETFs, preferred, funds)
-  const priceableSymbols = useMemo(() => {
+  // Get priceable symbols + CDR map
+  const { priceableSymbols, cdrMap } = useMemo(() => {
     const symbols = new Set<string>();
+    const cdrs: Record<string, string> = {};
     holdings.forEach(h => {
       if (!['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)) {
         symbols.add(h.symbol);
+        if (h.isCDR && h.underlyingSymbol) {
+          cdrs[h.symbol] = h.underlyingSymbol;
+        }
       }
     });
-    return Array.from(symbols);
+    return { priceableSymbols: Array.from(symbols), cdrMap: cdrs };
   }, [holdings]);
 
-  // Fetch prices & targets
+  // Fetch prices & targets (CDR map passed to target hook)
   const { prices, isLoading: pricesLoading } = useYahooPrices(showTargets ? priceableSymbols : []);
-  const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(showTargets ? priceableSymbols : []);
+  const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(showTargets ? priceableSymbols : [], cdrMap);
 
   const isLoadingPrices = pricesLoading || targetsLoading;
 

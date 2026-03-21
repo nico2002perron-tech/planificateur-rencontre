@@ -59,6 +59,10 @@ export async function GET(request: NextRequest) {
         const withTO = await tryFetchPrice(`${symbol}.TO`);
         if (withTO) return { symbol, ...withTO };
 
+        // Try with .NE (CDRs on NEO: META → META.NE)
+        const withNE = await tryFetchPrice(`${symbol}.NE`);
+        if (withNE) return { symbol, ...withNE };
+
         return empty;
       })
     );

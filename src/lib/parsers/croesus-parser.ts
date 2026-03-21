@@ -42,6 +42,9 @@ export interface ParsedHolding {
   yieldToMaturity?: number;
   modifiedDuration?: number;
   accruedInterest?: number;
+  // CDR (Canadian Depositary Receipts) — hedged US stocks on NEO
+  isCDR?: boolean;
+  underlyingSymbol?: string;  // US underlying (e.g. META for META.NE)
   // Metadata
   sector?: string;
   rawRow: string;
@@ -620,6 +623,15 @@ export function parseCroesusData(rawText: string): ParseResult {
       const bondDetails = extractBondDetails(name);
       if (bondDetails.coupon && !holding.couponRate) holding.couponRate = bondDetails.coupon;
       if (bondDetails.maturity && !holding.maturityDate) holding.maturityDate = bondDetails.maturity;
+    }
+
+    // CDR detection — Canadian Depositary Receipts (hedged US stocks on NEO)
+    if (/C\$H(DG|ED)|CDR\$?H|CDR/i.test(name)) {
+      holding.isCDR = true;
+      // The symbol in Croesus is the base US ticker (META, AMZN, GOOGL, etc.)
+      // The CDR trades on NEO with .NE suffix on Yahoo Finance
+      const baseSymbol = symbol.replace(/\.(NE|NEO)$/i, '');
+      holding.underlyingSymbol = baseSymbol;
     }
 
     holdings.push(holding);
