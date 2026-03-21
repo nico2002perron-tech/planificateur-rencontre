@@ -145,30 +145,43 @@ async function lookupCDRTarget(
   underlyingSymbol: string
 ): Promise<{ symbol: string; data: PriceTargetConsensus | null }> {
   try {
+    console.log(`[CDR] Looking up: cdrSymbol="${cdrSymbol}", underlying="${underlyingSymbol}"`);
+
     // 1. Get the US underlying's current price and target
     //    Try the symbol as-is first, then without class suffix (V-A → V)
     let underlyingResult = await lookupTarget(underlyingSymbol);
     let resolvedUnderlying = underlyingSymbol;
     if (!underlyingResult.data || underlyingResult.data.targetConsensus <= 0) {
+      console.log(`[CDR] lookupTarget("${underlyingSymbol}") failed, trying without class suffix`);
       // Try without class suffix: V-A → V, BRK-B stays BRK-B (tried as-is already)
       const withoutClass = underlyingSymbol.replace(/-[A-Z]{1,2}$/, '');
       if (withoutClass !== underlyingSymbol) {
         underlyingResult = await lookupTarget(withoutClass);
         resolvedUnderlying = withoutClass;
+        console.log(`[CDR] Retry with "${withoutClass}": ${underlyingResult.data ? 'OK' : 'FAILED'}`);
       }
       if (!underlyingResult.data || underlyingResult.data.targetConsensus <= 0) {
+        console.log(`[CDR] No target found for underlying "${resolvedUnderlying}"`);
         return { symbol: cdrSymbol, data: null };
       }
     }
+
+    console.log(`[CDR] Underlying target: consensus=${underlyingResult.data.targetConsensus}, source=${underlyingResult.data.source}`);
 
     // 2. Get the US underlying's current price to compute gain %
     const ySym = toYahooSymbol(resolvedUnderlying);
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price`;
     const res = await yahooFetch(url);
-    if (!res.ok) return { symbol: cdrSymbol, data: null };
+    if (!res.ok) {
+      console.log(`[CDR] Failed to fetch US price for "${ySym}": ${res.status}`);
+      return { symbol: cdrSymbol, data: null };
+    }
     const json = await res.json();
     const usPrice = json?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw;
-    if (!usPrice || usPrice <= 0) return { symbol: cdrSymbol, data: null };
+    if (!usPrice || usPrice <= 0) {
+      console.log(`[CDR] US price is invalid for "${ySym}": ${usPrice}`);
+      return { symbol: cdrSymbol, data: null };
+    }
 
     // 3. Compute the % gain from the US underlying target
     const usTarget = underlyingResult.data.targetConsensus;
@@ -176,6 +189,8 @@ async function lookupCDRTarget(
     const gainPctHigh = (underlyingResult.data.targetHigh - usPrice) / usPrice;
     const gainPctLow = (underlyingResult.data.targetLow - usPrice) / usPrice;
     const cdrSource = underlyingResult.data.source;
+
+    console.log(`[CDR] ${cdrSymbol}: US price=$${usPrice}, US target=$${usTarget}, gain=${(gainPct * 100).toFixed(1)}%`);
 
     // 4. Try to get CDR's NEO price for server-side target calculation
     const neoSymbol = `${cdrSymbol.replace(/\.(NE|NEO)$/i, '')}.NE`;
@@ -186,6 +201,8 @@ async function lookupCDRTarget(
       const neoJson = await neoRes.json();
       cdrPrice = neoJson?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw ?? 0;
     }
+
+    console.log(`[CDR] ${cdrSymbol}: NEO symbol="${neoSymbol}", NEO price=${cdrPrice}, cdrGainPct=${gainPct}`);
 
     // 5. Compute target — use NEO price if available, otherwise client will recalculate
     const basePrice = cdrPrice > 0 ? cdrPrice : 0;
@@ -203,7 +220,8 @@ async function lookupCDRTarget(
         cdrGainPct: gainPct, // Always pass gain % so client can apply to Croesus price
       },
     };
-  } catch {
+  } catch (err) {
+    console.error(`[CDR] Error for ${cdrSymbol}:`, err);
     return { symbol: cdrSymbol, data: null };
   }
 }

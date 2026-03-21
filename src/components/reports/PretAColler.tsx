@@ -367,13 +367,20 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
 
     priceableSymbols.forEach(sym => {
+      // For CDR detection: check if ANY holding with this symbol is a CDR
+      // (handles case where .find() returns a non-CDR duplicate)
       const holding = holdings.find(h => h.symbol === sym);
       if (!holding) return;
+
+      const isCDR = holding.isCDR || sym in cdrMap;
+      const cdrHolding = isCDR ? holdings.find(h => h.symbol === sym && h.isCDR) : null;
 
       const yahoo = prices.get(sym);
       const target = targets[sym];
       // CDR holdings: always use Croesus market price (CAD), never Yahoo US price
-      const currentPrice = holding.isCDR ? holding.marketPrice : (yahoo?.price || holding.marketPrice);
+      const currentPrice = isCDR
+        ? (cdrHolding?.marketPrice || holding.marketPrice)
+        : (yahoo?.price || holding.marketPrice);
       const hasCustom = sym in customTargets;
 
       let targetPrice: number;
@@ -382,7 +389,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       if (hasCustom) {
         targetPrice = customTargets[sym];
         source = 'Manuel';
-      } else if (holding.isCDR && target?.cdrGainPct !== undefined) {
+      } else if (isCDR && target?.cdrGainPct !== undefined) {
         // CDR: apply the US underlying's gain % to the Croesus CAD price
         targetPrice = Math.round(currentPrice * (1 + target.cdrGainPct) * 100) / 100;
         source = 'CDR';
@@ -400,7 +407,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     });
 
     return map;
-  }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols]);
+  }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols, cdrMap]);
 
   // Category values
   const categoryValues = useMemo(() => {
