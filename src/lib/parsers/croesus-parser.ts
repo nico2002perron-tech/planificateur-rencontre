@@ -392,25 +392,26 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType): st
   s = s.replace(/^(NYSE:|NYSEARCA:|NASDAQ:|NMS:|XNYS:|XNAS:)/i, '');
   s = s.replace(/^(US\.|CA\.)/i, '');
 
+  // Already has an exchange suffix → done
+  if (/\.(TO|V|CN|NE)$/.test(s)) return s;
+
   // Handle .UN (REIT trust units): AP.UN → AP-UN.TO for Yahoo Finance
   if (s.match(/\.UN$/)) {
-    s = s.replace('.UN', '-UN.TO');
-    return s;
+    return s.replace('.UN', '-UN.TO');
   }
 
   // Preferred shares: BNS.PR.I → BNS-PI.TO
   if (s.match(/\.PR\.[A-Z]$/)) {
-    s = s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
-    return s;
+    return s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
   }
 
-  // Already has an exchange suffix → done
-  if (/\.(TO|V|CN|NE)$/.test(s)) return s;
+  // Class shares: GIB.A → GIB-A.TO, X.B → X-B.TO, LNR.DB → LNR-DB.TO
+  if (s.match(/\.[A-Z]{1,2}$/)) {
+    return s.replace(/\.([A-Z]{1,2})$/, '-$1.TO');
+  }
 
-  // Croesus is a Canadian platform: all equity/ETF/preferred/fund symbols
-  // without a suffix are Canadian. Add .TO for Yahoo Finance compatibility.
-  // Only skip if it looks like a US stock (already has exchange suffix or is
-  // obviously not a ticker — e.g., bond CUSIPs are handled above).
+  // Croesus is a Canadian platform: all short equity symbols without a
+  // suffix are Canadian. Add .TO for Yahoo Finance compatibility.
   if (/^[A-Z]{1,5}$/.test(s)) {
     s = `${s}.TO`;
   }
