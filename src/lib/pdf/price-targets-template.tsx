@@ -68,6 +68,9 @@ export interface PriceTargetReportData {
     otherCount: number;
     pricesFound: number;
     targetsFound: number;
+    equityGain?: number;
+    fixedIncomeAnnualIncome?: number;
+    totalEstimated?: number;
   };
 }
 
@@ -216,18 +219,42 @@ function CoverPage({ data }: { data: PriceTargetReportData }) {
         </View>
 
         {s.totalTargetValue > 0 && (
-          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 30 }}>
-            <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
-              <Text style={styles.kpiLabel}>Valeur cible 12 mois</Text>
-              <Text style={[styles.kpiValue, { fontSize: 20, color: C.blue }]}>{fmt(s.totalTargetValue)}</Text>
+          <>
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
+                <Text style={styles.kpiLabel}>Valeur cible 12 mois</Text>
+                <Text style={[styles.kpiValue, { fontSize: 20, color: C.blue }]}>{fmt(s.totalTargetValue)}</Text>
+              </View>
+              <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: s.totalGain >= 0 ? C.up : C.down, borderLeftStyle: 'solid' as const }]}>
+                <Text style={styles.kpiLabel}>Gain estimé (Actions)</Text>
+                <Text style={[styles.kpiValue, { fontSize: 20, color: s.totalGain >= 0 ? C.up : C.down }]}>
+                  {fmt(s.totalGain)} ({fmtPct(s.totalGainPct)})
+                </Text>
+              </View>
             </View>
-            <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: s.totalGain >= 0 ? C.up : C.down, borderLeftStyle: 'solid' as const }]}>
-              <Text style={styles.kpiLabel}>Gain estimé</Text>
-              <Text style={[styles.kpiValue, { fontSize: 20, color: s.totalGain >= 0 ? C.up : C.down }]}>
-                {fmt(s.totalGain)} ({fmtPct(s.totalGainPct)})
-              </Text>
+
+            {/* Gains breakdown: Actions / Revenus fixes / Total */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
+              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
+                <Text style={[styles.kpiLabel, { fontSize: 7.5 }]}>Actions (gain en capital)</Text>
+                <Text style={[styles.kpiValue, { fontSize: 16, color: (s.equityGain ?? s.totalGain) >= 0 ? C.up : C.down }]}>
+                  {fmt(s.equityGain ?? s.totalGain)}
+                </Text>
+              </View>
+              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.gold, borderLeftStyle: 'solid' as const }]}>
+                <Text style={[styles.kpiLabel, { fontSize: 7.5 }]}>Revenus fixes (revenu annuel)</Text>
+                <Text style={[styles.kpiValue, { fontSize: 16, color: C.gold }]}>
+                  {fmt(s.fixedIncomeAnnualIncome ?? 0)}
+                </Text>
+              </View>
+              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const, backgroundColor: '#f0fdf4' }]}>
+                <Text style={[styles.kpiLabel, { fontSize: 7.5, fontWeight: 700 }]}>Total estimé</Text>
+                <Text style={[styles.kpiValue, { fontSize: 18, color: (s.totalEstimated ?? s.totalGain) >= 0 ? C.up : C.down }]}>
+                  {fmt(s.totalEstimated ?? s.totalGain)}
+                </Text>
+              </View>
             </View>
-          </View>
+          </>
         )}
 
         {/* Position counts */}
