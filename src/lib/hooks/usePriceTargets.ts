@@ -12,6 +12,7 @@ export interface PriceTargetConsensus {
   targetLow: number;
   numberOfAnalysts: number;
   source: 'yahoo' | 'fmp' | 'manual' | 'historical';
+  cdrGainPct?: number; // For CDRs: the US underlying's gain % to apply to Croesus price
 }
 
 /**

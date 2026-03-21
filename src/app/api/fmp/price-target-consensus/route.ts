@@ -11,6 +11,7 @@ export interface PriceTargetConsensus {
   numberOfAnalysts: number;
   source: 'yahoo' | 'fmp' | 'manual' | 'historical';
   resolvedSymbol?: string; // The actual Yahoo symbol that worked
+  cdrGainPct?: number; // For CDRs: the US underlying's gain %, so client can apply to Croesus price
 }
 
 /**
@@ -159,11 +160,14 @@ async function lookupCDRTarget(
     const usPrice = json?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw;
     if (!usPrice || usPrice <= 0) return { symbol: cdrSymbol, data: null };
 
-    // 3. Compute the % gain from the US underlying
+    // 3. Compute the % gain from the US underlying target
     const usTarget = underlyingResult.data.targetConsensus;
     const gainPct = (usTarget - usPrice) / usPrice;
+    const gainPctHigh = (underlyingResult.data.targetHigh - usPrice) / usPrice;
+    const gainPctLow = (underlyingResult.data.targetLow - usPrice) / usPrice;
+    const cdrSource = underlyingResult.data.source;
 
-    // 4. Get the CDR's current NEO price
+    // 4. Try to get CDR's NEO price for server-side target calculation
     const neoSymbol = `${cdrSymbol.replace(/\.(NE|NEO)$/i, '')}.NE`;
     const neoUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(neoSymbol)}?modules=price`;
     const neoRes = await yahooFetch(neoUrl);
@@ -173,31 +177,20 @@ async function lookupCDRTarget(
       cdrPrice = neoJson?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw ?? 0;
     }
 
-    // If we couldn't get the NEO price, try the symbol as-is
-    if (cdrPrice <= 0) {
-      const directUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(cdrSymbol)}?modules=price`;
-      const directRes = await yahooFetch(directUrl);
-      if (directRes.ok) {
-        const directJson = await directRes.json();
-        cdrPrice = directJson?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw ?? 0;
-      }
-    }
-
-    if (cdrPrice <= 0) return { symbol: cdrSymbol, data: null };
-
-    // 5. Apply the US gain % to the CDR price
-    const cdrTarget = Math.round(cdrPrice * (1 + gainPct) * 100) / 100;
-    const cdrSource = underlyingResult.data.source;
+    // 5. Compute target — use NEO price if available, otherwise client will recalculate
+    const basePrice = cdrPrice > 0 ? cdrPrice : 0;
+    const cdrTarget = basePrice > 0 ? Math.round(basePrice * (1 + gainPct) * 100) / 100 : 0;
 
     return {
       symbol: cdrSymbol,
       data: {
         targetConsensus: cdrTarget,
-        targetHigh: Math.round(cdrPrice * (1 + (underlyingResult.data.targetHigh - usPrice) / usPrice) * 100) / 100,
-        targetLow: Math.round(cdrPrice * (1 + (underlyingResult.data.targetLow - usPrice) / usPrice) * 100) / 100,
+        targetHigh: basePrice > 0 ? Math.round(basePrice * (1 + gainPctHigh) * 100) / 100 : 0,
+        targetLow: basePrice > 0 ? Math.round(basePrice * (1 + gainPctLow) * 100) / 100 : 0,
         numberOfAnalysts: underlyingResult.data.numberOfAnalysts,
         source: cdrSource,
         resolvedSymbol: `${underlyingSymbol} (CDR)`,
+        cdrGainPct: gainPct, // Always pass gain % so client can apply to Croesus price
       },
     };
   } catch {

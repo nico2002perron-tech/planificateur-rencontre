@@ -372,13 +372,29 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
       const yahoo = prices.get(sym);
       const target = targets[sym];
-      const currentPrice = yahoo?.price || holding.marketPrice;
+      // CDR holdings: always use Croesus market price (CAD), never Yahoo US price
+      const currentPrice = holding.isCDR ? holding.marketPrice : (yahoo?.price || holding.marketPrice);
       const hasCustom = sym in customTargets;
-      const apiTarget = target?.targetConsensus || 0;
-      const targetPrice = hasCustom ? customTargets[sym] : (apiTarget > 0 ? apiTarget : 0);
+
+      let targetPrice: number;
+      let source: string;
+
+      if (hasCustom) {
+        targetPrice = customTargets[sym];
+        source = 'Manuel';
+      } else if (holding.isCDR && target?.cdrGainPct !== undefined) {
+        // CDR: apply the US underlying's gain % to the Croesus CAD price
+        targetPrice = Math.round(currentPrice * (1 + target.cdrGainPct) * 100) / 100;
+        source = 'CDR';
+      } else if (target?.targetConsensus && target.targetConsensus > 0) {
+        targetPrice = target.targetConsensus;
+        source = target.source === 'historical' ? 'Est. hist.' : 'Analyste';
+      } else {
+        targetPrice = 0;
+        source = 'N/D';
+      }
+
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
-      const apiSource = target?.source;
-      const source = hasCustom ? 'Manuel' : (apiTarget > 0 ? (apiSource === 'historical' ? 'Est. hist.' : 'Analyste') : 'N/D');
 
       map.set(sym, { currentPrice, targetPrice, gainPct, source });
     });
@@ -403,6 +419,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     let analystCount = 0;
     let historicalCount = 0;
     let manualCount = 0;
+    let cdrCount = 0;
     let noTargetCount = 0;
 
     holdings.forEach(h => {
@@ -411,7 +428,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         totalCurrent += h.quantity * data.currentPrice;
         if (data.targetPrice > 0) {
           totalTarget += h.quantity * data.targetPrice;
-          if (data.source === 'Est. hist.') historicalCount++;
+          if (data.source === 'CDR') cdrCount++;
+          else if (data.source === 'Est. hist.') historicalCount++;
           else if (data.source === 'Manuel') manualCount++;
           else analystCount++;
         } else {
@@ -423,9 +441,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
     const gain = totalTarget - totalCurrent;
     const gainPct = totalCurrent > 0 ? (gain / totalCurrent) * 100 : 0;
-    const withTargets = analystCount + historicalCount + manualCount;
+    const withTargets = analystCount + historicalCount + manualCount + cdrCount;
 
-    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, noTargetCount };
+    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, cdrCount, noTargetCount };
   }, [showTargets, targetData, holdings, priceableSymbols.length]);
 
   const handleDownloadPdf = useCallback(async () => {
@@ -698,6 +716,14 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                 </span>
               </div>
             )}
+            {targetSummary.cdrCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="text-xs font-medium text-text-main">
+                  {targetSummary.cdrCount} titre{targetSummary.cdrCount > 1 ? 's' : ''} — <span className="text-emerald-700">CDR C$HDG (sous-jacent US)</span>
+                </span>
+              </div>
+            )}
             {targetSummary.manualCount > 0 && (
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
@@ -903,6 +929,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                                 <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
                                 <span className={`text-[10px] px-1 py-0.5 rounded ${
                                   td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
+                                    : td.source === 'CDR' ? 'bg-emerald-100 text-emerald-700'
                                     : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
                                     : 'bg-purple-100 text-purple-700'
                                 }`}>
