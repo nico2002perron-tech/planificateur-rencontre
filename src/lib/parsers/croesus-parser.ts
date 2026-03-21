@@ -163,10 +163,6 @@ const CASH_KEYWORDS = [
   /money\s*market/i, /march[eé]\s*mon[eé]t/i,
 ];
 
-const TSX_SUFFIXES_NEEDED = [
-  /^(RY|TD|BNS|BMO|CM|SLF|MFC|GWO|IAG|POW|FFH|CNR|CNQ|CP|TRP|ENB|SU|CVE|IMO|HSE|ABX|K|AEM|FNV|WPM|SHOP|CSU|OTEX|BB|L|ATD|DOL|MRU|EMP|WN|GIL|CCL|MG|QSR|TFI|WSP|SNC|STN|BAM|BN|BIP|BEP|BEPC|BIPC|FTS|EMA|AQN|NPI|RNW|INE|SPB|IPL|KEY|PPL|GEI|ARX|WCP|ERF|BTE|VET|TVE|MEG|POU|AAV|NVA|CR|TOU|PSK|SGY|CEU|CPG|FRU|PEY|PXT|SES|PNE|WHC|BIR|CJ|KEL|WTE|HWO|ESI|PD|SVM|FR|ELD|EDV|MAG|AG|SSL|CG|GMIN|NGT|LUG|DPM|OGC|TXG|KNT|ARTG|BTO|OR|EQX|LUN|HBM|FM|CS|IVN|ERO|TECK|CCO|NXE|DML|URC|FIND|EFR|LAC|LAM|LGD|SKE|CGL|GLXY|DFY|SOBO|FSZ|TLG)$/i,
-];
-
 // ─── Number parsing ──────────────────────────────────────────────────────────
 
 function parseNumber(value: string): number {
@@ -408,10 +404,15 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType): st
     return s;
   }
 
-  // If it's a known Canadian stock without .TO suffix, add it
-  const baseSymbol = s.replace(/\.(TO|V|CN|NE)$/, '');
-  if (TSX_SUFFIXES_NEEDED.some(rx => rx.test(baseSymbol)) && !s.includes('.')) {
-    s = `${baseSymbol}.TO`;
+  // Already has an exchange suffix → done
+  if (/\.(TO|V|CN|NE)$/.test(s)) return s;
+
+  // Croesus is a Canadian platform: all equity/ETF/preferred/fund symbols
+  // without a suffix are Canadian. Add .TO for Yahoo Finance compatibility.
+  // Only skip if it looks like a US stock (already has exchange suffix or is
+  // obviously not a ticker — e.g., bond CUSIPs are handled above).
+  if (/^[A-Z]{1,5}$/.test(s)) {
+    s = `${s}.TO`;
   }
 
   return s;
