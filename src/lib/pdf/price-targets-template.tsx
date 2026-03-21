@@ -69,8 +69,12 @@ export interface PriceTargetReportData {
     pricesFound: number;
     targetsFound: number;
     equityGain?: number;
+    equityGainPct?: number;
     fixedIncomeAnnualIncome?: number;
+    fixedIncomeMarketValue?: number;
+    fixedIncomeGainPct?: number;
     totalEstimated?: number;
+    totalEstimatedPct?: number;
   };
 }
 
@@ -220,39 +224,63 @@ function CoverPage({ data }: { data: PriceTargetReportData }) {
 
         {s.totalTargetValue > 0 && (
           <>
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
               <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
                 <Text style={styles.kpiLabel}>Valeur cible 12 mois</Text>
                 <Text style={[styles.kpiValue, { fontSize: 20, color: C.blue }]}>{fmt(s.totalTargetValue)}</Text>
               </View>
-              <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: s.totalGain >= 0 ? C.up : C.down, borderLeftStyle: 'solid' as const }]}>
-                <Text style={styles.kpiLabel}>Gain estimé (Actions)</Text>
-                <Text style={[styles.kpiValue, { fontSize: 20, color: s.totalGain >= 0 ? C.up : C.down }]}>
-                  {fmt(s.totalGain)} ({fmtPct(s.totalGainPct)})
+            </View>
+
+            {/* Gains breakdown heading */}
+            <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+              Gains estimés par catégorie
+            </Text>
+
+            {/* Actions + Revenus fixes side by side */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+              {/* Actions */}
+              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.kpiLabel, { fontSize: 7.5, marginBottom: 0 }]}>Actions (gain en capital)</Text>
+                  <View style={{ backgroundColor: (s.equityGainPct ?? s.totalGainPct) >= 0 ? '#dcfce7' : '#fef2f2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: (s.equityGainPct ?? s.totalGainPct) >= 0 ? C.up : C.down }}>
+                      {fmtPct(s.equityGainPct ?? s.totalGainPct)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.kpiValue, { fontSize: 18, color: (s.equityGain ?? s.totalGain) >= 0 ? C.up : C.down }]}>
+                  {fmt(s.equityGain ?? s.totalGain)}
+                </Text>
+              </View>
+              {/* Revenus fixes */}
+              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.kpiLabel, { fontSize: 7.5, marginBottom: 0 }]}>Revenus fixes (revenu annuel)</Text>
+                  <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.up }}>
+                      {fmtPct(s.fixedIncomeGainPct ?? 0)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.kpiValue, { fontSize: 18, color: C.up }]}>
+                  {fmt(s.fixedIncomeAnnualIncome ?? 0)}
                 </Text>
               </View>
             </View>
 
-            {/* Gains breakdown: Actions / Revenus fixes / Total */}
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
-              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
-                <Text style={[styles.kpiLabel, { fontSize: 7.5 }]}>Actions (gain en capital)</Text>
-                <Text style={[styles.kpiValue, { fontSize: 16, color: (s.equityGain ?? s.totalGain) >= 0 ? C.up : C.down }]}>
-                  {fmt(s.equityGain ?? s.totalGain)}
-                </Text>
+            {/* Total estimé — prominent */}
+            <View style={[styles.statCard, { borderLeftWidth: 4, borderLeftColor: C.up, borderLeftStyle: 'solid' as const, backgroundColor: '#f0fdf4', borderWidth: 1.5, borderColor: '#86efac', borderStyle: 'solid' as const, marginBottom: 30 }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Total estimé</Text>
+                <View style={{ backgroundColor: (s.totalEstimatedPct ?? s.totalGainPct) >= 0 ? '#bbf7d0' : '#fecaca', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: (s.totalEstimatedPct ?? s.totalGainPct) >= 0 ? '#15803d' : C.down }}>
+                    {fmtPct(s.totalEstimatedPct ?? s.totalGainPct)}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.gold, borderLeftStyle: 'solid' as const }]}>
-                <Text style={[styles.kpiLabel, { fontSize: 7.5 }]}>Revenus fixes (revenu annuel)</Text>
-                <Text style={[styles.kpiValue, { fontSize: 16, color: C.gold }]}>
-                  {fmt(s.fixedIncomeAnnualIncome ?? 0)}
-                </Text>
-              </View>
-              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const, backgroundColor: '#f0fdf4' }]}>
-                <Text style={[styles.kpiLabel, { fontSize: 7.5, fontWeight: 700 }]}>Total estimé</Text>
-                <Text style={[styles.kpiValue, { fontSize: 18, color: (s.totalEstimated ?? s.totalGain) >= 0 ? C.up : C.down }]}>
-                  {fmt(s.totalEstimated ?? s.totalGain)}
-                </Text>
-              </View>
+              <Text style={[styles.kpiValue, { fontSize: 22, color: (s.totalEstimated ?? s.totalGain) >= 0 ? C.up : C.down }]}>
+                {fmt(s.totalEstimated ?? s.totalGain)}
+              </Text>
             </View>
           </>
         )}

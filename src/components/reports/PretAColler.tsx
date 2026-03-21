@@ -461,14 +461,18 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     const withTargets = analystCount + historicalCount + manualCount + cdrCount;
 
     // Gains breakdown by category
-    const fixedIncomeAnnualIncome = holdings
-      .filter(h => h.assetType === 'FIXED_INCOME')
-      .reduce((s, h) => s + h.annualIncome, 0);
+    const fixedIncomeHoldings = holdings.filter(h => h.assetType === 'FIXED_INCOME');
+    const fixedIncomeAnnualIncome = fixedIncomeHoldings.reduce((s, h) => s + h.annualIncome, 0);
+    const fixedIncomeMarketValue = fixedIncomeHoldings.reduce((s, h) => s + h.marketValue, 0);
+    const fixedIncomeGainPct = fixedIncomeMarketValue > 0 ? (fixedIncomeAnnualIncome / fixedIncomeMarketValue) * 100 : 0;
 
     const equityGain = gain; // target gain is already equity-only
+    const equityGainPct = gainPct; // same as gainPct (equity-only)
     const totalEstimated = equityGain + fixedIncomeAnnualIncome;
+    const totalPortfolioValue = totalCurrent + fixedIncomeMarketValue;
+    const totalEstimatedPct = totalPortfolioValue > 0 ? (totalEstimated / totalPortfolioValue) * 100 : 0;
 
-    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, cdrCount, noTargetCount, equityGain, fixedIncomeAnnualIncome, totalEstimated };
+    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, cdrCount, noTargetCount, equityGain, equityGainPct, fixedIncomeAnnualIncome, fixedIncomeMarketValue, fixedIncomeGainPct, totalEstimated, totalEstimatedPct };
   }, [showTargets, targetData, holdings, priceableSymbols.length]);
 
   const handleDownloadPdf = useCallback(async () => {
@@ -525,8 +529,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           pricesFound: prices.size,
           targetsFound: Array.from(targetData.values()).filter(t => t.targetPrice > 0).length,
           equityGain: totalTargetValue - totalCurrentValue,
+          equityGainPct: totalCurrentValue > 0 ? ((totalTargetValue - totalCurrentValue) / totalCurrentValue) * 100 : 0,
           fixedIncomeAnnualIncome: holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0),
+          fixedIncomeMarketValue: holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0),
+          fixedIncomeGainPct: (() => { const mv = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0); const ai = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0); return mv > 0 ? (ai / mv) * 100 : 0; })(),
           totalEstimated: (totalTargetValue - totalCurrentValue) + holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0),
+          totalEstimatedPct: (() => { const fiMv = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0); const fiAi = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0); const eqGain = totalTargetValue - totalCurrentValue; const totalPv = totalCurrentValue + fiMv; return totalPv > 0 ? ((eqGain + fiAi) / totalPv) * 100 : 0; })(),
         },
       };
 
@@ -1012,48 +1020,63 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
       {/* Target price summary */}
       {showTargets && targetSummary && !isLoadingPrices && (
-        <div className="p-4 bg-gradient-to-r from-brand-primary/5 to-emerald-50 rounded-xl border border-brand-primary/10 space-y-3">
-          <div className="grid grid-cols-4 gap-4 text-center">
+        <div className="p-5 bg-gradient-to-r from-brand-primary/5 to-emerald-50 rounded-xl border border-brand-primary/10 space-y-4">
+          {/* Top row: overview KPIs */}
+          <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-xs text-text-muted">Prix temps réel</p>
               <p className="text-sm font-bold text-text-main">{prices.size}/{priceableSymbols.length}</p>
             </div>
             <div>
-              <p className="text-xs text-text-muted">Valeur actuelle</p>
+              <p className="text-xs text-text-muted">Valeur actuelle (actions)</p>
               <p className="text-lg font-bold text-text-main">{formatCurrency(targetSummary.totalCurrent)}</p>
             </div>
             <div>
               <p className="text-xs text-text-muted">Valeur cible 12 mois</p>
               <p className="text-lg font-bold text-brand-primary">{formatCurrency(targetSummary.totalTarget)}</p>
             </div>
-            <div>
-              <p className="text-xs text-text-muted">Gain estimé (Actions)</p>
-              <p className={`text-lg font-bold ${targetSummary.equityGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {formatCurrency(targetSummary.equityGain)} ({formatPercent(targetSummary.gainPct)})
-              </p>
-            </div>
           </div>
+
           {/* Gains breakdown */}
-          <div className="border-t border-brand-primary/10 pt-3">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-100">
-                <p className="text-xs text-text-muted">Actions (gain en capital)</p>
-                <p className={`text-base font-bold ${targetSummary.equityGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          <div className="border-t border-brand-primary/10 pt-4">
+            <p className="text-xs font-bold text-text-main mb-3 uppercase tracking-wide">Gains estimés par catégorie</p>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Actions */}
+              <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-text-main">Actions (gain en capital)</p>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${targetSummary.equityGainPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                    {formatPercent(targetSummary.equityGainPct)}
+                  </span>
+                </div>
+                <p className={`text-xl font-bold ${targetSummary.equityGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                   {formatCurrency(targetSummary.equityGain)}
                 </p>
               </div>
-              <div className="p-2 rounded-lg bg-amber-50/80 border border-amber-100">
-                <p className="text-xs text-text-muted">Revenus fixes (revenu annuel)</p>
-                <p className="text-base font-bold text-amber-700">
+              {/* Revenus fixes */}
+              <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-text-main">Revenus fixes (revenu annuel)</p>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                    {formatPercent(targetSummary.fixedIncomeGainPct)}
+                  </span>
+                </div>
+                <p className="text-xl font-bold text-emerald-600">
                   {formatCurrency(targetSummary.fixedIncomeAnnualIncome)}
                 </p>
               </div>
-              <div className="p-2 rounded-lg bg-emerald-50/80 border border-emerald-200">
-                <p className="text-xs font-semibold text-text-main">Total estimé</p>
-                <p className={`text-lg font-bold ${targetSummary.totalEstimated >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {formatCurrency(targetSummary.totalEstimated)}
-                </p>
+            </div>
+            {/* Total */}
+            <div className="mt-3 p-3 rounded-lg bg-emerald-50 border-2 border-emerald-300">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-text-main">Total estimé</p>
+                <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${targetSummary.totalEstimatedPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                  {formatPercent(targetSummary.totalEstimatedPct)}
+                </span>
               </div>
+              <p className={`text-2xl font-bold ${targetSummary.totalEstimated >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {formatCurrency(targetSummary.totalEstimated)}
+              </p>
             </div>
           </div>
         </div>
