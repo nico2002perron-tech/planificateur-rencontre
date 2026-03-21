@@ -4,18 +4,21 @@
  * Parses tab-separated data copied from Croesus portfolio management system.
  * Handles equities, fixed income, ETFs, funds, cash/margin positions.
  *
- * Expected Croesus column order (11 columns):
- *   0: Quantité          — e.g. 58 000 or (131 167,99) for negatives
- *   1: Description        — e.g. FORD CRED CB 2.961%16SP26
- *   2: Type de compte     — A/E/W/S/T/Y/P/F (Comptant/Marge/CELI/REER/FERR/...)
- *   3: Symbole            — e.g. T482B6 (CUSIP), CJ, ENB, 1CAD, AP.UN
- *   4: PRU (coût moyen)   — e.g. 91,672
- *   5: Prix au marché     — e.g. 99,808
- *   6: Valeur comptable   — e.g. 53 169,50
- *   7: Valeur de marché   — e.g. 57 888,64
- *   8: Durée Mod.         — e.g. 0,48 or n/d
- *   9: Intérêts courus    — e.g. 14,00 (accrued interest / dividends)
- *  10: Revenu annuel      — e.g. 1 717,38 (annual coupon or dividend income)
+ * Expected Croesus column order (12 columns):
+ *   0: Devise             — e.g. CAD, USD (currency the security is traded in)
+ *   1: Quantité           — e.g. 58 000 or (131 167,99) for negatives
+ *   2: Description        — e.g. FORD CRED CB 2.961%16SP26
+ *   3: Type de compte     — A/E/W/S/T/Y/P/F (Comptant/Marge/CELI/REER/FERR/...)
+ *   4: Symbole            — e.g. T482B6 (CUSIP), CJ, ENB, 1CAD, AP.UN
+ *   5: PRU (coût moyen)   — e.g. 91,672
+ *   6: Prix au marché     — e.g. 99,808
+ *   7: Valeur comptable   — e.g. 53 169,50
+ *   8: Valeur de marché   — e.g. 57 888,64
+ *   9: Durée Mod.         — e.g. 0,48 or n/d
+ *  10: Intérêts courus    — e.g. 14,00 (accrued interest / dividends)
+ *  11: Revenu annuel      — e.g. 1 717,38 (annual coupon or dividend income)
+ *
+ * Also supports legacy 11-column format (without Devise) for backwards compatibility.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -391,7 +394,7 @@ function extractBondDetails(description: string): { coupon?: number; maturity?: 
 
 // ─── Symbol normalization ────────────────────────────────────────────────────
 
-function normalizeSymbol(symbol: string, name: string, assetType: AssetType): string {
+function normalizeSymbol(symbol: string, name: string, assetType: AssetType, currency: string): string {
   // Don't touch cash symbols
   if (assetType === 'CASH') return symbol;
 
@@ -401,6 +404,7 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType): st
   }
 
   let s = symbol.trim().toUpperCase();
+  const isCAD = /^(CAD|CA|CAN)$/i.test(currency.trim());
 
   // Remove common exchange prefixes
   s = s.replace(/^(TSE:|TSX:|TOR:|CVE:|NEO:|XTSE:|XTOR:)/i, '');
@@ -420,10 +424,21 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType): st
     return s.replace(/\.PR\.([A-Z])$/, '-P$1.TO');
   }
 
-  // Class shares: GIB.A → GIB-A, X.B → X-B (Yahoo format with dash)
-  // Exchange suffix (.TO) will be resolved by the API at lookup time
+  // Class shares: GIB.A → GIB-A (Yahoo format with dash)
   if (s.match(/\.[A-Z]{1,2}$/)) {
-    return s.replace(/\.([A-Z]{1,2})$/, '-$1');
+    s = s.replace(/\.([A-Z]{1,2})$/, '-$1');
+  }
+
+  // CDR C$HDG stocks trade on NEO (.NE), not TSX — don't add .TO
+  if (/C\$H(DG|ED)|CDR\$?H|CDR/i.test(name)) {
+    return s;
+  }
+
+  // Use currency to determine exchange suffix:
+  // CAD → Toronto Stock Exchange (.TO)
+  // USD/other → US exchange (no suffix needed)
+  if (isCAD && /^[A-Z]{1,6}(-[A-Z]{1,2})?$/.test(s)) {
+    return `${s}.TO`;
   }
 
   return s;
@@ -482,8 +497,28 @@ export function parseCroesusData(rawText: string): ParseResult {
       }
     }
   } else {
-    // No headers detected — apply Nicolas's Croesus column order (11 columns)
-    if (firstFields.length >= 8) {
+    // No headers detected — check if first column is a currency code (new 12-column format)
+    const firstVal = firstFields[0]?.trim();
+    const hasCurrencyCol = /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstVal);
+
+    if (hasCurrencyCol && firstFields.length >= 9) {
+      // New format with Devise column at position 0 (12 columns)
+      columnMapping = {
+        currency: 0,
+        quantity: 1,
+        name: 2,
+        accountType: 3,
+        symbol: 4,
+        averageCost: 5,
+        marketPrice: 6,
+        bookValue: 7,
+        marketValue: 8,
+      };
+      if (firstFields.length >= 10) columnMapping.modifiedDuration = 9;
+      if (firstFields.length >= 11) columnMapping.accruedInterest = 10;
+      if (firstFields.length >= 12) columnMapping.annualIncome = 11;
+    } else if (firstFields.length >= 8) {
+      // Legacy format without Devise column (11 columns)
       columnMapping = {
         quantity: 0,
         name: 1,
@@ -561,6 +596,7 @@ export function parseCroesusData(rawText: string): ParseResult {
     const name = getField('name') || rawSymbol;
     const typeField = getField('assetType');
     const accountCode = getField('accountType').toUpperCase();
+    const rawCurrency = getField('currency').toUpperCase() || 'CAD';
 
     // Parse modified duration early — helps classify fixed income
     const modDurStr = getField('modifiedDuration');
@@ -569,8 +605,8 @@ export function parseCroesusData(rawText: string): ParseResult {
     // Classify asset type
     const assetType = classifyAssetType(rawSymbol, name, typeField, modifiedDuration);
 
-    // Normalize symbol
-    const symbol = normalizeSymbol(rawSymbol, name, assetType);
+    // Normalize symbol — currency determines exchange suffix (.TO for CAD, none for USD)
+    const symbol = normalizeSymbol(rawSymbol, name, assetType, rawCurrency);
 
     // Parse numbers
     const quantity = parseNumber(getField('quantity'));
@@ -596,7 +632,7 @@ export function parseCroesusData(rawText: string): ParseResult {
       marketValue,
       bookValue,
       averageCost: averageCost || (quantity !== 0 ? bookValue / quantity : 0),
-      currency: 'CAD',
+      currency: /^(CAD|CA|CAN)$/i.test(rawCurrency) ? 'CAD' : (rawCurrency || 'CAD'),
       assetType,
       weight: 0,
       accountType: accountCode,
@@ -656,7 +692,7 @@ export function parseCroesusData(rawText: string): ParseResult {
     other: holdings.filter(h => h.assetType === 'OTHER').length,
     totalMarketValue: holdings.reduce((sum, h) => sum + h.marketValue, 0),
     totalAnnualIncome: holdings.reduce((sum, h) => sum + h.annualIncome, 0),
-    currencies: ['CAD'],
+    currencies: [...new Set(holdings.map(h => h.currency))],
     accountTypes: Array.from(accountTypesSet),
   };
 
