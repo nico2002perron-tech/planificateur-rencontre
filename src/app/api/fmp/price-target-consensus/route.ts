@@ -54,8 +54,8 @@ async function estimateFromHistory(symbol: string): Promise<PriceTargetConsensus
 
     const returnPct = (currentPrice - priceOneYearAgo) / priceOneYearAgo;
 
-    // Cap the estimated return to a reasonable range (-50% to +100%)
-    const cappedReturn = Math.max(-0.5, Math.min(1.0, returnPct));
+    // Cap the estimated return: minimum 0% (never negative target), max +100%
+    const cappedReturn = Math.max(0, Math.min(1.0, returnPct));
     const estimatedTarget = Math.round(currentPrice * (1 + cappedReturn) * 100) / 100;
 
     return {
