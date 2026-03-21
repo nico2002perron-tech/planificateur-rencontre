@@ -344,7 +344,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     if (!showTargets || targetData.size === 0) return null;
     let totalCurrent = 0;
     let totalTarget = 0;
-    let withTargets = 0;
+    let analystCount = 0;
+    let historicalCount = 0;
+    let manualCount = 0;
+    let noTargetCount = 0;
 
     holdings.forEach(h => {
       const data = targetData.get(h.symbol);
@@ -352,17 +355,21 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         totalCurrent += h.quantity * data.currentPrice;
         if (data.targetPrice > 0) {
           totalTarget += h.quantity * data.targetPrice;
-          withTargets++;
+          if (data.source === 'Est. hist.') historicalCount++;
+          else if (data.source === 'Manuel') manualCount++;
+          else analystCount++;
         } else {
           totalTarget += h.quantity * data.currentPrice;
+          noTargetCount++;
         }
       }
     });
 
     const gain = totalTarget - totalCurrent;
     const gainPct = totalCurrent > 0 ? (gain / totalCurrent) * 100 : 0;
+    const withTargets = analystCount + historicalCount + manualCount;
 
-    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length };
+    return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, noTargetCount };
   }, [showTargets, targetData, holdings, priceableSymbols.length]);
 
   const handleDownloadPdf = useCallback(async () => {
@@ -545,6 +552,53 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               <span className={`text-xs font-medium ${band.color}`}>{band.label}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Source breakdown banner */}
+      {showTargets && targetSummary && !isLoadingPrices && (
+        <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 space-y-2">
+          <p className="text-sm font-bold text-text-main">Sources des cours cibles</p>
+          <div className="flex flex-wrap gap-3">
+            {targetSummary.analystCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+                <span className="text-xs font-medium text-text-main">
+                  {targetSummary.analystCount} titre{targetSummary.analystCount > 1 ? 's' : ''} — <span className="text-purple-700">Consensus analyste</span>
+                </span>
+              </div>
+            )}
+            {targetSummary.historicalCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
+                <span className="text-xs font-medium text-text-main">
+                  {targetSummary.historicalCount} titre{targetSummary.historicalCount > 1 ? 's' : ''} — <span className="text-sky-700">Estimation historique 12 mois</span>
+                </span>
+              </div>
+            )}
+            {targetSummary.manualCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="text-xs font-medium text-text-main">
+                  {targetSummary.manualCount} titre{targetSummary.manualCount > 1 ? 's' : ''} — <span className="text-amber-700">Manuel</span>
+                </span>
+              </div>
+            )}
+            {targetSummary.noTargetCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-gray-400" />
+                <span className="text-xs font-medium text-text-main">
+                  {targetSummary.noTargetCount} titre{targetSummary.noTargetCount > 1 ? 's' : ''} — <span className="text-text-muted">Aucune donnée</span>
+                </span>
+              </div>
+            )}
+          </div>
+          {targetSummary.historicalCount > 0 && (
+            <p className="text-[11px] text-sky-700 bg-sky-50 px-3 py-1.5 rounded-lg border border-sky-200 mt-1">
+              Les estimations historiques projettent le rendement des 12 derniers mois sur le prix actuel.
+              Ce n&apos;est pas une prévision — vous pouvez modifier ces cibles manuellement avec le crayon.
+            </p>
+          )}
         </div>
       )}
 
