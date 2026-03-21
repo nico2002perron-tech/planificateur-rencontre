@@ -136,50 +136,98 @@ async function lookupTarget(symbol: string): Promise<{ symbol: string; data: Pri
  * the % gain to the CDR's current NEO price.
  */
 /**
- * Directly fetch a US stock's price + analyst target from Yahoo in one call.
- * Tries the symbol as-is, then without class suffix (V-A → V).
+ * Search Yahoo Finance for a ticker. Used when CDR NEO symbol (VISA) differs
+ * from the real US ticker (V). Returns the first US equity match.
+ */
+async function searchYahooTicker(query: string): Promise<string | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=5&newsCount=0&enableFuzzyQuery=false`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const quotes = (json?.quotes ?? []) as { symbol?: string; quoteType?: string; exchange?: string }[];
+    // Prefer US equity exchanges
+    const usExchanges = ['NMS', 'NYQ', 'NGM', 'PCX', 'BTS', 'NCM'];
+    for (const q of quotes) {
+      if (q.quoteType === 'EQUITY' && q.exchange && usExchanges.includes(q.exchange)) {
+        return q.symbol ?? null;
+      }
+    }
+    // Fallback: first equity result
+    for (const q of quotes) {
+      if (q.quoteType === 'EQUITY') return q.symbol ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a single Yahoo quoteSummary with financialData+price.
+ */
+async function fetchYahooSummary(sym: string): Promise<{
+  usPrice: number; targetMean: number; targetHigh: number; targetLow: number;
+  numAnalysts: number; resolvedSymbol: string;
+} | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,price`;
+    const res = await yahooFetch(url);
+    if (!res.ok) { console.log(`[CDR] Yahoo ${sym}: HTTP ${res.status}`); return null; }
+
+    const json = await res.json();
+    const result = json?.quoteSummary?.result?.[0];
+    if (!result) { console.log(`[CDR] Yahoo ${sym}: no result`); return null; }
+
+    const fd = result.financialData ?? {};
+    const price = result.price ?? {};
+    const usPrice = price.regularMarketPrice?.raw ?? 0;
+    const targetMean = fd.targetMeanPrice?.raw ?? 0;
+
+    if (usPrice <= 0) { console.log(`[CDR] Yahoo ${sym}: no price`); return null; }
+    if (targetMean <= 0) { console.log(`[CDR] Yahoo ${sym}: price=$${usPrice} but no target`); return null; }
+
+    console.log(`[CDR] Yahoo ${sym}: price=$${usPrice}, target=$${targetMean}`);
+    return {
+      usPrice, targetMean,
+      targetHigh: fd.targetHighPrice?.raw ?? targetMean,
+      targetLow: fd.targetLowPrice?.raw ?? targetMean,
+      numAnalysts: fd.numberOfAnalystOpinions?.raw ?? 0,
+      resolvedSymbol: sym,
+    };
+  } catch { return null; }
+}
+
+/**
+ * Directly fetch a US stock's price + analyst target from Yahoo.
+ * Tries the symbol as-is, then without class suffix (V-A → V),
+ * then Yahoo search to find the real US ticker (VISA → V).
  */
 async function fetchUSUnderlyingData(symbol: string): Promise<{
   usPrice: number; targetMean: number; targetHigh: number; targetLow: number;
   numAnalysts: number; resolvedSymbol: string;
 } | null> {
+  // Build list of symbols to try
   const variants = [symbol];
-  // Also try without class suffix: V-A → V
   const withoutClass = symbol.replace(/-[A-Z]{1,2}$/, '');
   if (withoutClass !== symbol) variants.push(withoutClass);
 
+  // Try each variant directly
   for (const sym of variants) {
-    try {
-      const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,price`;
-      const res = await yahooFetch(url);
-      if (!res.ok) { console.log(`[CDR] Yahoo ${sym}: HTTP ${res.status}`); continue; }
-
-      const json = await res.json();
-      const result = json?.quoteSummary?.result?.[0];
-      if (!result) { console.log(`[CDR] Yahoo ${sym}: no result`); continue; }
-
-      const fd = result.financialData ?? {};
-      const price = result.price ?? {};
-
-      const usPrice = price.regularMarketPrice?.raw ?? 0;
-      const targetMean = fd.targetMeanPrice?.raw ?? 0;
-
-      if (usPrice <= 0) { console.log(`[CDR] Yahoo ${sym}: no price`); continue; }
-      if (targetMean <= 0) { console.log(`[CDR] Yahoo ${sym}: no target (price=$${usPrice})`); continue; }
-
-      console.log(`[CDR] Yahoo ${sym}: price=$${usPrice}, target=$${targetMean}`);
-      return {
-        usPrice,
-        targetMean,
-        targetHigh: fd.targetHighPrice?.raw ?? targetMean,
-        targetLow: fd.targetLowPrice?.raw ?? targetMean,
-        numAnalysts: fd.numberOfAnalystOpinions?.raw ?? 0,
-        resolvedSymbol: sym,
-      };
-    } catch (err) {
-      console.log(`[CDR] Yahoo ${sym}: error`, err);
-    }
+    const data = await fetchYahooSummary(sym);
+    if (data) return data;
   }
+
+  // Fallback: Yahoo search to find the real US ticker
+  // e.g. CDR symbol "VISA" on NEO → Yahoo search finds "V" (Visa Inc, NYSE)
+  console.log(`[CDR] Direct lookup failed for "${symbol}", searching Yahoo...`);
+  const realTicker = await searchYahooTicker(symbol);
+  if (realTicker && !variants.includes(realTicker)) {
+    console.log(`[CDR] Yahoo search: "${symbol}" → "${realTicker}"`);
+    const data = await fetchYahooSummary(realTicker);
+    if (data) return data;
+  }
+
   return null;
 }
 
