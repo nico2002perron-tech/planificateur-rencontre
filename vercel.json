@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/refresh-prices",
       "schedule": "0 16 * * 1-5"
+    },
+    {
+      "path": "/api/cron/refresh-fund-docs",
+      "schedule": "0 12 1 * *"
     }
   ]
 }

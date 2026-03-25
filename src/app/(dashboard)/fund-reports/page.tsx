@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   Clock,
   RefreshCw,
+  Zap,
+  Globe,
 } from 'lucide-react';
 
 interface FundDocument {
@@ -72,6 +74,11 @@ export default function FundReportsPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [manualName, setManualName] = useState('');
+
+  // Auto-fetch state
+  const [autoFetchCode, setAutoFetchCode] = useState('');
+  const [autoFetching, setAutoFetching] = useState(false);
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   // Delete modal
   const [deleteTarget, setDeleteTarget] = useState<FundDocument | null>(null);
@@ -201,6 +208,75 @@ export default function FundReportsPage() {
     fileInputRef.current?.addEventListener('change', handler);
   }
 
+  async function handleAutoFetch() {
+    const code = autoFetchCode.trim().toUpperCase();
+    if (!code) return;
+    setAutoFetching(true);
+    try {
+      const res = await fetch('/api/fund-reports/auto-fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fund_code: code }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast('error', data.error || 'Échec du téléchargement automatique');
+        return;
+      }
+
+      toast('success', data.message);
+      setAutoFetchCode('');
+      fetchDocuments();
+    } catch {
+      toast('error', 'Erreur lors du téléchargement automatique');
+    } finally {
+      setAutoFetching(false);
+    }
+  }
+
+  async function handleAutoRefreshOne(doc: FundDocument) {
+    try {
+      toast('info', `Recherche de mise à jour pour ${doc.fund_code}...`);
+      const res = await fetch('/api/fund-reports/auto-fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fund_code: doc.fund_code, fund_name: doc.fund_name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast('warning', data.error || `Pas de mise à jour trouvée pour ${doc.fund_code}`);
+        return;
+      }
+      toast('success', data.message);
+      fetchDocuments();
+    } catch {
+      toast('error', `Erreur pour ${doc.fund_code}`);
+    }
+  }
+
+  async function handleRefreshAll() {
+    setRefreshingAll(true);
+    let updated = 0;
+    let failed = 0;
+    for (const doc of documents) {
+      try {
+        const res = await fetch('/api/fund-reports/auto-fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fund_code: doc.fund_code, fund_name: doc.fund_name }),
+        });
+        if (res.ok) updated++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    toast('success', `Rafraîchissement terminé : ${updated} mis à jour, ${failed} échoués`);
+    fetchDocuments();
+    setRefreshingAll(false);
+  }
+
   const filtered = documents.filter((doc) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
@@ -275,6 +351,51 @@ export default function FundReportsPage() {
           </div>
         )}
       </div>
+
+      {/* Auto-fetch by code */}
+      <Card className="mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <Zap className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-text-main">Téléchargement automatique</p>
+            <p className="text-xs text-text-muted">
+              Entrez un code FundSERV — le PDF sera téléchargé automatiquement depuis le site du manufacturier
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={autoFetchCode}
+              onChange={(e) => setAutoFetchCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && handleAutoFetch()}
+              placeholder="Ex: RBF658"
+              className="w-36 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary font-mono"
+            />
+            <Button
+              size="sm"
+              onClick={handleAutoFetch}
+              loading={autoFetching}
+              disabled={!autoFetchCode.trim()}
+              icon={<Globe className="h-3.5 w-3.5" />}
+            >
+              Chercher
+            </Button>
+          </div>
+          {documents.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshAll}
+              loading={refreshingAll}
+              icon={<RefreshCw className="h-3.5 w-3.5" />}
+            >
+              Tout rafraîchir
+            </Button>
+          )}
+        </div>
+      </Card>
 
       {/* Search bar */}
       {documents.length > 0 && (
@@ -363,12 +484,22 @@ export default function FundReportsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleUpdate(doc)}
-                            title="Mettre à jour"
-                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                            icon={<RefreshCw className="h-3.5 w-3.5" />}
+                            onClick={() => handleAutoRefreshOne(doc)}
+                            title="Rafraîchir depuis le web"
+                            className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                            icon={<Globe className="h-3.5 w-3.5" />}
                           >
-                            M.à.j
+                            Auto
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleUpdate(doc)}
+                            title="Uploader manuellement"
+                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                            icon={<Upload className="h-3.5 w-3.5" />}
+                          >
+                            Manuel
                           </Button>
                           <Button
                             variant="ghost"
