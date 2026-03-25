@@ -12,6 +12,7 @@ import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
   Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, FileText,
+  BookOpen, CheckCircle2, Clock, AlertCircle, Upload, Globe,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -282,6 +283,17 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [aiChecking, setAiChecking] = useState(false);
   const [aiChecked, setAiChecked] = useState(false);
 
+  // Fund document status check
+  interface FundCheckResult {
+    fund_code: string;
+    status: 'ok' | 'outdated' | 'missing';
+    fund_name?: string;
+    updated_at?: string;
+    months_old?: number;
+  }
+  const [fundCheckResults, setFundCheckResults] = useState<FundCheckResult[]>([]);
+  const [fundCheckDone, setFundCheckDone] = useState(false);
+
   // AI classification check — runs once on mount
   const aiCheckRan = useRef(false);
   useEffect(() => {
@@ -321,6 +333,40 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     };
 
     runAiCheck();
+  }, [result.holdings]);
+
+  // Fund document status check — runs once on mount
+  const fundCheckRan = useRef(false);
+  useEffect(() => {
+    if (fundCheckRan.current) return;
+    fundCheckRan.current = true;
+
+    const fundHoldings = result.holdings.filter(h => h.assetType === 'FUND');
+    if (fundHoldings.length === 0) {
+      setFundCheckDone(true);
+      return;
+    }
+
+    const checkFunds = async () => {
+      try {
+        const fundCodes = fundHoldings.map(h => h.symbol);
+        const res = await fetch('/api/fund-reports/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fund_codes: fundCodes }),
+        });
+        if (res.ok) {
+          const { results } = await res.json();
+          setFundCheckResults(results || []);
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setFundCheckDone(true);
+      }
+    };
+
+    checkFunds();
   }, [result.holdings]);
 
   // Apply symbol & type overrides
@@ -641,6 +687,74 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
           <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
           <span className="text-sm text-emerald-700 font-medium">IA — Classifications vérifiées, tout semble correct</span>
+        </div>
+      )}
+
+      {/* Fund document status banner */}
+      {fundCheckDone && fundCheckResults.length > 0 && (
+        <div className="px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-blue-600 flex-shrink-0" />
+              <span className="text-sm font-bold text-text-main">
+                Rapports de fonds — {fundCheckResults.length} fonds détectés
+              </span>
+            </div>
+            <a href="/fund-reports" target="_blank" className="text-xs text-brand-primary hover:underline font-medium">
+              Gérer la bibliothèque
+            </a>
+          </div>
+          <div className="space-y-1.5">
+            {fundCheckResults.map((f) => (
+              <div key={f.fund_code} className="flex items-center gap-2 text-xs">
+                <span className="font-mono font-semibold text-brand-primary w-20">{f.fund_code}</span>
+                {f.status === 'ok' && (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-emerald-700 font-medium">À jour</span>
+                    {f.fund_name && <span className="text-text-muted">— {f.fund_name}</span>}
+                  </>
+                )}
+                {f.status === 'outdated' && (
+                  <>
+                    <Clock className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-amber-700 font-medium">
+                      Périmé ({Math.round(f.months_old || 0)} mois)
+                    </span>
+                    {f.fund_name && <span className="text-text-muted">— {f.fund_name}</span>}
+                    <a href="/fund-reports" target="_blank" className="px-2 py-0.5 rounded bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors">
+                      Mettre à jour
+                    </a>
+                  </>
+                )}
+                {f.status === 'missing' && (
+                  <>
+                    <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                    <span className="text-red-700 font-medium">Non uploadé</span>
+                    <a href="/fund-reports" target="_blank" className="px-2 py-0.5 rounded bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors">
+                      Uploader
+                    </a>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          {fundCheckResults.every(f => f.status === 'ok') && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <Check className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="text-xs text-emerald-700 font-medium">
+                Tous les rapports de fonds sont à jour — ils seront inclus dans le PDF
+              </span>
+            </div>
+          )}
+          {fundCheckResults.some(f => f.status === 'missing') && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs text-amber-700">
+                Les fonds manquants ne seront pas inclus dans le rapport PDF
+              </span>
+            </div>
+          )}
         </div>
       )}
 
