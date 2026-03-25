@@ -249,6 +249,26 @@ CREATE TRIGGER holdings_updated_at BEFORE UPDATE ON holdings FOR EACH ROW EXECUT
 CREATE TRIGGER model_portfolios_updated_at BEFORE UPDATE ON model_portfolios FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================
+-- 14. FUND_DOCUMENTS (rapports de fonds uploadés)
+-- ============================================
+CREATE TABLE fund_documents (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  fund_code TEXT NOT NULL,
+  fund_name TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  file_size INTEGER NOT NULL DEFAULT 0,
+  uploaded_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_fund_documents_code ON fund_documents(fund_code);
+CREATE INDEX idx_fund_documents_updated ON fund_documents(updated_at DESC);
+
+CREATE TRIGGER fund_documents_updated_at BEFORE UPDATE ON fund_documents FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
 -- Row Level Security (RLS)
 -- ============================================
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;

@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   TrendingUp,
   BarChart2,
+  BookOpen,
 } from 'lucide-react';
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/valuation', label: 'Valorisation', icon: BarChart2 },
   { href: '/reports', label: 'Rapports', icon: FileText },
+  { href: '/fund-reports', label: 'Rapports de fonds', icon: BookOpen },
   { href: '/admin', label: 'Administration', icon: Settings },
 ];
 
