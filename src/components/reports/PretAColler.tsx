@@ -1211,6 +1211,28 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             <Spinner size="sm" />
             Chargement des prix et cours cibles...
           </div>
+        ) : fundCheckResults.some(f => f.status === 'missing' || f.status === 'outdated') ? (
+          <div className="flex flex-col items-center gap-2">
+            <Button
+              disabled
+              icon={<FileText className="h-4 w-4" />}
+              size="lg"
+              className="opacity-50 cursor-not-allowed"
+            >
+              Télécharger le PDF
+            </Button>
+            <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {fundCheckResults.filter(f => f.status === 'missing').length > 0
+                ? `${fundCheckResults.filter(f => f.status === 'missing').length} rapport(s) de fonds manquant(s)`
+                : `${fundCheckResults.filter(f => f.status === 'outdated').length} rapport(s) de fonds périmé(s)`
+              }
+              {' — '}
+              <a href="/fund-reports" target="_blank" className="underline hover:text-red-800">
+                Mettre à jour
+              </a>
+            </p>
+          </div>
         ) : (
           <Button
             onClick={handleDownloadPdf}

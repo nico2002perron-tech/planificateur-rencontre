@@ -13,7 +13,7 @@ import { usePortfolios } from '@/lib/hooks/usePortfolio';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import {
   FileText, ChevronRight, ChevronLeft, Download, Check, User, Briefcase, Settings, Eye, Wifi, AlertCircle,
-  TrendingUp, X, Sparkles, BarChart3, Pencil, LineChart,
+  TrendingUp, X, Sparkles, BarChart3, Pencil, LineChart, BookOpen, CheckCircle2, Clock,
 } from 'lucide-react';
 
 const BENCHMARK_OPTIONS = [
@@ -96,6 +96,16 @@ function NewReportWizard() {
   const [includeValuation, setIncludeValuation] = useState(false);
   const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([]);
 
+  // Fund document check
+  interface FundCheckItem {
+    fund_code: string;
+    status: 'ok' | 'outdated' | 'missing';
+    fund_name?: string;
+    months_old?: number;
+  }
+  const [fundCheckResults, setFundCheckResults] = useState<FundCheckItem[]>([]);
+  const [fundCheckDone, setFundCheckDone] = useState(false);
+
   // Filter portfolios by selected client
   const filteredPortfolios = useMemo(() => {
     if (!portfolios || !selectedClientId) return [];
@@ -137,6 +147,51 @@ function NewReportWizard() {
         .finally(() => setHoldingsLoading(false));
     }
   }, [selectedPortfolioId, step]);
+
+  // Check fund documents when holdings are loaded
+  useEffect(() => {
+    if (portfolioHoldings.length === 0) {
+      setFundCheckResults([]);
+      setFundCheckDone(false);
+      return;
+    }
+
+    // Find holdings that look like fund codes (no .TO suffix, typically alphanumeric 3-8 chars)
+    const fundCodes = portfolioHoldings
+      .filter(h => {
+        const s = h.symbol;
+        // Fund codes: no dot, letters+numbers, 3-10 chars (RBF658, TDB900, MFC4367)
+        return /^[A-Z]{2,4}\d{2,6}$/.test(s);
+      })
+      .map(h => h.symbol);
+
+    if (fundCodes.length === 0) {
+      setFundCheckDone(true);
+      return;
+    }
+
+    const checkFunds = async () => {
+      try {
+        const res = await fetch('/api/fund-reports/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fund_codes: fundCodes }),
+        });
+        if (res.ok) {
+          const { results } = await res.json();
+          setFundCheckResults(results || []);
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setFundCheckDone(true);
+      }
+    };
+
+    checkFunds();
+  }, [portfolioHoldings]);
+
+  const fundsBlocked = fundCheckResults.some(f => f.status === 'missing' || f.status === 'outdated');
 
   // Get symbols for FMP fetch
   const holdingSymbols = useMemo(() => portfolioHoldings.map((h) => h.symbol), [portfolioHoldings]);
@@ -817,6 +872,56 @@ function NewReportWizard() {
             </div>
           </div>
 
+          {/* Fund document status */}
+          {fundCheckDone && fundCheckResults.length > 0 && (
+            <div className={`mb-6 p-4 rounded-lg border ${fundsBlocked ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <BookOpen className={`h-4 w-4 ${fundsBlocked ? 'text-red-600' : 'text-emerald-600'}`} />
+                <span className="text-sm font-bold text-text-main">
+                  Rapports de fonds ({fundCheckResults.length})
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {fundCheckResults.map((f) => (
+                  <div key={f.fund_code} className="flex items-center gap-2 text-xs">
+                    <span className="font-mono font-semibold text-brand-primary w-20">{f.fund_code}</span>
+                    {f.status === 'ok' && (
+                      <>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        <span className="text-emerald-700 font-medium">À jour</span>
+                      </>
+                    )}
+                    {f.status === 'outdated' && (
+                      <>
+                        <Clock className="h-3.5 w-3.5 text-amber-500" />
+                        <span className="text-amber-700 font-medium">Périmé ({Math.round(f.months_old || 0)} mois)</span>
+                      </>
+                    )}
+                    {f.status === 'missing' && (
+                      <>
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        <span className="text-red-700 font-medium">Non uploadé</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {fundsBlocked && (
+                <div className="mt-3 flex items-center gap-2">
+                  <a
+                    href="/fund-reports"
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-full hover:bg-red-700 transition-colors"
+                  >
+                    <BookOpen className="h-3 w-3" />
+                    Mettre à jour les rapports de fonds
+                  </a>
+                  <span className="text-xs text-red-600">Requis avant de générer le rapport</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {totalEstimatedGain !== 0 && (
             <div className="mb-6 p-3 bg-bg-light rounded-lg">
               <p className="text-xs text-text-muted mb-1">Estimation consensus 12 mois</p>
@@ -830,13 +935,22 @@ function NewReportWizard() {
             <Button variant="ghost" onClick={() => setStep(3)} icon={<ChevronLeft className="h-4 w-4" />}>
               Retour
             </Button>
-            <Button
-              loading={generating}
-              onClick={handleGenerate}
-              icon={<Download className="h-4 w-4" />}
-            >
-              Générer le rapport PDF
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                loading={generating}
+                onClick={handleGenerate}
+                icon={<Download className="h-4 w-4" />}
+                disabled={fundsBlocked}
+              >
+                Générer le rapport PDF
+              </Button>
+              {fundsBlocked && (
+                <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Rapports de fonds requis
+                </p>
+              )}
+            </div>
           </div>
         </Card>
       )}
