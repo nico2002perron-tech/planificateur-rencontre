@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
   ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
-  Lock, Unlock, Award, BarChart3, Clock, DollarSign, Calendar,
+  Lock, Unlock, Award, BarChart3, Clock, DollarSign, Calendar, PieChart, Check, Info, ChevronUp,
 } from 'lucide-react';
 
 // ── Sector icons (same as profiles page) ──
@@ -102,6 +102,9 @@ export default function UniversePage() {
 // ONGLET ACTIONS
 // ════════════════════════════════════════════════
 
+// ── ETF sector breakdown type ──
+interface ETFSector { sector: string; weight: number }
+
 function StocksTab() {
   const { stocks, bySector, sectors, isLoading, mutate } = useStockUniverse();
   const { toast } = useToast();
@@ -113,8 +116,34 @@ function StocksTab() {
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // ── Pending add (selected from search, waiting for sector pick) ──
-  const [pending, setPending] = useState<{ symbol: string; name: string; logo: string | null } | null>(null);
+  // ── Pending add (selected from search, waiting for sector pick or ETF auto) ──
+  const [pending, setPending] = useState<{
+    symbol: string; name: string; logo: string | null; type: string;
+  } | null>(null);
+
+  // ── ETF sector breakdown (loaded automatically for ETFs) ──
+  const [etfSectors, setEtfSectors] = useState<ETFSector[] | null>(null);
+  const [loadingEtfSectors, setLoadingEtfSectors] = useState(false);
+  const [addingEtf, setAddingEtf] = useState(false);
+
+  // When pending is an ETF, fetch sector breakdown
+  useEffect(() => {
+    if (!pending || pending.type !== 'ETF') {
+      setEtfSectors(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingEtfSectors(true);
+    setEtfSectors(null);
+    fetch(`/api/models/etf-sectors?symbol=${encodeURIComponent(pending.symbol)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!cancelled) setEtfSectors(data.sectors || null);
+      })
+      .catch(() => { if (!cancelled) setEtfSectors(null); })
+      .finally(() => { if (!cancelled) setLoadingEtfSectors(false); });
+    return () => { cancelled = true; };
+  }, [pending]);
 
   // Recherche TradingView (debounced)
   const handleSearch = useCallback((q: string) => {
@@ -135,14 +164,45 @@ function StocksTab() {
     }, 250);
   }, []);
 
-  // Select from search → show sector picker
+  // Select from search → show sector picker (stock) or auto-detect (ETF)
   function selectResult(r: SearchResult) {
-    setPending({ symbol: r.symbol, name: r.name, logo: r.logo });
+    setPending({ symbol: r.symbol, name: r.name, logo: r.logo, type: r.type });
     setSearchResults([]);
     setSearchQuery('');
   }
 
-  // Pick sector → add immediately
+  // Add ETF to all detected sectors at once
+  async function addEtfToAllSectors() {
+    if (!pending || !etfSectors || etfSectors.length === 0) return;
+    setAddingEtf(true);
+    const addedSectors: string[] = [];
+    try {
+      for (const { sector } of etfSectors) {
+        const res = await fetch('/api/models/universe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: pending.symbol,
+            name: pending.name,
+            sector,
+            stock_type: 'variable',
+            logo_url: pending.logo,
+          }),
+        });
+        if (res.ok) addedSectors.push(sector);
+      }
+      toast('success', `${pending.symbol} ajouté dans ${addedSectors.length} secteurs`);
+      setPending(null);
+      setExpandedSectors(prev => new Set([...prev, ...addedSectors]));
+      mutate();
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Erreur');
+    } finally {
+      setAddingEtf(false);
+    }
+  }
+
+  // Pick sector → add immediately (for stocks or manual ETF fallback)
   async function addToSector(sectorValue: string) {
     if (!pending) return;
     try {
@@ -164,7 +224,6 @@ function StocksTab() {
       const sectorLabel = SECTORS.find(s => s.value === sectorValue)?.label || sectorValue;
       toast('success', `${pending.symbol} ajouté dans ${sectorLabel}`);
       setPending(null);
-      // Auto-expand the sector we just added to
       setExpandedSectors(prev => new Set([...prev, sectorValue]));
       mutate();
     } catch (e) {
@@ -255,6 +314,11 @@ function StocksTab() {
                   <div className="text-text-muted text-xs truncate">{r.name}</div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {r.type === 'ETF' && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 text-[10px] font-bold">
+                      <PieChart className="h-2.5 w-2.5" /> ETF
+                    </span>
+                  )}
                   <Badge variant="outline">{r.exchange}</Badge>
                   <Plus className="h-4 w-4 text-brand-primary" />
                 </div>
@@ -264,10 +328,10 @@ function StocksTab() {
         )}
       </div>
 
-      {/* ── Sector picker (appears after selecting a search result) ── */}
+      {/* ── Sector picker / ETF auto-breakdown (appears after selecting a search result) ── */}
       {pending && (
         <div className="bg-white rounded-2xl border-2 border-brand-primary/30 p-5 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Selected stock preview */}
+          {/* Selected stock/ETF preview */}
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
             {pending.logo ? (
               <img src={pending.logo} alt="" className="h-10 w-10 rounded-full object-contain bg-white border border-gray-100" />
@@ -277,7 +341,14 @@ function StocksTab() {
               </div>
             )}
             <div className="flex-1">
-              <div className="font-mono font-bold text-text-main">{pending.symbol}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-text-main">{pending.symbol}</span>
+                {pending.type === 'ETF' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 text-[10px] font-bold uppercase">
+                    <PieChart className="h-3 w-3" /> ETF
+                  </span>
+                )}
+              </div>
               <div className="text-sm text-text-muted">{pending.name}</div>
             </div>
             <button onClick={() => setPending(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
@@ -285,24 +356,108 @@ function StocksTab() {
             </button>
           </div>
 
-          {/* Sector selection */}
-          <p className="text-sm font-medium text-text-main mb-3">Dans quel secteur?</p>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {SECTORS.map(s => {
-              const meta = SECTOR_META[s.value];
-              const Icon = meta?.Icon || TrendingUp;
-              return (
-                <button
-                  key={s.value}
-                  onClick={() => addToSector(s.value)}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-gray-100 hover:border-transparent hover:shadow-md transition-all duration-150 group ${meta?.bg || 'bg-gray-50'} hover:scale-[1.02]`}
-                >
-                  <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'} transition-transform group-hover:scale-110`} />
-                  <span className="text-xs font-medium text-text-main text-center leading-tight">{s.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {/* ETF: auto sector breakdown */}
+          {pending.type === 'ETF' ? (
+            <div>
+              {loadingEtfSectors ? (
+                <div className="flex items-center justify-center gap-3 py-6">
+                  <Spinner size="sm" />
+                  <span className="text-sm text-text-muted">Analyse de la repartition sectorielle...</span>
+                </div>
+              ) : etfSectors && etfSectors.length > 0 ? (
+                <>
+                  <p className="text-sm font-medium text-text-main mb-3 flex items-center gap-2">
+                    <PieChart className="h-4 w-4 text-violet-500" />
+                    Repartition sectorielle detectee
+                  </p>
+                  {/* Sector bars */}
+                  <div className="space-y-2 mb-4">
+                    {etfSectors.map(({ sector, weight }) => {
+                      const meta = SECTOR_META[sector];
+                      const sectorLabel = SECTORS.find(s => s.value === sector)?.label || sector;
+                      const Icon = meta?.Icon || TrendingUp;
+                      const pct = Math.round(weight * 100);
+                      return (
+                        <div key={sector} className="flex items-center gap-3">
+                          <div className={`w-7 h-7 rounded-lg ${meta?.bg || 'bg-gray-100'} flex items-center justify-center shrink-0`}>
+                            <Icon className={`h-4 w-4 ${meta?.color || 'text-gray-500'}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-xs font-medium text-text-main">{sectorLabel}</span>
+                              <span className="text-xs font-mono font-semibold text-text-muted">{pct}%</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${meta?.color?.replace('text-', 'bg-') || 'bg-gray-400'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Confirm button */}
+                  <button
+                    onClick={addEtfToAllSectors}
+                    disabled={addingEtf}
+                    className="w-full py-3 rounded-xl bg-brand-primary text-white font-semibold text-sm hover:bg-brand-primary/90 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {addingEtf ? (
+                      <><Spinner size="sm" /> Ajout en cours...</>
+                    ) : (
+                      <><Check className="h-4 w-4" /> Ajouter dans {etfSectors.length} secteurs</>
+                    )}
+                  </button>
+                </>
+              ) : (
+                /* ETF but no sector data found → fallback to manual picker */
+                <>
+                  <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+                    Repartition non disponible pour cet ETF. Choisissez le secteur manuellement.
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {SECTORS.map(s => {
+                      const meta = SECTOR_META[s.value];
+                      const Icon = meta?.Icon || TrendingUp;
+                      return (
+                        <button
+                          key={s.value}
+                          onClick={() => addToSector(s.value)}
+                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-gray-100 hover:border-transparent hover:shadow-md transition-all duration-150 group ${meta?.bg || 'bg-gray-50'} hover:scale-[1.02]`}
+                        >
+                          <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'} transition-transform group-hover:scale-110`} />
+                          <span className="text-xs font-medium text-text-main text-center leading-tight">{s.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            /* Regular stock: manual sector picker */
+            <>
+              <p className="text-sm font-medium text-text-main mb-3">Dans quel secteur?</p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {SECTORS.map(s => {
+                  const meta = SECTOR_META[s.value];
+                  const Icon = meta?.Icon || TrendingUp;
+                  return (
+                    <button
+                      key={s.value}
+                      onClick={() => addToSector(s.value)}
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-gray-100 hover:border-transparent hover:shadow-md transition-all duration-150 group ${meta?.bg || 'bg-gray-50'} hover:scale-[1.02]`}
+                    >
+                      <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'} transition-transform group-hover:scale-110`} />
+                      <span className="text-xs font-medium text-text-main text-center leading-tight">{s.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -483,6 +638,323 @@ function scoreBonds(bonds: UniverseBond[]): ScoredBond[] {
 
     return { bond, score, couponScore, maturityScore, sizeScore, typeScore, yearsToMaturity };
   }).sort((a, b) => b.score - a.score);
+}
+
+// ── Bond Gains Analyzer (Duolingo-style) ──
+interface BondGainInfo {
+  bond: UniverseBond;
+  yearsToMaturity: number;
+  annualCoupon: number;
+  totalCouponIncome: number;
+  totalReturnPct: number;
+  annualizedReturnPct: number;
+  bucket: string;
+}
+
+const GAIN_BUCKETS = [
+  { key: 'lt1',   label: '< 1 an',   emoji: '~',  min: -Infinity, max: 1,   color: 'bg-red-400',     ring: 'ring-red-400',     text: 'text-red-600',    lightBg: 'bg-red-50',    border: 'border-red-200',    verdict: 'Bientot rembourse' },
+  { key: '1to3',  label: '1-3 ans',  emoji: '~',  min: 1,         max: 3,   color: 'bg-amber-400',   ring: 'ring-amber-400',   text: 'text-amber-600',  lightBg: 'bg-amber-50',  border: 'border-amber-200',  verdict: 'Court terme' },
+  { key: '3to5',  label: '3-5 ans',  emoji: '~',  min: 3,         max: 5,   color: 'bg-emerald-400', ring: 'ring-emerald-400', text: 'text-emerald-600', lightBg: 'bg-emerald-50', border: 'border-emerald-200', verdict: 'Zone ideale' },
+  { key: '5to7',  label: '5-7 ans',  emoji: '~',  min: 5,         max: 7,   color: 'bg-blue-400',    ring: 'ring-blue-400',    text: 'text-blue-600',   lightBg: 'bg-blue-50',   border: 'border-blue-200',   verdict: 'Bon equilibre' },
+  { key: '7to10', label: '7-10 ans', emoji: '~',  min: 7,         max: 10,  color: 'bg-violet-400',  ring: 'ring-violet-400',  text: 'text-violet-600', lightBg: 'bg-violet-50', border: 'border-violet-200', verdict: 'Long terme' },
+  { key: 'gt10',  label: '10+ ans',  emoji: '~',  min: 10,        max: Infinity, color: 'bg-slate-400', ring: 'ring-slate-400', text: 'text-slate-500', lightBg: 'bg-slate-50', border: 'border-slate-200', verdict: 'Tres long terme' },
+] as const;
+
+function analyzeBondGains(bonds: UniverseBond[]): BondGainInfo[] {
+  const now = new Date();
+  const results: BondGainInfo[] = [];
+
+  for (const bond of bonds) {
+    if (!bond.coupon || !bond.maturity) continue;
+    const desc = bond.description || '';
+    if (/\/N'FRAC|\/FR|\/SF|ETF/i.test(desc)) continue;
+
+    const matDate = new Date(bond.maturity);
+    const yearsToMaturity = Math.max(0, (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    if (yearsToMaturity < 0.05) continue;
+
+    const annualCoupon = bond.coupon;
+    const totalCouponIncome = annualCoupon * yearsToMaturity;
+    const totalReturnPct = totalCouponIncome;
+    const annualizedReturnPct = annualCoupon;
+
+    let bucket = 'gt10';
+    for (const b of GAIN_BUCKETS) {
+      if (yearsToMaturity >= b.min && yearsToMaturity < b.max) { bucket = b.key; break; }
+    }
+
+    results.push({ bond, yearsToMaturity, annualCoupon, totalCouponIncome, totalReturnPct, annualizedReturnPct, bucket });
+  }
+
+  return results.sort((a, b) => b.totalReturnPct - a.totalReturnPct);
+}
+
+function getGainEmoji(pct: number): string {
+  if (pct >= 40) return '🔥';
+  if (pct >= 25) return '🚀';
+  if (pct >= 15) return '✨';
+  if (pct >= 8) return '👍';
+  if (pct >= 3) return '📌';
+  return '⏳';
+}
+
+function getGainLabel(pct: number): string {
+  if (pct >= 40) return 'Exceptionnel';
+  if (pct >= 25) return 'Excellent';
+  if (pct >= 15) return 'Tres bon';
+  if (pct >= 8) return 'Bon';
+  if (pct >= 3) return 'Correct';
+  return 'Faible';
+}
+
+function getGainColor(pct: number): string {
+  if (pct >= 25) return 'text-emerald-600';
+  if (pct >= 15) return 'text-blue-600';
+  if (pct >= 8) return 'text-amber-600';
+  return 'text-gray-500';
+}
+
+function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
+  const [showMethode, setShowMethode] = useState(false);
+  const [expandedBucket, setExpandedBucket] = useState<string | null>(null);
+  const gains = analyzeBondGains(bonds);
+  if (gains.length === 0) return null;
+
+  const bucketData = GAIN_BUCKETS.map(b => {
+    const items = gains.filter(g => g.bucket === b.key);
+    const count = items.length;
+    const avgCoupon = count > 0 ? items.reduce((s, g) => s + g.annualCoupon, 0) / count : 0;
+    const avgTotalReturn = count > 0 ? items.reduce((s, g) => s + g.totalReturnPct, 0) / count : 0;
+    const avgYears = count > 0 ? items.reduce((s, g) => s + g.yearsToMaturity, 0) / count : 0;
+    const sortedItems = [...items].sort((a, b) => b.totalReturnPct - a.totalReturnPct);
+    return { ...b, count, avgCoupon, avgTotalReturn, avgYears, items: sortedItems };
+  });
+
+  const totalBonds = gains.length;
+  const avgCouponAll = gains.reduce((s, g) => s + g.annualCoupon, 0) / totalBonds;
+  const avgReturnAll = gains.reduce((s, g) => s + g.totalReturnPct, 0) / totalBonds;
+  const bestOverall = gains[0];
+  const maxBucketReturn = Math.max(1, ...bucketData.map(b => b.avgTotalReturn));
+
+  // Top 3 bonds overall
+  const podium = gains.slice(0, 3);
+
+  return (
+    <div className="rounded-2xl border-2 border-emerald-200 overflow-hidden">
+
+      {/* ── Big green header ── */}
+      <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-5 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center">
+              <TrendingUp className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg leading-tight">Combien ca rapporte?</h3>
+              <p className="text-emerald-100 text-xs mt-0.5">Gains estimes en coupons jusqu&apos;a l&apos;echeance</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-black">{avgReturnAll.toFixed(1)}%</div>
+            <div className="text-emerald-200 text-[11px] font-medium">gain moyen</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-5 space-y-5">
+
+        {/* ── 3 stat pills ── */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="relative rounded-2xl border-2 border-emerald-100 p-4 text-center overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-400" />
+            <p className="text-2xl font-black text-emerald-600">{avgCouponAll.toFixed(2)}%</p>
+            <p className="text-[11px] text-text-muted font-medium mt-1">Coupon moyen / an</p>
+            <p className="text-[10px] text-emerald-600/70 mt-0.5">Chaque annee vous recevez ca</p>
+          </div>
+          <div className="relative rounded-2xl border-2 border-blue-100 p-4 text-center overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-400" />
+            <p className="text-2xl font-black text-blue-600">{avgReturnAll.toFixed(1)}%</p>
+            <p className="text-[11px] text-text-muted font-medium mt-1">Gain total moyen</p>
+            <p className="text-[10px] text-blue-600/70 mt-0.5">Tous les coupons cumules</p>
+          </div>
+          <div className="relative rounded-2xl border-2 border-amber-100 p-4 text-center overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-amber-400" />
+            <p className="text-2xl font-black text-amber-600">{totalBonds}</p>
+            <p className="text-[11px] text-text-muted font-medium mt-1">Obligations analysees</p>
+            <p className="text-[10px] text-amber-600/70 mt-0.5">Fonds et sans echeance exclus</p>
+          </div>
+        </div>
+
+        {/* ── Podium Top 3 ── */}
+        {podium.length >= 3 && (
+          <div>
+            <p className="text-sm font-bold text-text-main mb-3 flex items-center gap-2">
+              <Award className="h-4 w-4 text-amber-500" /> Top 3 — Meilleurs gains totaux
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {podium.map((g, i) => {
+                const medals = [
+                  { bg: 'bg-gradient-to-b from-amber-50 to-amber-100', border: 'border-amber-300', badge: 'bg-amber-400', emoji: '🥇' },
+                  { bg: 'bg-gradient-to-b from-gray-50 to-gray-100',   border: 'border-gray-300',   badge: 'bg-gray-400',   emoji: '🥈' },
+                  { bg: 'bg-gradient-to-b from-orange-50 to-orange-100', border: 'border-orange-300', badge: 'bg-orange-400', emoji: '🥉' },
+                ];
+                const m = medals[i];
+                const displayName = g.bond.issuer || g.bond.description?.substring(0, 12) || '—';
+                return (
+                  <div key={g.bond.id} className={`relative rounded-2xl border-2 ${m.border} ${m.bg} p-4 text-center`}>
+                    <div className="text-2xl mb-1">{m.emoji}</div>
+                    <p className="font-bold text-text-main text-sm truncate" title={g.bond.description || ''}>{displayName}</p>
+                    <p className="text-2xl font-black mt-1 text-emerald-600">+{g.totalReturnPct.toFixed(1)}%</p>
+                    <p className="text-[10px] text-text-muted mt-1">
+                      {g.annualCoupon}%/an &middot; {g.yearsToMaturity.toFixed(1)} ans
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Buckets — expandable cards ── */}
+        <div>
+          <p className="text-sm font-bold text-text-main mb-3 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-brand-primary" /> Par tranche d&apos;echeance
+          </p>
+          <div className="space-y-2">
+            {bucketData.map(b => {
+              if (b.count === 0) return (
+                <div key={b.key} className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3 flex items-center gap-3 opacity-40">
+                  <span className={`w-3 h-3 rounded-full ${b.color}`} />
+                  <span className="text-xs text-text-muted flex-1">{b.label}</span>
+                  <span className="text-[10px] text-text-muted">Aucune obligation</span>
+                </div>
+              );
+
+              const barWidth = (b.avgTotalReturn / maxBucketReturn) * 100;
+              const isExpanded = expandedBucket === b.key;
+              const emoji = getGainEmoji(b.avgTotalReturn);
+              const label = getGainLabel(b.avgTotalReturn);
+              const gainColor = getGainColor(b.avgTotalReturn);
+
+              return (
+                <div key={b.key} className={`rounded-2xl border-2 ${b.border} overflow-hidden transition-all`}>
+                  {/* Bucket header — clickable */}
+                  <button
+                    onClick={() => setExpandedBucket(isExpanded ? null : b.key)}
+                    className={`w-full ${b.lightBg} px-4 py-3 flex items-center gap-3 transition-colors hover:brightness-[0.97]`}
+                  >
+                    {/* Color dot + emoji */}
+                    <div className={`w-10 h-10 rounded-xl ${b.lightBg} ring-2 ${b.ring} flex items-center justify-center text-lg shrink-0`}>
+                      {emoji}
+                    </div>
+
+                    {/* Label + verdict */}
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-text-main">{b.label}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${b.lightBg} ${b.text} border ${b.border}`}>
+                          {b.count} obligation{b.count > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      {/* Mini progress bar */}
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-2.5 rounded-full bg-white/80 overflow-hidden">
+                          <div className={`h-full rounded-full ${b.color} transition-all duration-700`} style={{ width: `${barWidth}%` }} />
+                        </div>
+                        <span className={`text-xs font-bold ${b.text} shrink-0`}>{label}</span>
+                      </div>
+                    </div>
+
+                    {/* Big gain number */}
+                    <div className="text-right shrink-0 ml-2">
+                      <span className={`text-xl font-black ${gainColor}`}>+{b.avgTotalReturn.toFixed(1)}%</span>
+                      <span className="text-[10px] text-text-muted block">{b.avgCoupon.toFixed(2)}%/an</span>
+                    </div>
+
+                    {/* Chevron */}
+                    {isExpanded
+                      ? <ChevronUp className="h-4 w-4 text-text-muted shrink-0" />
+                      : <ChevronDown className="h-4 w-4 text-text-muted shrink-0" />
+                    }
+                  </button>
+
+                  {/* Expanded: list of bonds in this bucket */}
+                  {isExpanded && (
+                    <div className="bg-white border-t border-gray-100 divide-y divide-gray-50">
+                      {b.items.map((g, idx) => {
+                        const name = g.bond.issuer || g.bond.description?.substring(0, 20) || '—';
+                        const gainEmoji = getGainEmoji(g.totalReturnPct);
+                        return (
+                          <div key={g.bond.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50">
+                            <span className="text-xs font-mono text-text-muted w-5 text-center shrink-0">{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-text-main truncate" title={g.bond.description || ''}>{name}</p>
+                              <p className="text-[10px] text-text-muted">
+                                Coupon {g.annualCoupon}%/an &middot; Echeance dans {g.yearsToMaturity.toFixed(1)} ans
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-sm">{gainEmoji}</span>
+                              <div className="text-right">
+                                <span className={`text-sm font-bold ${getGainColor(g.totalReturnPct)}`}>+{g.totalReturnPct.toFixed(1)}%</span>
+                                <span className="text-[9px] text-text-muted block">total</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Color legend ── */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
+          <span className="font-semibold text-text-main mr-1">Legende :</span>
+          {GAIN_BUCKETS.map(b => {
+            const count = bucketData.find(d => d.key === b.key)?.count || 0;
+            return (
+              <span key={b.key} className={`flex items-center gap-1 ${count === 0 ? 'opacity-30' : ''}`}>
+                <span className={`w-2.5 h-2.5 rounded-full ${b.color} inline-block`} />
+                {b.label}
+                {count > 0 && <span className="font-bold">({count})</span>}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* ── Methodology note — collapsible ── */}
+        <div className="rounded-xl border border-blue-100 bg-blue-50/50 overflow-hidden">
+          <button
+            onClick={() => setShowMethode(!showMethode)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 text-left">Comment on calcule ces gains?</span>
+            {showMethode ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          {showMethode && (
+            <div className="px-4 pb-4 text-xs text-blue-800/80 space-y-2 border-t border-blue-100 pt-3">
+              <p><span className="font-bold">Gain total</span> = taux coupon x annees restantes avant echeance.</p>
+              <p>Exemple : une obligation a <span className="font-mono font-bold">5%</span> qui echeoit dans <span className="font-bold">4 ans</span> rapporte environ <span className="font-mono font-bold">+20%</span> en coupons cumules (5% x 4).</p>
+              <div className="rounded-lg bg-white/60 p-3 space-y-1.5 border border-blue-100">
+                <p className="font-bold text-blue-700">Ce qui est precis :</p>
+                <p>Le coupon et la date d&apos;echeance proviennent directement de vos fichiers Croesus — donnees fiables.</p>
+                <p className="font-bold text-blue-700 mt-2">Ce qui est approximatif :</p>
+                <p>On suppose un achat au pair (100$). Le gain/perte en capital n&apos;est pas inclus car le prix unitaire n&apos;est pas disponible dans le format Repartition d&apos;actifs. Les coupons ne sont pas reinvestis (pas de capitalisation).</p>
+                <p className="font-bold text-blue-700 mt-2">En resume :</p>
+                <p>C&apos;est un excellent indicateur pour <span className="font-bold">comparer les obligations entre elles</span> et orienter la construction de votre portefeuille modele.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
 }
 
 // ── Maturity Timeline Legend ──
@@ -836,6 +1308,9 @@ function BondsTab() {
 
       {/* ── Maturity Timeline ── */}
       {bonds.length > 0 && <MaturityTimeline bonds={bonds} />}
+
+      {/* ── Bond Gains Analyzer ── */}
+      {bonds.length > 0 && <BondGainsAnalyzer bonds={bonds} />}
 
       {/* ── Classement recommandé ── */}
       {bonds.length > 0 && (() => {
