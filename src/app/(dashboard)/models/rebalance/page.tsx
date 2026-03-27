@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
 import { parseCroesusData, type ParsedHolding } from '@/lib/parsers/croesus-parser';
+import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Scale, ClipboardPaste, Zap, AlertTriangle, Check,
   Copy, ShoppingCart, Ban, ArrowUpCircle, ArrowDownCircle,
@@ -317,6 +318,8 @@ export default function RebalancePage() {
           threshold={driftThreshold}
         />
       )}
+
+      <StepNav current={7} />
     </div>
   );
 }

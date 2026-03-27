@@ -12,6 +12,7 @@ import {
   type SectorConfig,
 } from '@/lib/hooks/useInvestmentProfiles';
 import { SECTORS, INVESTMENT_PROFILES } from '@/lib/utils/constants';
+import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, ArrowRight, Save, Plus, Check, ChevronLeft,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
@@ -267,6 +268,7 @@ export default function ProfilesPage() {
 
       {/* ═══════════ STEP 1 — Choose Profile ═══════════ */}
       {step === 1 && (
+        <div className="space-y-0">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
           {profiles.sort((a, b) => a.profile_number - b.profile_number).map((p, i) => (
             <button
@@ -300,6 +302,8 @@ export default function ProfilesPage() {
               </div>
             </button>
           ))}
+        </div>
+        <StepNav current={1} />
         </div>
       )}
 

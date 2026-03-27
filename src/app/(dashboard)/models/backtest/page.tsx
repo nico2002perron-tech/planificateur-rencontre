@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
+import { StepNav } from '@/components/models/StepNav';
 import { ArrowLeft, Activity, TrendingUp, TrendingDown, BarChart3, Shield, Percent } from 'lucide-react';
 
 // ── Types ──
@@ -183,6 +184,8 @@ export default function BacktestPage() {
       )}
 
       {data && !loading && <BacktestView data={data} />}
+
+      <StepNav current={5} />
     </div>
   );
 }

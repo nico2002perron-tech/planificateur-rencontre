@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useStockUniverse, type UniverseStock } from '@/lib/hooks/useStockUniverse';
 import { useBondsUniverse, type UniverseBond } from '@/lib/hooks/useBondsUniverse';
 import { SECTORS } from '@/lib/utils/constants';
+import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Plus, Trash2, Upload, Search, GripVertical,
   ChevronDown, ChevronRight, FileSpreadsheet, X,
@@ -60,6 +61,8 @@ export default function UniversePage() {
       </div>
 
       {tab === 'actions' ? <StocksTab /> : <BondsTab />}
+
+      <StepNav current={2} />
     </div>
   );
 }

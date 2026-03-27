@@ -13,6 +13,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
 import { parseCroesusData, type ParsedHolding } from '@/lib/parsers/croesus-parser';
+import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Zap, ArrowRightLeft, ClipboardPaste,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Check,
@@ -302,6 +303,8 @@ export default function ComparePage() {
       {model && parsed && !generating && (
         <ComparisonView model={model} holdings={holdings} totalValue={portfolioValue} />
       )}
+
+      <StepNav current={6} />
     </div>
   );
 }

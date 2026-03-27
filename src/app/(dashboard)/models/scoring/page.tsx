@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
+import { StepNav } from '@/components/models/StepNav';
 import { ArrowLeft, Target, Star } from 'lucide-react';
 
 // ── Types ──
@@ -160,6 +161,8 @@ export default function ScoringPage() {
       )}
 
       {data && !loading && <ScoringView data={data} />}
+
+      <StepNav current={4} />
     </div>
   );
 }

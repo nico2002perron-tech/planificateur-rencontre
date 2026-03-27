@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
 import { Modal } from '@/components/ui/Modal';
+import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Zap, Download, Save, ChevronDown, ChevronRight,
   DollarSign, TrendingUp, Percent, BarChart3,
@@ -295,6 +296,8 @@ export default function GeneratePage() {
           saving={false}
         />
       )}
+
+      <StepNav current={3} />
 
       {/* Modal de sauvegarde */}
       <Modal open={saveModalOpen} onClose={() => setSaveModalOpen(false)} title="Sauvegarder comme modele" size="sm">
