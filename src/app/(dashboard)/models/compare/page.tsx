@@ -16,6 +16,7 @@ import { parseCroesusData, type ParsedHolding } from '@/lib/parsers/croesus-pars
 import {
   ArrowLeft, Zap, ArrowRightLeft, ClipboardPaste,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Check,
+  ShoppingCart, Ban, Copy, ArrowUpCircle, ArrowDownCircle,
 } from 'lucide-react';
 
 // ── Types miroir du generateur ──
@@ -595,6 +596,243 @@ function ComparisonView({ model, holdings, totalValue }: {
           </table>
         </div>
       </Card>
+
+      {/* ── Transactions suggerees ── */}
+      <SuggestedTransactions positions={positions} holdings={holdings} model={model} />
+    </div>
+  );
+}
+
+// ════════════════════════════════════════
+// TRANSACTIONS SUGGEREES
+// ════════════════════════════════════════
+
+interface Transaction {
+  action: 'BUY' | 'SELL';
+  symbol: string;
+  name: string;
+  quantity: number;
+  estimatedPrice: number;
+  estimatedValue: number;
+  reason: string;
+}
+
+function SuggestedTransactions({ positions, holdings, model }: {
+  positions: ComparedPosition[];
+  holdings: ParsedHolding[];
+  model: GeneratedPortfolio;
+}) {
+  const { toast } = useToast();
+  const [showSells, setShowSells] = useState(true);
+
+  const transactions = useMemo(() => {
+    const txs: Transaction[] = [];
+
+    // Prix lookup depuis les holdings Croesus
+    const holdingPrices = new Map<string, number>();
+    for (const h of holdings) {
+      if (h.marketPrice > 0) holdingPrices.set(h.symbol.toUpperCase(), h.marketPrice);
+    }
+
+    // Prix lookup depuis le modele
+    const modelPrices = new Map<string, number>();
+    for (const sec of model.sectors) {
+      for (const s of sec.stocks) {
+        modelPrices.set(s.symbol.toUpperCase(), s.price);
+      }
+    }
+
+    for (const p of positions) {
+      const sym = p.symbol.toUpperCase();
+      const price = modelPrices.get(sym) || holdingPrices.get(sym) || 0;
+
+      if (p.status === 'missing') {
+        // Acheter la totalite
+        txs.push({
+          action: 'BUY',
+          symbol: p.symbol,
+          name: p.name,
+          quantity: p.modelQty,
+          estimatedPrice: price,
+          estimatedValue: p.modelQty * price,
+          reason: 'Position absente du portefeuille',
+        });
+      } else if (p.status === 'underweight' && p.qtyDiff < 0) {
+        // Acheter la difference
+        const qty = Math.abs(p.qtyDiff);
+        txs.push({
+          action: 'BUY',
+          symbol: p.symbol,
+          name: p.name,
+          quantity: qty,
+          estimatedPrice: price,
+          estimatedValue: qty * price,
+          reason: `Sous-pondere de ${fmtDec(Math.abs(p.weightDiff))}%`,
+        });
+      } else if (p.status === 'overweight' && p.qtyDiff > 0) {
+        // Vendre l'exces
+        const qty = p.qtyDiff;
+        txs.push({
+          action: 'SELL',
+          symbol: p.symbol,
+          name: p.name,
+          quantity: qty,
+          estimatedPrice: price,
+          estimatedValue: qty * price,
+          reason: `Surpondere de ${fmtDec(p.weightDiff)}%`,
+        });
+      } else if (p.status === 'extra') {
+        // Vendre la totalite
+        txs.push({
+          action: 'SELL',
+          symbol: p.symbol,
+          name: p.name,
+          quantity: p.actualQty,
+          estimatedPrice: price,
+          estimatedValue: p.actualQty * price,
+          reason: 'Position hors modele',
+        });
+      }
+    }
+
+    return txs;
+  }, [positions, holdings, model]);
+
+  const buys = transactions.filter(t => t.action === 'BUY');
+  const sells = transactions.filter(t => t.action === 'SELL');
+  const totalBuys = buys.reduce((s, t) => s + t.estimatedValue, 0);
+  const totalSells = sells.reduce((s, t) => s + t.estimatedValue, 0);
+  const net = totalSells - totalBuys;
+
+  const displayedTxs = showSells ? transactions : buys;
+
+  // Copier au clipboard
+  function handleCopy() {
+    const lines = [
+      'Action\tSymbole\tNom\tQuantite\tPrix est.\tValeur est.\tRaison',
+      ...displayedTxs.map(t =>
+        `${t.action}\t${t.symbol}\t${t.name}\t${t.quantity}\t${fmtDec(t.estimatedPrice)}\t${fmt(t.estimatedValue)}\t${t.reason}`
+      ),
+    ];
+    navigator.clipboard.writeText(lines.join('\n'));
+    toast('success', 'Transactions copiees au presse-papier');
+  }
+
+  if (transactions.length === 0) {
+    return (
+      <Card className="text-center py-8">
+        <Check className="h-10 w-10 text-emerald-500 mx-auto mb-2" />
+        <h3 className="font-semibold text-text-main">Aucune transaction necessaire</h3>
+        <p className="text-sm text-text-muted">Le portefeuille est conforme au modele.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-text-main">Transactions suggerees</h3>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showSells}
+              onChange={(e) => setShowSells(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Afficher les ventes
+          </label>
+          <Button variant="ghost" size="sm" onClick={handleCopy} icon={<Copy className="h-3.5 w-3.5" />}>
+            Copier
+          </Button>
+        </div>
+      </div>
+
+      {/* Resume financier */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card padding="sm">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
+            <span className="text-xs text-text-muted">Achats ({buys.length})</span>
+          </div>
+          <p className="text-lg font-semibold text-emerald-600">{fmt(totalBuys)}</p>
+        </Card>
+        <Card padding="sm">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowDownCircle className="h-4 w-4 text-red-500" />
+            <span className="text-xs text-text-muted">Ventes ({sells.length})</span>
+          </div>
+          <p className="text-lg font-semibold text-red-500">{fmt(totalSells)}</p>
+        </Card>
+        <Card padding="sm">
+          <div className="flex items-center gap-2 mb-1">
+            <ArrowRightLeft className="h-4 w-4 text-text-muted" />
+            <span className="text-xs text-text-muted">Flux net</span>
+          </div>
+          <p className={`text-lg font-semibold ${net >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            {net >= 0 ? '+' : ''}{fmt(net)}
+          </p>
+        </Card>
+        <Card padding="sm">
+          <div className="flex items-center gap-2 mb-1">
+            <ShoppingCart className="h-4 w-4 text-text-muted" />
+            <span className="text-xs text-text-muted">Total transactions</span>
+          </div>
+          <p className="text-lg font-semibold text-text-main">{transactions.length}</p>
+        </Card>
+      </div>
+
+      {/* Tableau transactions */}
+      <Card padding="none">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
+                <th className="px-4 py-2.5 w-20">Action</th>
+                <th className="px-3 py-2.5">Symbole</th>
+                <th className="px-3 py-2.5">Nom</th>
+                <th className="px-3 py-2.5 text-right">Quantite</th>
+                <th className="px-3 py-2.5 text-right">Prix est.</th>
+                <th className="px-3 py-2.5 text-right">Valeur est.</th>
+                <th className="px-3 py-2.5">Raison</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedTxs.map((t, i) => (
+                <tr key={`${t.symbol}-${i}`} className={`border-t border-gray-50 hover:bg-gray-50/50 ${
+                  t.action === 'BUY' ? 'bg-emerald-50/20' : 'bg-red-50/20'
+                }`}>
+                  <td className="px-4 py-2.5">
+                    <Badge variant={t.action === 'BUY' ? 'success' : 'danger'}>
+                      {t.action === 'BUY' ? (
+                        <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3" /> Achat</span>
+                      ) : (
+                        <span className="flex items-center gap-1"><Ban className="h-3 w-3" /> Vente</span>
+                      )}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono font-medium text-text-main">{t.symbol}</td>
+                  <td className="px-3 py-2.5 text-text-muted max-w-[160px] truncate">{t.name}</td>
+                  <td className="px-3 py-2.5 text-right font-mono font-semibold">{t.quantity}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-text-muted">
+                    {t.estimatedPrice > 0 ? `${fmtDec(t.estimatedPrice)}` : '—'}
+                  </td>
+                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${
+                    t.action === 'BUY' ? 'text-emerald-600' : 'text-red-500'
+                  }`}>
+                    {t.estimatedValue > 0 ? fmt(t.estimatedValue) : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-text-muted text-xs">{t.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <p className="text-xs text-text-light">
+        Les prix estimes proviennent de Yahoo Finance et Croesus. Les quantites sont indicatives et doivent etre validees avant execution.
+      </p>
     </div>
   );
 }
