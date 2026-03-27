@@ -77,7 +77,7 @@ function StocksTab() {
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set(sectors));
   const [showAdd, setShowAdd] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ symbol: string; description: string; exchange: string; type: string }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ symbol: string; name: string; exchange: string; type: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -92,7 +92,7 @@ function StocksTab() {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(data.results?.slice(0, 8) || []);
+          setSearchResults(Array.isArray(data) ? data.slice(0, 8) : []);
         }
       } catch { /* ignore */ }
       setSearching(false);
@@ -292,7 +292,7 @@ function StocksTab() {
                   <button
                     key={r.symbol}
                     onClick={() => {
-                      setAddForm(f => ({ ...f, symbol: r.symbol, name: r.description }));
+                      setAddForm(f => ({ ...f, symbol: r.symbol, name: r.name }));
                       setSearchQuery(r.symbol);
                       setSearchResults([]);
                     }}
@@ -300,7 +300,7 @@ function StocksTab() {
                   >
                     <div>
                       <span className="font-mono font-medium">{r.symbol}</span>
-                      <span className="text-text-muted ml-2">{r.description}</span>
+                      <span className="text-text-muted ml-2">{r.name}</span>
                     </div>
                     <Badge variant="outline">{r.exchange}</Badge>
                   </button>
