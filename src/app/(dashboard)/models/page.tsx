@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
-import { Plus, PieChart, Trash2, Eye, Star, Rocket } from 'lucide-react';
+import { Plus, PieChart, Trash2, Eye, Star, Rocket, Globe } from 'lucide-react';
 
 const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   CONSERVATEUR: 'info',
@@ -56,9 +56,14 @@ export default function ModelsPage() {
         title="Portefeuilles modèles"
         description="Modèles de répartition prédéfinis par profil de risque"
         action={
-          <Link href="/models/new">
-            <Button icon={<Plus className="h-4 w-4" />}>Nouveau modèle</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/models/universe">
+              <Button variant="outline" icon={<Globe className="h-4 w-4" />}>Univers de titres</Button>
+            </Link>
+            <Link href="/models/new">
+              <Button icon={<Plus className="h-4 w-4" />}>Nouveau modèle</Button>
+            </Link>
+          </div>
         }
       />
 
