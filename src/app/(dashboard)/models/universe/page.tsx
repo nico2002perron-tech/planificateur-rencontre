@@ -802,10 +802,10 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
                   <div className={`h-full rounded-full ${b.color} transition-all duration-500`} style={{ width: `${barWidth}%` }} />
                 </div>
                 <span className="text-xs text-text-muted w-8 text-right shrink-0">{b.count}</span>
-                <span className={`text-sm font-bold w-16 text-right shrink-0 ${b.avgTotalReturn >= 15 ? 'text-emerald-600' : b.avgTotalReturn >= 8 ? 'text-blue-600' : 'text-text-muted'}`}>
-                  +{b.avgTotalReturn.toFixed(1)}%
-                </span>
-                <span className="text-xs text-text-muted w-14 text-right shrink-0">{b.avgCoupon.toFixed(2)}%/an</span>
+                <div className="text-right shrink-0 w-24">
+                  <span className="text-sm font-bold text-emerald-600 block leading-tight">+{b.avgTotalReturn.toFixed(1)}% <span className="text-[10px] font-medium text-emerald-500">total</span></span>
+                  <span className="text-[11px] text-emerald-500">{b.avgCoupon.toFixed(2)}% <span className="text-[10px]">/ an</span></span>
+                </div>
                 {isExpanded
                   ? <ChevronUp className="h-3.5 w-3.5 text-text-muted shrink-0" />
                   : <ChevronDown className="h-3.5 w-3.5 text-text-muted shrink-0" />
@@ -818,9 +818,9 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
                   <div className="flex items-center gap-3 px-5 py-1.5 text-[10px] font-medium text-text-muted uppercase tracking-wide">
                     <span className="w-5 shrink-0" />
                     <span className="flex-1">Emetteur</span>
-                    <span className="w-16 text-right">Coupon</span>
                     <span className="w-16 text-right">Echeance</span>
-                    <span className="w-20 text-right">Gain total</span>
+                    <span className="w-16 text-right">/ an</span>
+                    <span className="w-16 text-right">Total</span>
                   </div>
                   {b.items.map((g, idx) => {
                     const name = g.bond.issuer || g.bond.description?.substring(0, 25) || '—';
@@ -830,11 +830,9 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-text-main truncate" title={g.bond.description || ''}>{name}</p>
                         </div>
-                        <span className="text-xs font-mono text-text-main w-16 text-right shrink-0">{g.annualCoupon}%</span>
                         <span className="text-xs text-text-muted w-16 text-right shrink-0">{g.yearsToMaturity.toFixed(1)} ans</span>
-                        <span className={`text-xs font-bold w-20 text-right shrink-0 ${g.totalReturnPct >= 15 ? 'text-emerald-600' : g.totalReturnPct >= 8 ? 'text-blue-600' : 'text-text-muted'}`}>
-                          +{g.totalReturnPct.toFixed(1)}%
-                        </span>
+                        <span className="text-xs font-medium text-emerald-600 w-16 text-right shrink-0">{g.annualCoupon}%</span>
+                        <span className="text-xs font-bold text-emerald-600 w-16 text-right shrink-0">+{g.totalReturnPct.toFixed(1)}%</span>
                       </div>
                     );
                   })}
