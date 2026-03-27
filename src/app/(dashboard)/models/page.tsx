@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
-import { Plus, PieChart, Trash2, Eye, Star, Rocket, Globe, SlidersHorizontal, Zap, ArrowRightLeft, Activity, Target, Mail } from 'lucide-react';
+import { Plus, PieChart, Trash2, Eye, Star, Rocket, Globe, SlidersHorizontal, Zap, ArrowRightLeft, Activity, Target, Mail, Scale } from 'lucide-react';
 
 const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   CONSERVATEUR: 'info',
@@ -74,6 +74,9 @@ export default function ModelsPage() {
             </Link>
             <Link href="/models/email">
               <Button variant="outline" size="sm" icon={<Mail className="h-3.5 w-3.5" />}>Email IA</Button>
+            </Link>
+            <Link href="/models/rebalance">
+              <Button variant="outline" size="sm" icon={<Scale className="h-3.5 w-3.5" />}>Reequilibrage</Button>
             </Link>
             <Link href="/models/generate">
               <Button size="sm" icon={<Zap className="h-3.5 w-3.5" />}>Generer</Button>
