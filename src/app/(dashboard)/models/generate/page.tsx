@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
+import { Modal } from '@/components/ui/Modal';
 import {
   ArrowLeft, Zap, Download, Save, ChevronDown, ChevronRight,
   DollarSign, TrendingUp, Percent, BarChart3,
@@ -116,6 +117,8 @@ export default function GeneratePage() {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<GeneratedPortfolio | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [modelName, setModelName] = useState('');
 
   const handleGenerate = useCallback(async () => {
     if (!selectedProfileId) {
@@ -152,27 +155,49 @@ export default function GeneratePage() {
     }
   }, [selectedProfileId, portfolioValue, toast]);
 
-  const handleSave = useCallback(async () => {
-    if (!result || !selectedProfileId) return;
+  const handleSaveAsModel = useCallback(async () => {
+    if (!result || !modelName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/models/generate', {
+      // Map generated stocks to model holdings format
+      const allStocks = result.sectors.flatMap(s => s.stocks);
+      const totalValue = result.totalStockValue + result.totalBondValue + result.cashRemaining;
+      const holdings = allStocks.map(s => ({
+        symbol: s.symbol,
+        name: s.name,
+        weight: Math.round((s.realValue / totalValue) * 10000) / 100,
+        asset_class: 'EQUITY' as const,
+        region: s.symbol.endsWith('.TO') || s.symbol.endsWith('.V') ? 'CA' : 'US',
+      }));
+
+      // Risk level from profile
+      const profile = profiles.find(p => p.id === selectedProfileId);
+      const riskMap: Record<number, string> = { 1: 'CONSERVATEUR', 2: 'CONSERVATEUR', 3: 'MODERE', 4: 'EQUILIBRE', 5: 'CROISSANCE', 6: 'DYNAMIQUE' };
+      const riskLevel = profile ? (riskMap[profile.profile_number] || 'EQUILIBRE') : 'EQUILIBRE';
+
+      const res = await fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          profile_id: selectedProfileId,
-          portfolio_value: portfolioValue,
-          save: true,
+          name: modelName.trim(),
+          description: `Profil ${result.profileNumber} — ${result.profileName} (${result.equityPct}/${result.bondPct}) — ${fmt(result.portfolioValue)}`,
+          risk_level: riskLevel,
+          holdings,
         }),
       });
       if (!res.ok) throw new Error();
-      toast('success', 'Portefeuille sauvegarde');
+      const saved = await res.json();
+      toast('success', 'Modele sauvegarde');
+      setSaveModalOpen(false);
+      setModelName('');
+      // Redirect to model detail
+      window.location.href = `/models/${saved.id}`;
     } catch {
       toast('error', 'Erreur de sauvegarde');
     } finally {
       setSaving(false);
     }
-  }, [result, selectedProfileId, portfolioValue, toast]);
+  }, [result, modelName, selectedProfileId, profiles, toast]);
 
   if (profilesLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
@@ -260,7 +285,47 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {result && !generating && <PortfolioPreview portfolio={result} onSave={handleSave} saving={saving} />}
+      {result && !generating && (
+        <PortfolioPreview
+          portfolio={result}
+          onSave={() => {
+            setModelName(`${result.profileName} — ${new Date().toLocaleDateString('fr-CA')}`);
+            setSaveModalOpen(true);
+          }}
+          saving={false}
+        />
+      )}
+
+      {/* Modal de sauvegarde */}
+      <Modal open={saveModalOpen} onClose={() => setSaveModalOpen(false)} title="Sauvegarder comme modele" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">Nom du modele</label>
+            <input
+              type="text"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              placeholder="Ex: Croissance Q1 2026"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && modelName.trim()) handleSaveAsModel(); }}
+            />
+          </div>
+          {result && (
+            <div className="bg-gray-50 rounded-lg p-3 text-xs text-text-muted space-y-1">
+              <p>Profil {result.profileNumber} — {result.profileName}</p>
+              <p>{result.stats.nbStocks} actions, {result.stats.nbBonds} obligations</p>
+              <p>Valeur: {fmt(result.portfolioValue)}</p>
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setSaveModalOpen(false)}>Annuler</Button>
+            <Button loading={saving} disabled={!modelName.trim()} onClick={handleSaveAsModel} icon={<Save className="h-4 w-4" />}>
+              Sauvegarder
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

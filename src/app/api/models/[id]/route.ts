@@ -14,6 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .from('model_portfolios')
     .select('*')
     .eq('id', id)
+    .eq('created_by', session.user.id)
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -38,6 +39,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       is_default: body.is_default,
     })
     .eq('id', id)
+    .eq('created_by', session.user.id)
     .select()
     .single();
 
@@ -55,7 +57,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { error } = await supabase
     .from('model_portfolios')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .eq('created_by', session.user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
