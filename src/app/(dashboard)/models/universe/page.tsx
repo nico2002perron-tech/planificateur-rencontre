@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
   ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
-  Lock, Unlock, Award, BarChart3, Clock, DollarSign, Calendar, PieChart, Check, Info, ChevronUp,
+  Lock, Unlock, Award, BarChart3, Clock, DollarSign, Calendar, PieChart, Check, Info, ChevronUp, ClipboardPaste, Package,
 } from 'lucide-react';
 
 // ── Sector icons (same as profiles page) ──
@@ -105,6 +105,26 @@ export default function UniversePage() {
 // ── ETF sector breakdown type ──
 interface ETFSector { sector: string; weight: number }
 
+// ── Batch queue item ──
+interface QueueItem {
+  symbol: string;
+  name: string;
+  logo: string | null;
+  type: string;
+  sector: string | null; // auto-detected or null
+  status: 'detecting' | 'ready' | 'adding' | 'done' | 'error';
+}
+
+// ── Quick packs ──
+const QUICK_PACKS = [
+  { label: 'Banques CA', symbols: ['RY.TO', 'TD.TO', 'BNS.TO', 'BMO.TO', 'CM.TO', 'NA.TO'] },
+  { label: 'Big Tech', symbols: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'] },
+  { label: 'Energie CA', symbols: ['ENB.TO', 'TRP.TO', 'CNQ.TO', 'SU.TO', 'CVE.TO'] },
+  { label: 'Telcos CA', symbols: ['T.TO', 'BCE.TO', 'RCI-B.TO'] },
+  { label: 'Utilities CA', symbols: ['FTS.TO', 'EMA.TO', 'AQN.TO', 'H.TO'] },
+  { label: 'Immobilier CA', symbols: ['REI-UN.TO', 'CAR-UN.TO', 'HR-UN.TO', 'AP-UN.TO'] },
+] as const;
+
 function StocksTab() {
   const { stocks, bySector, sectors, isLoading, mutate } = useStockUniverse();
   const { toast } = useToast();
@@ -116,22 +136,26 @@ function StocksTab() {
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // ── Pending add (selected from search, waiting for sector pick or ETF auto) ──
+  // ── Pending add (single item — for sector picker or ETF) ──
   const [pending, setPending] = useState<{
     symbol: string; name: string; logo: string | null; type: string;
   } | null>(null);
 
-  // ── ETF sector breakdown (loaded automatically for ETFs) ──
+  // ── Batch queue (multi-add) ──
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [addingQueue, setAddingQueue] = useState(false);
+
+  // ── ETF sector breakdown ──
   const [etfSectors, setEtfSectors] = useState<ETFSector[] | null>(null);
   const [loadingEtfSectors, setLoadingEtfSectors] = useState(false);
   const [addingEtf, setAddingEtf] = useState(false);
 
-  // ── Stock sector auto-detection ──
+  // ── Stock sector auto-detection (single pending) ──
   const [detectedSector, setDetectedSector] = useState<string | null>(null);
   const [detectedIndustry, setDetectedIndustry] = useState<string | null>(null);
   const [loadingSector, setLoadingSector] = useState(false);
 
-  // When pending changes, fetch sector info
+  // When pending changes, fetch sector info (single mode)
   useEffect(() => {
     if (!pending) {
       setEtfSectors(null);
@@ -139,9 +163,7 @@ function StocksTab() {
       setDetectedIndustry(null);
       return;
     }
-
     let cancelled = false;
-
     if (pending.type === 'ETF') {
       setDetectedSector(null);
       setDetectedIndustry(null);
@@ -168,9 +190,135 @@ function StocksTab() {
         .catch(() => { if (!cancelled) setDetectedSector(null); })
         .finally(() => { if (!cancelled) setLoadingSector(false); });
     }
-
     return () => { cancelled = true; };
   }, [pending]);
+
+  // ── Detect sector for a queue item ──
+  async function detectSectorForItem(symbol: string): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/models/stock-sector?symbol=${encodeURIComponent(symbol)}`);
+      const data = await res.json();
+      return data.sector || null;
+    } catch { return null; }
+  }
+
+  // ── Add symbol to batch queue with auto-detect ──
+  function addToQueue(symbol: string, name: string, logo: string | null, type: string) {
+    // Skip if already in queue
+    if (queue.some(q => q.symbol === symbol)) return;
+
+    const item: QueueItem = { symbol, name, logo, type, sector: null, status: 'detecting' };
+    setQueue(prev => [...prev, item]);
+
+    // Auto-detect sector
+    detectSectorForItem(symbol).then(sector => {
+      setQueue(prev => prev.map(q =>
+        q.symbol === symbol ? { ...q, sector, status: 'ready' } : q
+      ));
+    });
+  }
+
+  // ── Remove from queue ──
+  function removeFromQueue(symbol: string) {
+    setQueue(prev => prev.filter(q => q.symbol !== symbol));
+  }
+
+  // ── Change sector in queue ──
+  function changeQueueSector(symbol: string, sector: string) {
+    setQueue(prev => prev.map(q =>
+      q.symbol === symbol ? { ...q, sector } : q
+    ));
+  }
+
+  // ── Add all queue items ──
+  async function addAllQueue() {
+    const ready = queue.filter(q => q.status === 'ready' && q.sector);
+    if (ready.length === 0) return;
+    setAddingQueue(true);
+    let added = 0;
+    const addedSectors: string[] = [];
+    for (const item of ready) {
+      setQueue(prev => prev.map(q => q.symbol === item.symbol ? { ...q, status: 'adding' } : q));
+      try {
+        const res = await fetch('/api/models/universe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: item.symbol,
+            name: item.name,
+            sector: item.sector,
+            stock_type: 'variable',
+            logo_url: item.logo,
+          }),
+        });
+        if (res.ok) {
+          added++;
+          if (item.sector) addedSectors.push(item.sector);
+          setQueue(prev => prev.map(q => q.symbol === item.symbol ? { ...q, status: 'done' } : q));
+        } else {
+          setQueue(prev => prev.map(q => q.symbol === item.symbol ? { ...q, status: 'error' } : q));
+        }
+      } catch {
+        setQueue(prev => prev.map(q => q.symbol === item.symbol ? { ...q, status: 'error' } : q));
+      }
+    }
+    toast('success', `${added} titre${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''}`);
+    setExpandedSectors(prev => new Set([...prev, ...addedSectors]));
+    // Clear done items after a short delay
+    setTimeout(() => setQueue(prev => prev.filter(q => q.status !== 'done')), 800);
+    setAddingQueue(false);
+    mutate();
+  }
+
+  // ── Paste handler: detect "AAPL, MSFT, RY.TO" ──
+  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData('text').trim();
+    // Detect multiple symbols (comma, space, newline separated)
+    const symbols = text.split(/[\s,;\n\t]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 1 && s.length <= 15 && /^[A-Z0-9.\-]+$/.test(s));
+    if (symbols.length >= 2) {
+      e.preventDefault();
+      setSearchQuery('');
+      setSearchResults([]);
+      setPending(null);
+      // Resolve each symbol via search API and add to queue
+      for (const sym of symbols) {
+        // Quick resolve via search
+        fetch(`/api/search?q=${encodeURIComponent(sym)}`)
+          .then(r => r.json())
+          .then((data: SearchResult[]) => {
+            const match = Array.isArray(data) ? data.find(r => r.symbol.toUpperCase() === sym || r.symbol.toUpperCase() === `${sym}.TO`) : null;
+            if (match) {
+              addToQueue(match.symbol, match.name, match.logo, match.type);
+            } else if (data.length > 0) {
+              addToQueue(data[0].symbol, data[0].name, data[0].logo, data[0].type);
+            }
+          })
+          .catch(() => {});
+      }
+      toast('info', `Resolution de ${symbols.length} symboles...`);
+    }
+  }
+
+  // ── Quick pack handler ──
+  function addPack(symbols: readonly string[]) {
+    setPending(null);
+    setSearchResults([]);
+    setSearchQuery('');
+    for (const sym of symbols) {
+      fetch(`/api/search?q=${encodeURIComponent(sym)}`)
+        .then(r => r.json())
+        .then((data: SearchResult[]) => {
+          const match = Array.isArray(data) ? data.find(r => r.symbol.toUpperCase() === sym.toUpperCase()) : null;
+          if (match) {
+            addToQueue(match.symbol, match.name, match.logo, match.type);
+          } else if (data.length > 0) {
+            addToQueue(data[0].symbol, data[0].name, data[0].logo, data[0].type);
+          }
+        })
+        .catch(() => {});
+    }
+    toast('info', `Resolution de ${symbols.length} symboles...`);
+  }
 
   // Recherche TradingView (debounced)
   const handleSearch = useCallback((q: string) => {
@@ -191,11 +339,19 @@ function StocksTab() {
     }, 250);
   }, []);
 
-  // Select from search → show sector picker (stock) or auto-detect (ETF)
+  // Select from search → single mode (sector picker) or add to queue if queue is active
   function selectResult(r: SearchResult) {
-    setPending({ symbol: r.symbol, name: r.name, logo: r.logo, type: r.type });
-    setSearchResults([]);
-    setSearchQuery('');
+    if (queue.length > 0) {
+      // Queue mode: add to batch
+      addToQueue(r.symbol, r.name, r.logo, r.type);
+      setSearchResults([]);
+      setSearchQuery('');
+    } else {
+      // Single mode
+      setPending({ symbol: r.symbol, name: r.name, logo: r.logo, type: r.type });
+      setSearchResults([]);
+      setSearchQuery('');
+    }
   }
 
   // Add ETF to all detected sectors at once
@@ -209,11 +365,8 @@ function StocksTab() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            symbol: pending.symbol,
-            name: pending.name,
-            sector,
-            stock_type: 'variable',
-            logo_url: pending.logo,
+            symbol: pending.symbol, name: pending.name, sector,
+            stock_type: 'variable', logo_url: pending.logo,
           }),
         });
         if (res.ok) addedSectors.push(sector);
@@ -237,17 +390,11 @@ function StocksTab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          symbol: pending.symbol,
-          name: pending.name,
-          sector: sectorValue,
-          stock_type: 'variable',
-          logo_url: pending.logo,
+          symbol: pending.symbol, name: pending.name, sector: sectorValue,
+          stock_type: 'variable', logo_url: pending.logo,
         }),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
       const sectorLabel = SECTORS.find(s => s.value === sectorValue)?.label || sectorValue;
       toast('success', `${pending.symbol} ajouté dans ${sectorLabel}`);
       setPending(null);
@@ -303,7 +450,7 @@ function StocksTab() {
   return (
     <div className="space-y-5">
 
-      {/* ── Big search bar (always visible) ── */}
+      {/* ── Search bar + paste support ── */}
       <div className="relative">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
@@ -311,7 +458,8 @@ function StocksTab() {
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Rechercher un titre... (ex: AAPL, RY.TO, MSFT)"
+            onPaste={handlePaste}
+            placeholder="Rechercher ou coller plusieurs symboles (AAPL, RY.TO, MSFT)"
             className="w-full pl-12 pr-4 py-3.5 bg-white border-2 border-gray-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary transition-all shadow-sm"
           />
           {searching && <Spinner size="sm" className="absolute right-4 top-1/2 -translate-y-1/2" />}
@@ -354,6 +502,108 @@ function StocksTab() {
           </div>
         )}
       </div>
+
+      {/* ── Quick packs ── */}
+      {!pending && queue.length === 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-text-muted mr-1">Ajout rapide :</span>
+          {QUICK_PACKS.map(pack => (
+            <button
+              key={pack.label}
+              onClick={() => addPack(pack.symbols)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-xs font-medium text-text-main hover:border-brand-primary hover:text-brand-primary transition-colors"
+            >
+              <Package className="h-3 w-3" />
+              {pack.label}
+              <span className="text-text-muted">({pack.symbols.length})</span>
+            </button>
+          ))}
+          <span className="text-[10px] text-text-muted ml-1 flex items-center gap-1">
+            <ClipboardPaste className="h-3 w-3" /> ou collez une liste
+          </span>
+        </div>
+      )}
+
+      {/* ── Batch queue ── */}
+      {queue.length > 0 && (
+        <div className="bg-white rounded-2xl border-2 border-brand-primary/20 overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold text-text-main">
+              {queue.length} titre{queue.length > 1 ? 's' : ''} en attente
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setQueue([])}
+                className="text-xs text-text-muted hover:text-red-500 transition-colors"
+              >
+                Tout retirer
+              </button>
+              <button
+                onClick={addAllQueue}
+                disabled={addingQueue || queue.every(q => q.status !== 'ready' || !q.sector)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-primary text-white text-xs font-semibold hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
+              >
+                {addingQueue ? <><Spinner size="sm" /> Ajout...</> : <><Check className="h-3.5 w-3.5" /> Tout ajouter</>}
+              </button>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-50 max-h-[300px] overflow-y-auto">
+            {queue.map(item => {
+              const sectorLabel = item.sector ? (SECTORS.find(s => s.value === item.sector)?.label || item.sector) : null;
+              const meta = item.sector ? SECTOR_META[item.sector] : null;
+              const Icon = meta?.Icon || TrendingUp;
+              return (
+                <div key={item.symbol} className={`flex items-center gap-3 px-5 py-2.5 ${item.status === 'done' ? 'bg-emerald-50/50' : item.status === 'error' ? 'bg-red-50/50' : ''}`}>
+                  {item.logo ? (
+                    <img src={item.logo} alt="" className="h-8 w-8 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
+                  ) : (
+                    <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                      <TrendingUp className="h-4 w-4 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono font-semibold text-sm text-text-main">{item.symbol}</span>
+                    <span className="text-xs text-text-muted ml-2 truncate">{item.name}</span>
+                  </div>
+                  {/* Sector */}
+                  {item.status === 'detecting' ? (
+                    <Spinner size="sm" />
+                  ) : item.status === 'done' ? (
+                    <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                  ) : item.sector ? (
+                    <select
+                      value={item.sector}
+                      onChange={(e) => changeQueueSector(item.symbol, e.target.value)}
+                      className={`text-xs font-medium rounded-lg border px-2 py-1 ${meta?.border || 'border-gray-200'} ${meta?.bg || 'bg-gray-50'} ${meta?.color || 'text-text-main'} focus:outline-none`}
+                    >
+                      {SECTORS.map(s => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value=""
+                      onChange={(e) => changeQueueSector(item.symbol, e.target.value)}
+                      className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-600 px-2 py-1 focus:outline-none"
+                    >
+                      <option value="" disabled>Choisir...</option>
+                      {SECTORS.map(s => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Remove */}
+                  {item.status !== 'done' && (
+                    <button onClick={() => removeFromQueue(item.symbol)} className="p-1 text-gray-300 hover:text-red-500 transition-colors shrink-0">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Sector picker / ETF auto-breakdown (appears after selecting a search result) ── */}
       {pending && (
