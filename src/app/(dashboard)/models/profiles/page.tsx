@@ -469,9 +469,9 @@ export default function ProfilesPage() {
                     onChange={(e) => updateWeight(s.sector, parseFloat(e.target.value))}
                     className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-brand-primary mb-3"
                   />
-                  <div className="flex items-center gap-2 text-xs text-text-muted">
-                    <span>Titres:</span>
-                    {[1, 2, 3, 4, 5].map((n) => (
+                  <div className="flex items-center gap-1.5 text-xs text-text-muted flex-wrap">
+                    <span className="mr-1">Titres:</span>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                       <button
                         key={n}
                         onClick={() => updateTitles(s.sector, n)}
