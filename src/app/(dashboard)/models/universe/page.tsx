@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
   ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
-  Lock, Unlock,
+  Lock, Unlock, Award, BarChart3, Clock, DollarSign,
 } from 'lucide-react';
 
 // ── Sector icons (same as profiles page) ──
@@ -417,12 +417,81 @@ function StocksTab() {
 
 const EXPIRY_DAYS = 30;
 
+// ── Bond scoring engine ──
+interface ScoredBond {
+  bond: UniverseBond;
+  score: number;
+  couponScore: number;
+  maturityScore: number;
+  sizeScore: number;
+  typeScore: number;
+  yearsToMaturity: number | null;
+}
+
+function scoreBonds(bonds: UniverseBond[]): ScoredBond[] {
+  const now = new Date();
+
+  // Compute max market value for size normalization
+  const marketValues = bonds.map(b => b.price ?? 0).filter(v => v > 0);
+  const maxMarketValue = marketValues.length > 0 ? Math.max(...marketValues) : 1;
+
+  return bonds.map(bond => {
+    const desc = bond.description || '';
+    const isFund = /\/N'FRAC|\/FR|\/SF|ETF/i.test(desc);
+
+    // Years to maturity
+    let yearsToMaturity: number | null = null;
+    if (bond.maturity) {
+      const matDate = new Date(bond.maturity);
+      yearsToMaturity = Math.max(0, (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    }
+
+    // 1. Coupon Score (0-30) — higher coupon = better income
+    const coupon = bond.coupon ?? 0;
+    const couponScore = Math.min(30, Math.round((coupon / 7) * 30));
+
+    // 2. Maturity Score (0-25) — sweet spot 2-7 years
+    let maturityScore = 0;
+    if (yearsToMaturity !== null) {
+      if (yearsToMaturity < 0.5) maturityScore = 3;       // expired/too short
+      else if (yearsToMaturity < 1) maturityScore = 10;
+      else if (yearsToMaturity < 3) maturityScore = 20;
+      else if (yearsToMaturity <= 7) maturityScore = 25;   // ideal
+      else if (yearsToMaturity <= 10) maturityScore = 18;
+      else maturityScore = 12;                             // long duration
+    } else {
+      maturityScore = isFund ? 15 : 5; // no maturity: funds get default, bonds penalized
+    }
+
+    // 3. Size Score (0-25) — larger position = more liquid/popular at IA
+    const marketValue = bond.price ?? 0;
+    const sizeScore = maxMarketValue > 0
+      ? Math.round((marketValue / maxMarketValue) * 25)
+      : 0;
+
+    // 4. Type Score (0-20) — real bonds >> funds for model portfolios
+    let typeScore = 0;
+    if (isFund) {
+      typeScore = 5;
+    } else if (coupon > 0) {
+      typeScore = 20; // real bond with coupon
+    } else {
+      typeScore = 10; // other type
+    }
+
+    const score = couponScore + maturityScore + sizeScore + typeScore;
+
+    return { bond, score, couponScore, maturityScore, sizeScore, typeScore, yearsToMaturity };
+  }).sort((a, b) => b.score - a.score);
+}
+
 function BondsTab() {
   const { bonds, stats, isLoading, mutate } = useBondsUniverse();
   const { toast } = useToast();
   const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [showList, setShowList] = useState(false);
+  const [showRanking, setShowRanking] = useState(true);
   const [filter, setFilter] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
@@ -600,7 +669,7 @@ function BondsTab() {
                 {dragging ? 'Lachez le fichier ici!' : 'Glissez votre fichier Excel ici'}
               </p>
               <p className="text-xs text-text-muted mb-3">
-                Bonds CAD.xlsm ou Bonds US.xlsm
+                Repartition d&apos;actifs.xlsx, Bonds CAD.xlsm ou Bonds US.xlsm
               </p>
               <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-white rounded-xl border border-gray-200 text-xs font-medium text-text-muted hover:border-brand-primary hover:text-brand-primary transition-colors">
                 <FileSpreadsheet className="h-3.5 w-3.5" /> ou parcourir les fichiers
@@ -625,6 +694,104 @@ function BondsTab() {
           ))}
         </div>
       )}
+
+      {/* ── Classement recommandé ── */}
+      {bonds.length > 0 && (() => {
+        const scored = scoreBonds(bonds);
+        // Only real bonds (with coupon), exclude funds
+        const realBonds = scored.filter(s => s.couponScore > 0 && !(/\/N'FRAC|\/FR|\/SF|ETF/i.test(s.bond.description || '')));
+        const topBonds = realBonds.slice(0, 25);
+        const fundCount = scored.length - realBonds.length;
+
+        return (
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <button
+              onClick={() => setShowRanking(!showRanking)}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+                  <Award className="h-5 w-5 text-amber-500" />
+                </div>
+                <div className="text-left">
+                  <span className="text-sm font-bold text-text-main block">Classement recommande</span>
+                  <span className="text-xs text-text-muted">Top 25 obligations pour portefeuilles modeles ({realBonds.length} obligations, {fundCount} fonds exclus)</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {showRanking ? <ChevronDown className="h-4 w-4 text-text-muted" /> : <ChevronRight className="h-4 w-4 text-text-muted" />}
+              </div>
+            </button>
+
+            {showRanking && (
+              <div className="border-t border-gray-100">
+                {/* Légende des scores */}
+                <div className="px-5 py-3 bg-gray-50/50 border-b border-gray-100 flex flex-wrap gap-4 text-xs text-text-muted">
+                  <span className="flex items-center gap-1"><BarChart3 className="h-3 w-3 text-brand-primary" /> Coupon /30</span>
+                  <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-violet-500" /> Echeance /25</span>
+                  <span className="flex items-center gap-1"><DollarSign className="h-3 w-3 text-emerald-500" /> Taille /25</span>
+                  <span className="flex items-center gap-1"><Award className="h-3 w-3 text-amber-500" /> Type /20</span>
+                </div>
+
+                <div className="divide-y divide-gray-50">
+                  {topBonds.map((s, i) => {
+                    const rank = i + 1;
+                    const medal = rank === 1 ? 'bg-amber-400 text-white' : rank === 2 ? 'bg-gray-300 text-white' : rank === 3 ? 'bg-amber-600 text-white' : 'bg-gray-100 text-text-muted';
+                    const desc = s.bond.description || '';
+                    const displayName = s.bond.issuer || desc.substring(0, 25);
+                    const maturityLabel = s.yearsToMaturity !== null
+                      ? s.yearsToMaturity < 1 ? '< 1 an' : `${s.yearsToMaturity.toFixed(1)} ans`
+                      : '—';
+
+                    return (
+                      <div key={s.bond.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/50 transition-colors">
+                        {/* Rank */}
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${medal}`}>
+                          {rank}
+                        </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-text-main truncate" title={desc}>{displayName}</div>
+                          <div className="flex items-center gap-3 text-xs text-text-muted mt-0.5">
+                            {s.bond.coupon != null && <span className="font-mono">{s.bond.coupon}%</span>}
+                            <span>{maturityLabel}</span>
+                            {s.bond.price != null && s.bond.price > 0 && (
+                              <span>${(s.bond.price / 1000).toFixed(0)}k</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Score breakdown — mini bars */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <div className="w-14 flex flex-col items-end gap-0.5" title={`Coupon: ${s.couponScore}/30 | Echeance: ${s.maturityScore}/25 | Taille: ${s.sizeScore}/25 | Type: ${s.typeScore}/20`}>
+                            <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden flex">
+                              <div className="h-full bg-brand-primary rounded-full" style={{ width: `${(s.couponScore / 30) * 100}%` }} />
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden flex">
+                              <div className="h-full bg-violet-400 rounded-full" style={{ width: `${(s.maturityScore / 25) * 100}%` }} />
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden flex">
+                              <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${(s.sizeScore / 25) * 100}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Total score */}
+                        <div className="text-right shrink-0 w-12">
+                          <span className={`text-sm font-bold ${
+                            s.score >= 70 ? 'text-emerald-600' : s.score >= 50 ? 'text-brand-primary' : 'text-text-muted'
+                          }`}>
+                            {s.score}
+                          </span>
+                          <span className="text-[10px] text-text-muted">/100</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Collapsible bond list ── */}
       {bonds.length > 0 && (
