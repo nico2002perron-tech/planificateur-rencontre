@@ -81,11 +81,25 @@ export async function GET(request: NextRequest) {
 
       const logoId = s.logoid || s.logo?.logoid || '';
 
+      // REITs / income trusts (.UN, .UN.TO) are classified as 'fund' by
+      // TradingView but should be treated as stocks (real estate / equity)
+      const isReit = /\.UN(\.TO|\.V)?$/i.test(ticker) || /\.UN$/i.test(s.symbol);
+      let resolvedType: string;
+      if (isReit) {
+        resolvedType = 'Stock';
+      } else if (s.type === 'fund') {
+        resolvedType = 'ETF';
+      } else if (s.type === 'dr') {
+        resolvedType = 'ADR';
+      } else {
+        resolvedType = 'Stock';
+      }
+
       results.push({
         symbol: ticker,
         name: s.description,
         exchange: s.exchange,
-        type: s.type === 'fund' ? 'ETF' : s.type === 'dr' ? 'ADR' : 'Stock',
+        type: resolvedType,
         country: s.country || '',
         currency: s.currency_code || '',
         logo: logoId ? `https://s3-symbol-logo.tradingview.com/${logoId}--big.svg` : null,
