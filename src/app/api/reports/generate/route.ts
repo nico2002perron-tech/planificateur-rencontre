@@ -55,6 +55,11 @@ export async function POST(request: NextRequest) {
     }
 
     const symbols = (portfolio.holdings || []).map((h: { symbol: string }) => h.symbol);
+
+    // Identify fund holdings by FundSERV code pattern (e.g., RBF658, TDB900, MFC4367)
+    const FUND_CODE_REGEX = /^[A-Z]{2,4}\d{2,6}$/;
+    const fundCodes = symbols.filter((s: string) => FUND_CODE_REGEX.test(s));
+
     const priceMap: Record<string, { price: number; company_name?: string; sector?: string }> = {};
 
     // ── Step 1: Fetch current prices (cache first, then FMP) ──
@@ -633,6 +638,15 @@ export async function POST(request: NextRequest) {
     const element = React.createElement(FullReportDocument, { data: reportData }) as any;
     const buffer = await renderToBuffer(element);
 
+    // ── Step 7b: Merge fund fact PDFs (if any fund holdings) ──
+    let finalPdfBytes: Uint8Array;
+    if (fundCodes.length > 0) {
+      const { mergeFundPdfs } = await import('@/lib/pdf/merge-fund-pdfs');
+      finalPdfBytes = await mergeFundPdfs(buffer, fundCodes);
+    } else {
+      finalPdfBytes = new Uint8Array(buffer);
+    }
+
     // ── Step 8: Record report in database ──
     const reportTitle = `Rapport - ${client.first_name} ${client.last_name} - ${portfolio.name}`;
     const { data: report } = await supabase
@@ -649,7 +663,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    return new NextResponse(new Uint8Array(buffer), {
+    return new NextResponse(Buffer.from(finalPdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="rapport-${client.last_name}-${portfolio.name}.pdf"`,

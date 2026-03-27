@@ -567,9 +567,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         return s + h.quantity * price;
       }, 0);
 
+      // Collect fund codes for automatic PDF merging
+      const fundCodes = holdings
+        .filter(h => h.assetType === 'FUND')
+        .map(h => h.symbol);
+
       const payload = {
         holdings: pdfHoldings,
         generatedAt: new Date().toISOString(),
+        fundCodes,
         summary: {
           totalMarketValue: result.summary.totalMarketValue,
           totalBookValue: holdings.reduce((s, h) => s + h.bookValue, 0),
