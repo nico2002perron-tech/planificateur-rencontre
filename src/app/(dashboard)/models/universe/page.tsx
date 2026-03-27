@@ -6,7 +6,6 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useStockUniverse, type UniverseStock } from '@/lib/hooks/useStockUniverse';
@@ -18,7 +17,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
   ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
-  Lock, Unlock, Sparkles,
+  Lock, Unlock,
 } from 'lucide-react';
 
 // ── Sector icons (same as profiles page) ──
@@ -416,19 +415,37 @@ function StocksTab() {
 // ONGLET OBLIGATIONS
 // ════════════════════════════════════════════════
 
+const EXPIRY_DAYS = 30;
+
 function BondsTab() {
   const { bonds, stats, isLoading, mutate } = useBondsUniverse();
   const { toast } = useToast();
   const [importing, setImporting] = useState(false);
-  const [showAddBond, setShowAddBond] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [showList, setShowList] = useState(false);
   const [filter, setFilter] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
 
-  // Import Excel
-  async function handleImportExcel(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // ── Timer: derive last import from most recent non-manual bond ──
+  const lastImportStr = bonds
+    .filter(b => b.source !== 'MANUAL')
+    .reduce((max, b) => (b.created_at > max ? b.created_at : max), '');
+  const lastImportDate = lastImportStr ? new Date(lastImportStr) : null;
+  const now = new Date();
+  const daysSinceImport = lastImportDate
+    ? Math.floor((now.getTime() - lastImportDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const daysRemaining = daysSinceImport !== null ? Math.max(0, EXPIRY_DAYS - daysSinceImport) : null;
+  const isExpired = daysRemaining !== null && daysRemaining === 0;
+  const progressPct = daysSinceImport !== null ? Math.min(100, (daysSinceImport / EXPIRY_DAYS) * 100) : 0;
 
+  // ── Import handler (shared by drop + file input) ──
+  async function importFile(file: File) {
+    if (!file.name.match(/\.(xlsx|xlsm|xls)$/i)) {
+      toast('warning', 'Format invalide. Utilisez .xlsx, .xlsm ou .xls');
+      return;
+    }
     setImporting(true);
     try {
       const formData = new FormData();
@@ -445,73 +462,39 @@ function BondsTab() {
       toast('error', err instanceof Error ? err.message : 'Erreur d\'import');
     } finally {
       setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
-  // Ajout manuel
-  const [bondForm, setBondForm] = useState({
-    description: '', issuer: '', cusip: '', coupon: '',
-    maturity: '', price: '', yield: '', category: '', source: 'MANUAL' as const,
-    is_mandatory: false,
-  });
-
-  async function handleAddBond() {
-    if (!bondForm.description && !bondForm.cusip) {
-      toast('warning', 'Description ou CUSIP requis');
-      return;
-    }
-    try {
-      const res = await fetch('/api/models/bonds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...bondForm,
-          coupon: bondForm.coupon ? parseFloat(bondForm.coupon) : null,
-          price: bondForm.price ? parseFloat(bondForm.price) : null,
-          yield: bondForm.yield ? parseFloat(bondForm.yield) : null,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
-      toast('success', 'Obligation ajoutee');
-      setShowAddBond(false);
-      setBondForm({ description: '', issuer: '', cusip: '', coupon: '', maturity: '', price: '', yield: '', category: '', source: 'MANUAL', is_mandatory: false });
-      mutate();
-    } catch (e) {
-      toast('error', e instanceof Error ? e.message : 'Erreur');
-    }
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) importFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  // Supprimer
-  async function handleDeleteBond(bond: UniverseBond) {
-    try {
-      await fetch('/api/models/bonds', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: bond.id }),
-      });
-      toast('success', 'Obligation retirée');
-      mutate();
-    } catch {
-      toast('error', 'Erreur');
-    }
+  // ── Drag & drop ──
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    setDragging(true);
   }
-
-  // Toggle obligatoire
-  async function handleToggleMandatory(bond: UniverseBond) {
-    try {
-      await fetch('/api/models/bonds', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: bond.id, is_mandatory: !bond.is_mandatory }),
-      });
-      mutate();
-    } catch {
-      toast('error', 'Erreur');
-    }
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setDragging(false);
+  }
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    dragCounter.current = 0;
+    const file = e.dataTransfer.files?.[0];
+    if (file) importFile(file);
   }
 
   const filteredBonds = filter
@@ -525,218 +508,198 @@ function BondsTab() {
   if (isLoading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
 
   return (
-    <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Total', value: stats.total },
-          { label: 'CAD', value: stats.cad },
-          { label: 'US', value: stats.us },
-          { label: 'Manuel', value: stats.manual },
-          { label: 'Obligatoires', value: stats.mandatory },
-        ].map(s => (
-          <Card key={s.label} padding="sm" className="text-center">
-            <p className="text-2xl font-semibold text-text-main">{s.value}</p>
-            <p className="text-xs text-text-muted">{s.label}</p>
-          </Card>
-        ))}
-      </div>
+    <div className="space-y-5">
 
-      {/* Barre d'actions */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filtrer par description, emetteur ou CUSIP..."
-            className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-          />
-          {filter && (
-            <button onClick={() => setFilter('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-              <X className="h-3.5 w-3.5 text-gray-400" />
-            </button>
+      {/* ── Timer card (only if bonds exist) ── */}
+      {lastImportDate && (
+        <div className={`rounded-2xl border-2 p-5 ${
+          isExpired
+            ? 'bg-red-50 border-red-200'
+            : daysRemaining !== null && daysRemaining <= 7
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-green-50 border-green-100'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                isExpired ? 'bg-red-100' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-amber-100' : 'bg-green-100'
+              }`}>
+                {isExpired ? (
+                  <Upload className="h-5 w-5 text-red-600" />
+                ) : (
+                  <FileSpreadsheet className={`h-5 w-5 ${daysRemaining !== null && daysRemaining <= 7 ? 'text-amber-600' : 'text-green-600'}`} />
+                )}
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${isExpired ? 'text-red-700' : 'text-text-main'}`}>
+                  {isExpired ? 'Liste expiree!' : 'Liste a jour'}
+                </p>
+                <p className="text-xs text-text-muted">
+                  Mise a jour le {lastImportDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              {isExpired ? (
+                <span className="text-sm font-bold text-red-600">Importez la nouvelle liste</span>
+              ) : (
+                <span className="text-sm font-semibold text-text-main">{daysRemaining} jour{daysRemaining !== 1 ? 's' : ''} restant{daysRemaining !== 1 ? 's' : ''}</span>
+              )}
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="h-2.5 rounded-full bg-white/60 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isExpired ? 'bg-red-400' : daysRemaining !== null && daysRemaining <= 7 ? 'bg-amber-400' : 'bg-green-400'
+              }`}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Drag & drop zone ── */}
+      <div
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`relative rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
+          dragging
+            ? 'border-brand-primary bg-brand-primary/5 scale-[1.01] shadow-lg'
+            : isExpired
+              ? 'border-red-300 bg-red-50/50 hover:border-red-400 hover:bg-red-50'
+              : 'border-gray-200 bg-gray-50/50 hover:border-brand-primary/40 hover:bg-brand-primary/5'
+        } ${importing ? 'pointer-events-none opacity-70' : ''}`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xlsm,.xls"
+          onChange={handleFileInput}
+          className="hidden"
+        />
+        <div className="flex flex-col items-center py-10 px-6">
+          {importing ? (
+            <>
+              <Spinner size="lg" className="mb-3" />
+              <p className="text-sm font-medium text-text-main">Importation en cours...</p>
+            </>
+          ) : (
+            <>
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${
+                dragging ? 'bg-brand-primary/10' : isExpired ? 'bg-red-100' : 'bg-gray-100'
+              }`}>
+                <Upload className={`h-7 w-7 ${
+                  dragging ? 'text-brand-primary' : isExpired ? 'text-red-500' : 'text-gray-400'
+                }`} />
+              </div>
+              <p className="text-sm font-semibold text-text-main mb-1">
+                {dragging ? 'Lachez le fichier ici!' : 'Glissez votre fichier Excel ici'}
+              </p>
+              <p className="text-xs text-text-muted mb-3">
+                Bonds CAD.xlsm ou Bonds US.xlsm
+              </p>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-white rounded-xl border border-gray-200 text-xs font-medium text-text-muted hover:border-brand-primary hover:text-brand-primary transition-colors">
+                <FileSpreadsheet className="h-3.5 w-3.5" /> ou parcourir les fichiers
+              </span>
+            </>
           )}
         </div>
-        <Button size="sm" variant="outline" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddBond(true)}>
-          Ajouter
-        </Button>
-        <div className="relative">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xlsm,.xls"
-            onChange={handleImportExcel}
-            className="hidden"
-          />
-          <Button
-            size="sm"
-            loading={importing}
-            icon={<Upload className="h-3.5 w-3.5" />}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Importer Excel
-          </Button>
-        </div>
       </div>
 
-      {/* Info import */}
-      {bonds.length === 0 && (
-        <Card className="text-center py-10">
-          <FileSpreadsheet className="h-12 w-12 text-text-light mx-auto mb-3" />
-          <h3 className="font-semibold text-text-main mb-1">Aucune obligation</h3>
-          <p className="text-sm text-text-muted mb-4 max-w-md mx-auto">
-            Importez vos fichiers Bonds CAD.xlsm ou Bonds US.xlsm pour remplir l'univers d'obligations.
-            Le systeme detecte automatiquement les CUSIP, coupons, echeances et prix.
-          </p>
-          <Button
-            icon={<Upload className="h-4 w-4" />}
-            onClick={() => fileInputRef.current?.click()}
-            loading={importing}
-          >
-            Importer un fichier Excel
-          </Button>
-        </Card>
-      )}
-
-      {/* Tableau des obligations */}
-      {filteredBonds.length > 0 && (
-        <Card padding="none">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
-                  <th className="px-4 py-2.5">Emetteur</th>
-                  <th className="px-3 py-2.5">CUSIP</th>
-                  <th className="px-3 py-2.5 text-right">Coupon</th>
-                  <th className="px-3 py-2.5">Echeance</th>
-                  <th className="px-3 py-2.5 text-right">Prix</th>
-                  <th className="px-3 py-2.5 text-right">Yield</th>
-                  <th className="px-3 py-2.5">Source</th>
-                  <th className="px-3 py-2.5">Categorie</th>
-                  <th className="px-3 py-2.5 text-center">Oblig.</th>
-                  <th className="px-3 py-2.5 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredBonds.slice(0, 200).map(bond => (
-                  <tr key={bond.id} className="border-t border-gray-50 hover:bg-gray-50/50">
-                    <td className="px-4 py-2 text-text-main max-w-[200px] truncate" title={bond.issuer || bond.description}>
-                      {bond.issuer || bond.description}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-text-muted text-xs">{bond.cusip || '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono">{bond.coupon != null ? `${bond.coupon}%` : '—'}</td>
-                    <td className="px-3 py-2 text-text-muted">
-                      {bond.maturity ? new Date(bond.maturity).toLocaleDateString('fr-CA') : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{bond.price != null ? bond.price.toFixed(2) : '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono">{bond.yield != null ? `${bond.yield}%` : '—'}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant={bond.source === 'CAD' ? 'info' : bond.source === 'US' ? 'warning' : 'default'}>
-                        {bond.source}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-text-muted text-xs">{bond.category || '—'}</td>
-                    <td className="px-3 py-2 text-center">
-                      <button onClick={() => handleToggleMandatory(bond)}>
-                        <Badge variant={bond.is_mandatory ? 'success' : 'outline'}>
-                          {bond.is_mandatory ? 'Oui' : 'Non'}
-                        </Badge>
-                      </button>
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        onClick={() => handleDeleteBond(bond)}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredBonds.length > 200 && (
-              <p className="text-xs text-text-muted text-center py-3 border-t border-gray-100">
-                Affichage limite a 200 / {filteredBonds.length} obligations. Utilisez le filtre pour preciser.
-              </p>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* Modal ajout manuel */}
-      <Modal open={showAddBond} onClose={() => setShowAddBond(false)} title="Ajouter une obligation" size="md">
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-1">Description</label>
-            <input
-              type="text"
-              value={bondForm.description}
-              onChange={(e) => setBondForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Ex: HEB CB 5.82% 13AU29"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Emetteur</label>
-              <input type="text" value={bondForm.issuer} onChange={(e) => setBondForm(f => ({ ...f, issuer: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
+      {/* ── Stats ── */}
+      {bonds.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Total', value: stats.total, color: 'text-text-main' },
+            { label: 'CAD', value: stats.cad, color: 'text-blue-600' },
+            { label: 'US', value: stats.us, color: 'text-amber-600' },
+          ].map(s => (
+            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
+              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-text-muted mt-0.5">{s.label}</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">CUSIP</label>
-              <input type="text" value={bondForm.cusip} onChange={(e) => setBondForm(f => ({ ...f, cusip: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Coupon (%)</label>
-              <input type="number" step="0.01" value={bondForm.coupon} onChange={(e) => setBondForm(f => ({ ...f, coupon: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Prix</label>
-              <input type="number" step="0.01" value={bondForm.price} onChange={(e) => setBondForm(f => ({ ...f, price: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Yield (%)</label>
-              <input type="number" step="0.01" value={bondForm.yield} onChange={(e) => setBondForm(f => ({ ...f, yield: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Echeance</label>
-              <input type="date" value={bondForm.maturity} onChange={(e) => setBondForm(f => ({ ...f, maturity: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Categorie</label>
-              <input type="text" value={bondForm.category} onChange={(e) => setBondForm(f => ({ ...f, category: e.target.value }))}
-                placeholder="Ex: Provincial, Corporate..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary" />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="mandatory"
-              checked={bondForm.is_mandatory}
-              onChange={(e) => setBondForm(f => ({ ...f, is_mandatory: e.target.checked }))}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="mandatory" className="text-sm text-text-main">Obligation obligatoire (toujours incluse dans les portefeuilles)</label>
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setShowAddBond(false)}>Annuler</Button>
-            <Button onClick={handleAddBond}>Ajouter</Button>
-          </div>
+          ))}
         </div>
-      </Modal>
+      )}
+
+      {/* ── Collapsible bond list ── */}
+      {bonds.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <button
+            onClick={() => setShowList(!showList)}
+            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50/50 transition-colors"
+          >
+            <span className="text-sm font-semibold text-text-main">Voir les obligations</span>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{bonds.length}</Badge>
+              {showList ? <ChevronDown className="h-4 w-4 text-text-muted" /> : <ChevronRight className="h-4 w-4 text-text-muted" />}
+            </div>
+          </button>
+
+          {showList && (
+            <div className="border-t border-gray-100">
+              {/* Filter */}
+              <div className="px-4 py-3 border-b border-gray-50">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+                  <input
+                    type="text"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder="Filtrer par emetteur ou CUSIP..."
+                    className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+                  />
+                  {filter && (
+                    <button onClick={() => setFilter('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <X className="h-3.5 w-3.5 text-gray-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              {/* List */}
+              <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
+                {filteredBonds.slice(0, 200).map(bond => (
+                  <div key={bond.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/70 transition-colors group">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-text-main truncate">{bond.issuer || bond.description}</div>
+                      <div className="flex items-center gap-2 text-xs text-text-muted">
+                        {bond.cusip && <span className="font-mono">{bond.cusip}</span>}
+                        {bond.coupon != null && <span>{bond.coupon}%</span>}
+                        {bond.maturity && <span>{new Date(bond.maturity).toLocaleDateString('fr-CA')}</span>}
+                      </div>
+                    </div>
+                    <Badge variant={bond.source === 'CAD' ? 'info' : bond.source === 'US' ? 'warning' : 'default'}>
+                      {bond.source}
+                    </Badge>
+                    {bond.price != null && (
+                      <span className="text-xs font-mono text-text-muted w-14 text-right shrink-0">{bond.price.toFixed(2)}</span>
+                    )}
+                    <Trash2
+                      onClick={() => {
+                        fetch('/api/models/bonds', {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: bond.id }),
+                        }).then(() => { toast('success', 'Retiree'); mutate(); });
+                      }}
+                      className="h-3.5 w-3.5 text-gray-300 hover:text-red-500 cursor-pointer transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    />
+                  </div>
+                ))}
+              </div>
+              {filteredBonds.length > 200 && (
+                <p className="text-xs text-text-muted text-center py-3 border-t border-gray-100">
+                  Affichage limite a 200 / {filteredBonds.length}. Utilisez le filtre.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
