@@ -756,7 +756,7 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
   const totalBonds = gains.length;
   const avgCouponAll = gains.reduce((s, g) => s + g.annualCoupon, 0) / totalBonds;
   const avgReturnAll = gains.reduce((s, g) => s + g.totalReturnPct, 0) / totalBonds;
-  const maxBucketReturn = Math.max(1, ...bucketData.map(b => b.avgTotalReturn));
+  const maxBucketCount = Math.max(1, ...bucketData.map(b => b.count));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -787,7 +787,7 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
       <div className="divide-y divide-gray-50">
         {bucketData.map(b => {
           if (b.count === 0) return null;
-          const barWidth = (b.avgTotalReturn / maxBucketReturn) * 100;
+          const barWidth = (b.count / maxBucketCount) * 100;
           const isExpanded = expandedBucket === b.key;
 
           return (
