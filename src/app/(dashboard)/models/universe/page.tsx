@@ -16,7 +16,38 @@ import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Plus, Trash2, Upload, Search,
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
+  Monitor, Heart, Landmark, Zap, Gem, Factory,
+  ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
+  Lock, Unlock, Sparkles,
 } from 'lucide-react';
+
+// ── Sector icons (same as profiles page) ──
+const SECTOR_META: Record<string, {
+  Icon: React.ComponentType<{ className?: string }>;
+  color: string; bg: string; border: string;
+}> = {
+  TECHNOLOGY:       { Icon: Monitor,     color: 'text-blue-500',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  HEALTHCARE:       { Icon: Heart,       color: 'text-rose-500',    bg: 'bg-rose-50',    border: 'border-rose-200' },
+  FINANCIALS:       { Icon: Landmark,    color: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  ENERGY:           { Icon: Zap,         color: 'text-orange-500',  bg: 'bg-orange-50',  border: 'border-orange-200' },
+  MATERIALS:        { Icon: Gem,         color: 'text-slate-500',   bg: 'bg-slate-50',   border: 'border-slate-200' },
+  INDUSTRIALS:      { Icon: Factory,     color: 'text-violet-500',  bg: 'bg-violet-50',  border: 'border-violet-200' },
+  CONSUMER_DISC:    { Icon: ShoppingBag, color: 'text-pink-500',    bg: 'bg-pink-50',    border: 'border-pink-200' },
+  CONSUMER_STAPLES: { Icon: Coffee,      color: 'text-amber-600',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  UTILITIES:        { Icon: Lightbulb,   color: 'text-cyan-600',    bg: 'bg-cyan-50',    border: 'border-cyan-200' },
+  REAL_ESTATE:      { Icon: Building2,   color: 'text-teal-500',    bg: 'bg-teal-50',    border: 'border-teal-200' },
+  TELECOM:          { Icon: Wifi,        color: 'text-indigo-500',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  MILITARY:         { Icon: Shield,      color: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200' },
+};
+
+// ── Search result type ──
+interface SearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  type: string;
+  logo: string | null;
+}
 
 // ── Onglets ──
 type Tab = 'actions' | 'obligations';
@@ -25,19 +56,20 @@ export default function UniversePage() {
   const [tab, setTab] = useState<Tab>('actions');
 
   return (
-    <div>
-      <PageHeader
-        title="Univers de titres"
-        description="Actions et obligations disponibles pour la construction des portefeuilles modeles"
-        action={
-          <Link href="/models">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
-          </Link>
-        }
-      />
+    <div className="max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-2">
+        <Link href="/models" className="p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-colors">
+          <ArrowLeft className="h-5 w-5 text-text-muted" />
+        </Link>
+        <div>
+          <h1 className="text-lg font-bold text-text-main">Choisir mes titres</h1>
+          <p className="text-sm text-text-muted">Construisez votre univers d&apos;actions et d&apos;obligations</p>
+        </div>
+      </div>
 
       {/* Onglets */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
+      <div className="flex gap-1 mb-6 mt-4 border-b border-gray-200">
         <button
           onClick={() => setTab('actions')}
           className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -75,15 +107,20 @@ function StocksTab() {
   const { stocks, bySector, sectors, isLoading, mutate } = useStockUniverse();
   const { toast } = useToast();
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set(sectors));
-  const [showAdd, setShowAdd] = useState(false);
+
+  // ── Search state ──
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ symbol: string; name: string; exchange: string; type: string; logo: string | null }[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // Recherche TradingView
+  // ── Pending add (selected from search, waiting for sector pick) ──
+  const [pending, setPending] = useState<{ symbol: string; name: string; logo: string | null } | null>(null);
+
+  // Recherche TradingView (debounced)
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
+    setPending(null);
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
@@ -99,29 +136,37 @@ function StocksTab() {
     }, 250);
   }, []);
 
-  // Ajouter un titre
-  const [addForm, setAddForm] = useState<{ symbol: string; name: string; sector: string; stock_type: 'obligatoire' | 'variable'; logo_url: string | null }>({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', logo_url: null });
+  // Select from search → show sector picker
+  function selectResult(r: SearchResult) {
+    setPending({ symbol: r.symbol, name: r.name, logo: r.logo });
+    setSearchResults([]);
+    setSearchQuery('');
+  }
 
-  async function handleAddStock() {
-    if (!addForm.symbol || !addForm.name || !addForm.sector) {
-      toast('warning', 'Remplissez tous les champs');
-      return;
-    }
+  // Pick sector → add immediately
+  async function addToSector(sectorValue: string) {
+    if (!pending) return;
     try {
       const res = await fetch('/api/models/universe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addForm),
+        body: JSON.stringify({
+          symbol: pending.symbol,
+          name: pending.name,
+          sector: sectorValue,
+          stock_type: 'variable',
+          logo_url: pending.logo,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error);
       }
-      toast('success', `${addForm.symbol} ajouté`);
-      setShowAdd(false);
-      setAddForm({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', logo_url: null });
-      setSearchQuery('');
-      setSearchResults([]);
+      const sectorLabel = SECTORS.find(s => s.value === sectorValue)?.label || sectorValue;
+      toast('success', `${pending.symbol} ajouté dans ${sectorLabel}`);
+      setPending(null);
+      // Auto-expand the sector we just added to
+      setExpandedSectors(prev => new Set([...prev, sectorValue]));
       mutate();
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Erreur');
@@ -171,202 +216,198 @@ function StocksTab() {
   if (isLoading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
 
   return (
-    <div className="space-y-4">
-      {/* Barre d'actions */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-text-muted">
-          {stocks.length} titre{stocks.length !== 1 ? 's' : ''} dans {sectors.length} secteur{sectors.length !== 1 ? 's' : ''}
-        </p>
-        <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAdd(true)}>
-          Ajouter un titre
-        </Button>
-      </div>
+    <div className="space-y-5">
 
-      {/* Secteurs */}
-      {sectors.length === 0 ? (
-        <Card className="text-center py-12">
-          <p className="text-sm text-text-muted mb-4">Aucun titre dans l'univers. Ajoutez vos premiers titres pour commencer.</p>
-          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAdd(true)}>
-            Ajouter un titre
-          </Button>
-        </Card>
-      ) : (
-        sectors.map(sector => {
-          const sectorStocks = bySector[sector] || [];
-          const obligatoires = sectorStocks.filter(s => s.stock_type === 'obligatoire');
-          const variables = sectorStocks.filter(s => s.stock_type === 'variable');
-          const isExpanded = expandedSectors.has(sector);
-          const sectorLabel = SECTORS.find(s => s.value === sector)?.label || sector;
+      {/* ── Big search bar (always visible) ── */}
+      <div className="relative">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Rechercher un titre... (ex: AAPL, RY.TO, MSFT)"
+            className="w-full pl-12 pr-4 py-3.5 bg-white border-2 border-gray-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary transition-all shadow-sm"
+          />
+          {searching && <Spinner size="sm" className="absolute right-4 top-1/2 -translate-y-1/2" />}
+        </div>
 
-          return (
-            <Card key={sector} padding="none">
-              {/* En-tête secteur */}
+        {/* Search results dropdown */}
+        {searchResults.length > 0 && (
+          <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
+              <p className="text-xs text-text-muted font-medium">Cliquez pour ajouter a votre univers</p>
+            </div>
+            {searchResults.map(r => (
               <button
-                onClick={() => toggleSector(sector)}
-                className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+                key={r.symbol}
+                onClick={() => selectResult(r)}
+                className="w-full text-left px-4 py-3 hover:bg-brand-primary/5 flex items-center gap-3 text-sm transition-colors border-b border-gray-50 last:border-0"
               >
-                <div className="flex items-center gap-3">
-                  {isExpanded ? <ChevronDown className="h-4 w-4 text-text-muted" /> : <ChevronRight className="h-4 w-4 text-text-muted" />}
-                  <span className="font-semibold text-text-main">{sectorLabel}</span>
-                  <Badge variant="outline">{sectorStocks.length} titre{sectorStocks.length !== 1 ? 's' : ''}</Badge>
-                  {obligatoires.length > 0 && (
-                    <Badge variant="info">{obligatoires.length} oblig.</Badge>
-                  )}
+                {r.logo ? (
+                  <img src={r.logo} alt="" className="h-8 w-8 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <TrendingUp className="h-4 w-4 text-gray-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono font-semibold text-text-main">{r.symbol}</div>
+                  <div className="text-text-muted text-xs truncate">{r.name}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline">{r.exchange}</Badge>
+                  <Plus className="h-4 w-4 text-brand-primary" />
                 </div>
               </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-              {/* Liste des titres style TradingView */}
-              {isExpanded && (
-                <div className="border-t border-gray-100 divide-y divide-gray-50">
-                  {sectorStocks.map(stock => (
-                    <div key={stock.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/70 transition-colors">
-                      {/* Logo */}
-                      {stock.logo_url ? (
-                        <img src={stock.logo_url} alt="" className="h-8 w-8 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
-                      ) : (
-                        <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                          <TrendingUp className="h-4 w-4 text-gray-400" />
-                        </div>
-                      )}
-                      {/* Symbole + Nom */}
-                      <div className="flex-1 min-w-0">
-                        <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
-                        <span className="text-text-muted text-sm ml-2 truncate">{stock.name}</span>
-                      </div>
-                      {/* Type badge */}
-                      <button onClick={() => handleToggleType(stock)} className="shrink-0">
-                        <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'}>
-                          {stock.stock_type === 'obligatoire' ? 'Obligatoire' : 'Variable'}
-                        </Badge>
-                      </button>
-                      {/* Supprimer */}
-                      <button
-                        onClick={() => handleDeleteStock(stock)}
-                        className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          );
-        })
+      {/* ── Sector picker (appears after selecting a search result) ── */}
+      {pending && (
+        <div className="bg-white rounded-2xl border-2 border-brand-primary/30 p-5 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Selected stock preview */}
+          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+            {pending.logo ? (
+              <img src={pending.logo} alt="" className="h-10 w-10 rounded-full object-contain bg-white border border-gray-100" />
+            ) : (
+              <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-gray-400" />
+              </div>
+            )}
+            <div className="flex-1">
+              <div className="font-mono font-bold text-text-main">{pending.symbol}</div>
+              <div className="text-sm text-text-muted">{pending.name}</div>
+            </div>
+            <button onClick={() => setPending(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Sector selection */}
+          <p className="text-sm font-medium text-text-main mb-3">Dans quel secteur?</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {SECTORS.map(s => {
+              const meta = SECTOR_META[s.value];
+              const Icon = meta?.Icon || TrendingUp;
+              return (
+                <button
+                  key={s.value}
+                  onClick={() => addToSector(s.value)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-gray-100 hover:border-transparent hover:shadow-md transition-all duration-150 group ${meta?.bg || 'bg-gray-50'} hover:scale-[1.02]`}
+                >
+                  <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'} transition-transform group-hover:scale-110`} />
+                  <span className="text-xs font-medium text-text-main text-center leading-tight">{s.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
-      {/* Modal ajout */}
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); setSearchQuery(''); setSearchResults([]); }} title="Ajouter un titre" size="md">
-        <div className="space-y-4">
-          {/* Recherche */}
-          <div className="relative">
-            <label className="block text-sm font-medium text-text-main mb-1">Rechercher un titre</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Ex: MSFT, RY.TO, AAPL..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              />
-              {searching && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
-            </div>
+      {/* ── Stats bar ── */}
+      {stocks.length > 0 && (
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-text-muted">
+            <span className="font-semibold text-text-main">{stocks.length}</span> titre{stocks.length !== 1 ? 's' : ''} dans
+            <span className="font-semibold text-text-main ml-1">{sectors.length}</span> secteur{sectors.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
 
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                {searchResults.map(r => (
-                  <button
-                    key={r.symbol}
-                    onClick={() => {
-                      setAddForm(f => ({ ...f, symbol: r.symbol, name: r.name, logo_url: r.logo }));
-                      setSearchQuery(r.symbol);
-                      setSearchResults([]);
-                    }}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 text-sm"
-                  >
-                    {r.logo ? (
-                      <img src={r.logo} alt="" className="h-6 w-6 rounded-full object-contain bg-gray-50 shrink-0" />
+      {/* ── Empty state ── */}
+      {stocks.length === 0 && !pending && (
+        <div className="text-center py-12">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-brand-primary/10 mb-4">
+            <Search className="h-7 w-7 text-brand-primary" />
+          </div>
+          <h3 className="font-bold text-text-main mb-2">Votre univers est vide</h3>
+          <p className="text-sm text-text-muted max-w-sm mx-auto mb-1">
+            Recherchez des actions par symbole ou nom dans la barre ci-dessus, puis choisissez un secteur.
+          </p>
+          <p className="text-xs text-text-muted">
+            Exemples: AAPL, MSFT, RY.TO, BNS.TO, SHOP.TO
+          </p>
+        </div>
+      )}
+
+      {/* ── Sector groups ── */}
+      {sectors.map(sector => {
+        const sectorStocks = bySector[sector] || [];
+        const obligatoires = sectorStocks.filter(s => s.stock_type === 'obligatoire');
+        const isExpanded = expandedSectors.has(sector);
+        const sectorLabel = SECTORS.find(s => s.value === sector)?.label || sector;
+        const meta = SECTOR_META[sector];
+        const Icon = meta?.Icon || TrendingUp;
+
+        return (
+          <div key={sector} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+            {/* En-tête secteur */}
+            <button
+              onClick={() => toggleSector(sector)}
+              className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50/50 transition-colors"
+            >
+              <div className={`w-9 h-9 rounded-xl ${meta?.bg || 'bg-gray-100'} flex items-center justify-center shrink-0`}>
+                <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'}`} />
+              </div>
+              <span className="font-semibold text-text-main flex-1 text-left">{sectorLabel}</span>
+              <Badge variant="outline">{sectorStocks.length}</Badge>
+              {obligatoires.length > 0 && (
+                <Badge variant="info"><Lock className="h-3 w-3 mr-0.5 inline" />{obligatoires.length}</Badge>
+              )}
+              {isExpanded ? <ChevronDown className="h-4 w-4 text-text-muted shrink-0" /> : <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />}
+            </button>
+
+            {/* Liste des titres */}
+            {isExpanded && (
+              <div className="border-t border-gray-100 divide-y divide-gray-50">
+                {sectorStocks.map(stock => (
+                  <div key={stock.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/70 transition-colors group">
+                    {/* Logo */}
+                    {stock.logo_url ? (
+                      <img src={stock.logo_url} alt="" className="h-9 w-9 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
                     ) : (
-                      <div className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                        <TrendingUp className="h-3 w-3 text-gray-400" />
+                      <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                        <TrendingUp className="h-4 w-4 text-gray-400" />
                       </div>
                     )}
+                    {/* Symbole + Nom */}
                     <div className="flex-1 min-w-0">
-                      <span className="font-mono font-medium">{r.symbol}</span>
-                      <span className="text-text-muted ml-2 truncate">{r.name}</span>
+                      <div className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</div>
+                      <div className="text-text-muted text-xs truncate">{stock.name}</div>
                     </div>
-                    <Badge variant="outline">{r.exchange}</Badge>
-                  </button>
+                    {/* Type badge */}
+                    <button
+                      onClick={() => handleToggleType(stock)}
+                      className="shrink-0"
+                      title={stock.stock_type === 'obligatoire' ? 'Cliquez pour rendre variable' : 'Cliquez pour rendre obligatoire'}
+                    >
+                      {stock.stock_type === 'obligatoire' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
+                          <Lock className="h-3 w-3" /> Obligatoire
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+                          <Unlock className="h-3 w-3" /> Variable
+                        </span>
+                      )}
+                    </button>
+                    {/* Supprimer */}
+                    <button
+                      onClick={() => handleDeleteStock(stock)}
+                      className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
-
-          {/* Aperçu du titre sélectionné */}
-          {addForm.symbol && (
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-              {addForm.logo_url ? (
-                <img src={addForm.logo_url} alt="" className="h-10 w-10 rounded-full object-contain bg-white border border-gray-100" />
-              ) : (
-                <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-gray-400" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <input
-                  type="text"
-                  value={addForm.symbol}
-                  onChange={(e) => setAddForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                  className="font-mono font-semibold text-text-main bg-transparent border-none p-0 text-sm focus:outline-none w-full"
-                />
-                <input
-                  type="text"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="Nom de l'entreprise"
-                  className="text-text-muted text-sm bg-transparent border-none p-0 focus:outline-none w-full"
-                />
-              </div>
-              <button onClick={() => setAddForm(f => ({ ...f, symbol: '', name: '', logo_url: null }))} className="p-1 text-gray-400 hover:text-gray-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-
-          {/* Secteur */}
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-1">Secteur</label>
-            <select
-              value={addForm.sector}
-              onChange={(e) => setAddForm(f => ({ ...f, sector: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-            >
-              {SECTORS.map(s => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Type */}
-          <div>
-            <label className="block text-sm font-medium text-text-main mb-1">Type</label>
-            <select
-              value={addForm.stock_type}
-              onChange={(e) => setAddForm(f => ({ ...f, stock_type: e.target.value as 'obligatoire' | 'variable' }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-            >
-              <option value="variable">Variable</option>
-              <option value="obligatoire">Obligatoire</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => { setShowAdd(false); setSearchQuery(''); setSearchResults([]); }}>Annuler</Button>
-            <Button onClick={handleAddStock}>Ajouter</Button>
-          </div>
-        </div>
-      </Modal>
+        );
+      })}
     </div>
   );
 }
