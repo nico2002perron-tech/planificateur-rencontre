@@ -63,6 +63,35 @@ export const MARKET_HOURS = {
   timezone: 'America/New_York',
 } as const;
 
+// ── Profils d'investissement (Portefeuille Modèle IG) ──
+export const INVESTMENT_PROFILES = [
+  { value: 'prudent',               label: 'Prudent',                equityPct: 40, bondPct: 60, nbBonds: 25, number: 1 },
+  { value: 'conservateur',           label: 'Conservateur',           equityPct: 50, bondPct: 50, nbBonds: 22, number: 2 },
+  { value: 'equilibre-conservateur', label: 'Equilibre Conservateur', equityPct: 60, bondPct: 40, nbBonds: 18, number: 3 },
+  { value: 'equilibre-croissance',   label: 'Equilibre Croissance',   equityPct: 70, bondPct: 30, nbBonds: 15, number: 4 },
+  { value: 'croissance',             label: 'Croissance',             equityPct: 80, bondPct: 20, nbBonds: 12, number: 5 },
+  { value: 'croissance-maximum',     label: 'Croissance Maximum',     equityPct: 90, bondPct: 10, nbBonds:  8, number: 6 },
+] as const;
+
+// ── Types de titres dans l'univers ──
+export const STOCK_TYPES = [
+  { value: 'obligatoire', label: 'Obligatoire' },
+  { value: 'variable',    label: 'Variable' },
+] as const;
+
+// ── Sources d'obligations ──
+export const BOND_SOURCES = [
+  { value: 'CAD',    label: 'Canada' },
+  { value: 'US',     label: 'États-Unis' },
+  { value: 'MANUAL', label: 'Manuel' },
+] as const;
+
+// ── Mois abrégés français (format bonds Croesus) ──
+export const MOIS_FR: Record<string, number> = {
+  JA: 1, FV: 2, MR: 3, AP: 4, MI: 5, JN: 6,
+  JL: 7, AU: 8, SP: 9, OC: 10, NO: 11, DC: 12,
+};
+
 export const CACHE_TTL = {
   QUOTE: 15 * 60 * 1000,       // 15 min
   PROFILE: 24 * 60 * 60 * 1000, // 24h
