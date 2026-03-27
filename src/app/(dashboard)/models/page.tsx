@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
-import { Plus, PieChart, Trash2, Eye, Star, Rocket, Globe, SlidersHorizontal, Zap } from 'lucide-react';
+import { Plus, PieChart, Trash2, Eye, Star, Rocket, Globe, SlidersHorizontal, Zap, ArrowRightLeft } from 'lucide-react';
 
 const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
   CONSERVATEUR: 'info',
@@ -56,15 +56,18 @@ export default function ModelsPage() {
         title="Portefeuilles modèles"
         description="Modèles de répartition prédéfinis par profil de risque"
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Link href="/models/profiles">
-              <Button variant="outline" icon={<SlidersHorizontal className="h-4 w-4" />}>Profils</Button>
+              <Button variant="outline" size="sm" icon={<SlidersHorizontal className="h-3.5 w-3.5" />}>Profils</Button>
             </Link>
             <Link href="/models/universe">
-              <Button variant="outline" icon={<Globe className="h-4 w-4" />}>Univers de titres</Button>
+              <Button variant="outline" size="sm" icon={<Globe className="h-3.5 w-3.5" />}>Univers</Button>
+            </Link>
+            <Link href="/models/compare">
+              <Button variant="outline" size="sm" icon={<ArrowRightLeft className="h-3.5 w-3.5" />}>Comparer</Button>
             </Link>
             <Link href="/models/generate">
-              <Button icon={<Zap className="h-4 w-4" />}>Generer</Button>
+              <Button size="sm" icon={<Zap className="h-3.5 w-3.5" />}>Generer</Button>
             </Link>
           </div>
         }
