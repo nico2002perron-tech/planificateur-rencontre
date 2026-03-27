@@ -335,13 +335,23 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     runAiCheck();
   }, [result.holdings]);
 
-  // Fund document status check — runs once on mount
+  // Fund document status check — runs once AFTER AI check completes
   const fundCheckRan = useRef(false);
   useEffect(() => {
-    if (fundCheckRan.current) return;
+    if (!aiChecked || fundCheckRan.current) return;
     fundCheckRan.current = true;
 
-    const fundHoldings = result.holdings.filter(h => h.assetType === 'FUND');
+    // Build a set of symbols that the AI reclassified away from FUND
+    const correctedAwayFromFund = new Set(
+      aiCorrections
+        .filter(c => c.assetType !== 'FUND')
+        .map(c => c.symbol)
+    );
+
+    // Only check holdings that are FUND and NOT reclassified by AI
+    const fundHoldings = result.holdings.filter(
+      h => h.assetType === 'FUND' && !correctedAwayFromFund.has(h.symbol)
+    );
     if (fundHoldings.length === 0) {
       setFundCheckDone(true);
       return;
@@ -367,7 +377,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     };
 
     checkFunds();
-  }, [result.holdings]);
+  }, [aiChecked, aiCorrections, result.holdings]);
 
   // Apply symbol & type overrides
   const holdings = useMemo(() => {
