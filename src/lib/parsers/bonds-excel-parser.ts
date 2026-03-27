@@ -24,6 +24,7 @@ export interface ParsedBond {
   source: 'CAD' | 'US';
   rating_sp?: string;
   rating_dbrs?: string;
+  description_raw?: string; // description originale (format Répartition)
 }
 
 export interface BondImportResult {
@@ -170,6 +171,112 @@ export function parseBondDescription(desc: string): {
   const issuer = parts.length > 1 ? parts[0].trim() : desc.replace(/\d{1,2}(?:JA|FV|MR|AP|MI|JN|JL|AU|SP|OC|NO|DC)\d{2}/, '').trim();
 
   return { coupon, maturity, issuer };
+}
+
+/**
+ * Parse un fichier "Répartition d'actifs.xlsx" (format Croesus mensuel IA).
+ * Colonnes: #, Description, Valeur marchande totale ($CAD), Pourcentage du type d'actif
+ * Utilise parseBondDescription() pour extraire coupon/echeance/emetteur.
+ */
+export function parseRepartitionExcel(
+  buffer: ArrayBuffer,
+  fileName: string
+): BondImportResult {
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const allBonds: ParsedBond[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) continue;
+
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+    // Find header row (look for "Description" in first 5 rows)
+    let headerRowIdx = -1;
+    let descColIdx = -1;
+    let valueColIdx = -1;
+    let pctColIdx = -1;
+
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      const row = rows[i];
+      if (!row) continue;
+      for (let j = 0; j < row.length; j++) {
+        const cell = String(row[j] ?? '').trim().toLowerCase();
+        if (cell === 'description') descColIdx = j;
+        if (cell.includes('valeur marchande') || cell.includes('valeur march')) valueColIdx = j;
+        if (cell.includes('pourcentage') || cell.includes('% du type')) pctColIdx = j;
+      }
+      if (descColIdx >= 0) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    if (headerRowIdx === -1 || descColIdx < 0) continue;
+
+    // Parse data rows
+    for (let i = headerRowIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+
+      const desc = row[descColIdx];
+      if (!desc || String(desc).trim() === '') continue;
+
+      const descStr = String(desc).trim();
+      const marketValue = valueColIdx >= 0 ? parseNum(row[valueColIdx]) : null;
+
+      // Parse the Croesus description to extract bond details
+      const parsed = parseBondDescription(descStr);
+
+      // Determine category: bonds have a coupon or maturity, funds have /N'FRAC or /FR or ETF
+      const isFund = /\/N'FRAC|\/FR|\/SF|ETF/i.test(descStr);
+      const category = isFund ? 'Fonds' : (parsed.coupon ? 'Obligation' : 'Autre');
+
+      allBonds.push({
+        cusip: '',  // not available in this format
+        issuer: parsed.issuer || descStr.substring(0, 30),
+        coupon: parsed.coupon,
+        maturity: parsed.maturity,
+        price: marketValue,  // market value stored as price for reference
+        yield: null,
+        spread: null,
+        category,
+        source: 'CAD',
+        description_raw: descStr,
+      });
+    }
+  }
+
+  return {
+    bonds: allBonds,
+    stats: {
+      total: allBonds.length,
+      sheets_parsed: workbook.SheetNames.length,
+      sheets_skipped: 0,
+    },
+  };
+}
+
+/**
+ * Detect if the Excel file is a "Répartition d'actifs" format.
+ * Returns true if the first sheet has a "Description" header (not CUSIP).
+ */
+export function isRepartitionFormat(buffer: ArrayBuffer): boolean {
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) return false;
+
+  const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    for (const cell of row) {
+      const val = String(cell ?? '').trim().toLowerCase();
+      if (val === 'description') return true;
+      if (val === 'cusip') return false;
+    }
+  }
+  return false;
 }
 
 // ── Helpers ──

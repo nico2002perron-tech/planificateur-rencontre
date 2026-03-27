@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
-import { parseBondsExcel } from '@/lib/parsers/bonds-excel-parser';
+import {
+  parseBondsExcel,
+  parseRepartitionExcel,
+  isRepartitionFormat,
+} from '@/lib/parsers/bonds-excel-parser';
 
 /**
- * POST — Import d'un fichier Excel de bonds (Bonds CAD.xlsm ou Bonds US.xlsm)
+ * POST — Import d'un fichier Excel de bonds.
+ * Auto-detecte le format:
+ *   - "Répartition d'actifs.xlsx" (Croesus mensuel IA) → parseRepartitionExcel
+ *   - "Bonds CAD.xlsm / Bonds US.xlsm" → parseBondsExcel
  * Accepte multipart/form-data avec un champ "file".
- * Détecte automatiquement CAD ou US via le nom du fichier.
- * Insère les bonds dans bonds_universe (upsert sur cusip+coupon+maturity).
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -27,7 +32,12 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = await file.arrayBuffer();
-  const { bonds, stats } = parseBondsExcel(buffer, fileName);
+
+  // Auto-detect format
+  const isRepartition = isRepartitionFormat(buffer);
+  const { bonds, stats } = isRepartition
+    ? parseRepartitionExcel(buffer, fileName)
+    : parseBondsExcel(buffer, fileName);
 
   if (bonds.length === 0) {
     return NextResponse.json({
@@ -36,17 +46,19 @@ export async function POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  // Insérer en batch dans Supabase
   const supabase = createClient();
-  const source = fileName.toUpperCase().includes('CAD') ? 'CAD' : 'US';
+
+  // Determine source for cleanup
+  const source = isRepartition
+    ? 'CAD'
+    : (fileName.toUpperCase().includes('CAD') ? 'CAD' : 'US');
 
   // Supprimer les anciens bonds de cette source avant d'importer
-  // (remplacement complet pour éviter les doublons)
   const { error: deleteError } = await supabase
     .from('bonds_universe')
     .delete()
     .eq('source', source)
-    .eq('is_mandatory', false); // ne pas supprimer les bonds obligatoires manuels
+    .eq('is_mandatory', false);
 
   if (deleteError) {
     return NextResponse.json({ error: `Erreur nettoyage: ${deleteError.message}` }, { status: 500 });
@@ -59,9 +71,9 @@ export async function POST(req: NextRequest) {
 
   for (let i = 0; i < bonds.length; i += BATCH_SIZE) {
     const batch = bonds.slice(i, i + BATCH_SIZE).map(b => ({
-      description: `${b.issuer} ${b.coupon ?? ''}% ${b.maturity ?? ''}`.trim(),
+      description: b.description_raw || `${b.issuer} ${b.coupon ?? ''}% ${b.maturity ?? ''}`.trim(),
       issuer: b.issuer,
-      cusip: b.cusip,
+      cusip: b.cusip || null,
       coupon: b.coupon,
       maturity: b.maturity,
       price: b.price,
@@ -89,6 +101,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     source,
     fileName,
+    format: isRepartition ? 'repartition' : 'bonds',
     stats: {
       ...stats,
       inserted,
