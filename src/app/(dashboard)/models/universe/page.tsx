@@ -14,8 +14,8 @@ import { useBondsUniverse, type UniverseBond } from '@/lib/hooks/useBondsUnivers
 import { SECTORS } from '@/lib/utils/constants';
 import { StepNav } from '@/components/models/StepNav';
 import {
-  ArrowLeft, Plus, Trash2, Upload, Search, GripVertical,
-  ChevronDown, ChevronRight, FileSpreadsheet, X,
+  ArrowLeft, Plus, Trash2, Upload, Search,
+  ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
 } from 'lucide-react';
 
 // ── Onglets ──
@@ -77,7 +77,7 @@ function StocksTab() {
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set(sectors));
   const [showAdd, setShowAdd] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ symbol: string; name: string; exchange: string; type: string }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ symbol: string; name: string; exchange: string; type: string; logo: string | null }[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -100,7 +100,7 @@ function StocksTab() {
   }, []);
 
   // Ajouter un titre
-  const [addForm, setAddForm] = useState<{ symbol: string; name: string; sector: string; stock_type: 'obligatoire' | 'variable'; position: number }>({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', position: 99 });
+  const [addForm, setAddForm] = useState<{ symbol: string; name: string; sector: string; stock_type: 'obligatoire' | 'variable'; logo_url: string | null }>({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', logo_url: null });
 
   async function handleAddStock() {
     if (!addForm.symbol || !addForm.name || !addForm.sector) {
@@ -119,7 +119,7 @@ function StocksTab() {
       }
       toast('success', `${addForm.symbol} ajouté`);
       setShowAdd(false);
-      setAddForm({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', position: 99 });
+      setAddForm({ symbol: '', name: '', sector: sectors[0] || 'TECHNOLOGY', stock_type: 'variable', logo_url: null });
       setSearchQuery('');
       setSearchResults([]);
       mutate();
@@ -215,52 +215,39 @@ function StocksTab() {
                 </div>
               </button>
 
-              {/* Tableau des titres */}
+              {/* Liste des titres style TradingView */}
               {isExpanded && (
-                <div className="border-t border-gray-100">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs text-text-muted uppercase tracking-wider">
-                        <th className="px-5 py-2 w-8"></th>
-                        <th className="px-3 py-2">Symbole</th>
-                        <th className="px-3 py-2">Nom</th>
-                        <th className="px-3 py-2 text-center">Type</th>
-                        <th className="px-3 py-2 text-center">Position</th>
-                        <th className="px-3 py-2 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sectorStocks.map(stock => (
-                        <tr key={stock.id} className="border-t border-gray-50 hover:bg-gray-50/50">
-                          <td className="px-5 py-2.5">
-                            <GripVertical className="h-3.5 w-3.5 text-gray-300" />
-                          </td>
-                          <td className="px-3 py-2.5 font-mono font-medium text-text-main">
-                            {stock.symbol}
-                          </td>
-                          <td className="px-3 py-2.5 text-text-muted">{stock.name}</td>
-                          <td className="px-3 py-2.5 text-center">
-                            <button onClick={() => handleToggleType(stock)}>
-                              <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'}>
-                                {stock.stock_type === 'obligatoire' ? 'Obligatoire' : 'Variable'}
-                              </Badge>
-                            </button>
-                          </td>
-                          <td className="px-3 py-2.5 text-center font-mono text-text-muted">
-                            {stock.position}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <button
-                              onClick={() => handleDeleteStock(stock)}
-                              className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="border-t border-gray-100 divide-y divide-gray-50">
+                  {sectorStocks.map(stock => (
+                    <div key={stock.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/70 transition-colors">
+                      {/* Logo */}
+                      {stock.logo_url ? (
+                        <img src={stock.logo_url} alt="" className="h-8 w-8 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                          <TrendingUp className="h-4 w-4 text-gray-400" />
+                        </div>
+                      )}
+                      {/* Symbole + Nom */}
+                      <div className="flex-1 min-w-0">
+                        <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
+                        <span className="text-text-muted text-sm ml-2 truncate">{stock.name}</span>
+                      </div>
+                      {/* Type badge */}
+                      <button onClick={() => handleToggleType(stock)} className="shrink-0">
+                        <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'}>
+                          {stock.stock_type === 'obligatoire' ? 'Obligatoire' : 'Variable'}
+                        </Badge>
+                      </button>
+                      {/* Supprimer */}
+                      <button
+                        onClick={() => handleDeleteStock(stock)}
+                        className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </Card>
@@ -292,15 +279,22 @@ function StocksTab() {
                   <button
                     key={r.symbol}
                     onClick={() => {
-                      setAddForm(f => ({ ...f, symbol: r.symbol, name: r.name }));
+                      setAddForm(f => ({ ...f, symbol: r.symbol, name: r.name, logo_url: r.logo }));
                       setSearchQuery(r.symbol);
                       setSearchResults([]);
                     }}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center justify-between text-sm"
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 text-sm"
                   >
-                    <div>
+                    {r.logo ? (
+                      <img src={r.logo} alt="" className="h-6 w-6 rounded-full object-contain bg-gray-50 shrink-0" />
+                    ) : (
+                      <div className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                        <TrendingUp className="h-3 w-3 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
                       <span className="font-mono font-medium">{r.symbol}</span>
-                      <span className="text-text-muted ml-2">{r.name}</span>
+                      <span className="text-text-muted ml-2 truncate">{r.name}</span>
                     </div>
                     <Badge variant="outline">{r.exchange}</Badge>
                   </button>
@@ -309,27 +303,36 @@ function StocksTab() {
             )}
           </div>
 
-          {/* Symbole et nom (pré-remplis par la recherche) */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Symbole</label>
-              <input
-                type="text"
-                value={addForm.symbol}
-                onChange={(e) => setAddForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              />
+          {/* Aperçu du titre sélectionné */}
+          {addForm.symbol && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+              {addForm.logo_url ? (
+                <img src={addForm.logo_url} alt="" className="h-10 w-10 rounded-full object-contain bg-white border border-gray-100" />
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-gray-400" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <input
+                  type="text"
+                  value={addForm.symbol}
+                  onChange={(e) => setAddForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+                  className="font-mono font-semibold text-text-main bg-transparent border-none p-0 text-sm focus:outline-none w-full"
+                />
+                <input
+                  type="text"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Nom de l'entreprise"
+                  className="text-text-muted text-sm bg-transparent border-none p-0 focus:outline-none w-full"
+                />
+              </div>
+              <button onClick={() => setAddForm(f => ({ ...f, symbol: '', name: '', logo_url: null }))} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Nom</label>
-              <input
-                type="text"
-                value={addForm.name}
-                onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              />
-            </div>
-          </div>
+          )}
 
           {/* Secteur */}
           <div>
@@ -345,29 +348,17 @@ function StocksTab() {
             </select>
           </div>
 
-          {/* Type et position */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Type</label>
-              <select
-                value={addForm.stock_type}
-                onChange={(e) => setAddForm(f => ({ ...f, stock_type: e.target.value as 'obligatoire' | 'variable' }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              >
-                <option value="variable">Variable</option>
-                <option value="obligatoire">Obligatoire</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-main mb-1">Position (priorite)</label>
-              <input
-                type="number"
-                min={1}
-                value={addForm.position}
-                onChange={(e) => setAddForm(f => ({ ...f, position: parseInt(e.target.value) || 99 }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              />
-            </div>
+          {/* Type */}
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">Type</label>
+            <select
+              value={addForm.stock_type}
+              onChange={(e) => setAddForm(f => ({ ...f, stock_type: e.target.value as 'obligatoire' | 'variable' }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+            >
+              <option value="variable">Variable</option>
+              <option value="obligatoire">Obligatoire</option>
+            </select>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">

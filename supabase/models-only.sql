@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS model_stock_universe (
   sector TEXT NOT NULL,
   stock_type TEXT NOT NULL DEFAULT 'variable' CHECK (stock_type IN ('obligatoire', 'variable')),
   position INTEGER NOT NULL DEFAULT 99,
+  logo_url TEXT,
   notes TEXT,
   created_by UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
