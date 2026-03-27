@@ -126,22 +126,49 @@ function StocksTab() {
   const [loadingEtfSectors, setLoadingEtfSectors] = useState(false);
   const [addingEtf, setAddingEtf] = useState(false);
 
-  // When pending is an ETF, fetch sector breakdown
+  // ── Stock sector auto-detection ──
+  const [detectedSector, setDetectedSector] = useState<string | null>(null);
+  const [detectedIndustry, setDetectedIndustry] = useState<string | null>(null);
+  const [loadingSector, setLoadingSector] = useState(false);
+
+  // When pending changes, fetch sector info
   useEffect(() => {
-    if (!pending || pending.type !== 'ETF') {
+    if (!pending) {
       setEtfSectors(null);
+      setDetectedSector(null);
+      setDetectedIndustry(null);
       return;
     }
+
     let cancelled = false;
-    setLoadingEtfSectors(true);
-    setEtfSectors(null);
-    fetch(`/api/models/etf-sectors?symbol=${encodeURIComponent(pending.symbol)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled) setEtfSectors(data.sectors || null);
-      })
-      .catch(() => { if (!cancelled) setEtfSectors(null); })
-      .finally(() => { if (!cancelled) setLoadingEtfSectors(false); });
+
+    if (pending.type === 'ETF') {
+      setDetectedSector(null);
+      setDetectedIndustry(null);
+      setLoadingEtfSectors(true);
+      setEtfSectors(null);
+      fetch(`/api/models/etf-sectors?symbol=${encodeURIComponent(pending.symbol)}`)
+        .then(r => r.json())
+        .then(data => { if (!cancelled) setEtfSectors(data.sectors || null); })
+        .catch(() => { if (!cancelled) setEtfSectors(null); })
+        .finally(() => { if (!cancelled) setLoadingEtfSectors(false); });
+    } else {
+      setEtfSectors(null);
+      setLoadingSector(true);
+      setDetectedSector(null);
+      setDetectedIndustry(null);
+      fetch(`/api/models/stock-sector?symbol=${encodeURIComponent(pending.symbol)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!cancelled) {
+            setDetectedSector(data.sector || null);
+            setDetectedIndustry(data.industry || null);
+          }
+        })
+        .catch(() => { if (!cancelled) setDetectedSector(null); })
+        .finally(() => { if (!cancelled) setLoadingSector(false); });
+    }
+
     return () => { cancelled = true; };
   }, [pending]);
 
@@ -437,21 +464,48 @@ function StocksTab() {
               )}
             </div>
           ) : (
-            /* Regular stock: manual sector picker */
+            /* Regular stock: sector picker with auto-detection */
             <>
-              <p className="text-sm font-medium text-text-main mb-3">Dans quel secteur?</p>
+              {loadingSector ? (
+                <div className="flex items-center gap-2 mb-3">
+                  <Spinner size="sm" />
+                  <span className="text-sm text-text-muted">Detection du secteur...</span>
+                </div>
+              ) : detectedSector ? (
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-medium text-text-main">Secteur detecte</p>
+                    <span className="text-[10px] text-text-muted">(cliquez un autre pour modifier)</span>
+                  </div>
+                  {detectedIndustry && (
+                    <p className="text-xs text-text-muted mb-2">Industrie : {detectedIndustry}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-text-main mb-3">Dans quel secteur?</p>
+              )}
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {SECTORS.map(s => {
                   const meta = SECTOR_META[s.value];
                   const Icon = meta?.Icon || TrendingUp;
+                  const isDetected = detectedSector === s.value;
                   return (
                     <button
                       key={s.value}
                       onClick={() => addToSector(s.value)}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-gray-100 hover:border-transparent hover:shadow-md transition-all duration-150 group ${meta?.bg || 'bg-gray-50'} hover:scale-[1.02]`}
+                      className={`relative flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all duration-150 group hover:scale-[1.02] ${
+                        isDetected
+                          ? `${meta?.border || 'border-brand-primary'} ${meta?.bg || 'bg-gray-50'} shadow-md ring-2 ring-offset-1 ${meta?.border?.replace('border-', 'ring-') || 'ring-brand-primary'}`
+                          : 'border-gray-100 hover:border-transparent hover:shadow-md'
+                      } ${!isDetected ? (meta?.bg || 'bg-gray-50') : ''}`}
                     >
+                      {isDetected && (
+                        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center">
+                          <Check className="h-3 w-3 text-white" />
+                        </div>
+                      )}
                       <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'} transition-transform group-hover:scale-110`} />
-                      <span className="text-xs font-medium text-text-main text-center leading-tight">{s.label}</span>
+                      <span className={`text-xs font-medium text-center leading-tight ${isDetected ? 'text-text-main font-bold' : 'text-text-main'}`}>{s.label}</span>
                     </button>
                   );
                 })}
