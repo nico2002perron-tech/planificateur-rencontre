@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, X, TrendingUp,
   Monitor, Heart, Landmark, Zap, Gem, Factory,
   ShoppingBag, Coffee, Lightbulb, Building2, Wifi, Shield,
-  Lock, Unlock, Award, BarChart3, Clock, DollarSign,
+  Lock, Unlock, Award, BarChart3, Clock, DollarSign, Calendar,
 } from 'lucide-react';
 
 // ── Sector icons (same as profiles page) ──
@@ -485,6 +485,145 @@ function scoreBonds(bonds: UniverseBond[]): ScoredBond[] {
   }).sort((a, b) => b.score - a.score);
 }
 
+// ── Maturity Timeline Legend ──
+const MATURITY_BUCKETS = [
+  { key: 'expired',  label: '< 1 an',    min: -Infinity, max: 1,   color: 'bg-red-400',     text: 'text-red-600',    bg: 'bg-red-50' },
+  { key: 'short',    label: '1–3 ans',   min: 1,         max: 3,   color: 'bg-amber-400',   text: 'text-amber-600',  bg: 'bg-amber-50' },
+  { key: 'medium',   label: '3–5 ans',   min: 3,         max: 5,   color: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { key: 'sweet',    label: '5–7 ans',   min: 5,         max: 7,   color: 'bg-brand-primary', text: 'text-brand-primary', bg: 'bg-blue-50' },
+  { key: 'long',     label: '7–10 ans',  min: 7,         max: 10,  color: 'bg-violet-400',  text: 'text-violet-600', bg: 'bg-violet-50' },
+  { key: 'verylong', label: '10+ ans',   min: 10,        max: Infinity, color: 'bg-slate-400', text: 'text-slate-500', bg: 'bg-slate-50' },
+] as const;
+
+function MaturityTimeline({ bonds }: { bonds: UniverseBond[] }) {
+  const now = new Date();
+
+  // Filter only real bonds with maturity (exclude funds)
+  const bondsWithMaturity = bonds.filter(b => {
+    if (!b.maturity) return false;
+    const desc = b.description || '';
+    return !/\/N'FRAC|\/FR|\/SF|ETF/i.test(desc);
+  });
+
+  const noMaturityCount = bonds.filter(b => !b.maturity).length;
+
+  // Compute years to maturity and bucket counts
+  const bucketCounts: Record<string, number> = {};
+  MATURITY_BUCKETS.forEach(b => { bucketCounts[b.key] = 0; });
+
+  const yearsData: number[] = [];
+  bondsWithMaturity.forEach(b => {
+    const matDate = new Date(b.maturity!);
+    const years = (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    yearsData.push(years);
+    for (const bucket of MATURITY_BUCKETS) {
+      if (years >= bucket.min && years < bucket.max) {
+        bucketCounts[bucket.key]++;
+        break;
+      }
+    }
+  });
+
+  const maxCount = Math.max(1, ...Object.values(bucketCounts));
+  const totalWithMaturity = bondsWithMaturity.length;
+
+  if (totalWithMaturity === 0) return null;
+
+  // Average maturity
+  const avgYears = yearsData.length > 0 ? yearsData.reduce((a, b) => a + b, 0) / yearsData.length : 0;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center">
+            <Calendar className="h-5 w-5 text-violet-500" />
+          </div>
+          <div>
+            <span className="text-sm font-bold text-text-main block">Echeances</span>
+            <span className="text-xs text-text-muted">{totalWithMaturity} obligations avec echeance</span>
+          </div>
+        </div>
+        <div className="text-right">
+          <span className="text-sm font-semibold text-text-main">{avgYears.toFixed(1)} ans</span>
+          <span className="text-xs text-text-muted block">echeance moyenne</span>
+        </div>
+      </div>
+
+      {/* Visual timeline */}
+      <div className="space-y-2">
+        {/* Bar chart (horizontal) */}
+        <div className="flex items-end gap-1.5 h-16">
+          {MATURITY_BUCKETS.map(bucket => {
+            const count = bucketCounts[bucket.key];
+            const heightPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+            return (
+              <div key={bucket.key} className="flex-1 flex flex-col items-center justify-end h-full">
+                {count > 0 && (
+                  <span className={`text-[10px] font-bold ${bucket.text} mb-1`}>{count}</span>
+                )}
+                <div
+                  className={`w-full rounded-t-lg transition-all duration-300 ${count > 0 ? bucket.color : 'bg-gray-100'}`}
+                  style={{ height: `${Math.max(count > 0 ? 15 : 4, heightPct)}%` }}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Timeline axis */}
+        <div className="relative">
+          {/* Continuous line */}
+          <div className="absolute top-2 left-0 right-0 h-0.5 bg-gray-200" />
+          {/* Sweet spot highlight (3-7 years) */}
+          <div className="absolute top-1 left-[33.3%] w-[33.4%] h-2 bg-emerald-100 rounded-full opacity-60" />
+
+          {/* Tick marks + labels */}
+          <div className="flex">
+            {MATURITY_BUCKETS.map(bucket => {
+              const count = bucketCounts[bucket.key];
+              const pct = totalWithMaturity > 0 ? Math.round((count / totalWithMaturity) * 100) : 0;
+              return (
+                <div key={bucket.key} className="flex-1 flex flex-col items-center">
+                  {/* Tick */}
+                  <div className={`w-1.5 h-1.5 rounded-full z-10 ${count > 0 ? bucket.color : 'bg-gray-300'}`} />
+                  {/* Label */}
+                  <span className={`text-[10px] mt-1.5 font-medium ${count > 0 ? bucket.text : 'text-gray-300'}`}>
+                    {bucket.label}
+                  </span>
+                  {/* Percentage */}
+                  {count > 0 && (
+                    <span className="text-[9px] text-text-muted">{pct}%</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Sweet spot legend */}
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-4 text-[11px] text-text-muted">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-100 border border-emerald-300 inline-block" />
+            Zone ideale (3-7 ans)
+          </span>
+          {noMaturityCount > 0 && (
+            <span className="text-gray-400">{noMaturityCount} sans echeance</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-text-muted">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Court</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> Moyen</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block" /> Long</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BondsTab() {
   const { bonds, stats, isLoading, mutate } = useBondsUniverse();
   const { toast } = useToast();
@@ -694,6 +833,9 @@ function BondsTab() {
           ))}
         </div>
       )}
+
+      {/* ── Maturity Timeline ── */}
+      {bonds.length > 0 && <MaturityTimeline bonds={bonds} />}
 
       {/* ── Classement recommandé ── */}
       {bonds.length > 0 && (() => {
