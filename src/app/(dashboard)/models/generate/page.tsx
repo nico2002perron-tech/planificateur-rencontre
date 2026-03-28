@@ -12,6 +12,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
 import { useStockUniverse, type UniverseStock } from '@/lib/hooks/useStockUniverse';
+import { useStockScores } from '@/lib/hooks/useStockScores';
+import type { StockScore } from '@/lib/models/stock-scorer';
 import { Modal } from '@/components/ui/Modal';
 import { StepNav } from '@/components/models/StepNav';
 import {
@@ -20,7 +22,7 @@ import {
   Monitor, Heart, Landmark, Factory, Gem, ShoppingBag, Coffee,
   Lightbulb, Building2, Wifi, Shield, Zap as ZapIcon,
   Wand2, Lock, Check, Search, Layers, Target, Eye, EyeOff,
-  Sparkles, ChevronUp,
+  Sparkles, ChevronUp, RotateCcw, Star,
 } from 'lucide-react';
 
 // ══════════════════════════════════════════
@@ -163,21 +165,84 @@ export default function GeneratePage() {
   const [modelName, setModelName] = useState('');
   const [paletteFilter, setPaletteFilter] = useState('');
   const [showPalette, setShowPalette] = useState(true);
+  const [paletteSortBy, setPaletteSortBy] = useState<'position' | 'score'>('score');
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // ── User-controlled stock selection ──
+  const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set());
 
   const selectedProfile = profiles.find(p => p.id === selectedProfileId);
 
-  // Stocks selected by the generation (for highlighting in palette)
-  const selectedSymbols = useMemo(() => {
-    if (!result) return new Set<string>();
-    return new Set(result.sectors.flatMap(s => s.stocks.map(st => st.symbol)));
-  }, [result]);
+  // ── Smart scoring ──
+  const { scoresMap, isLoading: scoresLoading } = useStockScores(selectedProfileId || null);
 
   // Profile sector map (which sectors are configured)
   const profileSectors = useMemo(() => {
     if (!selectedProfile) return new Set<string>();
     return new Set(selectedProfile.sectors.map(s => s.sector));
   }, [selectedProfile]);
+
+  // Auto-preselect stocks when profile changes
+  useEffect(() => {
+    if (!selectedProfile || universeStocks.length === 0) return;
+    const preSelected = new Set<string>();
+    for (const sc of selectedProfile.sectors) {
+      const sectorStocks = universeStocks
+        .filter(s => s.sector === sc.sector)
+        .sort((a, b) => {
+          // Sort by score if available, otherwise by type + position
+          const scoreA = scoresMap.get(a.id)?.composite ?? 0;
+          const scoreB = scoresMap.get(b.id)?.composite ?? 0;
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          if (a.stock_type !== b.stock_type) return a.stock_type === 'obligatoire' ? -1 : 1;
+          return a.position - b.position;
+        });
+      sectorStocks.slice(0, sc.nb_titles).forEach(s => preSelected.add(s.id));
+    }
+    setSelectedStockIds(preSelected);
+    setResult(null);
+  }, [selectedProfile, universeStocks, scoresMap]);
+
+  // Toggle a stock in/out of selection
+  const toggleStock = useCallback((stockId: string) => {
+    setSelectedStockIds(prev => {
+      const next = new Set(prev);
+      if (next.has(stockId)) next.delete(stockId);
+      else next.add(stockId);
+      return next;
+    });
+    setResult(null);
+  }, []);
+
+  // Auto-fill by score
+  const handleAutoFill = useCallback(() => {
+    if (!selectedProfile) return;
+    const autoSelected = new Set<string>();
+    for (const sc of selectedProfile.sectors) {
+      const sectorStocks = universeStocks
+        .filter(s => s.sector === sc.sector)
+        .sort((a, b) => {
+          const scoreA = scoresMap.get(a.id)?.composite ?? 0;
+          const scoreB = scoresMap.get(b.id)?.composite ?? 0;
+          return scoreB - scoreA;
+        });
+      sectorStocks.slice(0, sc.nb_titles).forEach(s => autoSelected.add(s.id));
+    }
+    setSelectedStockIds(autoSelected);
+    setResult(null);
+    toast('success', 'Selection auto-remplie par score!');
+  }, [selectedProfile, universeStocks, scoresMap, toast]);
+
+  // Select / deselect all stocks in a sector
+  const toggleSectorAll = useCallback((sector: string, select: boolean) => {
+    setSelectedStockIds(prev => {
+      const next = new Set(prev);
+      const sectorStocks = universeStocks.filter(s => s.sector === sector);
+      sectorStocks.forEach(s => select ? next.add(s.id) : next.delete(s.id));
+      return next;
+    });
+    setResult(null);
+  }, [universeStocks]);
 
   // Building step animation
   useEffect(() => {
@@ -205,6 +270,10 @@ export default function GeneratePage() {
       toast('warning', 'Valeur minimum : 10 000 $');
       return;
     }
+    if (selectedStockIds.size === 0) {
+      toast('warning', 'Selectionnez au moins un titre');
+      return;
+    }
 
     setGenerating(true);
     setResult(null);
@@ -212,7 +281,11 @@ export default function GeneratePage() {
       const res = await fetch('/api/models/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_id: selectedProfileId, portfolio_value: portfolioValue }),
+        body: JSON.stringify({
+          profile_id: selectedProfileId,
+          portfolio_value: portfolioValue,
+          selected_stock_ids: Array.from(selectedStockIds),
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -226,7 +299,7 @@ export default function GeneratePage() {
     } finally {
       setGenerating(false);
     }
-  }, [selectedProfileId, portfolioValue, toast]);
+  }, [selectedProfileId, portfolioValue, selectedStockIds, toast]);
 
   const handleSaveAsModel = useCallback(async () => {
     if (!result || !modelName.trim()) return;
@@ -407,15 +480,44 @@ export default function GeneratePage() {
           <div className="flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-brand-primary text-white text-xs font-bold flex items-center justify-center">3</span>
             <span className="text-sm font-semibold text-text-main">Ma palette d&apos;actions</span>
-            <Badge variant="outline">{universeStocks.length} titres</Badge>
+            <Badge variant="outline">{selectedStockIds.size}/{universeStocks.length} selectionnes</Badge>
+            {scoresLoading && <Spinner size="sm" />}
           </div>
-          <button
-            onClick={() => setShowPalette(!showPalette)}
-            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-main transition-colors"
-          >
-            {showPalette ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            {showPalette ? 'Masquer' : 'Afficher'}
-          </button>
+          <div className="flex items-center gap-2">
+            {selectedProfile && (
+              <>
+                <button
+                  onClick={handleAutoFill}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-400 to-orange-400 text-white hover:shadow-md hover:shadow-amber-200 transition-all duration-200"
+                  title="Remplir automatiquement selon le score"
+                >
+                  <Star className="h-3 w-3" /> Auto-remplir
+                </button>
+                <button
+                  onClick={() => setSelectedStockIds(new Set())}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-red-500 hover:bg-red-50 transition-colors"
+                  title="Tout deselectioner"
+                >
+                  <RotateCcw className="h-3 w-3" /> Vider
+                </button>
+                <div className="h-4 w-px bg-gray-200" />
+                <button
+                  onClick={() => setPaletteSortBy(paletteSortBy === 'score' ? 'position' : 'score')}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-brand-primary hover:bg-brand-primary/5 transition-colors"
+                >
+                  {paletteSortBy === 'score' ? <Star className="h-3 w-3" /> : <Layers className="h-3 w-3" />}
+                  Tri: {paletteSortBy === 'score' ? 'Score' : 'Position'}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setShowPalette(!showPalette)}
+              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-main transition-colors"
+            >
+              {showPalette ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {showPalette ? 'Masquer' : 'Afficher'}
+            </button>
+          </div>
         </div>
 
         {showPalette && (
@@ -440,6 +542,8 @@ export default function GeneratePage() {
                 const SectorIcon = style.icon;
                 const sectorStocks = bySector[sector] || [];
                 const isConfigured = profileSectors.has(sector);
+                const sectorConfig = selectedProfile?.sectors.find(s => s.sector === sector);
+                const nbTarget = sectorConfig?.nb_titles ?? 0;
 
                 // Filter stocks
                 const filtered = paletteFilter
@@ -450,6 +554,23 @@ export default function GeneratePage() {
                   : sectorStocks;
 
                 if (filtered.length === 0) return null;
+
+                // Sort stocks
+                const sorted = [...filtered].sort((a, b) => {
+                  if (paletteSortBy === 'score') {
+                    const sa = scoresMap.get(a.id)?.composite ?? 0;
+                    const sb = scoresMap.get(b.id)?.composite ?? 0;
+                    if (sa !== sb) return sb - sa;
+                  }
+                  if (a.stock_type !== b.stock_type) return a.stock_type === 'obligatoire' ? -1 : 1;
+                  return a.position - b.position;
+                });
+
+                // Count selected in this sector
+                const selectedInSector = sectorStocks.filter(s => selectedStockIds.has(s.id)).length;
+                const isFull = isConfigured && selectedInSector >= nbTarget;
+                const isOver = isConfigured && selectedInSector > nbTarget;
+                const allSelected = sectorStocks.every(s => selectedStockIds.has(s.id));
 
                 return (
                   <div key={sector} className={`rounded-xl border p-3 transition-all duration-200 ${
@@ -463,39 +584,72 @@ export default function GeneratePage() {
                         <SectorIcon className={`h-3.5 w-3.5 ${style.color}`} />
                       </div>
                       <span className="text-xs font-semibold text-text-main">{style.label}</span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{filtered.length}</Badge>
-                      {!isConfigured && selectedProfile && (
-                        <span className="text-[10px] text-text-muted italic ml-auto">non configure</span>
-                      )}
                       {isConfigured && selectedProfile && (
-                        <span className="text-[10px] text-text-muted ml-auto">
-                          {selectedProfile.sectors.find(s => s.sector === sector)?.nb_titles} titres cibles
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isFull && !isOver
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : isOver
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-gray-100 text-text-muted'
+                        }`}>
+                          {selectedInSector}/{nbTarget} titres
                         </span>
                       )}
+                      {!isConfigured && selectedProfile && (
+                        <span className="text-[10px] text-text-muted italic">non configure</span>
+                      )}
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          onClick={() => toggleSectorAll(sector, !allSelected)}
+                          className="text-[10px] font-medium text-text-muted hover:text-brand-primary transition-colors px-1.5 py-0.5 rounded hover:bg-brand-primary/5"
+                        >
+                          {allSelected ? 'Tout deselectioner' : 'Tout selectioner'}
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Stock chips */}
+                    {/* Stock chips — interactive */}
                     <div className="flex flex-wrap gap-1.5">
-                      {filtered.map(stock => {
-                        const isInPortfolio = selectedSymbols.has(stock.symbol);
+                      {sorted.map(stock => {
+                        const isSelected = selectedStockIds.has(stock.id);
+                        const score = scoresMap.get(stock.id);
+                        const isObligatoire = stock.stock_type === 'obligatoire';
+                        const showWarning = isObligatoire && !isSelected && selectedProfile;
+
                         return (
-                          <div
+                          <button
                             key={stock.id}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all duration-300 ${
-                              isInPortfolio
-                                ? `${style.bg} ${style.color} ring-1 ring-current/20 shadow-sm`
-                                : 'bg-gray-100 text-text-muted'
+                            onClick={() => toggleStock(stock.id)}
+                            className={`group/chip inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer select-none ${
+                              isSelected
+                                ? `${style.bg} ${style.color} ring-1 ring-current/20 shadow-sm hover:shadow-md hover:scale-[1.03]`
+                                : showWarning
+                                  ? 'bg-red-50 text-red-400 ring-1 ring-red-200 hover:bg-red-100'
+                                  : 'bg-gray-100 text-text-muted hover:bg-gray-200 hover:text-text-main'
                             }`}
-                            title={`${stock.name}${stock.stock_type === 'obligatoire' ? ' (obligatoire)' : ''}`}
+                            title={`${stock.name}${isObligatoire ? ' (obligatoire)' : ''}${score ? ` — Score: ${score.composite}/10` : ''}`}
                           >
-                            {stock.stock_type === 'obligatoire' && (
+                            {isObligatoire && (
                               <Lock className="h-2.5 w-2.5 opacity-60" />
                             )}
-                            {isInPortfolio && (
+                            {isSelected && (
                               <Check className="h-2.5 w-2.5" />
                             )}
                             <span className="font-mono">{stock.symbol.replace('.TO', '').replace('.V', '')}</span>
-                          </div>
+                            {score && (
+                              <span className={`ml-0.5 px-1.5 py-0 rounded-full text-[9px] font-bold leading-relaxed ${
+                                score.recommendation === 'top'
+                                  ? 'bg-emerald-500/15 text-emerald-700'
+                                  : score.recommendation === 'bon'
+                                    ? 'bg-blue-500/15 text-blue-700'
+                                    : score.recommendation === 'neutre'
+                                      ? 'bg-gray-500/15 text-gray-600'
+                                      : 'bg-red-500/15 text-red-600'
+                              }`}>
+                                {score.composite.toFixed(1)}
+                              </span>
+                            )}
+                          </button>
                         );
                       })}
                     </div>

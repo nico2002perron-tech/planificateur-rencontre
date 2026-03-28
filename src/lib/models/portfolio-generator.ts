@@ -67,6 +67,7 @@ export interface GeneratorParams {
   stocks: StockUniverse[];
   bonds: BondUniverse[];
   prices: Map<string, number>; // symbol → current price
+  bypassLimits?: boolean;      // true = use all stocks passed (user-curated selection)
 }
 
 // ── Résultat ──
@@ -160,7 +161,7 @@ const SECTOR_LABELS: Record<string, string> = {
 // ── Algorithme principal ──
 
 export function generatePortfolio(params: GeneratorParams): GeneratedPortfolio {
-  const { profile, portfolioValue, stocks, bonds, prices } = params;
+  const { profile, portfolioValue, stocks, bonds, prices, bypassLimits } = params;
   const { equity_pct, bond_pct, nb_bonds, sectors: sectorConfigs, bond_config } = profile;
 
   const equityBudget = portfolioValue * (equity_pct / 100);
@@ -188,7 +189,10 @@ export function generatePortfolio(params: GeneratorParams): GeneratedPortfolio {
       .sort((a, b) => a.position - b.position);
 
     // Prendre les top nb_titles (obligatoire en priorité)
-    const selected = [...obligatoire, ...variable].slice(0, nb_titles);
+    // Si bypassLimits, utiliser tous les stocks passés (sélection manuelle de l'utilisateur)
+    const selected = bypassLimits
+      ? [...obligatoire, ...variable]
+      : [...obligatoire, ...variable].slice(0, nb_titles);
 
     // Budget pour ce secteur
     const sectorBudget = equityBudget * (weight_pct / 100);

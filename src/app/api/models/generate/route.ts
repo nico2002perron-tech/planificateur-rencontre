@@ -16,8 +16,9 @@ import {
  * Body: {
  *   profile_id: string,
  *   portfolio_value: number,
- *   save?: boolean,           // sauvegarder dans model_generated (défaut: false)
- *   client_id?: string,       // optionnel, pour lier à un client
+ *   selected_stock_ids?: string[],  // IDs des stocks sélectionnés par l'utilisateur
+ *   save?: boolean,
+ *   client_id?: string,
  * }
  *
  * Retourne le portefeuille généré complet avec toutes les positions.
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { profile_id, portfolio_value, save, client_id } = body;
+  const { profile_id, portfolio_value, save, client_id, selected_stock_ids } = body;
 
   if (!profile_id || !portfolio_value || portfolio_value <= 0) {
     return NextResponse.json(
@@ -79,15 +80,22 @@ export async function POST(req: NextRequest) {
     supabase.from('bonds_universe').select('*'),
   ]);
 
-  const stocks: StockUniverse[] = (stockRows || []) as StockUniverse[];
+  const allStocks: StockUniverse[] = (stockRows || []) as StockUniverse[];
   const bonds: BondUniverse[] = (bondRows || []) as BondUniverse[];
+
+  // Filter stocks if user provided a selection
+  const hasUserSelection = Array.isArray(selected_stock_ids) && selected_stock_ids.length > 0;
+  const selectedSet = hasUserSelection ? new Set(selected_stock_ids as string[]) : null;
+  const stocks = selectedSet
+    ? allStocks.filter(s => selectedSet.has(s.id))
+    : allStocks;
 
   // ── 3. Récupérer les prix courants ──
 
-  // Identifier les symboles nécessaires (uniquement les secteurs configurés)
+  // Identifier les symboles nécessaires
   const configuredSectors = new Set(profile.sectors.map(s => s.sector));
   const neededSymbols = stocks
-    .filter(s => configuredSectors.has(s.sector))
+    .filter(s => selectedSet ? true : configuredSectors.has(s.sector))
     .map(s => s.symbol);
 
   const uniqueSymbols = [...new Set(neededSymbols)];
@@ -140,6 +148,7 @@ export async function POST(req: NextRequest) {
     stocks,
     bonds,
     prices: priceMap,
+    bypassLimits: hasUserSelection,
   });
 
   // ── 5. Sauvegarder si demandé ──
