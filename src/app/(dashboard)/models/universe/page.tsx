@@ -320,6 +320,71 @@ function StocksTab() {
     toast('info', `Resolution de ${symbols.length} symboles...`);
   }
 
+  // ── Excel file import ──
+  const [importingFile, setImportingFile] = useState(false);
+  const [draggingFile, setDraggingFile] = useState(false);
+  const fileDragCounter = useRef(0);
+  const stockFileRef = useRef<HTMLInputElement>(null);
+
+  async function importStockFile(file: File) {
+    if (!file.name.match(/\.(xlsx|xlsm|xls|csv)$/i)) {
+      toast('warning', 'Format invalide. Utilisez .xlsx, .xlsm, .xls ou .csv');
+      return;
+    }
+    setImportingFile(true);
+    setPending(null);
+    setSearchResults([]);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/models/universe/import', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      const symbols: string[] = data.symbols || [];
+      if (symbols.length === 0) {
+        toast('warning', 'Aucun symbole detecte dans le fichier');
+        return;
+      }
+
+      toast('info', `${symbols.length} symboles detectes — resolution en cours...`);
+
+      // Resolve each symbol and add to queue
+      for (const sym of symbols) {
+        fetch(`/api/search?q=${encodeURIComponent(sym)}`)
+          .then(r => r.json())
+          .then((results: SearchResult[]) => {
+            const match = Array.isArray(results)
+              ? results.find(r => r.symbol.toUpperCase() === sym) || results[0]
+              : null;
+            if (match) {
+              addToQueue(match.symbol, match.name, match.logo, match.type);
+            }
+          })
+          .catch(() => {});
+      }
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Erreur d\'import');
+    } finally {
+      setImportingFile(false);
+    }
+  }
+
+  function handleStockFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) importStockFile(file);
+    if (stockFileRef.current) stockFileRef.current.value = '';
+  }
+
+  function handleStockDragEnter(e: React.DragEvent) { e.preventDefault(); e.stopPropagation(); fileDragCounter.current++; setDraggingFile(true); }
+  function handleStockDragLeave(e: React.DragEvent) { e.preventDefault(); e.stopPropagation(); fileDragCounter.current--; if (fileDragCounter.current === 0) setDraggingFile(false); }
+  function handleStockDragOver(e: React.DragEvent) { e.preventDefault(); e.stopPropagation(); }
+  function handleStockDrop(e: React.DragEvent) {
+    e.preventDefault(); e.stopPropagation(); setDraggingFile(false); fileDragCounter.current = 0;
+    const file = e.dataTransfer.files?.[0];
+    if (file) importStockFile(file);
+  }
+
   // Recherche TradingView (debounced)
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
@@ -503,24 +568,56 @@ function StocksTab() {
         )}
       </div>
 
-      {/* ── Quick packs ── */}
+      {/* ── Quick packs + Excel drop zone ── */}
       {!pending && queue.length === 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-text-muted mr-1">Ajout rapide :</span>
-          {QUICK_PACKS.map(pack => (
-            <button
-              key={pack.label}
-              onClick={() => addPack(pack.symbols)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-xs font-medium text-text-main hover:border-brand-primary hover:text-brand-primary transition-colors"
-            >
-              <Package className="h-3 w-3" />
-              {pack.label}
-              <span className="text-text-muted">({pack.symbols.length})</span>
-            </button>
-          ))}
-          <span className="text-[10px] text-text-muted ml-1 flex items-center gap-1">
-            <ClipboardPaste className="h-3 w-3" /> ou collez une liste
-          </span>
+        <div className="space-y-3">
+          {/* Packs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-text-muted mr-1">Ajout rapide :</span>
+            {QUICK_PACKS.map(pack => (
+              <button
+                key={pack.label}
+                onClick={() => addPack(pack.symbols)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-xs font-medium text-text-main hover:border-brand-primary hover:text-brand-primary transition-colors"
+              >
+                <Package className="h-3 w-3" />
+                {pack.label}
+                <span className="text-text-muted">({pack.symbols.length})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Excel drop zone */}
+          <div
+            onDragEnter={handleStockDragEnter}
+            onDragLeave={handleStockDragLeave}
+            onDragOver={handleStockDragOver}
+            onDrop={handleStockDrop}
+            onClick={() => stockFileRef.current?.click()}
+            className={`rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
+              draggingFile
+                ? 'border-brand-primary bg-brand-primary/5 scale-[1.01]'
+                : 'border-gray-200 bg-gray-50/50 hover:border-brand-primary/40 hover:bg-brand-primary/5'
+            } ${importingFile ? 'pointer-events-none opacity-70' : ''}`}
+          >
+            <input ref={stockFileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" onChange={handleStockFileInput} className="hidden" />
+            <div className="flex items-center justify-center gap-3 py-4 px-5">
+              {importingFile ? (
+                <><Spinner size="sm" /><span className="text-sm text-text-muted">Analyse du fichier...</span></>
+              ) : (
+                <>
+                  <Upload className={`h-5 w-5 ${draggingFile ? 'text-brand-primary' : 'text-gray-400'}`} />
+                  <div className="text-sm">
+                    <span className="font-medium text-text-main">{draggingFile ? 'Lachez ici!' : 'Glissez un fichier Excel'}</span>
+                    <span className="text-text-muted ml-1">ou cliquez — detection auto des symboles</span>
+                  </div>
+                  <span className="text-[10px] text-text-muted flex items-center gap-1 ml-2 shrink-0">
+                    <ClipboardPaste className="h-3 w-3" /> ou collez dans la barre
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
