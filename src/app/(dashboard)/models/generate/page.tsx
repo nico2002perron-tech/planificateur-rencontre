@@ -1,26 +1,31 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
+import { useStockUniverse, type UniverseStock } from '@/lib/hooks/useStockUniverse';
 import { Modal } from '@/components/ui/Modal';
 import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Zap, Download, Save, ChevronDown, ChevronRight,
   DollarSign, TrendingUp, Percent, BarChart3,
+  Monitor, Heart, Landmark, Factory, Gem, ShoppingBag, Coffee,
+  Lightbulb, Building2, Wifi, Shield, Zap as ZapIcon,
+  Wand2, Lock, Check, Search, Layers, Target, Eye, EyeOff,
+  Sparkles, ChevronUp,
 } from 'lucide-react';
 
-// ── Types (miroir du backend) ──
+// ══════════════════════════════════════════
+// TYPES
+// ══════════════════════════════════════════
 
 interface GeneratedStock {
   symbol: string;
@@ -84,11 +89,45 @@ interface GeneratedPortfolio {
   generatedAt: string;
 }
 
-// ── Constantes ──
+// ══════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════
 
 const BRAND = '#00b4d8';
-const DARK = '#03045e';
-const COLORS = [BRAND, '#0077b6', DARK, '#f4a261', '#2ecc71', '#e63946', '#8b5cf6', '#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#84cc16'];
+const COLORS = [BRAND, '#0077b6', '#03045e', '#f4a261', '#2ecc71', '#e63946', '#8b5cf6', '#14b8a6', '#f59e0b', '#6366f1', '#ec4899', '#84cc16'];
+
+const SECTOR_STYLE: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string; bg: string; hex: string; label: string }> = {
+  TECHNOLOGY:       { icon: Monitor,     color: 'text-blue-500',    bg: 'bg-blue-50',    hex: '#3b82f6', label: 'Techno' },
+  HEALTHCARE:       { icon: Heart,       color: 'text-rose-500',    bg: 'bg-rose-50',    hex: '#f43f5e', label: 'Sante' },
+  FINANCIALS:       { icon: Landmark,    color: 'text-emerald-500', bg: 'bg-emerald-50', hex: '#10b981', label: 'Finance' },
+  ENERGY:           { icon: ZapIcon,     color: 'text-orange-500',  bg: 'bg-orange-50',  hex: '#f97316', label: 'Energie' },
+  MATERIALS:        { icon: Gem,         color: 'text-slate-500',   bg: 'bg-slate-50',   hex: '#64748b', label: 'Materiaux' },
+  INDUSTRIALS:      { icon: Factory,     color: 'text-violet-500',  bg: 'bg-violet-50',  hex: '#8b5cf6', label: 'Industriels' },
+  CONSUMER_DISC:    { icon: ShoppingBag, color: 'text-pink-500',    bg: 'bg-pink-50',    hex: '#ec4899', label: 'Cons. disc.' },
+  CONSUMER_STAPLES: { icon: Coffee,      color: 'text-amber-600',   bg: 'bg-amber-50',   hex: '#d97706', label: 'Cons. base' },
+  UTILITIES:        { icon: Lightbulb,   color: 'text-cyan-600',    bg: 'bg-cyan-50',    hex: '#0891b2', label: 'Serv. pub.' },
+  REAL_ESTATE:      { icon: Building2,   color: 'text-teal-500',    bg: 'bg-teal-50',    hex: '#14b8a6', label: 'Immobilier' },
+  TELECOM:          { icon: Wifi,        color: 'text-indigo-500',  bg: 'bg-indigo-50',  hex: '#6366f1', label: 'Telecom' },
+  MILITARY:         { icon: Shield,      color: 'text-red-500',     bg: 'bg-red-50',     hex: '#ef4444', label: 'Militaire' },
+};
+
+const PROFILE_VISUALS: Record<number, { icon: React.ComponentType<{ className?: string }>; gradient: string; ring: string }> = {
+  1: { icon: Shield,     gradient: 'from-blue-500 to-blue-600',     ring: 'ring-blue-300' },
+  2: { icon: Shield,     gradient: 'from-sky-400 to-sky-500',       ring: 'ring-sky-300' },
+  3: { icon: Target,     gradient: 'from-amber-400 to-amber-500',   ring: 'ring-amber-300' },
+  4: { icon: Layers,     gradient: 'from-emerald-400 to-emerald-500', ring: 'ring-emerald-300' },
+  5: { icon: TrendingUp, gradient: 'from-brand-primary to-blue-500', ring: 'ring-brand-primary/40' },
+  6: { icon: Zap,        gradient: 'from-violet-500 to-purple-600', ring: 'ring-violet-300' },
+};
+
+const BUILDING_STEPS = [
+  'Analyse du profil...',
+  'Selection des actions...',
+  'Recuperation des prix...',
+  'Selection des obligations...',
+  'Calcul des allocations...',
+  'Optimisation finale...',
+];
 
 const tooltipStyle = {
   borderRadius: 8,
@@ -105,21 +144,57 @@ function fmtDec(n: number, dec = 2) {
   return new Intl.NumberFormat('fr-CA', { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(n);
 }
 
-// ════════════════════════════════════════
-// PAGE PRINCIPALE
-// ════════════════════════════════════════
+// ══════════════════════════════════════════
+// MAIN PAGE
+// ══════════════════════════════════════════
 
 export default function GeneratePage() {
   const { profiles, isLoading: profilesLoading } = useInvestmentProfiles();
+  const { stocks: universeStocks, bySector, sectors: universeSectors, isLoading: universeLoading } = useStockUniverse();
   const { toast } = useToast();
 
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [portfolioValue, setPortfolioValue] = useState(100000);
   const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [buildingStep, setBuildingStep] = useState(0);
   const [result, setResult] = useState<GeneratedPortfolio | null>(null);
+  const [saving, setSaving] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [modelName, setModelName] = useState('');
+  const [paletteFilter, setPaletteFilter] = useState('');
+  const [showPalette, setShowPalette] = useState(true);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  const selectedProfile = profiles.find(p => p.id === selectedProfileId);
+
+  // Stocks selected by the generation (for highlighting in palette)
+  const selectedSymbols = useMemo(() => {
+    if (!result) return new Set<string>();
+    return new Set(result.sectors.flatMap(s => s.stocks.map(st => st.symbol)));
+  }, [result]);
+
+  // Profile sector map (which sectors are configured)
+  const profileSectors = useMemo(() => {
+    if (!selectedProfile) return new Set<string>();
+    return new Set(selectedProfile.sectors.map(s => s.sector));
+  }, [selectedProfile]);
+
+  // Building step animation
+  useEffect(() => {
+    if (!generating) return;
+    setBuildingStep(0);
+    const interval = setInterval(() => {
+      setBuildingStep(prev => (prev + 1) % BUILDING_STEPS.length);
+    }, 800);
+    return () => clearInterval(interval);
+  }, [generating]);
+
+  // Scroll to result when generated
+  useEffect(() => {
+    if (result && resultRef.current) {
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+    }
+  }, [result]);
 
   const handleGenerate = useCallback(async () => {
     if (!selectedProfileId) {
@@ -137,10 +212,7 @@ export default function GeneratePage() {
       const res = await fetch('/api/models/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          profile_id: selectedProfileId,
-          portfolio_value: portfolioValue,
-        }),
+        body: JSON.stringify({ profile_id: selectedProfileId, portfolio_value: portfolioValue }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -148,7 +220,7 @@ export default function GeneratePage() {
       }
       const data = await res.json();
       setResult(data.portfolio);
-      toast('success', 'Portefeuille genere');
+      toast('success', 'Portefeuille construit!');
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Erreur');
     } finally {
@@ -160,7 +232,6 @@ export default function GeneratePage() {
     if (!result || !modelName.trim()) return;
     setSaving(true);
     try {
-      // Map generated stocks to model holdings format
       const allStocks = result.sectors.flatMap(s => s.stocks);
       const totalValue = result.totalStockValue + result.totalBondValue + result.cashRemaining;
       const holdings = allStocks.map(s => ({
@@ -171,7 +242,6 @@ export default function GeneratePage() {
         region: s.symbol.endsWith('.TO') || s.symbol.endsWith('.V') ? 'CA' : 'US',
       }));
 
-      // Risk level from profile
       const profile = profiles.find(p => p.id === selectedProfileId);
       const riskMap: Record<number, string> = { 1: 'CONSERVATEUR', 2: 'CONSERVATEUR', 3: 'MODERE', 4: 'EQUILIBRE', 5: 'CROISSANCE', 6: 'DYNAMIQUE' };
       const riskLevel = profile ? (riskMap[profile.profile_number] || 'EQUILIBRE') : 'EQUILIBRE';
@@ -188,10 +258,9 @@ export default function GeneratePage() {
       });
       if (!res.ok) throw new Error();
       const saved = await res.json();
-      toast('success', 'Modele sauvegarde');
+      toast('success', 'Modele sauvegarde!');
       setSaveModalOpen(false);
       setModelName('');
-      // Redirect to model detail
       window.location.href = `/models/${saved.id}`;
     } catch {
       toast('error', 'Erreur de sauvegarde');
@@ -200,106 +269,331 @@ export default function GeneratePage() {
     }
   }, [result, modelName, selectedProfileId, profiles, toast]);
 
-  if (profilesLoading) {
+  const isLoading = profilesLoading || universeLoading;
+  const isReady = !!selectedProfileId && portfolioValue >= 10000;
+
+  if (isLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Generateur de portefeuille"
-        description="Construisez un portefeuille modele en temps reel selon le profil d'investissement"
-        action={
-          <Link href="/models">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
-          </Link>
-        }
-      />
-
-      {/* ── Parametres ── */}
-      <Card className="mb-6">
-        <div className="flex flex-col md:flex-row gap-4 items-end">
-          {/* Profil */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-text-main mb-1">Profil d'investissement</label>
-            <select
-              value={selectedProfileId}
-              onChange={(e) => { setSelectedProfileId(e.target.value); setResult(null); }}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-            >
-              <option value="">-- Selectionnez un profil --</option>
-              {profiles.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.profile_number}. {p.name} ({p.equity_pct}/{p.bond_pct})
-                </option>
-              ))}
-            </select>
+    <div className="space-y-6">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-brand-primary to-blue-600 flex items-center justify-center">
+              <Wand2 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-text-main">Construire mon portefeuille</h1>
+              <p className="text-sm text-text-muted">Assemblez votre portefeuille ideal a partir de votre univers</p>
+            </div>
           </div>
+        </div>
+        <Link href="/models">
+          <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
+        </Link>
+      </div>
 
-          {/* Valeur */}
-          <div className="w-full md:w-56">
-            <label className="block text-sm font-medium text-text-main mb-1">Valeur du portefeuille ($)</label>
+      {/* ══════════════════════════════════════
+          SECTION 1 : PROFIL D'INVESTISSEMENT
+         ══════════════════════════════════════ */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-6 h-6 rounded-full bg-brand-primary text-white text-xs font-bold flex items-center justify-center">1</span>
+          <span className="text-sm font-semibold text-text-main">Choisir mon profil</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {profiles.map(p => {
+            const vis = PROFILE_VISUALS[p.profile_number] || PROFILE_VISUALS[4];
+            const ProfileIcon = vis.icon;
+            const isSelected = selectedProfileId === p.id;
+
+            return (
+              <button
+                key={p.id}
+                onClick={() => { setSelectedProfileId(p.id); setResult(null); }}
+                className={`relative rounded-2xl border-2 p-4 transition-all duration-200 text-left group ${
+                  isSelected
+                    ? `border-transparent ring-2 ${vis.ring} bg-white shadow-lg scale-[1.03]`
+                    : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-md'
+                }`}
+              >
+                {/* Selected check */}
+                {isSelected && (
+                  <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brand-primary flex items-center justify-center">
+                    <Check className="h-3 w-3 text-white" />
+                  </div>
+                )}
+
+                {/* Icon */}
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${vis.gradient} flex items-center justify-center mb-3`}>
+                  <ProfileIcon className="h-5 w-5 text-white" />
+                </div>
+
+                {/* Name */}
+                <p className="text-sm font-bold text-text-main leading-tight mb-1">{p.name}</p>
+
+                {/* Allocation bar */}
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden flex">
+                    <div className="h-full bg-brand-primary rounded-full" style={{ width: `${p.equity_pct}%` }} />
+                    <div className="h-full bg-amber-400 rounded-full" style={{ width: `${p.bond_pct}%` }} />
+                  </div>
+                </div>
+                <p className="text-[11px] text-text-muted">
+                  <span className="text-brand-primary font-semibold">{p.equity_pct}%</span> actions /{' '}
+                  <span className="text-amber-500 font-semibold">{p.bond_pct}%</span> oblig.
+                </p>
+
+                {/* Sector count */}
+                <p className="text-[10px] text-text-muted mt-1.5">
+                  {p.sectors.length} secteurs — {p.nb_bonds} oblig.
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════
+          SECTION 2 : BUDGET
+         ══════════════════════════════════════ */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-6 h-6 rounded-full bg-brand-primary text-white text-xs font-bold flex items-center justify-center">2</span>
+          <span className="text-sm font-semibold text-text-main">Definir mon budget</span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+              <DollarSign className="h-5 w-5 text-emerald-500" />
+            </div>
             <input
               type="number"
               min={10000}
               step={5000}
               value={portfolioValue}
               onChange={(e) => { setPortfolioValue(parseInt(e.target.value) || 0); setResult(null); }}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+              className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-lg font-mono font-bold text-text-main focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
             />
           </div>
+          <div className="flex gap-2 mt-3 flex-wrap">
+            {[50000, 100000, 250000, 500000, 1000000].map(v => (
+              <button
+                key={v}
+                onClick={() => { setPortfolioValue(v); setResult(null); }}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 ${
+                  portfolioValue === v
+                    ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/30 scale-105'
+                    : 'bg-gray-100 text-text-muted hover:bg-gray-200'
+                }`}
+              >
+                {fmt(v)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-          {/* Bouton */}
-          <Button
-            size="lg"
-            loading={generating}
-            onClick={handleGenerate}
-            icon={<Zap className="h-4 w-4" />}
+      {/* ══════════════════════════════════════
+          SECTION 3 : MA PALETTE D'ACTIONS
+         ══════════════════════════════════════ */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-brand-primary text-white text-xs font-bold flex items-center justify-center">3</span>
+            <span className="text-sm font-semibold text-text-main">Ma palette d&apos;actions</span>
+            <Badge variant="outline">{universeStocks.length} titres</Badge>
+          </div>
+          <button
+            onClick={() => setShowPalette(!showPalette)}
+            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-main transition-colors"
           >
-            Generer
-          </Button>
+            {showPalette ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {showPalette ? 'Masquer' : 'Afficher'}
+          </button>
         </div>
 
-        {/* Presets rapides */}
-        <div className="flex gap-2 mt-3 flex-wrap">
-          {[50000, 100000, 250000, 500000, 1000000].map(v => (
-            <button
-              key={v}
-              onClick={() => { setPortfolioValue(v); setResult(null); }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                portfolioValue === v
-                  ? 'bg-brand-primary text-white'
-                  : 'bg-gray-100 text-text-muted hover:bg-gray-200'
-              }`}
-            >
-              {fmt(v)}
-            </button>
-          ))}
-        </div>
-      </Card>
+        {showPalette && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+            {/* Filter */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+              <input
+                type="text"
+                value={paletteFilter}
+                onChange={(e) => setPaletteFilter(e.target.value)}
+                placeholder="Chercher un titre..."
+                className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+              />
+            </div>
 
-      {/* ── Resultat ── */}
-      {generating && (
-        <div className="flex flex-col items-center justify-center py-20">
-          <Spinner size="lg" />
-          <p className="text-sm text-text-muted mt-4">Recuperation des prix et generation en cours...</p>
+            {/* Sector rows */}
+            <div className="space-y-2">
+              {universeSectors.map(sector => {
+                const style = SECTOR_STYLE[sector];
+                if (!style) return null;
+                const SectorIcon = style.icon;
+                const sectorStocks = bySector[sector] || [];
+                const isConfigured = profileSectors.has(sector);
+
+                // Filter stocks
+                const filtered = paletteFilter
+                  ? sectorStocks.filter(s =>
+                      s.symbol.toLowerCase().includes(paletteFilter.toLowerCase()) ||
+                      s.name.toLowerCase().includes(paletteFilter.toLowerCase())
+                    )
+                  : sectorStocks;
+
+                if (filtered.length === 0) return null;
+
+                return (
+                  <div key={sector} className={`rounded-xl border p-3 transition-all duration-200 ${
+                    isConfigured
+                      ? 'border-gray-200 bg-white'
+                      : 'border-gray-100 bg-gray-50/50 opacity-60'
+                  }`}>
+                    {/* Sector header */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className={`w-6 h-6 rounded-lg ${style.bg} flex items-center justify-center`}>
+                        <SectorIcon className={`h-3.5 w-3.5 ${style.color}`} />
+                      </div>
+                      <span className="text-xs font-semibold text-text-main">{style.label}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{filtered.length}</Badge>
+                      {!isConfigured && selectedProfile && (
+                        <span className="text-[10px] text-text-muted italic ml-auto">non configure</span>
+                      )}
+                      {isConfigured && selectedProfile && (
+                        <span className="text-[10px] text-text-muted ml-auto">
+                          {selectedProfile.sectors.find(s => s.sector === sector)?.nb_titles} titres cibles
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Stock chips */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {filtered.map(stock => {
+                        const isInPortfolio = selectedSymbols.has(stock.symbol);
+                        return (
+                          <div
+                            key={stock.id}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all duration-300 ${
+                              isInPortfolio
+                                ? `${style.bg} ${style.color} ring-1 ring-current/20 shadow-sm`
+                                : 'bg-gray-100 text-text-muted'
+                            }`}
+                            title={`${stock.name}${stock.stock_type === 'obligatoire' ? ' (obligatoire)' : ''}`}
+                          >
+                            {stock.stock_type === 'obligatoire' && (
+                              <Lock className="h-2.5 w-2.5 opacity-60" />
+                            )}
+                            {isInPortfolio && (
+                              <Check className="h-2.5 w-2.5" />
+                            )}
+                            <span className="font-mono">{stock.symbol.replace('.TO', '').replace('.V', '')}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {universeStocks.length === 0 && (
+              <div className="text-center py-6">
+                <p className="text-sm text-text-muted">Aucun titre dans votre univers.</p>
+                <Link href="/models/universe" className="text-sm text-brand-primary font-medium hover:underline mt-1 inline-block">
+                  Ajouter des titres a l&apos;etape 2
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════
+          BIG BUILD BUTTON
+         ══════════════════════════════════════ */}
+      {!result && !generating && (
+        <div className="flex justify-center py-4">
+          <button
+            onClick={handleGenerate}
+            disabled={!isReady}
+            className={`group relative px-10 py-5 rounded-2xl font-bold text-lg transition-all duration-300 ${
+              isReady
+                ? 'bg-gradient-to-r from-brand-primary to-blue-600 text-white shadow-xl shadow-brand-primary/30 hover:shadow-2xl hover:shadow-brand-primary/40 hover:scale-[1.03] active:scale-[0.98]'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Wand2 className={`h-6 w-6 ${isReady ? 'group-hover:rotate-12 transition-transform' : ''}`} />
+              <span>Construire mon portefeuille!</span>
+              <Sparkles className={`h-5 w-5 ${isReady ? 'opacity-80' : 'opacity-30'}`} />
+            </div>
+            {!isReady && (
+              <p className="text-xs font-normal mt-1 opacity-70">
+                {!selectedProfileId ? 'Selectionnez un profil' : 'Budget minimum 10 000 $'}
+              </p>
+            )}
+          </button>
         </div>
       )}
 
+      {/* ── Building animation ── */}
+      {generating && (
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="relative w-20 h-20 mb-6">
+            <div className="absolute inset-0 rounded-full border-4 border-brand-primary/20 animate-ping" />
+            <div className="absolute inset-2 rounded-full border-4 border-brand-primary/40 animate-ping" style={{ animationDelay: '0.3s' }} />
+            <div className="absolute inset-0 w-20 h-20 rounded-full bg-gradient-to-br from-brand-primary to-blue-600 flex items-center justify-center animate-pulse">
+              <Wand2 className="h-8 w-8 text-white" />
+            </div>
+          </div>
+
+          <div className="h-8 flex items-center">
+            <p className="text-sm font-medium text-text-main animate-pulse">
+              {BUILDING_STEPS[buildingStep]}
+            </p>
+          </div>
+
+          {/* Step dots */}
+          <div className="flex items-center gap-1.5 mt-4">
+            {BUILDING_STEPS.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  i <= buildingStep ? 'w-6 bg-brand-primary' : 'w-1.5 bg-gray-200'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════
+          SECTION 4 : RÉSULTAT
+         ══════════════════════════════════════ */}
       {result && !generating && (
-        <PortfolioPreview
-          portfolio={result}
-          onSave={() => {
-            setModelName(`${result.profileName} — ${new Date().toLocaleDateString('fr-CA')}`);
-            setSaveModalOpen(true);
-          }}
-          saving={false}
-        />
+        <div ref={resultRef}>
+          <PortfolioResult
+            portfolio={result}
+            onSave={() => {
+              setModelName(`${result.profileName} — ${new Date().toLocaleDateString('fr-CA')}`);
+              setSaveModalOpen(true);
+            }}
+            onRegenerate={() => { setResult(null); handleGenerate(); }}
+          />
+        </div>
       )}
 
       <StepNav current={3} />
 
-      {/* Modal de sauvegarde */}
+      {/* ── Save modal ── */}
       <Modal open={saveModalOpen} onClose={() => setSaveModalOpen(false)} title="Sauvegarder comme modele" size="sm">
         <div className="space-y-4">
           <div>
@@ -315,10 +609,20 @@ export default function GeneratePage() {
             />
           </div>
           {result && (
-            <div className="bg-gray-50 rounded-lg p-3 text-xs text-text-muted space-y-1">
-              <p>Profil {result.profileNumber} — {result.profileName}</p>
-              <p>{result.stats.nbStocks} actions, {result.stats.nbBonds} obligations</p>
-              <p>Valeur: {fmt(result.portfolioValue)}</p>
+            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-primary to-blue-600 flex items-center justify-center">
+                  <Layers className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-text-main">Profil {result.profileNumber} — {result.profileName}</p>
+                  <p className="text-xs text-text-muted">{result.stats.nbStocks} actions, {result.stats.nbBonds} obligations</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-text-muted pt-1 border-t border-gray-200">
+                <span>Valeur: <span className="font-mono font-bold text-text-main">{fmt(result.portfolioValue)}</span></span>
+                <span>Revenu est.: <span className="font-mono font-bold text-emerald-600">{fmt(result.stats.estimatedAnnualIncome)}/an</span></span>
+              </div>
             </div>
           )}
           <div className="flex justify-end gap-3">
@@ -333,18 +637,19 @@ export default function GeneratePage() {
   );
 }
 
-// ════════════════════════════════════════
-// PREVIEW DU PORTEFEUILLE
-// ════════════════════════════════════════
+// ══════════════════════════════════════════
+// PORTFOLIO RESULT (interactive preview)
+// ══════════════════════════════════════════
 
-function PortfolioPreview({ portfolio: p, onSave, saving }: {
+function PortfolioResult({ portfolio: p, onSave, onRegenerate }: {
   portfolio: GeneratedPortfolio;
   onSave: () => void;
-  saving: boolean;
+  onRegenerate: () => void;
 }) {
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(
-    new Set(p.sectors.map(s => s.sector))
+    new Set(p.sectors.filter(s => s.stocks.length > 0).map(s => s.sector))
   );
+  const [showBonds, setShowBonds] = useState(false);
 
   function toggleSector(sector: string) {
     setExpandedSectors(prev => {
@@ -355,116 +660,96 @@ function PortfolioPreview({ portfolio: p, onSave, saving }: {
     });
   }
 
-  // Données pour les charts
   const allocationData = [
     { name: 'Actions', value: p.totalStockValue, color: BRAND },
     { name: 'Obligations', value: p.totalBondValue, color: '#f4a261' },
     ...(p.cashRemaining > 0 ? [{ name: 'Liquidites', value: p.cashRemaining, color: '#e5e7eb' }] : []),
   ];
 
-  const sectorChartData = p.sectors
-    .filter(s => s.stocks.length > 0)
-    .map(s => ({
-      name: s.sectorLabel.length > 12 ? s.sectorLabel.slice(0, 12) + '.' : s.sectorLabel,
-      fullName: s.sectorLabel,
-      cible: s.targetWeight,
-      reel: s.realWeight,
-    }));
+  const activeSectors = p.sectors.filter(s => s.stocks.length > 0);
+  const sectorPieData = activeSectors.map(s => ({
+    name: SECTOR_STYLE[s.sector]?.label || s.sectorLabel,
+    value: s.totalValue,
+    sector: s.sector,
+    color: SECTOR_STYLE[s.sector]?.hex || '#6b7280',
+  }));
 
   return (
-    <div className="space-y-6">
-      {/* ── En-tete + Actions ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-text-main">
-            Profil {p.profileNumber} — {p.profileName}
-          </h2>
-          <p className="text-sm text-text-muted">
-            {p.equityPct}% actions / {p.bondPct}% obligations — {fmt(p.portfolioValue)}
-          </p>
+    <div className="space-y-5">
+      {/* ── Result header ── */}
+      <div className="bg-gradient-to-r from-brand-primary to-blue-600 rounded-2xl p-5 text-white">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Profil {p.profileNumber} — {p.profileName}</h2>
+              <p className="text-sm text-white/70">
+                {p.equityPct}% actions / {p.bondPct}% obligations — {fmt(p.portfolioValue)}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onRegenerate}
+              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-sm font-medium flex items-center gap-1.5"
+            >
+              <Wand2 className="h-3.5 w-3.5" /> Regenerer
+            </button>
+            <button
+              onClick={onSave}
+              className="px-4 py-2 rounded-xl bg-white text-brand-primary hover:bg-white/90 transition-colors text-sm font-bold flex items-center gap-1.5"
+            >
+              <Save className="h-3.5 w-3.5" /> Sauvegarder
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" loading={saving} onClick={onSave} icon={<Save className="h-3.5 w-3.5" />}>
-            Sauvegarder
-          </Button>
-          <Button variant="ghost" size="sm" icon={<Download className="h-3.5 w-3.5" />} onClick={() => {
-            const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `portefeuille-${p.profileName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }}>
-            Exporter JSON
-          </Button>
+
+        {/* Key stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Actions', value: fmt(p.totalStockValue), sub: `${p.realEquityPct}%`, icon: TrendingUp },
+            { label: 'Obligations', value: fmt(p.totalBondValue), sub: `${p.realBondPct}%`, icon: BarChart3 },
+            { label: 'Revenu annuel', value: fmt(p.stats.estimatedAnnualIncome), sub: `${fmtDec(p.stats.estimatedAnnualIncome / p.portfolioValue * 100)}%`, icon: DollarSign },
+            { label: 'Liquidites', value: fmt(p.cashRemaining), sub: `${p.realCashPct}%`, icon: Percent },
+          ].map(s => (
+            <div key={s.label} className="bg-white/10 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <s.icon className="h-4 w-4 text-white/60" />
+                <span className="text-xs text-white/60">{s.label}</span>
+              </div>
+              <p className="text-lg font-bold">{s.value}</p>
+              <p className="text-xs text-white/50">{s.sub} du ptf</p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── Cartes resume ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          icon={<DollarSign className="h-5 w-5" />}
-          label="Actions"
-          value={fmt(p.totalStockValue)}
-          sub={`${p.realEquityPct}% reel`}
-          color="text-brand-primary"
-        />
-        <StatCard
-          icon={<BarChart3 className="h-5 w-5" />}
-          label="Obligations"
-          value={fmt(p.totalBondValue)}
-          sub={`${p.realBondPct}% reel`}
-          color="text-amber-500"
-        />
-        <StatCard
-          icon={<TrendingUp className="h-5 w-5" />}
-          label="Revenu annuel est."
-          value={fmt(p.stats.estimatedAnnualIncome)}
-          sub={`${fmtDec(p.stats.estimatedAnnualIncome / p.portfolioValue * 100)}% du ptf`}
-          color="text-emerald-600"
-        />
-        <StatCard
-          icon={<Percent className="h-5 w-5" />}
-          label="Liquidites"
-          value={fmt(p.cashRemaining)}
-          sub={`${p.realCashPct}% restant`}
-          color="text-gray-500"
-        />
-      </div>
-
-      {/* ── Stats secondaires ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {/* ── Quick stats badges ── */}
+      <div className="flex flex-wrap gap-2">
         {[
-          { label: 'Titres', value: String(p.stats.nbStocks) },
-          { label: 'Obligations', value: String(p.stats.nbBonds) },
-          { label: 'Secteurs', value: String(p.stats.nbSectors) },
-          { label: 'Div. moy.', value: `${fmtDec(p.stats.avgDividendYield)}%` },
-          { label: 'Yield obl. moy.', value: `${fmtDec(p.stats.avgBondYield)}%` },
+          { label: 'Titres', value: String(p.stats.nbStocks), color: 'bg-brand-primary/10 text-brand-primary' },
+          { label: 'Obligations', value: String(p.stats.nbBonds), color: 'bg-amber-50 text-amber-600' },
+          { label: 'Secteurs', value: String(p.stats.nbSectors), color: 'bg-violet-50 text-violet-600' },
+          { label: 'Div. moy.', value: `${fmtDec(p.stats.avgDividendYield)}%`, color: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Yield obl.', value: `${fmtDec(p.stats.avgBondYield)}%`, color: 'bg-orange-50 text-orange-600' },
         ].map(s => (
-          <Card key={s.label} padding="sm" className="text-center">
-            <p className="text-xl font-semibold text-text-main">{s.value}</p>
-            <p className="text-xs text-text-muted">{s.label}</p>
-          </Card>
+          <div key={s.label} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${s.color}`}>
+            <span className="text-lg font-bold leading-none">{s.value}</span>
+            <span className="opacity-70">{s.label}</span>
+          </div>
         ))}
       </div>
 
-      {/* ── Charts ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Allocation Pie */}
-        <Card>
-          <h3 className="text-sm font-semibold text-text-main mb-4">Repartition globale</h3>
-          <ResponsiveContainer width="100%" height={260}>
+      {/* ── Two donuts ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Global allocation */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-text-main mb-3">Repartition globale</h3>
+          <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie
-                data={allocationData}
-                cx="50%"
-                cy="50%"
-                innerRadius={65}
-                outerRadius={100}
-                paddingAngle={3}
-                dataKey="value"
-              >
+              <Pie data={allocationData} cx="50%" cy="50%" innerRadius={65} outerRadius={95} paddingAngle={3} dataKey="value">
                 {allocationData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
@@ -479,130 +764,159 @@ function PortfolioPreview({ portfolio: p, onSave, saving }: {
               />
             </PieChart>
           </ResponsiveContainer>
-          <div className="flex justify-center gap-6 mt-2">
+          <div className="flex justify-center gap-5 mt-2">
             {allocationData.map(d => (
-              <div key={d.name} className="flex items-center gap-2 text-xs text-text-muted">
+              <div key={d.name} className="flex items-center gap-1.5 text-xs text-text-muted">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.color }} />
+                {d.name} — {fmtDec(d.value / p.portfolioValue * 100, 1)}%
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sector donut */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-text-main mb-3">Repartition sectorielle</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={sectorPieData} cx="50%" cy="50%" innerRadius={65} outerRadius={95} paddingAngle={2} dataKey="value">
+                {sectorPieData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={tooltipStyle}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(value: any, _: any, entry: any) => [
+                  `${fmt(Number(value) || 0)} (${fmtDec((Number(value) || 0) / p.totalStockValue * 100)}%)`,
+                  entry?.payload?.name ?? '',
+                ]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
+            {sectorPieData.map(d => (
+              <div key={d.name} className="flex items-center gap-1 text-[11px] text-text-muted">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
                 {d.name}
               </div>
             ))}
           </div>
-        </Card>
-
-        {/* Secteurs Bar */}
-        <Card>
-          <h3 className="text-sm font-semibold text-text-main mb-4">Poids par secteur (cible vs reel)</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={sectorChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#586e82' }} interval={0} angle={-25} textAnchor="end" height={50} />
-              <YAxis tick={{ fontSize: 11, fill: '#586e82' }} tickFormatter={(v: number) => `${v}%`} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(value: any, name: any) => [
-                  `${fmtDec(Number(value) || 0)}%`,
-                  name === 'cible' ? 'Cible' : 'Reel',
-                ]}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                labelFormatter={(label: any, payload: any) =>
-                  payload?.[0]?.payload?.fullName || label
-                }
-              />
-              <Bar dataKey="cible" fill={BRAND} radius={[4, 4, 0, 0]} opacity={0.4} />
-              <Bar dataKey="reel" fill={BRAND} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-6 mt-2">
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: BRAND, opacity: 0.4 }} />
-              Cible
-            </div>
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: BRAND }} />
-              Reel
-            </div>
-          </div>
-        </Card>
+        </div>
       </div>
 
-      {/* ── Detail Actions par secteur ── */}
+      {/* ── Sector detail cards ── */}
       <div>
-        <h3 className="text-sm font-semibold text-text-main mb-3">Detail des actions</h3>
-        <div className="space-y-2">
-          {p.sectors.filter(s => s.stocks.length > 0).map((sec, si) => {
+        <h3 className="text-sm font-semibold text-text-main mb-3">Detail par secteur</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {activeSectors.map(sec => {
+            const style = SECTOR_STYLE[sec.sector];
+            const SectorIcon = style?.icon || TrendingUp;
             const isExpanded = expandedSectors.has(sec.sector);
+            const diff = sec.realWeight - sec.targetWeight;
+            const diffAbs = Math.abs(diff);
+
             return (
-              <Card key={sec.sector} padding="none">
+              <div key={sec.sector} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <button
                   onClick={() => toggleSector(sec.sector)}
-                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
+                  className="w-full px-4 py-3 hover:bg-gray-50/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl ${style?.bg || 'bg-gray-100'} flex items-center justify-center shrink-0`}>
+                      <SectorIcon className={`h-4.5 w-4.5 ${style?.color || 'text-gray-500'}`} />
+                    </div>
+
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-text-main">{sec.sectorLabel}</span>
+                        <Badge variant="outline" className="text-[10px]">{sec.stocks.length}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-text-muted mt-0.5">
+                        <span className="font-mono font-semibold text-text-main">{fmt(sec.totalValue)}</span>
+                        <span>Cible {fmtDec(sec.targetWeight)}%</span>
+                        <span className={diffAbs < 0.5 ? 'text-emerald-600 font-medium' : diffAbs < 1.5 ? 'text-amber-600 font-medium' : 'text-red-500 font-medium'}>
+                          Reel {fmtDec(sec.realWeight)}%
+                          <span className="ml-0.5">({diff >= 0 ? '+' : ''}{fmtDec(diff)}%)</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Weight bar */}
+                    <div className="w-16 shrink-0">
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden relative">
+                        <div
+                          className="h-full rounded-full absolute top-0 left-0 opacity-25"
+                          style={{ width: `${Math.min(sec.targetWeight * 4, 100)}%`, backgroundColor: style?.hex }}
+                        />
+                        <div
+                          className="h-full rounded-full absolute top-0 left-0"
+                          style={{ width: `${Math.min(sec.realWeight * 4, 100)}%`, backgroundColor: style?.hex }}
+                        />
+                      </div>
+                    </div>
+
                     {isExpanded
-                      ? <ChevronDown className="h-4 w-4 text-text-muted" />
-                      : <ChevronRight className="h-4 w-4 text-text-muted" />
+                      ? <ChevronUp className="h-4 w-4 text-text-muted shrink-0" />
+                      : <ChevronDown className="h-4 w-4 text-text-muted shrink-0" />
                     }
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[si % COLORS.length] }} />
-                    <span className="font-semibold text-sm text-text-main">{sec.sectorLabel}</span>
-                    <Badge variant="outline">{sec.stocks.length} titre{sec.stocks.length > 1 ? 's' : ''}</Badge>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-text-muted">
-                    <span>{fmt(sec.totalValue)}</span>
-                    <Badge variant={Math.abs(sec.realWeight - sec.targetWeight) < 1 ? 'success' : 'warning'}>
-                      {fmtDec(sec.realWeight)}%
-                    </Badge>
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t border-gray-100">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-text-muted uppercase tracking-wider">
-                          <th className="px-5 py-2">Symbole</th>
-                          <th className="px-3 py-2">Nom</th>
-                          <th className="px-3 py-2 text-center">Type</th>
-                          <th className="px-3 py-2 text-right">Prix</th>
-                          <th className="px-3 py-2 text-right">Qte</th>
-                          <th className="px-3 py-2 text-right">Valeur</th>
-                          <th className="px-3 py-2 text-right">Poids</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sec.stocks.map(stock => (
-                          <tr key={stock.symbol} className="border-t border-gray-50 hover:bg-gray-50/50">
-                            <td className="px-5 py-2 font-mono font-medium text-text-main">{stock.symbol}</td>
-                            <td className="px-3 py-2 text-text-muted">{stock.name}</td>
-                            <td className="px-3 py-2 text-center">
-                              <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'}>
-                                {stock.stock_type === 'obligatoire' ? 'Oblig.' : 'Var.'}
-                              </Badge>
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono">{fmtDec(stock.price)}</td>
-                            <td className="px-3 py-2 text-right font-mono font-semibold">{stock.quantity}</td>
-                            <td className="px-3 py-2 text-right font-mono">{fmt(stock.realValue)}</td>
-                            <td className="px-3 py-2 text-right font-mono text-text-muted">{fmtDec(stock.realWeight)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="border-t border-gray-100 divide-y divide-gray-50">
+                    {sec.stocks.map((stock, si) => (
+                      <div key={stock.symbol} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50 transition-colors">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[si % COLORS.length] }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-semibold text-sm text-text-main">{stock.symbol}</span>
+                            <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'} className="text-[10px]">
+                              {stock.stock_type === 'obligatoire' ? 'Oblig.' : 'Var.'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-text-muted truncate">{stock.name}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-mono font-semibold text-sm text-text-main">{fmt(stock.realValue)}</p>
+                          <p className="text-[11px] text-text-muted">
+                            {stock.quantity} x {fmtDec(stock.price)} — <span className="font-medium">{fmtDec(stock.realWeight)}%</span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })}
         </div>
       </div>
 
-      {/* ── Detail Obligations ── */}
+      {/* ── Bonds section ── */}
       {p.bonds.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-text-main mb-3">
-            Detail des obligations ({p.bonds.length})
-          </h3>
-          <Card padding="none">
-            <div className="overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <button
+            onClick={() => setShowBonds(!showBonds)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+                <BarChart3 className="h-5 w-5 text-amber-500" />
+              </div>
+              <div className="text-left">
+                <span className="text-sm font-bold text-text-main block">Obligations</span>
+                <span className="text-xs text-text-muted">{p.bonds.length} positions — {fmt(p.totalBondValue)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{p.bonds.length}</Badge>
+              {showBonds ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
+            </div>
+          </button>
+
+          {showBonds && (
+            <div className="border-t border-gray-100 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
@@ -610,11 +924,9 @@ function PortfolioPreview({ portfolio: p, onSave, saving }: {
                     <th className="px-3 py-2.5">CUSIP</th>
                     <th className="px-3 py-2.5 text-right">Coupon</th>
                     <th className="px-3 py-2.5">Echeance</th>
-                    <th className="px-3 py-2.5 text-right">Prix</th>
                     <th className="px-3 py-2.5 text-right">Yield</th>
                     <th className="px-3 py-2.5 text-right">Qte</th>
                     <th className="px-3 py-2.5 text-right">Valeur</th>
-                    <th className="px-3 py-2.5 text-right">Poids</th>
                     <th className="px-3 py-2.5">Source</th>
                   </tr>
                 </thead>
@@ -629,14 +941,10 @@ function PortfolioPreview({ portfolio: p, onSave, saving }: {
                       </td>
                       <td className="px-3 py-2 font-mono text-text-muted text-xs">{bond.cusip || '—'}</td>
                       <td className="px-3 py-2 text-right font-mono">{bond.coupon != null ? `${fmtDec(bond.coupon)}%` : '—'}</td>
-                      <td className="px-3 py-2 text-text-muted">
-                        {bond.maturity ? new Date(bond.maturity).toLocaleDateString('fr-CA') : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{fmtDec(bond.price)}</td>
+                      <td className="px-3 py-2 text-text-muted">{bond.maturity ? new Date(bond.maturity).toLocaleDateString('fr-CA') : '—'}</td>
                       <td className="px-3 py-2 text-right font-mono">{bond.yieldPct != null ? `${fmtDec(bond.yieldPct)}%` : '—'}</td>
                       <td className="px-3 py-2 text-right font-mono font-semibold">{bond.quantity}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmt(bond.realValue)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-text-muted">{fmtDec(bond.realWeight)}%</td>
                       <td className="px-3 py-2">
                         <Badge variant={bond.source === 'CAD' ? 'info' : bond.source === 'US' ? 'warning' : 'default'}>
                           {bond.source}
@@ -647,35 +955,32 @@ function PortfolioPreview({ portfolio: p, onSave, saving }: {
                 </tbody>
               </table>
             </div>
-          </Card>
+          )}
         </div>
       )}
 
-      {/* ── Timestamp ── */}
-      <p className="text-xs text-text-light text-right">
-        Genere le {new Date(p.generatedAt).toLocaleString('fr-CA')}
-      </p>
-    </div>
-  );
-}
-
-// ── Composant carte stat ──
-
-function StatCard({ icon, label, value, sub, color }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-  color: string;
-}) {
-  return (
-    <Card className="flex items-start gap-3">
-      <div className={`p-2 rounded-lg bg-gray-50 ${color}`}>{icon}</div>
-      <div>
-        <p className="text-xs text-text-muted">{label}</p>
-        <p className="text-lg font-semibold text-text-main leading-tight">{value}</p>
-        <p className="text-xs text-text-muted mt-0.5">{sub}</p>
+      {/* ── Footer actions ── */}
+      <div className="flex items-center justify-between pt-2">
+        <p className="text-xs text-text-light">
+          Genere le {new Date(p.generatedAt).toLocaleString('fr-CA')}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" icon={<Download className="h-3.5 w-3.5" />} onClick={() => {
+            const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `portefeuille-${p.profileName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>
+            JSON
+          </Button>
+          <Button size="sm" onClick={onSave} icon={<Save className="h-3.5 w-3.5" />}>
+            Sauvegarder
+          </Button>
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }
