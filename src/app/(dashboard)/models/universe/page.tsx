@@ -1165,7 +1165,7 @@ interface BondGainInfo {
 }
 
 const GAIN_BUCKETS = [
-  { key: 'lt1',   label: '< 1 an',   min: -Infinity, max: 1,   color: 'bg-red-400',     text: 'text-red-600',    lightBg: 'bg-red-50',    border: 'border-red-200' },
+  { key: 'lt1',   label: '< 1 an',   min: 0,         max: 1,   color: 'bg-red-400',     text: 'text-red-600',    lightBg: 'bg-red-50',    border: 'border-red-200' },
   { key: '1to3',  label: '1-3 ans',  min: 1,         max: 3,   color: 'bg-amber-400',   text: 'text-amber-600',  lightBg: 'bg-amber-50',  border: 'border-amber-200' },
   { key: '3to5',  label: '3-5 ans',  min: 3,         max: 5,   color: 'bg-emerald-400', text: 'text-emerald-600', lightBg: 'bg-emerald-50', border: 'border-emerald-200' },
   { key: '5to7',  label: '5-7 ans',  min: 5,         max: 7,   color: 'bg-blue-400',    text: 'text-blue-600',   lightBg: 'bg-blue-50',   border: 'border-blue-200' },
@@ -1183,8 +1183,8 @@ function analyzeBondGains(bonds: UniverseBond[]): BondGainInfo[] {
     if (/\/N'FRAC|\/FR|\/SF|ETF/i.test(desc)) continue;
 
     const matDate = new Date(bond.maturity);
-    const yearsToMaturity = Math.max(0, (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    if (yearsToMaturity < 0.05) continue;
+    const yearsToMaturity = (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    if (yearsToMaturity <= 0) continue; // obligation déjà échue
 
     const totalReturnPct = bond.coupon * yearsToMaturity;
 
@@ -1338,12 +1338,13 @@ function BondGainsAnalyzer({ bonds }: { bonds: UniverseBond[] }) {
 
 // ── Maturity Timeline Legend ──
 const MATURITY_BUCKETS = [
-  { key: 'expired',  label: '< 1 an',    min: -Infinity, max: 1,   color: 'bg-red-400',     text: 'text-red-600',    bg: 'bg-red-50' },
-  { key: 'short',    label: '1–3 ans',   min: 1,         max: 3,   color: 'bg-amber-400',   text: 'text-amber-600',  bg: 'bg-amber-50' },
-  { key: 'medium',   label: '3–5 ans',   min: 3,         max: 5,   color: 'bg-emerald-400', text: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { key: 'sweet',    label: '5–7 ans',   min: 5,         max: 7,   color: 'bg-brand-primary', text: 'text-brand-primary', bg: 'bg-blue-50' },
-  { key: 'long',     label: '7–10 ans',  min: 7,         max: 10,  color: 'bg-violet-400',  text: 'text-violet-600', bg: 'bg-violet-50' },
-  { key: 'verylong', label: '10+ ans',   min: 10,        max: Infinity, color: 'bg-slate-400', text: 'text-slate-500', bg: 'bg-slate-50' },
+  { key: 'overdue',  label: 'Échues',     min: -Infinity, max: 0,   color: 'bg-gray-400',      text: 'text-gray-500',      bg: 'bg-gray-50' },
+  { key: 'expired',  label: '< 1 an',     min: 0,         max: 1,   color: 'bg-red-400',       text: 'text-red-600',       bg: 'bg-red-50' },
+  { key: 'short',    label: '1–3 ans',    min: 1,         max: 3,   color: 'bg-amber-400',     text: 'text-amber-600',     bg: 'bg-amber-50' },
+  { key: 'medium',   label: '3–5 ans',    min: 3,         max: 5,   color: 'bg-emerald-400',   text: 'text-emerald-600',   bg: 'bg-emerald-50' },
+  { key: 'sweet',    label: '5–7 ans',    min: 5,         max: 7,   color: 'bg-brand-primary', text: 'text-brand-primary', bg: 'bg-blue-50' },
+  { key: 'long',     label: '7–10 ans',   min: 7,         max: 10,  color: 'bg-violet-400',    text: 'text-violet-600',    bg: 'bg-violet-50' },
+  { key: 'verylong', label: '10+ ans',    min: 10,        max: Infinity, color: 'bg-slate-400', text: 'text-slate-500',    bg: 'bg-slate-50' },
 ] as const;
 
 function MaturityTimeline({ bonds }: { bonds: UniverseBond[] }) {
@@ -1427,8 +1428,8 @@ function MaturityTimeline({ bonds }: { bonds: UniverseBond[] }) {
         <div className="relative">
           {/* Continuous line */}
           <div className="absolute top-2 left-0 right-0 h-0.5 bg-gray-200" />
-          {/* Sweet spot highlight (3-7 years) */}
-          <div className="absolute top-1 left-[33.3%] w-[33.4%] h-2 bg-emerald-100 rounded-full opacity-60" />
+          {/* Sweet spot highlight (3-7 years) — buckets 3-4 out of 7 */}
+          <div className="absolute top-1 left-[42.9%] w-[28.6%] h-2 bg-emerald-100 rounded-full opacity-60" />
 
           {/* Tick marks + labels */}
           <div className="flex">
@@ -1515,7 +1516,10 @@ function BondsTab() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast('success', `${data.stats.inserted} obligations importees depuis ${data.fileName}`);
+      const parts = [`${data.stats.inserted} importees`];
+      if (data.stats.updatedMandatory > 0) parts.push(`${data.stats.updatedMandatory} obligatoires maj`);
+      if (data.stats.skippedDuplicates > 0) parts.push(`${data.stats.skippedDuplicates} doublons ignores`);
+      toast('success', `${parts.join(', ')} — ${data.fileName}`);
       mutate();
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Erreur d\'import');
@@ -1670,20 +1674,61 @@ function BondsTab() {
       </div>
 
       {/* ── Stats ── */}
-      {bonds.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Total', value: stats.total, color: 'text-text-main' },
-            { label: 'CAD', value: stats.cad, color: 'text-blue-600' },
-            { label: 'US', value: stats.us, color: 'text-amber-600' },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
-              <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-text-muted mt-0.5">{s.label}</p>
+      {bonds.length > 0 && (() => {
+        const nowStats = new Date();
+        const realBondsWithMat = bonds.filter(b => {
+          if (!b.maturity) return false;
+          return !/\/N'FRAC|\/FR|\/SF|ETF/i.test(b.description || '');
+        });
+        const overdueCount = realBondsWithMat.filter(b => {
+          return (new Date(b.maturity!).getTime() - nowStats.getTime()) <= 0;
+        }).length;
+        const lt1Count = realBondsWithMat.filter(b => {
+          const y = (new Date(b.maturity!).getTime() - nowStats.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+          return y > 0 && y < 1;
+        }).length;
+        const fundCount = bonds.filter(b => /\/N'FRAC|\/FR|\/SF|ETF/i.test(b.description || '')).length;
+
+        return (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Total', value: stats.total, color: 'text-text-main', bg: 'bg-white', border: 'border-gray-100' },
+                { label: 'CAD', value: stats.cad, color: 'text-blue-600', bg: 'bg-white', border: 'border-gray-100' },
+                { label: 'US', value: stats.us, color: 'text-amber-600', bg: 'bg-white', border: 'border-gray-100' },
+              ].map(s => (
+                <div key={s.label} className={`${s.bg} rounded-2xl border ${s.border} p-4 text-center`}>
+                  <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-xs text-text-muted mt-0.5">{s.label}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+            {(overdueCount > 0 || lt1Count > 0 || fundCount > 0) && (
+              <div className="flex flex-wrap gap-2">
+                {overdueCount > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-200">
+                    <span className="w-2.5 h-2.5 rounded-full bg-gray-400" />
+                    <span className="text-sm font-bold text-gray-500">{overdueCount}</span>
+                    <span className="text-xs text-text-muted">échues</span>
+                  </div>
+                )}
+                {lt1Count > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-xl border border-red-100">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                    <span className="text-sm font-bold text-red-600">{lt1Count}</span>
+                    <span className="text-xs text-text-muted">&lt; 1 an</span>
+                  </div>
+                )}
+                {fundCount > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-gray-100">
+                    <span className="text-xs text-text-muted">{fundCount} fonds exclus des analyses</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Maturity Timeline ── */}
       {bonds.length > 0 && <MaturityTimeline bonds={bonds} />}
