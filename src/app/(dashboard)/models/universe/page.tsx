@@ -919,6 +919,16 @@ function StocksTab() {
         const meta = SECTOR_META[sector];
         const Icon = meta?.Icon || TrendingUp;
 
+        // Build sub-sector groups from industry data
+        const subGroups: Record<string, UniverseStock[]> = {};
+        for (const s of sectorStocks) {
+          const label = getIndustryLabel(s.industry) || 'Autre';
+          if (!subGroups[label]) subGroups[label] = [];
+          subGroups[label].push(s);
+        }
+        const subGroupEntries = Object.entries(subGroups).sort((a, b) => b[1].length - a[1].length);
+        const hasSubGroups = subGroupEntries.length > 1 || (subGroupEntries.length === 1 && subGroupEntries[0][0] !== 'Autre');
+
         return (
           <div key={sector} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
             {/* En-tête secteur */}
@@ -929,7 +939,19 @@ function StocksTab() {
               <div className={`w-9 h-9 rounded-xl ${meta?.bg || 'bg-gray-100'} flex items-center justify-center shrink-0`}>
                 <Icon className={`h-5 w-5 ${meta?.color || 'text-gray-500'}`} />
               </div>
-              <span className="font-semibold text-text-main flex-1 text-left">{sectorLabel}</span>
+              <div className="flex-1 text-left">
+                <span className="font-semibold text-text-main">{sectorLabel}</span>
+                {/* Mini sub-sector breakdown in header */}
+                {hasSubGroups && !isExpanded && (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {subGroupEntries.map(([label, items]) => (
+                      <span key={label} className="text-[10px] font-medium text-text-muted bg-gray-100 rounded px-1.5 py-0.5">
+                        {label} ({items.length})
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Badge variant="outline">{sectorStocks.length}</Badge>
               {obligatoires.length > 0 && (
                 <Badge variant="info"><Lock className="h-3 w-3 mr-0.5 inline" />{obligatoires.length}</Badge>
@@ -937,56 +959,119 @@ function StocksTab() {
               {isExpanded ? <ChevronDown className="h-4 w-4 text-text-muted shrink-0" /> : <ChevronRight className="h-4 w-4 text-text-muted shrink-0" />}
             </button>
 
-            {/* Liste des titres */}
+            {/* Liste des titres — grouped by sub-sector when applicable */}
             {isExpanded && (
-              <div className="border-t border-gray-100 divide-y divide-gray-50">
-                {sectorStocks.map(stock => (
-                  <div key={stock.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/70 transition-colors group">
-                    {/* Logo */}
-                    {stock.logo_url ? (
-                      <img src={stock.logo_url} alt="" className="h-9 w-9 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
-                    ) : (
-                      <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                        <TrendingUp className="h-4 w-4 text-gray-400" />
-                      </div>
-                    )}
-                    {/* Symbole + Nom + Industry */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
-                        {stock.industry && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-text-muted shrink-0">
-                            {getIndustryLabel(stock.industry)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-text-muted text-xs truncate">{stock.name}</div>
+              <div className="border-t border-gray-100">
+                {/* Sub-sector breakdown bar */}
+                {hasSubGroups && (
+                  <div className="px-5 py-3 bg-gray-50/70 border-b border-gray-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-semibold text-text-main">Sous-secteurs</span>
                     </div>
-                    {/* Type badge */}
-                    <button
-                      onClick={() => handleToggleType(stock)}
-                      className="shrink-0"
-                      title={stock.stock_type === 'obligatoire' ? 'Cliquez pour rendre variable' : 'Cliquez pour rendre obligatoire'}
-                    >
-                      {stock.stock_type === 'obligatoire' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
-                          <Lock className="h-3 w-3" /> Obligatoire
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
-                          <Unlock className="h-3 w-3" /> Variable
-                        </span>
-                      )}
-                    </button>
-                    {/* Supprimer */}
-                    <button
-                      onClick={() => handleDeleteStock(stock)}
-                      className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex rounded-full overflow-hidden h-2.5 bg-gray-200">
+                      {subGroupEntries.map(([label, items], i) => {
+                        const pct = (items.length / sectorStocks.length) * 100;
+                        const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-amber-500', 'bg-violet-500', 'bg-rose-500', 'bg-cyan-500', 'bg-slate-400'];
+                        return (
+                          <div
+                            key={label}
+                            className={`${colors[i % colors.length]} transition-all duration-300`}
+                            style={{ width: `${pct}%` }}
+                            title={`${label}: ${Math.round(pct)}%`}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                      {subGroupEntries.map(([label, items], i) => {
+                        const pct = Math.round((items.length / sectorStocks.length) * 100);
+                        const dots = ['bg-emerald-500', 'bg-blue-500', 'bg-amber-500', 'bg-violet-500', 'bg-rose-500', 'bg-cyan-500', 'bg-slate-400'];
+                        return (
+                          <span key={label} className="flex items-center gap-1.5 text-[11px] text-text-muted">
+                            <span className={`w-2 h-2 rounded-full ${dots[i % dots.length]} shrink-0`} />
+                            <span className="font-medium text-text-main">{label}</span>
+                            <span>{items.length} titre{items.length > 1 ? 's' : ''} — {pct}%</span>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
+                )}
+
+                {/* Stocks listed by sub-group */}
+                {hasSubGroups ? (
+                  subGroupEntries.map(([label, items], groupIdx) => (
+                    <div key={label}>
+                      <div className="px-5 py-2 bg-gray-50/40 border-b border-gray-50 flex items-center gap-2">
+                        {(() => { const dots = ['bg-emerald-500', 'bg-blue-500', 'bg-amber-500', 'bg-violet-500', 'bg-rose-500', 'bg-cyan-500', 'bg-slate-400']; return <span className={`w-2 h-2 rounded-full ${dots[groupIdx % dots.length]} shrink-0`} />; })()}
+                        <span className="text-xs font-semibold text-text-main">{label}</span>
+                        <span className="text-[10px] text-text-muted">({items.length})</span>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {items.map(stock => (
+                          <div key={stock.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/70 transition-colors group">
+                            {stock.logo_url ? (
+                              <img src={stock.logo_url} alt="" className="h-9 w-9 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
+                            ) : (
+                              <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                                <TrendingUp className="h-4 w-4 text-gray-400" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
+                              <div className="text-text-muted text-xs truncate">{stock.name}</div>
+                            </div>
+                            <button onClick={() => handleToggleType(stock)} className="shrink-0" title={stock.stock_type === 'obligatoire' ? 'Cliquez pour rendre variable' : 'Cliquez pour rendre obligatoire'}>
+                              {stock.stock_type === 'obligatoire' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium"><Lock className="h-3 w-3" /> Obligatoire</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium"><Unlock className="h-3 w-3" /> Variable</span>
+                              )}
+                            </button>
+                            <button onClick={() => handleDeleteStock(stock)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {sectorStocks.map(stock => (
+                      <div key={stock.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/70 transition-colors group">
+                        {stock.logo_url ? (
+                          <img src={stock.logo_url} alt="" className="h-9 w-9 rounded-full object-contain bg-white border border-gray-100 shrink-0" />
+                        ) : (
+                          <div className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                            <TrendingUp className="h-4 w-4 text-gray-400" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
+                            {stock.industry && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-text-muted shrink-0">
+                                {getIndustryLabel(stock.industry)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-text-muted text-xs truncate">{stock.name}</div>
+                        </div>
+                        <button onClick={() => handleToggleType(stock)} className="shrink-0" title={stock.stock_type === 'obligatoire' ? 'Cliquez pour rendre variable' : 'Cliquez pour rendre obligatoire'}>
+                          {stock.stock_type === 'obligatoire' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium"><Lock className="h-3 w-3" /> Obligatoire</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium"><Unlock className="h-3 w-3" /> Variable</span>
+                          )}
+                        </button>
+                        <button onClick={() => handleDeleteStock(stock)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
