@@ -1347,134 +1347,7 @@ const MATURITY_BUCKETS = [
   { key: 'verylong', label: '10+ ans',    min: 10,        max: Infinity, color: 'bg-slate-400', text: 'text-slate-500',    bg: 'bg-slate-50' },
 ] as const;
 
-function MaturityTimeline({ bonds }: { bonds: UniverseBond[] }) {
-  const now = new Date();
-
-  // Filter only real bonds with maturity (exclude funds)
-  const bondsWithMaturity = bonds.filter(b => {
-    if (!b.maturity) return false;
-    const desc = b.description || '';
-    return !/\/N'FRAC|\/FR|\/SF|ETF/i.test(desc);
-  });
-
-  const noMaturityCount = bonds.filter(b => !b.maturity).length;
-
-  // Compute years to maturity and bucket counts
-  const bucketCounts: Record<string, number> = {};
-  MATURITY_BUCKETS.forEach(b => { bucketCounts[b.key] = 0; });
-
-  const yearsData: number[] = [];
-  bondsWithMaturity.forEach(b => {
-    const matDate = new Date(b.maturity!);
-    const years = (matDate.getTime() - now.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-    yearsData.push(years);
-    for (const bucket of MATURITY_BUCKETS) {
-      if (years >= bucket.min && years < bucket.max) {
-        bucketCounts[bucket.key]++;
-        break;
-      }
-    }
-  });
-
-  const maxCount = Math.max(1, ...Object.values(bucketCounts));
-  const totalWithMaturity = bondsWithMaturity.length;
-
-  if (totalWithMaturity === 0) return null;
-
-  // Average maturity
-  const avgYears = yearsData.length > 0 ? yearsData.reduce((a, b) => a + b, 0) / yearsData.length : 0;
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center">
-            <Calendar className="h-5 w-5 text-violet-500" />
-          </div>
-          <div>
-            <span className="text-sm font-bold text-text-main block">Echeances</span>
-            <span className="text-xs text-text-muted">{totalWithMaturity} obligations avec echeance</span>
-          </div>
-        </div>
-        <div className="text-right">
-          <span className="text-sm font-semibold text-text-main">{avgYears.toFixed(1)} ans</span>
-          <span className="text-xs text-text-muted block">echeance moyenne</span>
-        </div>
-      </div>
-
-      {/* Visual timeline */}
-      <div className="space-y-2">
-        {/* Bar chart (horizontal) */}
-        <div className="flex items-end gap-1.5 h-16">
-          {MATURITY_BUCKETS.map(bucket => {
-            const count = bucketCounts[bucket.key];
-            const heightPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
-            return (
-              <div key={bucket.key} className="flex-1 flex flex-col items-center justify-end h-full">
-                {count > 0 && (
-                  <span className={`text-[10px] font-bold ${bucket.text} mb-1`}>{count}</span>
-                )}
-                <div
-                  className={`w-full rounded-t-lg transition-all duration-300 ${count > 0 ? bucket.color : 'bg-gray-100'}`}
-                  style={{ height: `${Math.max(count > 0 ? 15 : 4, heightPct)}%` }}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Timeline axis */}
-        <div className="relative">
-          {/* Continuous line */}
-          <div className="absolute top-2 left-0 right-0 h-0.5 bg-gray-200" />
-          {/* Sweet spot highlight (3-7 years) — buckets 3-4 out of 7 */}
-          <div className="absolute top-1 left-[42.9%] w-[28.6%] h-2 bg-emerald-100 rounded-full opacity-60" />
-
-          {/* Tick marks + labels */}
-          <div className="flex">
-            {MATURITY_BUCKETS.map(bucket => {
-              const count = bucketCounts[bucket.key];
-              const pct = totalWithMaturity > 0 ? Math.round((count / totalWithMaturity) * 100) : 0;
-              return (
-                <div key={bucket.key} className="flex-1 flex flex-col items-center">
-                  {/* Tick */}
-                  <div className={`w-1.5 h-1.5 rounded-full z-10 ${count > 0 ? bucket.color : 'bg-gray-300'}`} />
-                  {/* Label */}
-                  <span className={`text-[10px] mt-1.5 font-medium ${count > 0 ? bucket.text : 'text-gray-300'}`}>
-                    {bucket.label}
-                  </span>
-                  {/* Percentage */}
-                  {count > 0 && (
-                    <span className="text-[9px] text-text-muted">{pct}%</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Sweet spot legend */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-        <div className="flex items-center gap-4 text-[11px] text-text-muted">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-100 border border-emerald-300 inline-block" />
-            Zone ideale (3-7 ans)
-          </span>
-          {noMaturityCount > 0 && (
-            <span className="text-gray-400">{noMaturityCount} sans echeance</span>
-          )}
-        </div>
-        <div className="flex items-center gap-3 text-[11px] text-text-muted">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Court</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> Moyen</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block" /> Long</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+// MaturityTimeline removed — maturity breakdown now shown as inline badges in stats section
 
 function BondsTab() {
   const { bonds, stats, isLoading, mutate } = useBondsUniverse();
@@ -1673,65 +1546,76 @@ function BondsTab() {
         </div>
       </div>
 
-      {/* ── Stats ── */}
+      {/* ── Stats + pastilles échéances ── */}
       {bonds.length > 0 && (() => {
         const nowStats = new Date();
-        const realBondsWithMat = bonds.filter(b => {
-          if (!b.maturity) return false;
-          return !/\/N'FRAC|\/FR|\/SF|ETF/i.test(b.description || '');
-        });
-        const overdueCount = realBondsWithMat.filter(b => {
-          return (new Date(b.maturity!).getTime() - nowStats.getTime()) <= 0;
-        }).length;
-        const lt1Count = realBondsWithMat.filter(b => {
+        const isFund = (d: string) => /\/N'FRAC|\/FR|\/SF|ETF/i.test(d);
+        const realBondsWithMat = bonds.filter(b => b.maturity && !isFund(b.description || ''));
+
+        // Compute bucket counts
+        const bucketCounts: Record<string, number> = {};
+        MATURITY_BUCKETS.forEach(mb => { bucketCounts[mb.key] = 0; });
+        realBondsWithMat.forEach(b => {
           const y = (new Date(b.maturity!).getTime() - nowStats.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-          return y > 0 && y < 1;
-        }).length;
-        const fundCount = bonds.filter(b => /\/N'FRAC|\/FR|\/SF|ETF/i.test(b.description || '')).length;
+          for (const mb of MATURITY_BUCKETS) {
+            if (y >= mb.min && y < mb.max) { bucketCounts[mb.key]++; break; }
+          }
+        });
+
+        const fundCount = bonds.filter(b => isFund(b.description || '')).length;
+        const noMatCount = bonds.filter(b => !b.maturity && !isFund(b.description || '')).length;
+        const avgYears = realBondsWithMat.length > 0
+          ? realBondsWithMat.reduce((s, b) => s + (new Date(b.maturity!).getTime() - nowStats.getTime()) / (365.25 * 24 * 60 * 60 * 1000), 0) / realBondsWithMat.length
+          : 0;
 
         return (
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Total', value: stats.total, color: 'text-text-main', bg: 'bg-white', border: 'border-gray-100' },
-                { label: 'CAD', value: stats.cad, color: 'text-blue-600', bg: 'bg-white', border: 'border-gray-100' },
-                { label: 'US', value: stats.us, color: 'text-amber-600', bg: 'bg-white', border: 'border-gray-100' },
+                { label: 'Total', value: stats.total, color: 'text-text-main' },
+                { label: 'CAD', value: stats.cad, color: 'text-blue-600' },
+                { label: 'US', value: stats.us, color: 'text-amber-600' },
               ].map(s => (
-                <div key={s.label} className={`${s.bg} rounded-2xl border ${s.border} p-4 text-center`}>
+                <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
                   <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                   <p className="text-xs text-text-muted mt-0.5">{s.label}</p>
                 </div>
               ))}
             </div>
-            {(overdueCount > 0 || lt1Count > 0 || fundCount > 0) && (
-              <div className="flex flex-wrap gap-2">
-                {overdueCount > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-200">
-                    <span className="w-2.5 h-2.5 rounded-full bg-gray-400" />
-                    <span className="text-sm font-bold text-gray-500">{overdueCount}</span>
-                    <span className="text-xs text-text-muted">échues</span>
+
+            {/* Pastilles échéances */}
+            <div className="flex flex-wrap items-center gap-2">
+              {MATURITY_BUCKETS.map(mb => {
+                const count = bucketCounts[mb.key];
+                if (count === 0) return null;
+                return (
+                  <div key={mb.key} className={`flex items-center gap-1.5 px-3 py-1.5 ${mb.bg} rounded-xl border border-gray-200/60`}>
+                    <span className={`w-2.5 h-2.5 rounded-full ${mb.color}`} />
+                    <span className={`text-sm font-bold ${mb.text}`}>{count}</span>
+                    <span className="text-xs text-text-muted">{mb.label}</span>
                   </div>
-                )}
-                {lt1Count > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-xl border border-red-100">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                    <span className="text-sm font-bold text-red-600">{lt1Count}</span>
-                    <span className="text-xs text-text-muted">&lt; 1 an</span>
-                  </div>
-                )}
-                {fundCount > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-gray-100">
-                    <span className="text-xs text-text-muted">{fundCount} fonds exclus des analyses</span>
-                  </div>
-                )}
-              </div>
-            )}
+                );
+              })}
+              {noMatCount > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-gray-100">
+                  <span className="text-xs text-text-muted">{noMatCount} sans echeance</span>
+                </div>
+              )}
+              {fundCount > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-gray-100">
+                  <span className="text-xs text-text-muted">{fundCount} fonds exclus</span>
+                </div>
+              )}
+              {realBondsWithMat.length > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-gray-100 ml-auto">
+                  <span className="text-xs text-text-muted">moy.</span>
+                  <span className="text-sm font-semibold text-text-main">{avgYears.toFixed(1)} ans</span>
+                </div>
+              )}
+            </div>
           </div>
         );
       })()}
-
-      {/* ── Maturity Timeline ── */}
-      {bonds.length > 0 && <MaturityTimeline bonds={bonds} />}
 
       {/* ── Bond Gains Analyzer ── */}
       {bonds.length > 0 && <BondGainsAnalyzer bonds={bonds} />}
