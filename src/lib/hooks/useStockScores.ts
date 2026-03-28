@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import useSWR from 'swr';
 import type { StockScore } from '@/lib/models/stock-scorer';
 
@@ -13,9 +14,12 @@ export function useStockScores(profileId: string | null) {
 
   const scores = data?.scores ?? [];
 
-  // Map by stockId for quick lookup
-  const scoresMap = new Map<string, StockScore>();
-  for (const s of scores) scoresMap.set(s.stockId, s);
+  // Memoize so downstream useEffects don't fire on every render
+  const scoresMap = useMemo(() => {
+    const map = new Map<string, StockScore>();
+    for (const s of scores) map.set(s.stockId, s);
+    return map;
+  }, [scores]);
 
   return { scores, scoresMap, error, isLoading };
 }
