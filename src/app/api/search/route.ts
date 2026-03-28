@@ -75,7 +75,12 @@ export async function GET(request: NextRequest) {
       if (!RELEVANT_EXCHANGES.has(s.exchange)) continue;
       if (!validTypes.has(s.type)) continue;
 
-      const ticker = buildTicker(s.symbol, s.exchange);
+      // Hedged CAD listings often appear under US exchanges on TradingView
+      // but belong on NEO — force .NE suffix when description says "CAD Hedge"
+      const isCadHedge = /cad[- ]?hedg/i.test(s.description);
+      const ticker = isCadHedge && !['TSX', 'TSXV', 'NEO'].includes(s.exchange)
+        ? `${s.symbol}.NE`
+        : buildTicker(s.symbol, s.exchange);
       if (seen.has(ticker)) continue;
       seen.add(ticker);
 
