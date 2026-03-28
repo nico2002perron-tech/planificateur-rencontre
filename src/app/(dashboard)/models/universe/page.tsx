@@ -105,6 +105,19 @@ export default function UniversePage() {
 // ── ETF sector breakdown type ──
 interface ETFSector { sector: string; weight: number }
 
+// ── Yahoo industry → French sub-label for FINANCIALS ──
+function getIndustryLabel(industry: string | null | undefined): string | null {
+  if (!industry) return null;
+  const lower = industry.toLowerCase();
+  if (lower.includes('insurance') || lower.includes('assurance')) return 'Assurance';
+  if (lower.includes('bank')) return 'Banque';
+  if (lower.includes('capital market')) return 'Marches des capitaux';
+  if (lower.includes('asset management') || lower.includes('investment management')) return 'Gestion d\'actifs';
+  if (lower.includes('credit') || lower.includes('lending') || lower.includes('mortgage')) return 'Credit';
+  if (lower.includes('financial data') || lower.includes('stock exchange') || lower.includes('financial exchange')) return 'Bourses / Donnees';
+  return industry; // fallback: show raw industry
+}
+
 // ── Batch queue item ──
 interface QueueItem {
   symbol: string;
@@ -112,6 +125,7 @@ interface QueueItem {
   logo: string | null;
   type: string;
   sector: string | null; // auto-detected or null
+  industry: string | null;
   status: 'detecting' | 'ready' | 'adding' | 'done' | 'error';
 }
 
@@ -193,13 +207,13 @@ function StocksTab() {
     return () => { cancelled = true; };
   }, [pending]);
 
-  // ── Detect sector for a queue item ──
-  async function detectSectorForItem(symbol: string): Promise<string | null> {
+  // ── Detect sector + industry for a queue item ──
+  async function detectSectorForItem(symbol: string): Promise<{ sector: string | null; industry: string | null }> {
     try {
       const res = await fetch(`/api/models/stock-sector?symbol=${encodeURIComponent(symbol)}`);
       const data = await res.json();
-      return data.sector || null;
-    } catch { return null; }
+      return { sector: data.sector || null, industry: data.industry || null };
+    } catch { return { sector: null, industry: null }; }
   }
 
   // ── Add symbol to batch queue with auto-detect ──
@@ -207,13 +221,13 @@ function StocksTab() {
     // Skip if already in queue
     if (queue.some(q => q.symbol === symbol)) return;
 
-    const item: QueueItem = { symbol, name, logo, type, sector: null, status: 'detecting' };
+    const item: QueueItem = { symbol, name, logo, type, sector: null, industry: null, status: 'detecting' };
     setQueue(prev => [...prev, item]);
 
-    // Auto-detect sector
-    detectSectorForItem(symbol).then(sector => {
+    // Auto-detect sector + industry
+    detectSectorForItem(symbol).then(({ sector, industry }) => {
       setQueue(prev => prev.map(q =>
-        q.symbol === symbol ? { ...q, sector, status: 'ready' } : q
+        q.symbol === symbol ? { ...q, sector, industry, status: 'ready' } : q
       ));
     });
   }
@@ -247,6 +261,7 @@ function StocksTab() {
             symbol: item.symbol,
             name: item.name,
             sector: item.sector,
+            industry: item.industry,
             stock_type: 'variable',
             logo_url: item.logo,
           }),
@@ -456,7 +471,7 @@ function StocksTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symbol: pending.symbol, name: pending.name, sector: sectorValue,
-          stock_type: 'variable', logo_url: pending.logo,
+          industry: detectedIndustry, stock_type: 'variable', logo_url: pending.logo,
         }),
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
@@ -659,8 +674,15 @@ function StocksTab() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <span className="font-mono font-semibold text-sm text-text-main">{item.symbol}</span>
-                    <span className="text-xs text-text-muted ml-2 truncate">{item.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-sm text-text-main">{item.symbol}</span>
+                      {item.industry && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-text-muted shrink-0">
+                          {getIndustryLabel(item.industry)}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-text-muted truncate block">{item.name}</span>
                   </div>
                   {/* Sector */}
                   {item.status === 'detecting' ? (
@@ -928,9 +950,16 @@ function StocksTab() {
                         <TrendingUp className="h-4 w-4 text-gray-400" />
                       </div>
                     )}
-                    {/* Symbole + Nom */}
+                    {/* Symbole + Nom + Industry */}
                     <div className="flex-1 min-w-0">
-                      <div className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-text-main text-sm">{stock.symbol}</span>
+                        {stock.industry && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-text-muted shrink-0">
+                            {getIndustryLabel(stock.industry)}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-text-muted text-xs truncate">{stock.name}</div>
                     </div>
                     {/* Type badge */}

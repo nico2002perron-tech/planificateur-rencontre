@@ -7,6 +7,7 @@ export interface UniverseStock {
   symbol: string;
   name: string;
   sector: string;
+  industry: string | null;
   stock_type: 'obligatoire' | 'variable';
   position: number;
   logo_url: string | null;

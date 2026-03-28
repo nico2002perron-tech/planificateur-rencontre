@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { symbol, name, sector, stock_type, position, logo_url, notes } = body;
+  const { symbol, name, sector, stock_type, position, logo_url, notes, industry } = body;
 
   if (!symbol || !name || !sector) {
     return NextResponse.json({ error: 'symbol, name et sector requis' }, { status: 400 });
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       symbol: symbol.toUpperCase(),
       name,
       sector,
+      industry: industry || null,
       stock_type: stock_type || 'variable',
       position: position ?? 99,
       logo_url: logo_url || null,
