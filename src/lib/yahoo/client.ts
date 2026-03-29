@@ -84,12 +84,15 @@ export function toYahooSymbol(symbol: string): string {
 
 // ── Prix cible 1 an ───────────────────────────────────────────────────────────
 
-export async function getYahooPriceTarget(symbol: string): Promise<YahooPriceTarget> {
+const EMPTY_TARGET: YahooPriceTarget = { targetLow: null, targetMean: null, targetHigh: null, numAnalysts: 0, recommendationKey: 'none' };
+
+/** Internal: fetch price target for a single symbol without fallback. */
+async function fetchYahooPriceTargetDirect(sym: string): Promise<YahooPriceTarget> {
   try {
-    const ySym = toYahooSymbol(symbol);
+    const ySym = toYahooSymbol(sym);
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=financialData`;
     const res = await yahooFetch(url);
-    if (!res.ok) return { targetLow: null, targetMean: null, targetHigh: null, numAnalysts: 0, recommendationKey: 'none' };
+    if (!res.ok) return EMPTY_TARGET;
 
     const json = await res.json();
     const fd = json?.quoteSummary?.result?.[0]?.financialData ?? {};
@@ -110,8 +113,25 @@ export async function getYahooPriceTarget(symbol: string): Promise<YahooPriceTar
       recommendationKey: String(fd.recommendationKey ?? 'none'),
     };
   } catch {
-    return { targetLow: null, targetMean: null, targetHigh: null, numAnalysts: 0, recommendationKey: 'none' };
+    return EMPTY_TARGET;
   }
+}
+
+/**
+ * Fetch analyst price target from Yahoo Finance.
+ * Falls back to US base ticker for interlisted .TO stocks with no target.
+ */
+export async function getYahooPriceTarget(symbol: string): Promise<YahooPriceTarget> {
+  const result = await fetchYahooPriceTargetDirect(symbol);
+
+  // Fallback: .TO with no analyst target → try US ticker
+  if (symbol.endsWith('.TO') && !result.targetMean) {
+    const usTicker = symbol.replace('.TO', '');
+    const usResult = await fetchYahooPriceTargetDirect(usTicker);
+    if (usResult.targetMean) return usResult;
+  }
+
+  return result;
 }
 
 /**
@@ -218,12 +238,28 @@ export interface YahooProfileData {
 }
 
 /**
- * Fetch company profile from Yahoo Finance (replaces FMP getProfile).
- * Modules: price + summaryDetail + assetProfile + defaultKeyStatistics
+ * Count how many key fundamental fields have real data (non-zero).
+ * Used to detect sparse profiles (e.g., interlisted .TO tickers with no fundamentals).
  */
-export async function getYahooProfile(symbol: string): Promise<YahooProfileData | null> {
+function profileDataPoints(p: YahooProfileData): number {
+  let n = 0;
+  if (p.pe > 0) n++;
+  if (p.eps !== 0) n++;
+  if (p.beta > 0) n++;
+  if (p.profitMargins !== 0) n++;
+  if (p.debtToEquity > 0) n++;
+  if (p.earningsGrowth !== 0) n++;
+  if (p.mktCap > 0) n++;
+  if (p.freeCashflow !== 0) n++;
+  if (p.returnOnEquity !== 0) n++;
+  if (p.revenueGrowth !== 0) n++;
+  return n;
+}
+
+/** Internal: fetch a single Yahoo profile without fallback logic. */
+async function fetchYahooProfileDirect(sym: string): Promise<YahooProfileData | null> {
   try {
-    const ySym = toYahooSymbol(symbol);
+    const ySym = toYahooSymbol(sym);
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics,financialData`;
     const res = await yahooFetch(url);
     if (!res.ok) return null;
@@ -247,15 +283,15 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
     };
 
     return {
-      symbol,
+      symbol: sym,
       companyName: price.shortName ?? price.longName ?? '',
       description: typeof ap.longBusinessSummary === 'string' ? ap.longBusinessSummary : '',
       sector: ap.sector ?? '',
       industry: ap.industry ?? '',
       country: ap.country ?? '',
       beta: raw(ks.beta) || raw(sd.beta) || 0,
-      lastDiv: raw(sd.dividendRate),           // Annual dividend per share
-      dividendYield: raw(sd.dividendYield),    // e.g. 0.025
+      lastDiv: raw(sd.dividendRate),
+      dividendYield: raw(sd.dividendYield),
       mktCap: raw(price.marketCap) || raw(sd.marketCap),
       exchange: price.exchangeName ?? price.exchange ?? '',
       pe: raw(sd.trailingPE),
@@ -274,6 +310,33 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch company profile from Yahoo Finance (replaces FMP getProfile).
+ * Modules: price + summaryDetail + assetProfile + defaultKeyStatistics + financialData
+ *
+ * For interlisted .TO stocks (e.g., LMT.TO, MSFT.TO): if the Canadian ticker
+ * returns sparse/no fundamental data, automatically falls back to the US base
+ * ticker (LMT, MSFT) which typically has full data on Yahoo Finance.
+ */
+export async function getYahooProfile(symbol: string): Promise<YahooProfileData | null> {
+  const result = await fetchYahooProfileDirect(symbol);
+
+  // Fallback: .TO symbols with sparse data → try US base ticker
+  if (symbol.endsWith('.TO')) {
+    const isSparse = !result || profileDataPoints(result) < 3;
+    if (isSparse) {
+      const usTicker = symbol.replace('.TO', '');
+      const usResult = await fetchYahooProfileDirect(usTicker);
+      if (usResult && profileDataPoints(usResult) >= 3) {
+        // Use US fundamentals but keep the original .TO symbol
+        return { ...usResult, symbol };
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
