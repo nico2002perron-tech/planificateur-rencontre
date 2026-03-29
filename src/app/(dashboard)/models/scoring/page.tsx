@@ -165,8 +165,8 @@ const UPSIDE_FACTORS: LegendFactor[] = [
     tiers: [{ condition: 'Tres sous-evalue', baseScore: 9 }, { condition: 'Sous-evalue', baseScore: 7 }, { condition: 'A sa juste valeur', baseScore: 4 }, { condition: 'Surevalue', baseScore: 2 }] },
   { key: 'fcfYield', label: 'Rendement en cash (FCF)', color: '#10b981', summary: 'Combien de vrai cash l\'entreprise genere par rapport a sa valeur en bourse. C\'est la mesure preferee de Warren Buffett — le cash ne ment pas.',
     tiers: [{ condition: 'FCF Yield > 6%', baseScore: 8 }, { condition: 'FCF Yield 3-6%', baseScore: 6.5 }, { condition: 'FCF Yield < 2%', baseScore: 5 }, { condition: 'Brule du cash', baseScore: 2 }] },
-  { key: 'totalReturn', label: 'Rendement total estime', color: '#f59e0b', summary: 'Combine le gain en prix estime par les analystes ET le revenu de dividende. C\'est le retour reel pour l\'investisseur sur 12 mois.',
-    tiers: [{ condition: 'Retour > 12%', baseScore: 7.5 }, { condition: 'Retour 5-12%', baseScore: 6 }, { condition: 'Retour < 3%', baseScore: 4 }, { condition: 'Retour negatif', baseScore: 2 }] },
+  { key: 'totalReturn', label: 'Revenu de dividende', color: '#f59e0b', summary: 'Quel revenu passif le titre genere-t-il? Un bon dividende donne un rendement stable, meme si le prix ne bouge pas. Attention: un rendement trop eleve peut cacher un probleme.',
+    tiers: [{ condition: 'Dividende 3-5%', baseScore: 8.5 }, { condition: 'Dividende 1-3%', baseScore: 7 }, { condition: 'Aucun dividende', baseScore: 5 }, { condition: 'Rendement > 9% (suspect)', baseScore: 5 }] },
   { key: 'capitalEfficiency', label: 'Efficacite du capital (ROE)', color: '#ef4444', summary: 'Pour chaque dollar investi par les actionnaires, combien l\'entreprise genere de profit? Un ROE eleve = une machine a creer de la valeur.',
     tiers: [{ condition: 'ROE > 20%', baseScore: 8 }, { condition: 'ROE 10-20%', baseScore: 6.5 }, { condition: 'ROE < 5%', baseScore: 4 }, { condition: 'ROE negatif', baseScore: 2 }] },
 ];
@@ -493,7 +493,7 @@ function WeightCustomizer({
     { key: 'analystTarget', label: 'Cible des analystes', color: '#06b6d4' },
     { key: 'valuationDiscount', label: 'Sous-evaluation', color: '#8b5cf6' },
     { key: 'fcfYield', label: 'Cash genere (FCF)', color: '#10b981' },
-    { key: 'totalReturn', label: 'Rendement total estime', color: '#f59e0b' },
+    { key: 'totalReturn', label: 'Revenu de dividende', color: '#f59e0b' },
     { key: 'capitalEfficiency', label: 'Efficacite du capital', color: '#ef4444' },
   ];
 
@@ -891,7 +891,7 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                 { label: `Cible analystes (${uPct('analystTarget')}%)`, value: wAvg(s => s.upside.analystTarget), hint: 'Ou les pros voient le titre' },
                 { label: `Sous-evaluation (${uPct('valuationDiscount')}%)`, value: wAvg(s => s.upside.valuationDiscount), hint: 'Le titre vaut-il plus que son prix?' },
                 { label: `Cash genere (${uPct('fcfYield')}%)`, value: wAvg(s => s.upside.fcfYield), hint: 'Free cash flow vs valeur en bourse' },
-                { label: `Rendement total (${uPct('totalReturn')}%)`, value: wAvg(s => s.upside.totalReturn), hint: 'Gain en prix + dividende' },
+                { label: `Dividende (${uPct('totalReturn')}%)`, value: wAvg(s => s.upside.totalReturn), hint: 'Revenu passif du dividende' },
                 { label: `Efficacite (${uPct('capitalEfficiency')}%)`, value: wAvg(s => s.upside.capitalEfficiency), hint: 'ROE — retour sur capitaux propres' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
@@ -1068,7 +1068,7 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 { label: `Cible analystes (${uPct('analystTarget')}%)`, value: s.upside.analystTarget, hint: 'Cible 12 mois' },
                                 { label: `Sous-evaluation (${uPct('valuationDiscount')}%)`, value: s.upside.valuationDiscount, hint: 'DCF + PE forward' },
                                 { label: `Cash genere (${uPct('fcfYield')}%)`, value: s.upside.fcfYield, hint: 'FCF / capitalisation' },
-                                { label: `Rendement total (${uPct('totalReturn')}%)`, value: s.upside.totalReturn, hint: 'Gain + dividende' },
+                                { label: `Dividende (${uPct('totalReturn')}%)`, value: s.upside.totalReturn, hint: 'Revenu de dividende' },
                                 { label: `Efficacite (${uPct('capitalEfficiency')}%)`, value: s.upside.capitalEfficiency, hint: 'ROE' },
                               ]} />
                             </div>

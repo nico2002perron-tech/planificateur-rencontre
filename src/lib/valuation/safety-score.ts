@@ -31,8 +31,8 @@ export interface UpsideScoreBreakdown {
   analystTarget: number;       // 0-10 (analyst consensus target)
   valuationDiscount: number;   // 0-10 (DCF + forward PE discount)
   fcfYield: number;            // 0-10 (free cash flow / market cap)
-  totalReturn: number;         // 0-10 (price upside + dividend yield)
-  capitalEfficiency: number;   // 0-10 (ROE + forward PE improvement)
+  totalReturn: number;         // 0-10 (dividend income yield)
+  capitalEfficiency: number;   // 0-10 (ROE — return on equity)
   total: number;               // 0-10 weighted
   label: string;
   color: string;
@@ -639,23 +639,24 @@ export function calculateUpsideScore(
     ]);
   }
 
-  // ── 5. Rendement total estime (prix + dividende) ──
-  //    Le retour reel pour l'investisseur sur 12 mois.
+  // ── 5. Revenu de dividende (potentiel d'income) ──
+  //    Le rendement passif pour l'investisseur. Le prix cible est deja capture
+  //    dans le facteur 2 (analystTarget) — ici on isole le dividende
+  //    pour eviter un double-comptage du upside de prix.
+  //    Un dividende eleve + croissant = source de rendement stable.
   let totalReturnScore = 5;
-  const priceUpside = estimatedGainPercent || 0;
-  const divReturn = dividendYield * 100;
-  const totalReturnPct = priceUpside + divReturn;
-
-  if (targetPrice > 0 || dividendYield > 0) {
-    totalReturnScore = lerp(totalReturnPct, [
-      [-15, 1],    // perte attendue
-      [-5, 2.5],   // retour negatif
-      [0, 4],      // seuil
-      [3, 5.5],    // retour modeste
-      [7, 6.5],    // correct
-      [12, 7.5],   // bon retour
-      [18, 8.5],   // tres bon
-      [30, 10],    // exceptionnel
+  if (dividendYield > 0) {
+    const divPct = dividendYield * 100;
+    totalReturnScore = lerp(divPct, [
+      [0.3, 5.5],   // dividende symbolique
+      [1.0, 6],     // petit mais present
+      [2.0, 7],     // rendement correct
+      [3.0, 8],     // bon rendement
+      [4.0, 8.5],   // tres bon
+      [5.0, 9],     // excellent
+      [6.5, 9.5],   // exceptionnel
+      [9.0, 8],     // signal d'alarme — rendement trop eleve
+      [12.0, 5],    // probablement insoutenable
     ]);
   }
 
