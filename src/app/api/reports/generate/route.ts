@@ -132,6 +132,10 @@ export async function POST(request: NextRequest) {
               profitMargins: yProfile.profitMargins,
               debtToEquity: yProfile.debtToEquity,
               currentRatio: yProfile.currentRatio,
+              revenueGrowth: yProfile.revenueGrowth,
+              freeCashflow: yProfile.freeCashflow,
+              returnOnEquity: yProfile.returnOnEquity,
+              forwardPE: yProfile.forwardPE,
             };
             return { symbol, data };
           }
@@ -603,6 +607,10 @@ export async function POST(request: NextRequest) {
           debtToEquity: hp.debtToEquity,
           currentRatio: hp.currentRatio,
           marketCap: hp.marketCap,
+          revenueGrowth: hp.revenueGrowth,
+          freeCashflow: hp.freeCashflow,
+          returnOnEquity: hp.returnOnEquity,
+          forwardPE: hp.forwardPE,
         };
       });
 

@@ -91,6 +91,10 @@ export async function POST(req: NextRequest) {
     profitMargins: number;
     debtToEquity: number;
     currentRatio: number;
+    revenueGrowth: number;
+    freeCashflow: number;
+    returnOnEquity: number;
+    forwardPE: number;
   }
 
   const stockData: StockFundamentals[] = [];
@@ -134,6 +138,10 @@ export async function POST(req: NextRequest) {
         profitMargins: yProfile?.profitMargins ?? 0,
         debtToEquity: yProfile?.debtToEquity ?? 0,
         currentRatio: yProfile?.currentRatio ?? 0,
+        revenueGrowth: yProfile?.revenueGrowth ?? 0,
+        freeCashflow: yProfile?.freeCashflow ?? 0,
+        returnOnEquity: yProfile?.returnOnEquity ?? 0,
+        forwardPE: yProfile?.forwardPE ?? 0,
       });
     }
   }
@@ -159,6 +167,10 @@ export async function POST(req: NextRequest) {
     debtToEquity: s.debtToEquity,
     currentRatio: s.currentRatio,
     marketCap: s.marketCap,
+    revenueGrowth: s.revenueGrowth,
+    freeCashflow: s.freeCashflow,
+    returnOnEquity: s.returnOnEquity,
+    forwardPE: s.forwardPE,
   }));
 
   const rawScores = calculateDualScores(dualScoreInputs, [], undefined, weights as CustomWeights | undefined);

@@ -113,6 +113,10 @@ export interface HoldingProfile {
   profitMargins: number;
   debtToEquity: number;
   currentRatio: number;
+  revenueGrowth: number;
+  freeCashflow: number;
+  returnOnEquity: number;
+  forwardPE: number;
 }
 
 export interface HistoricalPoint {
@@ -165,6 +169,10 @@ export interface FMPProfileData {
   profitMargins?: number;
   debtToEquity?: number;
   currentRatio?: number;
+  revenueGrowth?: number;
+  freeCashflow?: number;
+  returnOnEquity?: number;
+  forwardPE?: number;
 }
 
 export interface FMPTargetData {
@@ -557,6 +565,10 @@ export function buildFullReportData(
       profitMargins: profile?.profitMargins || 0,
       debtToEquity: profile?.debtToEquity || 0,
       currentRatio: profile?.currentRatio || 0,
+      revenueGrowth: profile?.revenueGrowth || 0,
+      freeCashflow: profile?.freeCashflow || 0,
+      returnOnEquity: profile?.returnOnEquity || 0,
+      forwardPE: profile?.forwardPE || 0,
     };
   });
 

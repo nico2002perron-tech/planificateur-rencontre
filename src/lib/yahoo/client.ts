@@ -211,6 +211,10 @@ export interface YahooProfileData {
   debtToEquity: number;    // financialData.debtToEquity (e.g. 150 = 150%)
   currentRatio: number;    // financialData.currentRatio
   profitMargins: number;   // financialData.profitMargins (decimal, e.g. 0.25 = 25%)
+  revenueGrowth: number;   // financialData.revenueGrowth (decimal, e.g. 0.12 = 12%)
+  freeCashflow: number;    // financialData.freeCashflow (absolute $)
+  returnOnEquity: number;  // financialData.returnOnEquity (decimal, e.g. 0.18 = 18%)
+  forwardPE: number;       // defaultKeyStatistics.forwardPe
 }
 
 /**
@@ -262,6 +266,10 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
       debtToEquity: raw(fd.debtToEquity),
       currentRatio: raw(fd.currentRatio),
       profitMargins: raw(fd.profitMargins),
+      revenueGrowth: raw(fd.revenueGrowth),
+      freeCashflow: raw(fd.freeCashflow),
+      returnOnEquity: raw(fd.returnOnEquity),
+      forwardPE: raw(ks.forwardPe),
     };
   } catch {
     return null;

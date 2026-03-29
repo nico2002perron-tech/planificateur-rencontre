@@ -27,13 +27,13 @@ export interface SafetyScoreBreakdown {
 }
 
 export interface UpsideScoreBreakdown {
-  analystUpside: number;     // 0-10
-  week52Room: number;        // 0-10
-  valuationUpside: number;   // 0-10
-  peSectorGap: number;       // 0-10
-  epsGrowth: number;         // 0-10
-  totalReturn: number;       // 0-10 (retired, always 0)
-  total: number;             // 0-10 weighted
+  businessGrowth: number;      // 0-10 (revenue + earnings growth)
+  analystTarget: number;       // 0-10 (analyst consensus target)
+  valuationDiscount: number;   // 0-10 (DCF + forward PE discount)
+  fcfYield: number;            // 0-10 (free cash flow / market cap)
+  totalReturn: number;         // 0-10 (price upside + dividend yield)
+  capitalEfficiency: number;   // 0-10 (ROE + forward PE improvement)
+  total: number;               // 0-10 weighted
   label: string;
   color: string;
 }
@@ -67,15 +67,17 @@ export interface SafetyScoreInputs {
 
 export interface UpsideScoreInputs {
   currentPrice: number;
-  targetPrice: number;     // analyst consensus
-  week52High: number;
-  week52Low: number;
-  avgIntrinsic: number;    // DCF valuation
-  pe: number;
-  sectorBenchmarkPE: number;
-  earningsGrowth: number;  // decimal
-  dividendYield: number;   // decimal
-  estimatedGainPercent: number;
+  targetPrice: number;       // analyst consensus
+  avgIntrinsic: number;      // DCF valuation (0 if unavailable)
+  pe: number;                // trailing PE
+  forwardPE: number;         // forward PE (analyst estimates)
+  earningsGrowth: number;    // decimal, e.g. 0.12 = 12%
+  revenueGrowth: number;     // decimal, e.g. 0.08 = 8%
+  dividendYield: number;     // decimal, e.g. 0.025 = 2.5%
+  freeCashflow: number;      // absolute $ (from Yahoo financialData)
+  marketCap: number;         // absolute $ (for FCF yield calculation)
+  returnOnEquity: number;    // decimal, e.g. 0.18 = 18%
+  estimatedGainPercent: number; // analyst target upside %
 }
 
 // ── Customizable Weights ─────────────────────────────────────────
@@ -90,11 +92,12 @@ export interface SafetyWeights {
 }
 
 export interface UpsideWeights {
-  analyst: number;
-  week52: number;
-  dcf: number;
-  peSector: number;
-  epsGrowth: number;
+  businessGrowth: number;
+  analystTarget: number;
+  valuationDiscount: number;
+  fcfYield: number;
+  totalReturn: number;
+  capitalEfficiency: number;
 }
 
 export interface CustomWeights {
@@ -114,11 +117,12 @@ export const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = {
 };
 
 export const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = {
-  analyst: 30,
-  week52: 15,
-  dcf: 20,
-  peSector: 15,
-  epsGrowth: 20,
+  businessGrowth: 20,
+  analystTarget: 20,
+  valuationDiscount: 20,
+  fcfYield: 15,
+  totalReturn: 15,
+  capitalEfficiency: 10,
 };
 
 // Normalize weights to fractions summing to 1.0
@@ -503,6 +507,9 @@ export function calculateSafetyScore(
 }
 
 // ── Upside Score Calculation ─────────────────────────────────────
+// 6 institutional-quality factors with continuous interpolation.
+// Measures: business growth, analyst targets, valuation discount,
+// free cash flow yield, total return, and capital efficiency.
 
 export function calculateUpsideScore(
   inputs: UpsideScoreInputs,
@@ -510,103 +517,222 @@ export function calculateUpsideScore(
   adjustments?: Partial<UpsideWeights>,
 ): UpsideScoreBreakdown {
   const {
-    currentPrice, targetPrice, week52High, week52Low,
-    avgIntrinsic, pe, sectorBenchmarkPE, earningsGrowth,
+    currentPrice, targetPrice, avgIntrinsic, pe, forwardPE,
+    earningsGrowth, revenueGrowth, dividendYield, freeCashflow,
+    marketCap, returnOnEquity, estimatedGainPercent,
   } = inputs;
   const w = normalizeWeights({ ...DEFAULT_UPSIDE_WEIGHTS, ...customWeights });
 
-  // 1. Cible analystes vs prix
-  let analystUpside = 5;
+  // ── 1. Croissance des affaires (revenus × 0.4 + BPA × 0.6) ──
+  //    Le moteur fondamental: le business grossit-il vraiment?
+  //    Revenue = top line (dur à manipuler), earnings = bottom line.
+  let revSub = 5;
+  if (revenueGrowth !== 0) {
+    revSub = lerp(revenueGrowth * 100, [
+      [-20, 1],    // revenus en chute libre
+      [-5, 3],     // baisse moderee
+      [0, 4.5],    // stagnation
+      [5, 6.5],    // croissance moderee
+      [10, 7.5],   // bonne croissance
+      [20, 9],     // forte croissance
+      [35, 10],    // exceptionnelle
+    ]);
+  }
+
+  let earnSub = 5;
+  if (earningsGrowth !== 0) {
+    earnSub = lerp(earningsGrowth * 100, [
+      [-30, 1],    // effondrement des profits
+      [-10, 3],    // baisse significative
+      [0, 4.5],    // stagnation
+      [5, 6],      // croissance modeste
+      [10, 7.5],   // bonne croissance
+      [20, 8.5],   // forte croissance
+      [35, 10],    // exceptionnelle
+    ]);
+  }
+
+  let businessGrowth = revSub * 0.4 + earnSub * 0.6;
+
+  // ── 2. Cible des analystes ──
+  //    Ecart entre le prix actuel et la cible consensus 12 mois.
+  let analystTarget = 5;
   if (targetPrice > 0 && currentPrice > 0) {
     const upside = ((targetPrice - currentPrice) / currentPrice) * 100;
-    if (upside >= 40) analystUpside = 10;
-    else if (upside >= 25) analystUpside = 8.5;
-    else if (upside >= 15) analystUpside = 7;
-    else if (upside >= 5) analystUpside = 6.5;
-    else if (upside >= 0) analystUpside = 3;
-    else if (upside >= -10) analystUpside = 2;
-    else analystUpside = 1;
+    analystTarget = lerp(upside, [
+      [-20, 1],    // les analystes voient une forte baisse
+      [-10, 2],    // baisse attendue
+      [-5, 3],     // leger recul
+      [0, 4.5],    // au prix cible (neutre-bas, pas de hausse prevue)
+      [3, 5.5],    // tres leger potentiel
+      [8, 6.5],    // potentiel correct
+      [15, 7.5],   // bon potentiel
+      [25, 8.5],   // fort potentiel
+      [40, 10],    // potentiel exceptionnel
+    ]);
   }
 
-  // 2. Position 52 semaines — room to grow
-  let week52Room = 5;
-  if (week52High > week52Low && week52High > 0) {
-    const range = week52High - week52Low;
-    const positionPct = (currentPrice - week52Low) / range;
-    week52Room = clamp(10 - positionPct * 7);
-  }
+  // ── 3. Sous-evaluation (DCF + Forward PE discount) ──
+  //    Combine la valeur intrinseque DCF (si dispo) et l'amelioration
+  //    du PE forward vs trailing (les profits vont augmenter).
+  let dcfSub = 5;
+  let forwardSub = 5;
+  let hasValuationData = false;
 
-  // 3. Upside valorisation DCF
-  let valuationUpside = 5;
+  // DCF component
   if (avgIntrinsic > 0 && currentPrice > 0) {
+    hasValuationData = true;
     const dcfUpside = ((avgIntrinsic - currentPrice) / currentPrice) * 100;
-    if (dcfUpside >= 50) valuationUpside = 10;
-    else if (dcfUpside >= 30) valuationUpside = 8;
-    else if (dcfUpside >= 15) valuationUpside = 7;
-    else if (dcfUpside >= 5) valuationUpside = 5.5;
-    else if (dcfUpside >= 0) valuationUpside = 4;
-    else if (dcfUpside >= -15) valuationUpside = 2.5;
-    else valuationUpside = 1;
+    dcfSub = lerp(dcfUpside, [
+      [-30, 1],    // tres surevalue
+      [-15, 2.5],  // surevalue
+      [0, 4],      // a sa juste valeur
+      [10, 6],     // legerement sous-evalue
+      [20, 7.5],   // sous-evalue
+      [35, 9],     // tres sous-evalue
+      [50, 10],    // aubaine
+    ]);
   }
 
-  // 4. PE vs secteur — PE below benchmark = expansion potential
-  let peSectorGap = 5;
-  if (pe > 0 && sectorBenchmarkPE > 0) {
-    const ratio = pe / sectorBenchmarkPE;
-    if (ratio < 0.5) peSectorGap = 9;
-    else if (ratio < 0.75) peSectorGap = 8;
-    else if (ratio < 1.0) peSectorGap = 6.5;
-    else if (ratio < 1.2) peSectorGap = 4;
-    else peSectorGap = 2;
+  // Forward PE discount: si le forward PE est plus bas que le trailing,
+  // les analystes anticipent une hausse des benefices.
+  if (forwardPE > 0 && pe > 0) {
+    hasValuationData = true;
+    const peImprovement = ((pe - forwardPE) / pe) * 100;
+    forwardSub = lerp(peImprovement, [
+      [-20, 2],    // PE forward plus eleve = benefices prevus en baisse
+      [0, 5],      // stable
+      [10, 6.5],   // legere amelioration
+      [20, 8],     // bonne amelioration
+      [35, 9],     // forte amelioration
+      [50, 10],    // transformation des benefices
+    ]);
   }
 
-  // 5. Croissance EPS
-  let epsGrowthScore = 5;
-  if (earningsGrowth !== 0) {
-    const gr = earningsGrowth * 100;
-    if (gr >= 30) epsGrowthScore = 10;
-    else if (gr >= 20) epsGrowthScore = 8;
-    else if (gr >= 10) epsGrowthScore = 7;
-    else if (gr >= 5) epsGrowthScore = 6;
-    else if (gr >= 0) epsGrowthScore = 4;
-    else epsGrowthScore = 2;
+  // Blend: DCF (60%) + Forward PE discount (40%) when both available
+  let valuationDiscount: number;
+  if (avgIntrinsic > 0 && forwardPE > 0) {
+    valuationDiscount = dcfSub * 0.6 + forwardSub * 0.4;
+  } else if (avgIntrinsic > 0) {
+    valuationDiscount = dcfSub;
+  } else if (forwardPE > 0) {
+    valuationDiscount = forwardSub;
+  } else {
+    valuationDiscount = 5; // aucune donnee
   }
 
-  // Apply per-factor adjustments
+  // ── 4. Rendement en cash (FCF Yield) ──
+  //    Free Cash Flow / Market Cap = combien de cash reel l'entreprise
+  //    genere par dollar de capitalisation. Le Buffett ratio.
+  let fcfYieldScore = 5;
+  if (freeCashflow !== 0 && marketCap > 0) {
+    const fcfYieldPct = (freeCashflow / marketCap) * 100;
+    fcfYieldScore = lerp(fcfYieldPct, [
+      [-5, 1],     // brule du cash
+      [-1, 3],     // leger deficit
+      [0, 4],      // seuil
+      [2, 5.5],    // faible rendement
+      [4, 7],      // correct
+      [6, 8],      // bon
+      [8, 9],      // tres bon
+      [12, 10],    // exceptionnel
+    ]);
+  }
+
+  // ── 5. Rendement total estime (prix + dividende) ──
+  //    Le retour reel pour l'investisseur sur 12 mois.
+  let totalReturnScore = 5;
+  const priceUpside = estimatedGainPercent || 0;
+  const divReturn = dividendYield * 100;
+  const totalReturnPct = priceUpside + divReturn;
+
+  if (targetPrice > 0 || dividendYield > 0) {
+    totalReturnScore = lerp(totalReturnPct, [
+      [-15, 1],    // perte attendue
+      [-5, 2.5],   // retour negatif
+      [0, 4],      // seuil
+      [3, 5.5],    // retour modeste
+      [7, 6.5],    // correct
+      [12, 7.5],   // bon retour
+      [18, 8.5],   // tres bon
+      [30, 10],    // exceptionnel
+    ]);
+  }
+
+  // ── 6. Efficacite du capital (ROE) ──
+  //    Un ROE eleve signifie que l'entreprise utilise bien l'argent
+  //    des actionnaires pour generer des profits. Buffett + Munger.
+  let capitalEfficiency = 5;
+  if (returnOnEquity !== 0) {
+    const roePct = returnOnEquity * 100;
+    capitalEfficiency = lerp(roePct, [
+      [-10, 1],    // detruit de la valeur
+      [0, 3],      // aucun retour
+      [5, 4.5],    // faible
+      [10, 6],     // correct
+      [15, 7],     // bon
+      [20, 8],     // tres bon
+      [30, 9],     // excellent
+      [40, 10],    // exceptionnel (rare)
+    ]);
+  }
+
+  // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
   if (adjustments) {
-    analystUpside = clamp(analystUpside + (adjustments.analyst ?? 0));
-    week52Room = clamp(week52Room + (adjustments.week52 ?? 0));
-    valuationUpside = clamp(valuationUpside + (adjustments.dcf ?? 0));
-    peSectorGap = clamp(peSectorGap + (adjustments.peSector ?? 0));
-    epsGrowthScore = clamp(epsGrowthScore + (adjustments.epsGrowth ?? 0));
+    businessGrowth = clamp(businessGrowth + (adjustments.businessGrowth ?? 0));
+    analystTarget = clamp(analystTarget + (adjustments.analystTarget ?? 0));
+    valuationDiscount = clamp(valuationDiscount + (adjustments.valuationDiscount ?? 0));
+    fcfYieldScore = clamp(fcfYieldScore + (adjustments.fcfYield ?? 0));
+    totalReturnScore = clamp(totalReturnScore + (adjustments.totalReturn ?? 0));
+    capitalEfficiency = clamp(capitalEfficiency + (adjustments.capitalEfficiency ?? 0));
   }
 
-  // Weighted total (normalized)
+  // Dynamic weight: if no valuation data, redistribute DCF weight to others
+  const effectiveWeights = { ...DEFAULT_UPSIDE_WEIGHTS, ...customWeights };
+  if (!hasValuationData) {
+    const vdWeight = effectiveWeights.valuationDiscount;
+    effectiveWeights.valuationDiscount = 0;
+    // Redistribute proportionally to other factors
+    const others = effectiveWeights.businessGrowth + effectiveWeights.analystTarget +
+      effectiveWeights.fcfYield + effectiveWeights.totalReturn + effectiveWeights.capitalEfficiency;
+    if (others > 0) {
+      const factor = 1 + vdWeight / others;
+      effectiveWeights.businessGrowth *= factor;
+      effectiveWeights.analystTarget *= factor;
+      effectiveWeights.fcfYield *= factor;
+      effectiveWeights.totalReturn *= factor;
+      effectiveWeights.capitalEfficiency *= factor;
+    }
+  }
+  const wFinal = normalizeWeights(effectiveWeights);
+
+  // Weighted total
   const total = clamp(
-    analystUpside * w.analyst +
-    week52Room * w.week52 +
-    valuationUpside * w.dcf +
-    peSectorGap * w.peSector +
-    epsGrowthScore * w.epsGrowth
+    businessGrowth * wFinal.businessGrowth +
+    analystTarget * wFinal.analystTarget +
+    valuationDiscount * wFinal.valuationDiscount +
+    fcfYieldScore * wFinal.fcfYield +
+    totalReturnScore * wFinal.totalReturn +
+    capitalEfficiency * wFinal.capitalEfficiency
   );
 
   const rounded = rd(total);
 
   let label: string;
   let color: string;
-  if (rounded >= 8) { label = 'Excellent'; color = '#10b981'; }
-  else if (rounded >= 6) { label = 'Bon'; color = '#22d3ee'; }
-  else if (rounded >= 4) { label = 'Modere'; color = '#f59e0b'; }
-  else if (rounded >= 2) { label = 'Faible'; color = '#f97316'; }
+  if (rounded >= 8) { label = 'Fort potentiel'; color = '#10b981'; }
+  else if (rounded >= 6) { label = 'Bon potentiel'; color = '#22d3ee'; }
+  else if (rounded >= 4) { label = 'Potentiel modere'; color = '#f59e0b'; }
+  else if (rounded >= 2) { label = 'Faible potentiel'; color = '#f97316'; }
   else { label = 'Tres faible'; color = '#ef4444'; }
 
   return {
-    analystUpside: rd(analystUpside),
-    week52Room: rd(week52Room),
-    valuationUpside: rd(valuationUpside),
-    peSectorGap: rd(peSectorGap),
-    epsGrowth: rd(epsGrowthScore),
-    totalReturn: 0,
+    businessGrowth: rd(businessGrowth),
+    analystTarget: rd(analystTarget),
+    valuationDiscount: rd(valuationDiscount),
+    fcfYield: rd(fcfYieldScore),
+    totalReturn: rd(totalReturnScore),
+    capitalEfficiency: rd(capitalEfficiency),
     total: rounded,
     label,
     color,
@@ -635,6 +761,10 @@ interface DualScoreHolding {
   debtToEquity: number;
   currentRatio: number;
   marketCap: number;
+  revenueGrowth: number;
+  freeCashflow: number;
+  returnOnEquity: number;
+  forwardPE: number;
 }
 
 interface DualScoreValuation {
@@ -692,13 +822,15 @@ export function calculateDualScores(
     const upside = calculateUpsideScore({
       currentPrice: h.currentPrice,
       targetPrice: h.targetPrice,
-      week52High: h.week52High,
-      week52Low: h.week52Low,
       avgIntrinsic: val?.avgIntrinsic ?? 0,
       pe: h.pe,
-      sectorBenchmarkPE: bench.pe,
+      forwardPE: h.forwardPE,
       earningsGrowth: h.earningsGrowth,
+      revenueGrowth: h.revenueGrowth,
       dividendYield: h.dividendYield,
+      freeCashflow: h.freeCashflow,
+      marketCap: h.marketCap,
+      returnOnEquity: h.returnOnEquity,
       estimatedGainPercent: h.estimatedGainPercent,
     }, weights?.upside, weights?.upsideAdj);
 

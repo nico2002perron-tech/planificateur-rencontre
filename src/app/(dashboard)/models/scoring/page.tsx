@@ -35,12 +35,12 @@ interface SafetyBreakdown {
 }
 
 interface UpsideBreakdown {
-  analystUpside: number;
-  week52Room: number;
-  valuationUpside: number;
-  peSectorGap: number;
-  epsGrowth: number;
+  businessGrowth: number;
+  analystTarget: number;
+  valuationDiscount: number;
+  fcfYield: number;
   totalReturn: number;
+  capitalEfficiency: number;
   total: number;
   label: string;
   color: string;
@@ -83,17 +83,18 @@ interface SafetyWeights {
 }
 
 interface UpsideWeights {
-  analyst: number;
-  week52: number;
-  dcf: number;
-  peSector: number;
-  epsGrowth: number;
+  businessGrowth: number;
+  analystTarget: number;
+  valuationDiscount: number;
+  fcfYield: number;
+  totalReturn: number;
+  capitalEfficiency: number;
 }
 
 const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = { balanceSheet: 25, beta: 20, profitability: 20, valuation: 15, size: 10, dividend: 10 };
-const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { analyst: 30, week52: 15, dcf: 20, peSector: 15, epsGrowth: 20 };
+const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { businessGrowth: 20, analystTarget: 20, valuationDiscount: 20, fcfYield: 15, totalReturn: 15, capitalEfficiency: 10 };
 const ZERO_SAFETY_ADJ: SafetyWeights = { balanceSheet: 0, beta: 0, profitability: 0, valuation: 0, size: 0, dividend: 0 };
-const ZERO_UPSIDE_ADJ: UpsideWeights = { analyst: 0, week52: 0, dcf: 0, peSector: 0, epsGrowth: 0 };
+const ZERO_UPSIDE_ADJ: UpsideWeights = { businessGrowth: 0, analystTarget: 0, valuationDiscount: 0, fcfYield: 0, totalReturn: 0, capitalEfficiency: 0 };
 
 // ── Constantes ──
 
@@ -156,16 +157,18 @@ const SAFETY_FACTORS: LegendFactor[] = [
 ];
 
 const UPSIDE_FACTORS: LegendFactor[] = [
-  { key: 'analyst', label: 'Cible des analystes', color: '#06b6d4', summary: 'Ou les analystes de Bay Street / Wall Street pensent que le titre sera dans 12 mois? Plus la cible est haute vs le prix actuel, plus le potentiel est grand.',
-    tiers: [{ condition: 'Forte hausse attendue', baseScore: 8.5 }, { condition: 'Hausse moderee', baseScore: 6.5 }, { condition: 'Deja au prix cible', baseScore: 3 }, { condition: 'Baisse attendue', baseScore: 1 }] },
-  { key: 'dcf', label: 'Valeur reelle estimee', color: '#8b5cf6', summary: 'On calcule ce que l\'entreprise vaut reellement selon ses flux de tresorerie. Si le prix en bourse est plus bas, c\'est une bonne affaire potentielle.',
-    tiers: [{ condition: 'Tres sous-evalue', baseScore: 8 }, { condition: 'Legerement sous-evalue', baseScore: 5.5 }, { condition: 'Surevalue', baseScore: 1 }] },
-  { key: 'epsGrowth', label: 'Croissance des profits', color: '#ec4899', summary: 'Les benefices de l\'entreprise augmentent-ils? Des profits en hausse poussent generalement le prix de l\'action vers le haut.',
-    tiers: [{ condition: 'Forte croissance', baseScore: 8 }, { condition: 'Croissance moderee', baseScore: 6 }, { condition: 'Profits en baisse', baseScore: 2 }] },
-  { key: 'week52', label: 'Marge de progression', color: '#10b981', summary: 'Ou se situe le prix par rapport a son plus haut et son plus bas des 12 derniers mois? Plus on est loin du sommet, plus il y a de potentiel de hausse.',
-    tiers: [{ condition: 'Pres du plus bas', baseScore: 10 }, { condition: 'Au milieu', baseScore: 6.5 }, { condition: 'Pres du sommet', baseScore: 3 }] },
-  { key: 'peSector', label: 'Moins cher que le secteur?', color: '#f59e0b', summary: 'Compare le prix du titre a la moyenne de son secteur. Un titre moins cher que ses pairs a plus de chances de rattraper la moyenne.',
-    tiers: [{ condition: 'Bien moins cher', baseScore: 9 }, { condition: 'Sous la moyenne', baseScore: 6.5 }, { condition: 'Plus cher que le secteur', baseScore: 2 }] },
+  { key: 'businessGrowth', label: 'Croissance de l\'entreprise', color: '#ec4899', summary: 'Les revenus et les profits augmentent-ils? C\'est le moteur fondamental. Les revenus sont durs a manipuler — si les ventes montent, le business grossit vraiment.',
+    tiers: [{ condition: 'Forte croissance', baseScore: 9 }, { condition: 'Bonne croissance', baseScore: 7.5 }, { condition: 'Stagnation', baseScore: 4.5 }, { condition: 'En baisse', baseScore: 2 }] },
+  { key: 'analystTarget', label: 'Cible des analystes', color: '#06b6d4', summary: 'Ou les analystes de Bay Street / Wall Street pensent que le titre sera dans 12 mois? Plus la cible est haute vs le prix actuel, plus le potentiel est grand.',
+    tiers: [{ condition: 'Fort potentiel (> 15%)', baseScore: 7.5 }, { condition: 'Potentiel correct (5-15%)', baseScore: 6 }, { condition: 'Au prix cible', baseScore: 4.5 }, { condition: 'Baisse attendue', baseScore: 2 }] },
+  { key: 'valuationDiscount', label: 'Le titre est-il sous-evalue?', color: '#8b5cf6', summary: 'Combine notre calcul de valeur reelle (DCF) et les previsions de benefices (PE forward). Si les benefices sont prevus en hausse, le titre devient moins cher.',
+    tiers: [{ condition: 'Tres sous-evalue', baseScore: 9 }, { condition: 'Sous-evalue', baseScore: 7 }, { condition: 'A sa juste valeur', baseScore: 4 }, { condition: 'Surevalue', baseScore: 2 }] },
+  { key: 'fcfYield', label: 'Rendement en cash (FCF)', color: '#10b981', summary: 'Combien de vrai cash l\'entreprise genere par rapport a sa valeur en bourse. C\'est la mesure preferee de Warren Buffett — le cash ne ment pas.',
+    tiers: [{ condition: 'FCF Yield > 6%', baseScore: 8 }, { condition: 'FCF Yield 3-6%', baseScore: 6.5 }, { condition: 'FCF Yield < 2%', baseScore: 5 }, { condition: 'Brule du cash', baseScore: 2 }] },
+  { key: 'totalReturn', label: 'Rendement total estime', color: '#f59e0b', summary: 'Combine le gain en prix estime par les analystes ET le revenu de dividende. C\'est le retour reel pour l\'investisseur sur 12 mois.',
+    tiers: [{ condition: 'Retour > 12%', baseScore: 7.5 }, { condition: 'Retour 5-12%', baseScore: 6 }, { condition: 'Retour < 3%', baseScore: 4 }, { condition: 'Retour negatif', baseScore: 2 }] },
+  { key: 'capitalEfficiency', label: 'Efficacite du capital (ROE)', color: '#ef4444', summary: 'Pour chaque dollar investi par les actionnaires, combien l\'entreprise genere de profit? Un ROE eleve = une machine a creer de la valeur.',
+    tiers: [{ condition: 'ROE > 20%', baseScore: 8 }, { condition: 'ROE 10-20%', baseScore: 6.5 }, { condition: 'ROE < 5%', baseScore: 4 }, { condition: 'ROE negatif', baseScore: 2 }] },
 ];
 
 const SCORE_SCALE = [
@@ -486,11 +489,12 @@ function WeightCustomizer({
   ];
 
   const upsideRows: FactorRow[] = [
-    { key: 'analyst', label: 'Cible des analystes', color: '#06b6d4' },
-    { key: 'dcf', label: 'Valeur reelle estimee', color: '#8b5cf6' },
-    { key: 'epsGrowth', label: 'Croissance des profits', color: '#ec4899' },
-    { key: 'week52', label: 'Marge de progression', color: '#10b981' },
-    { key: 'peSector', label: 'Moins cher que le secteur?', color: '#f59e0b' },
+    { key: 'businessGrowth', label: 'Croissance de l\'entreprise', color: '#ec4899' },
+    { key: 'analystTarget', label: 'Cible des analystes', color: '#06b6d4' },
+    { key: 'valuationDiscount', label: 'Sous-evaluation', color: '#8b5cf6' },
+    { key: 'fcfYield', label: 'Cash genere (FCF)', color: '#10b981' },
+    { key: 'totalReturn', label: 'Rendement total estime', color: '#f59e0b' },
+    { key: 'capitalEfficiency', label: 'Efficacite du capital', color: '#ef4444' },
   ];
 
   return (
@@ -784,8 +788,8 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
     { dimension: 'Potentiel', score: ps.upside },
     { dimension: 'Sante fin.', score: wAvg(s => s.safety.balanceSheetScore) },
     { dimension: 'Rentabilite', score: wAvg(s => s.safety.profitabilityScore) },
-    { dimension: 'Cible anal.', score: wAvg(s => s.upside.analystUpside) },
-    { dimension: 'Croissance', score: wAvg(s => s.upside.epsGrowth) },
+    { dimension: 'Cible anal.', score: wAvg(s => s.upside.analystTarget) },
+    { dimension: 'Croissance', score: wAvg(s => s.upside.businessGrowth) },
   ];
 
   const quadDist = [
@@ -883,11 +887,12 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               </p>
               {[
                 { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee' },
-                { label: `Cible des analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ou les pros voient le titre dans 12 mois' },
-                { label: `Marge de progression (${uPct('week52')}%)`, value: wAvg(s => s.upside.week52Room), hint: 'Loin du sommet = plus de potentiel' },
-                { label: `Valeur reelle estimee (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Le titre vaut-il plus que son prix?' },
-                { label: `Moins cher que le secteur? (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'Compare aux entreprises similaires' },
-                { label: `Croissance des profits (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Profits en hausse = prix en hausse' },
+                { label: `Croissance (${uPct('businessGrowth')}%)`, value: wAvg(s => s.upside.businessGrowth), hint: 'Revenus et profits en hausse' },
+                { label: `Cible analystes (${uPct('analystTarget')}%)`, value: wAvg(s => s.upside.analystTarget), hint: 'Ou les pros voient le titre' },
+                { label: `Sous-evaluation (${uPct('valuationDiscount')}%)`, value: wAvg(s => s.upside.valuationDiscount), hint: 'Le titre vaut-il plus que son prix?' },
+                { label: `Cash genere (${uPct('fcfYield')}%)`, value: wAvg(s => s.upside.fcfYield), hint: 'Free cash flow vs valeur en bourse' },
+                { label: `Rendement total (${uPct('totalReturn')}%)`, value: wAvg(s => s.upside.totalReturn), hint: 'Gain en prix + dividende' },
+                { label: `Efficacite (${uPct('capitalEfficiency')}%)`, value: wAvg(s => s.upside.capitalEfficiency), hint: 'ROE — retour sur capitaux propres' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -1059,11 +1064,12 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 <TrendingUp className="h-3 w-3" /> Detail potentiel — {s.upside.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: `Cible des analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Cible 12 mois vs prix actuel' },
-                                { label: `Marge de progression (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Potentiel vs le sommet' },
-                                { label: `Valeur reelle estimee (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Vaut plus que son prix?' },
-                                { label: `Moins cher que le secteur? (${uPct('peSector')}%)`, value: s.upside.peSectorGap, hint: 'Compare aux pairs' },
-                                { label: `Croissance des profits (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Profits en hausse' },
+                                { label: `Croissance (${uPct('businessGrowth')}%)`, value: s.upside.businessGrowth, hint: 'Revenus + profits' },
+                                { label: `Cible analystes (${uPct('analystTarget')}%)`, value: s.upside.analystTarget, hint: 'Cible 12 mois' },
+                                { label: `Sous-evaluation (${uPct('valuationDiscount')}%)`, value: s.upside.valuationDiscount, hint: 'DCF + PE forward' },
+                                { label: `Cash genere (${uPct('fcfYield')}%)`, value: s.upside.fcfYield, hint: 'FCF / capitalisation' },
+                                { label: `Rendement total (${uPct('totalReturn')}%)`, value: s.upside.totalReturn, hint: 'Gain + dividende' },
+                                { label: `Efficacite (${uPct('capitalEfficiency')}%)`, value: s.upside.capitalEfficiency, hint: 'ROE' },
                               ]} />
                             </div>
                           </div>
