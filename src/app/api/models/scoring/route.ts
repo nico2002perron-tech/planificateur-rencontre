@@ -4,7 +4,7 @@ import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
 import { getYahooQuotes, getYahooProfile, getYahooPriceTarget } from '@/lib/yahoo/client';
 import { generatePortfolio, type ProfileInput, type StockUniverse, type BondUniverse } from '@/lib/models/portfolio-generator';
-import { calculateDualScores, rankStocks } from '@/lib/valuation/safety-score';
+import { calculateDualScores, rankStocks, type CustomWeights } from '@/lib/valuation/safety-score';
 
 /**
  * POST /api/models/scoring
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { profile_id, portfolio_value = 100000 } = body;
+  const { profile_id, portfolio_value = 100000, weights } = body;
 
   if (!profile_id) {
     return NextResponse.json({ error: 'profile_id requis' }, { status: 400 });
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
     assetClass: 'EQUITY',
   }));
 
-  const rawScores = calculateDualScores(dualScoreInputs, []);
+  const rawScores = calculateDualScores(dualScoreInputs, [], undefined, weights as CustomWeights | undefined);
   const rankedScores = rankStocks(rawScores);
 
   // ── 5. Portfolio-level aggregates ──

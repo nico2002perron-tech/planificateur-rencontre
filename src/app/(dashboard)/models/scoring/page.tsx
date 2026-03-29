@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -16,6 +16,7 @@ import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Target, Shield, TrendingUp, Star, Eye,
   ChevronDown, ChevronUp, Info, Gauge, HelpCircle,
+  SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 
 // ── Types ──
@@ -70,6 +71,25 @@ interface ScoringResult {
   stocks: ScoredStock[];
 }
 
+interface SafetyWeights {
+  week52: number;
+  beta: number;
+  dividend: number;
+  pe: number;
+  eps: number;
+}
+
+interface UpsideWeights {
+  analyst: number;
+  week52: number;
+  dcf: number;
+  peSector: number;
+  epsGrowth: number;
+}
+
+const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = { week52: 20, beta: 25, dividend: 20, pe: 20, eps: 15 };
+const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { analyst: 30, week52: 15, dcf: 20, peSector: 15, epsGrowth: 20 };
+
 // ── Constantes ──
 
 const BRAND = '#00b4d8';
@@ -112,6 +132,137 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
+// ── Legend Data ──
+
+const SAFETY_FACTORS = [
+  {
+    key: 'beta' as const,
+    label: 'Beta (volatilite)',
+    color: '#3b82f6',
+    tiers: [
+      { condition: 'Beta < 0.5', score: '8+', color: GREEN },
+      { condition: 'Beta = 1.0', score: '6.5', color: BRAND },
+      { condition: 'Beta > 2.0', score: '3 ou moins', color: RED },
+    ],
+    summary: 'Moins volatile = plus sur',
+  },
+  {
+    key: 'week52' as const,
+    label: 'Position 52 semaines',
+    color: '#10b981',
+    tiers: [
+      { condition: 'Pres du 52w low', score: '9-10', color: GREEN },
+      { condition: 'Milieu du range', score: '6-7', color: AMBER },
+      { condition: 'Pres du 52w high', score: '3-4', color: RED },
+    ],
+    summary: 'Pres du bas annuel = meilleur prix d\'achat',
+  },
+  {
+    key: 'dividend' as const,
+    label: 'Dividendes',
+    color: '#8b5cf6',
+    tiers: [
+      { condition: 'Rendement 3-5%', score: '9', color: GREEN },
+      { condition: 'Rendement 1.5-3%', score: '7', color: BRAND },
+      { condition: '< 1.5%', score: '6.5', color: AMBER },
+      { condition: 'Aucun', score: '5', color: '#94a3b8' },
+      { condition: '> 8% (piege)', score: '3', color: RED },
+    ],
+    summary: 'Dividende regulier = coussin de revenu',
+  },
+  {
+    key: 'pe' as const,
+    label: 'PE vs secteur',
+    color: '#f59e0b',
+    tiers: [
+      { condition: 'PE 0.5-1.0x bench', score: '9', color: GREEN },
+      { condition: 'PE 1.0-1.3x bench', score: '7', color: BRAND },
+      { condition: 'PE > 1.8x bench', score: '2', color: RED },
+    ],
+    summary: 'PE sous le benchmark = sous-evalue',
+  },
+  {
+    key: 'eps' as const,
+    label: 'Benefices (BPA)',
+    color: '#ec4899',
+    tiers: [
+      { condition: 'BPA positif', score: '8', color: GREEN },
+      { condition: 'Breakeven', score: '4', color: AMBER },
+      { condition: 'BPA negatif', score: '1', color: RED },
+    ],
+    summary: 'Benefices positifs = fondamentaux solides',
+  },
+];
+
+const UPSIDE_FACTORS = [
+  {
+    key: 'analyst' as const,
+    label: 'Cible analystes',
+    color: '#06b6d4',
+    tiers: [
+      { condition: 'Upside > 25%', score: '8.5-10', color: GREEN },
+      { condition: 'Upside 5-15%', score: '6.5-7', color: BRAND },
+      { condition: 'Upside 0%', score: '3', color: RED },
+      { condition: 'Downside > 10%', score: '1', color: RED },
+    ],
+    summary: 'Ecart entre le prix et la cible 12 mois',
+  },
+  {
+    key: 'dcf' as const,
+    label: 'Valorisation DCF',
+    color: '#8b5cf6',
+    tiers: [
+      { condition: 'Sous-evalue > 30%', score: '8-10', color: GREEN },
+      { condition: 'Sous-evalue 5-15%', score: '5.5-7', color: BRAND },
+      { condition: 'Surevalue', score: '1-2.5', color: RED },
+    ],
+    summary: 'Valeur intrinseque vs prix du marche',
+  },
+  {
+    key: 'epsGrowth' as const,
+    label: 'Croissance BPA',
+    color: '#ec4899',
+    tiers: [
+      { condition: 'Croissance > 20%', score: '8-10', color: GREEN },
+      { condition: 'Croissance 5-10%', score: '6-7', color: BRAND },
+      { condition: 'Negative', score: '2', color: RED },
+    ],
+    summary: 'Benefices en croissance = moteur de hausse',
+  },
+  {
+    key: 'week52' as const,
+    label: 'Marge 52 semaines',
+    color: '#10b981',
+    tiers: [
+      { condition: 'Pres du 52w low', score: '9-10', color: GREEN },
+      { condition: 'Milieu du range', score: '6-7', color: AMBER },
+      { condition: 'Pres du 52w high', score: '3-4', color: RED },
+    ],
+    summary: 'Loin du sommet = marge de hausse',
+  },
+  {
+    key: 'peSector' as const,
+    label: 'PE vs secteur',
+    color: '#f59e0b',
+    tiers: [
+      { condition: 'PE < 50% bench', score: '9', color: GREEN },
+      { condition: 'PE < bench', score: '6.5-8', color: BRAND },
+      { condition: 'PE > 1.2x bench', score: '2', color: RED },
+    ],
+    summary: 'PE bas = potentiel d\'expansion du multiple',
+  },
+];
+
+const SCORE_SCALE = [
+  { min: 8, max: 10, label: 'Excellent', color: GREEN, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700' },
+  { min: 6, max: 8, label: 'Bon', color: BRAND, bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700' },
+  { min: 4, max: 6, label: 'Modere', color: AMBER, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
+  { min: 2, max: 4, label: 'Risque', color: '#f97316', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700' },
+  { min: 0, max: 2, label: 'Tres faible', color: RED, bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
+];
+
+// ── Utilities ──
+
 function fmtDec(n: number, d = 1) {
   return new Intl.NumberFormat('fr-CA', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
 }
@@ -139,12 +290,17 @@ function scoreBarColor(score: number, type: 'safety' | 'upside'): string {
   return RED;
 }
 
-function compositeVerdict(score: number): { text: string; emoji: string } {
-  if (score >= 8) return { text: 'Excellent equilibre securite/potentiel', emoji: '' };
-  if (score >= 6.5) return { text: 'Bon portefeuille, bien positionne', emoji: '' };
-  if (score >= 5) return { text: 'Portefeuille correct, quelques points a ameliorer', emoji: '' };
-  if (score >= 3.5) return { text: 'Attention — plusieurs titres a revoir', emoji: '' };
-  return { text: 'Portefeuille fragile — revision recommandee', emoji: '' };
+function compositeVerdict(score: number): { text: string } {
+  if (score >= 8) return { text: 'Excellent equilibre securite/potentiel' };
+  if (score >= 6.5) return { text: 'Bon portefeuille, bien positionne' };
+  if (score >= 5) return { text: 'Portefeuille correct, quelques points a ameliorer' };
+  if (score >= 3.5) return { text: 'Attention — plusieurs titres a revoir' };
+  return { text: 'Portefeuille fragile — revision recommandee' };
+}
+
+function weightsAreDefault(sw: SafetyWeights, uw: UpsideWeights): boolean {
+  return JSON.stringify(sw) === JSON.stringify(DEFAULT_SAFETY_WEIGHTS) &&
+    JSON.stringify(uw) === JSON.stringify(DEFAULT_UPSIDE_WEIGHTS);
 }
 
 // ── Score Gauge (visual arc) ──
@@ -210,6 +366,297 @@ function MiniBreakdown({ items }: { items: { label: string; value: number; hint:
   );
 }
 
+// ── Scoring Legend ──
+
+function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: SafetyWeights; upsideWeights: UpsideWeights }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const safetyTotal = Object.values(safetyWeights).reduce((a, b) => a + b, 0);
+  const upsideTotal = Object.values(upsideWeights).reduce((a, b) => a + b, 0);
+
+  const getSafetyPct = (key: keyof SafetyWeights) => safetyTotal > 0 ? Math.round(safetyWeights[key] / safetyTotal * 100) : 0;
+  const getUpsidePct = (key: keyof UpsideWeights) => upsideTotal > 0 ? Math.round(upsideWeights[key] / upsideTotal * 100) : 0;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+      {/* Header + Scale — always visible */}
+      <div
+        className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-100 to-emerald-100">
+              <Info className="h-4 w-4 text-cyan-700" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-text-main">Bareme des scores — comment sont attribues les points</h3>
+              <p className="text-xs text-text-muted">Chaque titre est note sur 10 pour sa securite et son potentiel</p>
+            </div>
+          </div>
+          {expanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
+        </div>
+
+        {/* Color scale — always visible */}
+        <div className="flex gap-1.5">
+          {SCORE_SCALE.map(s => (
+            <div key={s.label} className={`flex-1 rounded-lg px-2 py-1.5 ${s.bg} border ${s.border} text-center`}>
+              <p className={`text-xs font-bold ${s.text}`}>{s.min}-{s.max}</p>
+              <p className={`text-[10px] ${s.text} opacity-80`}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+          {/* Quadrant explanation */}
+          <div className="mb-4 p-3 rounded-xl bg-gray-50">
+            <p className="text-xs font-semibold text-text-main mb-2">Les 4 categories :</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {(['star', 'safe', 'growth', 'watch'] as const).map(q => {
+                const cfg = QUADRANT_CONFIG[q];
+                const Icon = cfg.icon;
+                return (
+                  <div key={q} className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${cfg.bg} border ${cfg.border}`}>
+                    <Icon className={`h-3.5 w-3.5 ${cfg.text} shrink-0`} />
+                    <span className={`text-xs font-semibold ${cfg.text}`}>{cfg.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Safety factors */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-4 w-4 text-emerald-600" />
+                <h4 className="text-sm font-bold text-emerald-700">Score de Securite</h4>
+              </div>
+              <div className="space-y-3">
+                {SAFETY_FACTORS.map(f => {
+                  const pct = getSafetyPct(f.key);
+                  return (
+                    <div key={f.key} className="rounded-xl border border-gray-100 p-3 bg-gray-50/50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-text-main">{f.label}</span>
+                        <span
+                          className="text-xs font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: `${f.color}15`, color: f.color }}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-muted mb-2">{f.summary}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {f.tiers.map((t, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border"
+                            style={{ borderColor: `${t.color}40`, backgroundColor: `${t.color}10`, color: t.color }}
+                          >
+                            {t.condition} = <strong>{t.score} pts</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Upside factors */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-4 w-4 text-cyan-600" />
+                <h4 className="text-sm font-bold text-cyan-700">Score de Potentiel</h4>
+              </div>
+              <div className="space-y-3">
+                {UPSIDE_FACTORS.map(f => {
+                  const pct = getUpsidePct(f.key);
+                  return (
+                    <div key={f.key} className="rounded-xl border border-gray-100 p-3 bg-gray-50/50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-text-main">{f.label}</span>
+                        <span
+                          className="text-xs font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: `${f.color}15`, color: f.color }}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-text-muted mb-2">{f.summary}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {f.tiers.map((t, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border"
+                            style={{ borderColor: `${t.color}40`, backgroundColor: `${t.color}10`, color: t.color }}
+                          >
+                            {t.condition} = <strong>{t.score} pts</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Weight Slider (Duolingo-style) ──
+
+function WeightSlider({
+  label, value, onChange, color,
+}: {
+  label: string; value: number; onChange: (v: number) => void; color: string;
+}) {
+  const pct = Math.min(value * 2, 100); // 50 max → 100% visual
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <span className="text-xs text-text-main font-medium w-40 shrink-0">{label}</span>
+      <div className="flex-1 relative h-3 rounded-full bg-gray-100 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-200"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={5}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </div>
+      <span
+        className="text-xs font-bold w-12 text-center rounded-full py-1"
+        style={{ backgroundColor: `${color}15`, color }}
+      >
+        {value}%
+      </span>
+    </div>
+  );
+}
+
+// ── Weight Customizer Panel ──
+
+function WeightCustomizer({
+  safetyWeights, upsideWeights,
+  onSafetyChange, onUpsideChange, onReset,
+}: {
+  safetyWeights: SafetyWeights;
+  upsideWeights: UpsideWeights;
+  onSafetyChange: (key: keyof SafetyWeights, value: number) => void;
+  onUpsideChange: (key: keyof UpsideWeights, value: number) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isDefault = weightsAreDefault(safetyWeights, upsideWeights);
+
+  const safetySum = Object.values(safetyWeights).reduce((a, b) => a + b, 0);
+  const upsideSum = Object.values(upsideWeights).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="mb-5 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+      <div
+        className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-violet-100 to-pink-100">
+              <SlidersHorizontal className="h-4 w-4 text-violet-700" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-text-main">
+                Personnaliser les criteres
+                {!isDefault && <span className="ml-2 text-xs font-normal text-violet-500">(modifie)</span>}
+              </p>
+              <p className="text-xs text-text-muted">Ajustez l&apos;importance de chaque facteur selon votre vision</p>
+            </div>
+          </div>
+          {open ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
+        </div>
+      </div>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Safety weights */}
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-emerald-600" />
+                  <h4 className="text-sm font-bold text-emerald-700">Securite</h4>
+                </div>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${safetySum === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  Total : {safetySum}%
+                </span>
+              </div>
+              <WeightSlider label="Beta (volatilite)" value={safetyWeights.beta} onChange={v => onSafetyChange('beta', v)} color="#3b82f6" />
+              <WeightSlider label="Position 52 semaines" value={safetyWeights.week52} onChange={v => onSafetyChange('week52', v)} color="#10b981" />
+              <WeightSlider label="Dividendes" value={safetyWeights.dividend} onChange={v => onSafetyChange('dividend', v)} color="#8b5cf6" />
+              <WeightSlider label="PE vs secteur" value={safetyWeights.pe} onChange={v => onSafetyChange('pe', v)} color="#f59e0b" />
+              <WeightSlider label="Benefices (BPA)" value={safetyWeights.eps} onChange={v => onSafetyChange('eps', v)} color="#ec4899" />
+              {safetySum !== 100 && (
+                <p className="text-[10px] text-amber-600 mt-1">Les poids seront normalises automatiquement ({safetySum}% → 100%)</p>
+              )}
+            </div>
+
+            {/* Upside weights */}
+            <div className="rounded-xl border border-cyan-100 bg-cyan-50/30 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-cyan-600" />
+                  <h4 className="text-sm font-bold text-cyan-700">Potentiel</h4>
+                </div>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${upsideSum === 100 ? 'bg-cyan-100 text-cyan-700' : 'bg-amber-100 text-amber-700'}`}>
+                  Total : {upsideSum}%
+                </span>
+              </div>
+              <WeightSlider label="Cible analystes" value={upsideWeights.analyst} onChange={v => onUpsideChange('analyst', v)} color="#06b6d4" />
+              <WeightSlider label="Valorisation DCF" value={upsideWeights.dcf} onChange={v => onUpsideChange('dcf', v)} color="#8b5cf6" />
+              <WeightSlider label="Croissance BPA" value={upsideWeights.epsGrowth} onChange={v => onUpsideChange('epsGrowth', v)} color="#ec4899" />
+              <WeightSlider label="Marge 52 semaines" value={upsideWeights.week52} onChange={v => onUpsideChange('week52', v)} color="#10b981" />
+              <WeightSlider label="PE vs secteur" value={upsideWeights.peSector} onChange={v => onUpsideChange('peSector', v)} color="#f59e0b" />
+              {upsideSum !== 100 && (
+                <p className="text-[10px] text-amber-600 mt-1">Les poids seront normalises automatiquement ({upsideSum}% → 100%)</p>
+              )}
+            </div>
+          </div>
+
+          {/* Reset button */}
+          {!isDefault && (
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={(e) => { e.stopPropagation(); onReset(); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm text-text-muted hover:bg-gray-50 hover:text-text-main transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reinitialiser les poids par defaut
+              </button>
+            </div>
+          )}
+
+          <p className="text-[10px] text-text-light text-center mt-3">
+            Les poids personnalises sont sauvegardes automatiquement dans votre navigateur.
+            Relancez l&apos;analyse apres modification pour voir les nouveaux scores.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ════════════════════════════════════════
 // PAGE
 // ════════════════════════════════════════
@@ -221,7 +668,44 @@ export default function ScoringPage() {
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ScoringResult | null>(null);
-  const [showGuide, setShowGuide] = useState(false);
+
+  // Custom weights state
+  const [safetyWeights, setSafetyWeights] = useState<SafetyWeights>({ ...DEFAULT_SAFETY_WEIGHTS });
+  const [upsideWeights, setUpsideWeights] = useState<UpsideWeights>({ ...DEFAULT_UPSIDE_WEIGHTS });
+  const [usedWeights, setUsedWeights] = useState<{ safety: SafetyWeights; upside: UpsideWeights } | null>(null);
+  const [weightsLoaded, setWeightsLoaded] = useState(false);
+
+  // Load from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('scoring-weights');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.safety) setSafetyWeights(w => ({ ...w, ...parsed.safety }));
+        if (parsed.upside) setUpsideWeights(w => ({ ...w, ...parsed.upside }));
+      }
+    } catch { /* ignore */ }
+    setWeightsLoaded(true);
+  }, []);
+
+  // Save to localStorage
+  useEffect(() => {
+    if (!weightsLoaded) return;
+    localStorage.setItem('scoring-weights', JSON.stringify({ safety: safetyWeights, upside: upsideWeights }));
+  }, [safetyWeights, upsideWeights, weightsLoaded]);
+
+  const handleSafetyChange = useCallback((key: keyof SafetyWeights, value: number) => {
+    setSafetyWeights(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleUpsideChange = useCallback((key: keyof UpsideWeights, value: number) => {
+    setUpsideWeights(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setSafetyWeights({ ...DEFAULT_SAFETY_WEIGHTS });
+    setUpsideWeights({ ...DEFAULT_UPSIDE_WEIGHTS });
+  }, []);
 
   const handleRun = useCallback(async () => {
     if (!selectedProfileId) {
@@ -234,20 +718,24 @@ export default function ScoringPage() {
       const res = await fetch('/api/models/scoring', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_id: selectedProfileId }),
+        body: JSON.stringify({
+          profile_id: selectedProfileId,
+          weights: { safety: safetyWeights, upside: upsideWeights },
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error);
       }
       setData(await res.json());
+      setUsedWeights({ safety: { ...safetyWeights }, upside: { ...upsideWeights } });
       toast('success', 'Scoring termine');
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Erreur');
     } finally {
       setLoading(false);
     }
-  }, [selectedProfileId, toast]);
+  }, [selectedProfileId, safetyWeights, upsideWeights, toast]);
 
   if (profilesLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
@@ -265,59 +753,17 @@ export default function ScoringPage() {
         }
       />
 
-      {/* Guide card */}
-      <div
-        className="mb-5 rounded-xl border border-cyan-200 bg-gradient-to-r from-cyan-50 to-blue-50 p-4 cursor-pointer"
-        onClick={() => setShowGuide(!showGuide)}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-100">
-              <HelpCircle className="h-4 w-4 text-cyan-700" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-text-main">Comment lire les resultats?</p>
-              <p className="text-xs text-text-muted">Cliquez pour voir le guide rapide</p>
-            </div>
-          </div>
-          {showGuide ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
-        </div>
+      {/* Detailed legend */}
+      <ScoringLegend safetyWeights={safetyWeights} upsideWeights={upsideWeights} />
 
-        {showGuide && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-text-muted">
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
-                <Shield className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold text-text-main">Score de Securite (0-10)</p>
-                  <p>Mesure la solidite du titre : stabilite du prix, faible volatilite, dividendes reguliers, benefices positifs et valorisation raisonnable.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <TrendingUp className="h-4 w-4 text-cyan-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-semibold text-text-main">Score de Potentiel (0-10)</p>
-                  <p>Mesure la marge de hausse : ecart avec la cible des analystes, sous-evaluation potentielle, croissance des benefices et rendement total estime.</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="font-semibold text-text-main mb-1">Les 4 categories :</p>
-              {(['star', 'safe', 'growth', 'watch'] as const).map(q => {
-                const cfg = QUADRANT_CONFIG[q];
-                const Icon = cfg.icon;
-                return (
-                  <div key={q} className="flex items-center gap-2">
-                    <Icon className={`h-3.5 w-3.5 ${cfg.text}`} />
-                    <span className={`font-semibold ${cfg.text}`}>{cfg.label}</span>
-                    <span className="text-xs">— {cfg.desc.split('.')[0]}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Weight customizer (Duolingo-style) */}
+      <WeightCustomizer
+        safetyWeights={safetyWeights}
+        upsideWeights={upsideWeights}
+        onSafetyChange={handleSafetyChange}
+        onUpsideChange={handleUpsideChange}
+        onReset={handleReset}
+      />
 
       {/* Profile selector */}
       <Card className="mb-6">
@@ -357,7 +803,7 @@ export default function ScoringPage() {
         </div>
       )}
 
-      {data && !loading && <ScoringView data={data} />}
+      {data && !loading && <ScoringView data={data} weights={usedWeights} />}
 
       <StepNav current={4} />
     </div>
@@ -368,7 +814,7 @@ export default function ScoringPage() {
 // VUE SCORING
 // ════════════════════════════════════════
 
-function ScoringView({ data }: { data: ScoringResult }) {
+function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety: SafetyWeights; upside: UpsideWeights } | null }) {
   const ps = data.portfolioScores;
   const composite = Math.round((ps.safety * 0.5 + ps.upside * 0.5) * 10) / 10;
   const verdict = compositeVerdict(composite);
@@ -379,6 +825,14 @@ function ScoringView({ data }: { data: ScoringResult }) {
     if (totalWeight === 0) return 0;
     return Math.round(data.stocks.reduce((s, st) => s + fn(st) * st.weight, 0) / totalWeight * 10) / 10;
   }
+
+  // Compute effective weight percentages
+  const sw = weights?.safety ?? DEFAULT_SAFETY_WEIGHTS;
+  const uw = weights?.upside ?? DEFAULT_UPSIDE_WEIGHTS;
+  const sSum = Object.values(sw).reduce((a, b) => a + b, 0);
+  const uSum = Object.values(uw).reduce((a, b) => a + b, 0);
+  const sPct = (k: keyof SafetyWeights) => sSum > 0 ? Math.round(sw[k] / sSum * 100) : 0;
+  const uPct = (k: keyof UpsideWeights) => uSum > 0 ? Math.round(uw[k] / uSum * 100) : 0;
 
   const radarData = [
     { dimension: 'Securite', score: ps.safety },
@@ -471,11 +925,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
               </p>
               {[
                 { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee de tous les criteres' },
-                { label: 'Position 52 sem.', value: wAvg(s => s.safety.week52Position), hint: 'Proche du low = meilleure opportunite' },
-                { label: 'Beta (volatilite)', value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile = plus sur' },
-                { label: 'Dividendes', value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier = coussin' },
-                { label: 'PE vs secteur', value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas vs benchmark = sous-evalue' },
-                { label: 'Benefices (BPA)', value: wAvg(s => s.safety.epsStability), hint: 'Benefices positifs = fondamentaux solides' },
+                { label: `Position 52 sem. (${sPct('week52')}%)`, value: wAvg(s => s.safety.week52Position), hint: 'Proche du low = meilleure opportunite' },
+                { label: `Beta / volatilite (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile = plus sur' },
+                { label: `Dividendes (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier = coussin' },
+                { label: `PE vs secteur (${sPct('pe')}%)`, value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas vs benchmark = sous-evalue' },
+                { label: `Benefices (${sPct('eps')}%)`, value: wAvg(s => s.safety.epsStability), hint: 'Benefices positifs = fondamentaux solides' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -494,11 +948,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
               </p>
               {[
                 { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee de tous les criteres' },
-                { label: 'Cible analystes (30%)', value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix actuel vs cible 12 mois' },
-                { label: 'Marge 52 sem. (15%)', value: wAvg(s => s.upside.week52Room), hint: 'Proche du low = plus de marge' },
-                { label: 'Valorisation DCF (20%)', value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon les modeles internes' },
-                { label: 'PE vs secteur (15%)', value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = potentiel d\'expansion du multiple' },
-                { label: 'Croissance BPA (20%)', value: wAvg(s => s.upside.epsGrowth), hint: 'Benefices en croissance = moteur de hausse' },
+                { label: `Cible analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix actuel vs cible 12 mois' },
+                { label: `Marge 52 sem. (${uPct('week52')}%)`, value: wAvg(s => s.upside.week52Room), hint: 'Proche du low = plus de marge' },
+                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon les modeles internes' },
+                { label: `PE vs secteur (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = potentiel d\'expansion du multiple' },
+                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Benefices en croissance = moteur de hausse' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -671,11 +1125,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
                                 <Shield className="h-3 w-3" /> Detail securite — {s.safety.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: 'Position 52 sem. (20%)', value: s.safety.week52Position, hint: 'Proche du low = meilleure opportunite' },
-                                { label: 'Beta / volatilite (25%)', value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile = plus sur' },
-                                { label: 'Dividendes (20%)', value: s.safety.dividendScore, hint: 'Dividende regulier = coussin de revenu' },
-                                { label: 'PE vs secteur (20%)', value: s.safety.peReasonableness, hint: 'PE bas vs benchmark = sous-evalue' },
-                                { label: 'Benefices (15%)', value: s.safety.epsStability, hint: 'BPA positif = fondamentaux solides' },
+                                { label: `Position 52 sem. (${sPct('week52')}%)`, value: s.safety.week52Position, hint: 'Proche du low = meilleure opportunite' },
+                                { label: `Beta / volatilite (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile = plus sur' },
+                                { label: `Dividendes (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Dividende regulier = coussin de revenu' },
+                                { label: `PE vs secteur (${sPct('pe')}%)`, value: s.safety.peReasonableness, hint: 'PE bas vs benchmark = sous-evalue' },
+                                { label: `Benefices (${sPct('eps')}%)`, value: s.safety.epsStability, hint: 'BPA positif = fondamentaux solides' },
                               ]} />
                             </div>
                             <div>
@@ -683,11 +1137,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
                                 <TrendingUp className="h-3 w-3" /> Detail potentiel — {s.upside.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: 'Cible analystes (30%)', value: s.upside.analystUpside, hint: 'Ecart prix vs consensus 12 mois' },
-                                { label: 'Marge 52 semaines (15%)', value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
-                                { label: 'Valorisation DCF (20%)', value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles internes' },
-                                { label: 'PE vs secteur (15%)', value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
-                                { label: 'Croissance BPA (20%)', value: s.upside.epsGrowth, hint: 'Croissance des benefices = moteur' },
+                                { label: `Cible analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Ecart prix vs consensus 12 mois' },
+                                { label: `Marge 52 semaines (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
+                                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles internes' },
+                                { label: `PE vs secteur (${uPct('peSector')}%)`, value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
+                                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Croissance des benefices = moteur' },
                               ]} />
                             </div>
                           </div>
@@ -708,6 +1162,3 @@ function ScoringView({ data }: { data: ScoringResult }) {
     </div>
   );
 }
-
-// Need React import for Fragment
-import React from 'react';
