@@ -11,7 +11,8 @@ import {
 } from '@/lib/calculations/scenarios';
 import type { AIReportContent, ValuationDataItem } from '@/lib/ai/types';
 import type { BenchmarkComparisonData } from './benchmark-data';
-export type { AIReportContent, ValuationDataItem, BenchmarkComparisonData };
+import type { StockDualScore } from '@/lib/valuation/safety-score';
+export type { AIReportContent, ValuationDataItem, BenchmarkComparisonData, StockDualScore };
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -103,6 +104,12 @@ export interface HoldingProfile {
   estimatedGainPercent: number;
   estimatedGainDollar: number;
   targetSource: 'consensus' | 'estimated' | 'manual' | 'none';
+  pe: number;
+  eps: number;
+  week52High: number;
+  week52Low: number;
+  dividendYield: number;
+  earningsGrowth: number;
 }
 
 export interface HistoricalPoint {
@@ -146,6 +153,12 @@ export interface FMPProfileData {
   lastDiv: number;
   mktCap: number;
   exchange: string;
+  pe?: number;
+  eps?: number;
+  week52High?: number;
+  week52Low?: number;
+  dividendYield?: number;
+  earningsGrowth?: number;
 }
 
 export interface FMPTargetData {
@@ -223,6 +236,7 @@ export interface FullReportData {
   aiContent?: AIReportContent | null;
   valuationData?: ValuationDataItem[] | null;
   benchmarkComparison?: BenchmarkComparisonData | null;
+  stockScores?: StockDualScore[] | null;
 }
 
 // ─── Sector Labels (FR) ─────────────────────────────────────────
@@ -528,6 +542,12 @@ export function buildFullReportData(
       estimatedGainPercent: Math.round(gainPercent * 100) / 100,
       estimatedGainDollar: Math.round(gainDollar * 100) / 100,
       targetSource,
+      pe: profile?.pe || 0,
+      eps: profile?.eps || 0,
+      week52High: profile?.week52High || 0,
+      week52Low: profile?.week52Low || 0,
+      dividendYield: profile?.dividendYield || 0,
+      earningsGrowth: profile?.earningsGrowth || 0,
     };
   });
 

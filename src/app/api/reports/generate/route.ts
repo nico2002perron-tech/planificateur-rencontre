@@ -14,6 +14,7 @@ import type { BenchmarkComparisonData } from '@/lib/pdf/benchmark-data';
 import { calculateValuation, solveReverseDcf, buildSensitivityMatrix } from '@/lib/valuation/dcf';
 import { getBenchmarkData } from '@/lib/valuation/benchmarks';
 import { scoreOutOf10 } from '@/lib/valuation/scoring';
+import { calculateDualScores, rankStocks } from '@/lib/valuation/safety-score';
 import { generateReportAIContent } from '@/lib/ai/groq-client';
 import React from 'react';
 
@@ -122,6 +123,12 @@ export async function POST(request: NextRequest) {
               lastDiv: yProfile.lastDiv,
               mktCap: yProfile.mktCap,
               exchange: yProfile.exchange,
+              pe: yProfile.pe,
+              eps: yProfile.eps,
+              week52High: yProfile.week52High,
+              week52Low: yProfile.week52Low,
+              dividendYield: yProfile.dividendYield,
+              earningsGrowth: yProfile.earningsGrowth,
             };
             return { symbol, data };
           }
@@ -569,7 +576,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Step 5c: Benchmark comparison (if benchmarks selected) ──
+    // ── Step 5c: Compute dual scores (Safety + Upside) ──
+    try {
+      const dualScoreHoldings = reportData.holdingProfiles.map((hp) => {
+        const holding = reportData.portfolio.holdings.find(h => h.symbol === hp.symbol);
+        return {
+          symbol: hp.symbol,
+          companyName: hp.companyName,
+          currentPrice: hp.currentPrice,
+          weight: holding?.weight ?? 0,
+          beta: hp.beta,
+          pe: hp.pe,
+          eps: hp.eps,
+          week52High: hp.week52High,
+          week52Low: hp.week52Low,
+          dividendYield: hp.dividendYield,
+          earningsGrowth: hp.earningsGrowth,
+          targetPrice: hp.targetPrice,
+          estimatedGainPercent: hp.estimatedGainPercent,
+          sector: hp.sector,
+          assetClass: holding?.assetClass ?? 'EQUITY',
+        };
+      });
+
+      const dualScoreValuations = (valuationData ?? [])
+        .filter(v => v.avgIntrinsic > 0)
+        .map(v => ({ symbol: v.symbol, avgIntrinsic: v.avgIntrinsic }));
+
+      const rawScores = calculateDualScores(dualScoreHoldings, dualScoreValuations);
+      reportData.stockScores = rankStocks(rawScores);
+    } catch (err) {
+      console.warn('Dual scoring failed, skipping:', err);
+      reportData.stockScores = null;
+    }
+
+    // ── Step 5d: Benchmark comparison (if benchmarks selected) ──
     let benchmarkComparison: BenchmarkComparisonData | null = null;
     const selectedBenchmarkKeys: string[] = config?.benchmarks ?? [];
     if (selectedBenchmarkKeys.length > 0 && symbols.length > 0) {

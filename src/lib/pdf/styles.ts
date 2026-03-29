@@ -333,6 +333,54 @@ export const styles = StyleSheet.create({
     borderRadius: 3,
   },
 
+  /* ── Quadrant Badge ─────────────────────────────────── */
+  quadrantBadge: {
+    fontSize: 6.5,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 3,
+    textAlign: 'center' as const,
+  },
+
+  /* ── Dual Score Bar ────────────────────────────────── */
+  dualScoreBarOuter: {
+    height: 7,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 3.5,
+    overflow: 'hidden' as const,
+    width: 50,
+  },
+  dualScoreBarInner: {
+    height: '100%',
+    borderRadius: 3.5,
+  },
+
+  /* ── Quadrant Mini Grid ────────────────────────────── */
+  quadrantGrid: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderStyle: 'solid' as const,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+  },
+  quadrantCell: {
+    padding: 6,
+    width: '50%',
+  },
+  quadrantLabel: {
+    fontSize: 6.5,
+    fontFamily: 'Open Sans',
+    fontWeight: 600,
+    marginBottom: 3,
+  },
+  quadrantSymbols: {
+    fontSize: 7,
+    color: '#475569',
+    lineHeight: 1.4,
+  },
+
   /* ── Disclaimer ───────────────────────────────────────── */
   disclaimer: {
     fontSize: 7,

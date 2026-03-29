@@ -34,6 +34,7 @@ import type {
   SectorBreakdownItem,
   ValuationDataItem,
   BenchmarkComparisonData,
+  StockDualScore,
 } from './report-data';
 
 // ─── Backward compat: keep old interface exported ───────────────
@@ -871,8 +872,10 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const benchData = data.benchmarkComparison;
   const hasBenchmark = !!benchData;
   const hasAI = !!ai;
+  const stockScores = data.stockScores;
+  const hasScores = stockScores && stockScores.length > 0;
   const profilePageCount = Math.max(1, Math.ceil(data.holdingProfiles.length / 4));
-  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0) + (hasBenchmark ? 1 : 0);
+  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0) + (hasBenchmark ? 1 : 0) + (hasScores ? 1 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
@@ -887,6 +890,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
     const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
     return sum + w * hp.beta;
   }, 0);
+  const scoreOffset = hasScores ? 1 : 0;
   const valOffset = hasValuation ? 3 : 0;
   const benchOffset = hasBenchmark ? 1 : 0;
   const gainLoss = data.portfolio.totalGainLoss;
@@ -1628,7 +1632,203 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
       </Page>
 
 
-      {/* ═══ PAGE 5 (conditional): BENCHMARK COMPARISON ═══════════ */}
+      {/* ═══ PAGE 5 (conditional): STOCK SCORING — Safety & Upside ═══ */}
+      {hasScores && stockScores && (() => {
+        const QUADRANT_CONFIG = {
+          star: { label: 'Etoile', bg: '#ecfdf5', color: '#065f46', border: '#a7f3d0' },
+          safe: { label: 'Sur', bg: '#eff6ff', color: '#1e40af', border: '#bfdbfe' },
+          growth: { label: 'Croissance', bg: '#ecfeff', color: '#155e75', border: '#a5f3fc' },
+          watch: { label: 'Veille', bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
+        };
+
+        const starSymbols = stockScores.filter(s => s.quadrant === 'star').map(s => s.symbol);
+        const safeSymbols = stockScores.filter(s => s.quadrant === 'safe').map(s => s.symbol);
+        const growthSymbols = stockScores.filter(s => s.quadrant === 'growth').map(s => s.symbol);
+        const watchSymbols = stockScores.filter(s => s.quadrant === 'watch').map(s => s.symbol);
+
+        // Weighted averages
+        const totalWeight = stockScores.reduce((s, sc) => s + sc.weight, 0);
+        const avgSafety = totalWeight > 0
+          ? stockScores.reduce((s, sc) => s + sc.safety.total * sc.weight, 0) / totalWeight : 0;
+        const avgUpside = totalWeight > 0
+          ? stockScores.reduce((s, sc) => s + sc.upside.total * sc.weight, 0) / totalWeight : 0;
+
+        function scoreBarColor(score: number, type: 'safety' | 'upside'): string {
+          if (type === 'safety') {
+            if (score >= 7) return '#10b981';
+            if (score >= 5) return '#f59e0b';
+            return '#ef4444';
+          }
+          if (score >= 7) return '#00b4d8';
+          if (score >= 5) return '#c5a365';
+          return '#ef4444';
+        }
+
+        return (
+          <Page size="LETTER" orientation="landscape" style={styles.page}>
+            <AccentBar />
+
+            {/* Header row */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+              <View>
+                <Text style={styles.sectionTitle}>Classement des titres</Text>
+                <Text style={{ fontSize: 8, color: C.textSec, marginTop: -10 }}>
+                  Score de securite et potentiel de gains — Classement composite (50% securite + 50% potentiel)
+                </Text>
+              </View>
+
+              {/* Mini Quadrant Grid */}
+              <View style={{ ...styles.quadrantGrid, width: 170 }}>
+                <View style={{ flexDirection: 'row' }}>
+                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.safe.bg, borderRightWidth: 0.5, borderRightColor: '#e2e8f0', borderRightStyle: 'solid' as const, borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', borderBottomStyle: 'solid' as const }}>
+                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.safe.color }}>Sur</Text>
+                    <Text style={styles.quadrantSymbols}>{safeSymbols.length > 0 ? safeSymbols.join(', ') : '—'}</Text>
+                  </View>
+                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.star.bg, borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', borderBottomStyle: 'solid' as const }}>
+                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.star.color }}>Etoile</Text>
+                    <Text style={styles.quadrantSymbols}>{starSymbols.length > 0 ? starSymbols.join(', ') : '—'}</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row' }}>
+                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.watch.bg, borderRightWidth: 0.5, borderRightColor: '#e2e8f0', borderRightStyle: 'solid' as const }}>
+                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.watch.color }}>Veille</Text>
+                    <Text style={styles.quadrantSymbols}>{watchSymbols.length > 0 ? watchSymbols.join(', ') : '—'}</Text>
+                  </View>
+                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.growth.bg }}>
+                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.growth.color }}>Croissance</Text>
+                    <Text style={styles.quadrantSymbols}>{growthSymbols.length > 0 ? growthSymbols.join(', ') : '—'}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Table */}
+            <View style={styles.table}>
+              <View style={styles.th}>
+                <Text style={{ ...styles.thCell, width: '4%', textAlign: 'center' }}>#</Text>
+                <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
+                <Text style={{ ...styles.thCell, width: '15%' }}>Description</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Securite</Text>
+                <Text style={{ ...styles.thCell, width: '10%' }}></Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Potentiel</Text>
+                <Text style={{ ...styles.thCell, width: '10%' }}></Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'center' }}>Quadrant</Text>
+                <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Rend. est.</Text>
+                <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Poids</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Conf.</Text>
+              </View>
+
+              {stockScores.map((sc: StockDualScore, i: number) => {
+                const qCfg = QUADRANT_CONFIG[sc.quadrant];
+                const holding = data.holdingProfiles.find(hp => hp.symbol === sc.symbol);
+                const divYield = holding ? holding.dividendYield * 100 : 0;
+                const totalReturnPct = (holding?.estimatedGainPercent ?? 0) + divYield;
+
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.tdBold, width: '4%', textAlign: 'center', color: C.navy }}>{sc.rank}</Text>
+                    <Text style={{ ...styles.tdBold, width: '7%', fontSize: 8 }}>{sc.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{sc.companyName.substring(0, 22)}</Text>
+
+                    {/* Safety score + bar */}
+                    <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.safety.color, fontSize: 9 }}>
+                      {sc.confidence === 'low' ? 'N/D' : sc.safety.total.toFixed(1)}
+                    </Text>
+                    <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                      {sc.confidence !== 'low' && (
+                        <View style={styles.dualScoreBarOuter}>
+                          <View style={{ ...styles.dualScoreBarInner, width: `${sc.safety.total * 10}%`, backgroundColor: scoreBarColor(sc.safety.total, 'safety') }} />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Upside score + bar */}
+                    <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.upside.color, fontSize: 9 }}>
+                      {sc.confidence === 'low' ? 'N/D' : sc.upside.total.toFixed(1)}
+                    </Text>
+                    <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                      {sc.confidence !== 'low' && (
+                        <View style={styles.dualScoreBarOuter}>
+                          <View style={{ ...styles.dualScoreBarInner, width: `${sc.upside.total * 10}%`, backgroundColor: scoreBarColor(sc.upside.total, 'upside') }} />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Quadrant badge */}
+                    <View style={{ width: '10%', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ ...styles.quadrantBadge, backgroundColor: qCfg.bg, color: qCfg.color }}>
+                        {qCfg.label}
+                      </Text>
+                    </View>
+
+                    {/* Total return % */}
+                    <Text style={{
+                      ...styles.td, width: '9%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
+                      color: totalReturnPct >= 0 ? C.up : C.down,
+                    }}>
+                      {holding?.targetPrice && holding.targetPrice > 0 ? fmtPct(totalReturnPct) : '—'}
+                    </Text>
+
+                    {/* Weight */}
+                    <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>
+                      {sc.weight.toFixed(1)}%
+                    </Text>
+
+                    {/* Confidence */}
+                    <Text style={{ ...styles.td, width: '7%', textAlign: 'center', fontSize: 7, color: sc.confidence === 'high' ? C.up : sc.confidence === 'medium' ? C.warn : C.textTer }}>
+                      {sc.confidence === 'high' ? 'Eleve' : sc.confidence === 'medium' ? 'Moyen' : 'Faible'}
+                    </Text>
+                  </View>
+                );
+              })}
+
+              {/* Weighted total row */}
+              <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 }}>
+                <Text style={{ ...styles.tdBold, width: '4%' }}></Text>
+                <Text style={{ ...styles.tdBold, width: '7%' }}></Text>
+                <Text style={{ ...styles.tdBold, width: '15%', fontSize: 8 }}>Moyenne ponderee</Text>
+                <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: C.navy, fontSize: 9 }}>{avgSafety.toFixed(1)}</Text>
+                <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                  <View style={styles.dualScoreBarOuter}>
+                    <View style={{ ...styles.dualScoreBarInner, width: `${avgSafety * 10}%`, backgroundColor: scoreBarColor(avgSafety, 'safety') }} />
+                  </View>
+                </View>
+                <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: C.navy, fontSize: 9 }}>{avgUpside.toFixed(1)}</Text>
+                <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                  <View style={styles.dualScoreBarOuter}>
+                    <View style={{ ...styles.dualScoreBarInner, width: `${avgUpside * 10}%`, backgroundColor: scoreBarColor(avgUpside, 'upside') }} />
+                  </View>
+                </View>
+                <Text style={{ ...styles.tdBold, width: '10%' }}></Text>
+                <Text style={{ ...styles.tdBold, width: '9%' }}></Text>
+                <Text style={{ ...styles.tdBold, width: '6%', textAlign: 'right' }}>100%</Text>
+                <Text style={{ ...styles.tdBold, width: '7%' }}></Text>
+              </View>
+            </View>
+
+            {/* Legend */}
+            <View style={{ flexDirection: 'row', gap: 14, marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#10b981' }} />
+                <Text style={{ fontSize: 6.5, color: C.textSec }}>Securite: vert = sur, jaune = modere, rouge = risque</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#00b4d8' }} />
+                <Text style={{ fontSize: 6.5, color: C.textSec }}>Potentiel: cyan = eleve, or = modere, rouge = faible</Text>
+              </View>
+            </View>
+
+            <Text style={{ ...styles.noteText, marginTop: 6 }}>
+              Les scores sont bases sur: position 52 sem., beta, dividende, PE, EPS (securite) et cible analystes, valorisation DCF, PE sectoriel, croissance EPS, rendement total (potentiel). Les ETF et fonds sans donnees fondamentales affichent &quot;N/D&quot;.
+            </Text>
+
+            <PageFooter num={5} total={totalPages} />
+          </Page>
+        );
+      })()}
+
+
+      {/* ═══ PAGE 6 (conditional): BENCHMARK COMPARISON ═══════════ */}
       {hasBenchmark && benchData && (() => {
         const allBenchSeries = [benchData.portfolio, ...benchData.indices];
         const bestIndex = benchData.indices.reduce((best, idx) =>
@@ -1790,7 +1990,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </Text>
             </View>
 
-            <PageFooter num={5} total={totalPages} />
+            <PageFooter num={5 + scoreOffset} total={totalPages} />
           </Page>
         );
       })()}
@@ -1959,7 +2159,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               Les valorisations sont des estimations basees sur des modeles financiers. Elles ne constituent pas des recommandations d&apos;investissement.
             </Text>
 
-            <PageFooter num={5 + benchOffset} total={totalPages} />
+            <PageFooter num={5 + scoreOffset + benchOffset} total={totalPages} />
           </Page>
         );
       })()}
@@ -2001,7 +2201,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
           </Text>
 
-          <PageFooter num={6 + benchOffset} total={totalPages} />
+          <PageFooter num={6 + scoreOffset + benchOffset} total={totalPages} />
         </Page>
       )}
 
@@ -2033,7 +2233,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
           <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
 
-          <PageFooter num={7 + benchOffset} total={totalPages} />
+          <PageFooter num={7 + scoreOffset + benchOffset} total={totalPages} />
         </Page>
       )}
 
@@ -2056,7 +2256,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </Text>
             )}
             <HoldingCards profiles={chunk} currency={ccy} />
-            <PageFooter num={5 + valOffset + benchOffset + pi} total={totalPages} />
+            <PageFooter num={5 + scoreOffset + valOffset + benchOffset + pi} total={totalPages} />
           </Page>
         );
       })}
@@ -2139,7 +2339,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         )}
         <AINarrativeBlock label="Interpretation des risques — IA" content={ai?.riskInterpretation} />
 
-        <PageFooter num={5 + valOffset + benchOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={5 + scoreOffset + valOffset + benchOffset + profilePageCount} total={totalPages} />
       </Page>
 
 
@@ -2218,7 +2418,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         </View>
 
-        <PageFooter num={6 + valOffset + benchOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={6 + scoreOffset + valOffset + benchOffset + profilePageCount} total={totalPages} />
       </Page>
 
     </Document>

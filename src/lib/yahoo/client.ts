@@ -203,6 +203,11 @@ export interface YahooProfileData {
   dividendYield: number; // e.g. 0.025 = 2.5%
   mktCap: number;
   exchange: string;
+  pe: number;              // summaryDetail.trailingPE
+  eps: number;             // defaultKeyStatistics.trailingEps
+  week52High: number;      // summaryDetail.fiftyTwoWeekHigh
+  week52Low: number;       // summaryDetail.fiftyTwoWeekLow
+  earningsGrowth: number;  // financialData.earningsGrowth
 }
 
 /**
@@ -212,7 +217,7 @@ export interface YahooProfileData {
 export async function getYahooProfile(symbol: string): Promise<YahooProfileData | null> {
   try {
     const ySym = toYahooSymbol(symbol);
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics`;
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,summaryDetail,assetProfile,defaultKeyStatistics,financialData`;
     const res = await yahooFetch(url);
     if (!res.ok) return null;
 
@@ -224,6 +229,7 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
     const sd = r.summaryDetail ?? {};
     const ap = r.assetProfile ?? {};
     const ks = r.defaultKeyStatistics ?? {};
+    const fd = r.financialData ?? {};
 
     const raw = (obj: unknown): number => {
       if (obj && typeof obj === 'object' && 'raw' in obj) {
@@ -245,6 +251,11 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
       dividendYield: raw(sd.dividendYield),    // e.g. 0.025
       mktCap: raw(price.marketCap) || raw(sd.marketCap),
       exchange: price.exchangeName ?? price.exchange ?? '',
+      pe: raw(sd.trailingPE),
+      eps: raw(ks.trailingEps),
+      week52High: raw(sd.fiftyTwoWeekHigh),
+      week52Low: raw(sd.fiftyTwoWeekLow),
+      earningsGrowth: raw(fd.earningsGrowth),
     };
   } catch {
     return null;
