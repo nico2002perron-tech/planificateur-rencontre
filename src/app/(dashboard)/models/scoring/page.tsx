@@ -15,7 +15,7 @@ import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
 import { StepNav } from '@/components/models/StepNav';
 import {
   ArrowLeft, Target, Shield, TrendingUp, Star, Eye,
-  ChevronDown, ChevronUp, Info, Gauge, HelpCircle,
+  ChevronDown, ChevronUp, Info, Gauge,
   SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 
@@ -89,6 +89,8 @@ interface UpsideWeights {
 
 const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = { week52: 20, beta: 25, dividend: 20, pe: 20, eps: 15 };
 const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { analyst: 30, week52: 15, dcf: 20, peSector: 15, epsGrowth: 20 };
+const ZERO_SAFETY_ADJ: SafetyWeights = { week52: 0, beta: 0, dividend: 0, pe: 0, eps: 0 };
+const ZERO_UPSIDE_ADJ: UpsideWeights = { analyst: 0, week52: 0, dcf: 0, peSector: 0, epsGrowth: 0 };
 
 // ── Constantes ──
 
@@ -100,157 +102,65 @@ const NAVY = '#03045e';
 
 const QUADRANT_CONFIG = {
   star: {
-    label: 'Etoile',
-    icon: Star,
+    label: 'Etoile', icon: Star,
     bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', color: GREEN,
     desc: 'Titres a la fois solides et prometteurs. Le meilleur des deux mondes.',
   },
   safe: {
-    label: 'Sur',
-    icon: Shield,
+    label: 'Sur', icon: Shield,
     bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', color: '#3b82f6',
     desc: 'Titres defensifs et stables, mais avec un potentiel de hausse plus limite.',
   },
   growth: {
-    label: 'Croissance',
-    icon: TrendingUp,
+    label: 'Croissance', icon: TrendingUp,
     bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', color: BRAND,
     desc: 'Fort potentiel de gains, mais avec plus de risque. Titres agressifs.',
   },
   watch: {
-    label: 'Veille',
-    icon: Eye,
+    label: 'Veille', icon: Eye,
     bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', color: RED,
     desc: 'Titres a surveiller de pres. Securite et potentiel en dessous de la moyenne.',
   },
 };
 
-const tooltipStyle = {
-  borderRadius: 8,
-  border: '1px solid #e5e7eb',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-  fontSize: 12,
-};
+const tooltipStyle = { borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: 12 };
 
-// ── Legend Data ──
+// ── Legend Data (baseScore = numeric for adjustment) ──
 
-const SAFETY_FACTORS = [
-  {
-    key: 'beta' as const,
-    label: 'Beta (volatilite)',
-    color: '#3b82f6',
-    tiers: [
-      { condition: 'Beta < 0.5', score: '8+', color: GREEN },
-      { condition: 'Beta = 1.0', score: '6.5', color: BRAND },
-      { condition: 'Beta > 2.0', score: '3 ou moins', color: RED },
-    ],
-    summary: 'Moins volatile = plus sur',
-  },
-  {
-    key: 'week52' as const,
-    label: 'Position 52 semaines',
-    color: '#10b981',
-    tiers: [
-      { condition: 'Pres du 52w low', score: '9-10', color: GREEN },
-      { condition: 'Milieu du range', score: '6-7', color: AMBER },
-      { condition: 'Pres du 52w high', score: '3-4', color: RED },
-    ],
-    summary: 'Pres du bas annuel = meilleur prix d\'achat',
-  },
-  {
-    key: 'dividend' as const,
-    label: 'Dividendes',
-    color: '#8b5cf6',
-    tiers: [
-      { condition: 'Rendement 3-5%', score: '9', color: GREEN },
-      { condition: 'Rendement 1.5-3%', score: '7', color: BRAND },
-      { condition: '< 1.5%', score: '6.5', color: AMBER },
-      { condition: 'Aucun', score: '5', color: '#94a3b8' },
-      { condition: '> 8% (piege)', score: '3', color: RED },
-    ],
-    summary: 'Dividende regulier = coussin de revenu',
-  },
-  {
-    key: 'pe' as const,
-    label: 'PE vs secteur',
-    color: '#f59e0b',
-    tiers: [
-      { condition: 'PE 0.5-1.0x bench', score: '9', color: GREEN },
-      { condition: 'PE 1.0-1.3x bench', score: '7', color: BRAND },
-      { condition: 'PE > 1.8x bench', score: '2', color: RED },
-    ],
-    summary: 'PE sous le benchmark = sous-evalue',
-  },
-  {
-    key: 'eps' as const,
-    label: 'Benefices (BPA)',
-    color: '#ec4899',
-    tiers: [
-      { condition: 'BPA positif', score: '8', color: GREEN },
-      { condition: 'Breakeven', score: '4', color: AMBER },
-      { condition: 'BPA negatif', score: '1', color: RED },
-    ],
-    summary: 'Benefices positifs = fondamentaux solides',
-  },
+interface LegendTier { condition: string; baseScore: number }
+
+interface LegendFactor {
+  key: string;
+  label: string;
+  color: string;
+  tiers: LegendTier[];
+  summary: string;
+}
+
+const SAFETY_FACTORS: LegendFactor[] = [
+  { key: 'beta', label: 'Beta (volatilite)', color: '#3b82f6', summary: 'Moins volatile = plus sur',
+    tiers: [{ condition: 'Beta < 0.5', baseScore: 8 }, { condition: 'Beta = 1.0', baseScore: 6.5 }, { condition: 'Beta > 2.0', baseScore: 3 }] },
+  { key: 'week52', label: 'Position 52 semaines', color: '#10b981', summary: 'Pres du bas annuel = meilleur prix',
+    tiers: [{ condition: 'Pres du 52w low', baseScore: 10 }, { condition: 'Milieu du range', baseScore: 6.5 }, { condition: 'Pres du 52w high', baseScore: 3 }] },
+  { key: 'dividend', label: 'Dividendes', color: '#8b5cf6', summary: 'Dividende regulier = coussin de revenu',
+    tiers: [{ condition: 'Rend. 3-5%', baseScore: 9 }, { condition: 'Rend. 1.5-3%', baseScore: 7 }, { condition: '< 1.5%', baseScore: 6.5 }, { condition: 'Aucun', baseScore: 5 }, { condition: '> 8% (piege)', baseScore: 3 }] },
+  { key: 'pe', label: 'PE vs secteur', color: '#f59e0b', summary: 'PE sous le benchmark = sous-evalue',
+    tiers: [{ condition: 'PE 0.5-1.0x bench', baseScore: 9 }, { condition: 'PE 1.0-1.3x', baseScore: 7 }, { condition: 'PE > 1.8x', baseScore: 2 }] },
+  { key: 'eps', label: 'Benefices (BPA)', color: '#ec4899', summary: 'Benefices positifs = fondamentaux solides',
+    tiers: [{ condition: 'BPA positif', baseScore: 8 }, { condition: 'Breakeven', baseScore: 4 }, { condition: 'BPA negatif', baseScore: 1 }] },
 ];
 
-const UPSIDE_FACTORS = [
-  {
-    key: 'analyst' as const,
-    label: 'Cible analystes',
-    color: '#06b6d4',
-    tiers: [
-      { condition: 'Upside > 25%', score: '8.5-10', color: GREEN },
-      { condition: 'Upside 5-15%', score: '6.5-7', color: BRAND },
-      { condition: 'Upside 0%', score: '3', color: RED },
-      { condition: 'Downside > 10%', score: '1', color: RED },
-    ],
-    summary: 'Ecart entre le prix et la cible 12 mois',
-  },
-  {
-    key: 'dcf' as const,
-    label: 'Valorisation DCF',
-    color: '#8b5cf6',
-    tiers: [
-      { condition: 'Sous-evalue > 30%', score: '8-10', color: GREEN },
-      { condition: 'Sous-evalue 5-15%', score: '5.5-7', color: BRAND },
-      { condition: 'Surevalue', score: '1-2.5', color: RED },
-    ],
-    summary: 'Valeur intrinseque vs prix du marche',
-  },
-  {
-    key: 'epsGrowth' as const,
-    label: 'Croissance BPA',
-    color: '#ec4899',
-    tiers: [
-      { condition: 'Croissance > 20%', score: '8-10', color: GREEN },
-      { condition: 'Croissance 5-10%', score: '6-7', color: BRAND },
-      { condition: 'Negative', score: '2', color: RED },
-    ],
-    summary: 'Benefices en croissance = moteur de hausse',
-  },
-  {
-    key: 'week52' as const,
-    label: 'Marge 52 semaines',
-    color: '#10b981',
-    tiers: [
-      { condition: 'Pres du 52w low', score: '9-10', color: GREEN },
-      { condition: 'Milieu du range', score: '6-7', color: AMBER },
-      { condition: 'Pres du 52w high', score: '3-4', color: RED },
-    ],
-    summary: 'Loin du sommet = marge de hausse',
-  },
-  {
-    key: 'peSector' as const,
-    label: 'PE vs secteur',
-    color: '#f59e0b',
-    tiers: [
-      { condition: 'PE < 50% bench', score: '9', color: GREEN },
-      { condition: 'PE < bench', score: '6.5-8', color: BRAND },
-      { condition: 'PE > 1.2x bench', score: '2', color: RED },
-    ],
-    summary: 'PE bas = potentiel d\'expansion du multiple',
-  },
+const UPSIDE_FACTORS: LegendFactor[] = [
+  { key: 'analyst', label: 'Cible analystes', color: '#06b6d4', summary: 'Ecart entre le prix et la cible 12 mois',
+    tiers: [{ condition: 'Upside > 25%', baseScore: 8.5 }, { condition: 'Upside 5-15%', baseScore: 6.5 }, { condition: 'Upside 0%', baseScore: 3 }, { condition: 'Downside > 10%', baseScore: 1 }] },
+  { key: 'dcf', label: 'Valorisation DCF', color: '#8b5cf6', summary: 'Valeur intrinseque vs prix du marche',
+    tiers: [{ condition: 'Sous-eval. > 30%', baseScore: 8 }, { condition: 'Sous-eval. 5-15%', baseScore: 5.5 }, { condition: 'Surevalue', baseScore: 1 }] },
+  { key: 'epsGrowth', label: 'Croissance BPA', color: '#ec4899', summary: 'Benefices en croissance = moteur de hausse',
+    tiers: [{ condition: 'Croissance > 20%', baseScore: 8 }, { condition: 'Croissance 5-10%', baseScore: 6 }, { condition: 'Negative', baseScore: 2 }] },
+  { key: 'week52', label: 'Marge 52 semaines', color: '#10b981', summary: 'Loin du sommet = marge de hausse',
+    tiers: [{ condition: 'Pres du 52w low', baseScore: 10 }, { condition: 'Milieu du range', baseScore: 6.5 }, { condition: 'Pres du 52w high', baseScore: 3 }] },
+  { key: 'peSector', label: 'PE vs secteur', color: '#f59e0b', summary: 'PE bas = potentiel d\'expansion du multiple',
+    tiers: [{ condition: 'PE < 50% bench', baseScore: 9 }, { condition: 'PE < bench', baseScore: 6.5 }, { condition: 'PE > 1.2x bench', baseScore: 2 }] },
 ];
 
 const SCORE_SCALE = [
@@ -265,6 +175,17 @@ const SCORE_SCALE = [
 
 function fmtDec(n: number, d = 1) {
   return new Intl.NumberFormat('fr-CA', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+}
+
+function clampScore(v: number): number {
+  return Math.max(0, Math.min(10, Math.round(v * 10) / 10));
+}
+
+function tierColor(score: number): string {
+  if (score >= 7) return GREEN;
+  if (score >= 5) return AMBER;
+  if (score >= 3) return '#f97316';
+  return RED;
 }
 
 function scoreColor(score: number): string {
@@ -298,9 +219,11 @@ function compositeVerdict(score: number): { text: string } {
   return { text: 'Portefeuille fragile — revision recommandee' };
 }
 
-function weightsAreDefault(sw: SafetyWeights, uw: UpsideWeights): boolean {
+function isAllDefault(sw: SafetyWeights, uw: UpsideWeights, sa: SafetyWeights, ua: UpsideWeights): boolean {
   return JSON.stringify(sw) === JSON.stringify(DEFAULT_SAFETY_WEIGHTS) &&
-    JSON.stringify(uw) === JSON.stringify(DEFAULT_UPSIDE_WEIGHTS);
+    JSON.stringify(uw) === JSON.stringify(DEFAULT_UPSIDE_WEIGHTS) &&
+    JSON.stringify(sa) === JSON.stringify(ZERO_SAFETY_ADJ) &&
+    JSON.stringify(ua) === JSON.stringify(ZERO_UPSIDE_ADJ);
 }
 
 // ── Score Gauge (visual arc) ──
@@ -314,7 +237,6 @@ function ScoreGauge({ score, label, size = 100 }: { score: number; label: string
   const startAngle = Math.PI;
   const endAngle = 0;
   const angle = startAngle - pct * Math.PI;
-
   const x1 = cx + radius * Math.cos(startAngle);
   const y1 = cy - radius * Math.sin(startAngle);
   const x2 = cx + radius * Math.cos(endAngle);
@@ -322,10 +244,8 @@ function ScoreGauge({ score, label, size = 100 }: { score: number; label: string
   const xA = cx + radius * Math.cos(angle);
   const yA = cy - radius * Math.sin(angle);
   const largeArc = pct > 0.5 ? 1 : 0;
-
   const bgPath = `M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}`;
   const fgPath = `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${xA} ${yA}`;
-
   const color = score >= 7 ? GREEN : score >= 5 ? AMBER : RED;
 
   return (
@@ -333,12 +253,8 @@ function ScoreGauge({ score, label, size = 100 }: { score: number; label: string
       <svg width={size} height={size * 0.65} viewBox={`0 0 ${size} ${size * 0.65}`}>
         <path d={bgPath} fill="none" stroke="#e5e7eb" strokeWidth={stroke} strokeLinecap="round" />
         <path d={fgPath} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" />
-        <text x={cx} y={cy - 2} textAnchor="middle" fontSize={size * 0.22} fontWeight="800" fill={NAVY}>
-          {fmtDec(score)}
-        </text>
-        <text x={cx} y={cy + size * 0.12} textAnchor="middle" fontSize={size * 0.09} fill="#94a3b8">
-          /10
-        </text>
+        <text x={cx} y={cy - 2} textAnchor="middle" fontSize={size * 0.22} fontWeight="800" fill={NAVY}>{fmtDec(score)}</text>
+        <text x={cx} y={cy + size * 0.12} textAnchor="middle" fontSize={size * 0.09} fill="#94a3b8">/10</text>
       </svg>
       <p className="text-xs font-semibold text-text-muted mt-1">{label}</p>
     </div>
@@ -366,24 +282,89 @@ function MiniBreakdown({ items }: { items: { label: string; value: number; hint:
   );
 }
 
+// ── Exigence Selector (3 level pills: Strict / Normal / Souple) ──
+
+function ExigenceSelector({
+  value, onChange, color,
+}: {
+  value: number; onChange: (v: number) => void; color: string;
+}) {
+  const levels = [
+    { v: -1, label: 'Strict' },
+    { v: 0, label: 'Normal' },
+    { v: 1, label: 'Souple' },
+  ];
+  return (
+    <div className="inline-flex rounded-full bg-gray-100 p-0.5 shrink-0">
+      {levels.map(l => (
+        <button
+          key={l.v}
+          onClick={(e) => { e.stopPropagation(); onChange(l.v); }}
+          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all ${
+            value === l.v ? 'text-white shadow-sm' : 'text-text-muted hover:text-text-main'
+          }`}
+          style={value === l.v ? { backgroundColor: color } : {}}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Scoring Legend ──
 
-function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: SafetyWeights; upsideWeights: UpsideWeights }) {
+function ScoringLegend({
+  safetyWeights, upsideWeights, safetyAdj, upsideAdj,
+}: {
+  safetyWeights: SafetyWeights; upsideWeights: UpsideWeights;
+  safetyAdj: SafetyWeights; upsideAdj: UpsideWeights;
+}) {
   const [expanded, setExpanded] = useState(false);
 
-  const safetyTotal = Object.values(safetyWeights).reduce((a, b) => a + b, 0);
-  const upsideTotal = Object.values(upsideWeights).reduce((a, b) => a + b, 0);
+  const sTotal = Object.values(safetyWeights).reduce((a, b) => a + b, 0);
+  const uTotal = Object.values(upsideWeights).reduce((a, b) => a + b, 0);
+  const sPct = (k: string) => sTotal > 0 ? Math.round((safetyWeights as unknown as Record<string, number>)[k] / sTotal * 100) : 0;
+  const uPct = (k: string) => uTotal > 0 ? Math.round((upsideWeights as unknown as Record<string, number>)[k] / uTotal * 100) : 0;
+  const sAdj = (k: string) => (safetyAdj as unknown as Record<string, number>)[k] ?? 0;
+  const uAdj = (k: string) => (upsideAdj as unknown as Record<string, number>)[k] ?? 0;
 
-  const getSafetyPct = (key: keyof SafetyWeights) => safetyTotal > 0 ? Math.round(safetyWeights[key] / safetyTotal * 100) : 0;
-  const getUpsidePct = (key: keyof UpsideWeights) => upsideTotal > 0 ? Math.round(upsideWeights[key] / upsideTotal * 100) : 0;
+  function renderFactor(f: LegendFactor, pct: number, adj: number) {
+    return (
+      <div key={f.key} className="rounded-xl border border-gray-100 p-3 bg-gray-50/50">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-text-main">{f.label}</span>
+          <div className="flex items-center gap-1.5">
+            {adj !== 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${adj > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                {adj > 0 ? `+${adj}` : adj}
+              </span>
+            )}
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${f.color}15`, color: f.color }}>
+              {pct}%
+            </span>
+          </div>
+        </div>
+        <p className="text-[10px] text-text-muted mb-2">{f.summary}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {f.tiers.map((t, i) => {
+            const adjusted = clampScore(t.baseScore + adj);
+            const c = tierColor(adjusted);
+            return (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border"
+                style={{ borderColor: `${c}40`, backgroundColor: `${c}10`, color: c }}>
+                {t.condition} = <strong>{adjusted} pts</strong>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-5 rounded-2xl border border-gray-200 bg-white overflow-hidden">
-      {/* Header + Scale — always visible */}
-      <div
-        className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
+      <div className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-100 to-emerald-100">
@@ -396,8 +377,6 @@ function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: Safety
           </div>
           {expanded ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
         </div>
-
-        {/* Color scale — always visible */}
         <div className="flex gap-1.5">
           {SCORE_SCALE.map(s => (
             <div key={s.label} className={`flex-1 rounded-lg px-2 py-1.5 ${s.bg} border ${s.border} text-center`}>
@@ -408,10 +387,8 @@ function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: Safety
         </div>
       </div>
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-          {/* Quadrant explanation */}
           <div className="mb-4 p-3 rounded-xl bg-gray-50">
             <p className="text-xs font-semibold text-text-main mb-2">Les 4 categories :</p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
@@ -429,79 +406,22 @@ function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: Safety
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Safety factors */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <Shield className="h-4 w-4 text-emerald-600" />
                 <h4 className="text-sm font-bold text-emerald-700">Score de Securite</h4>
               </div>
               <div className="space-y-3">
-                {SAFETY_FACTORS.map(f => {
-                  const pct = getSafetyPct(f.key);
-                  return (
-                    <div key={f.key} className="rounded-xl border border-gray-100 p-3 bg-gray-50/50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-text-main">{f.label}</span>
-                        <span
-                          className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: `${f.color}15`, color: f.color }}
-                        >
-                          {pct}%
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-text-muted mb-2">{f.summary}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {f.tiers.map((t, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border"
-                            style={{ borderColor: `${t.color}40`, backgroundColor: `${t.color}10`, color: t.color }}
-                          >
-                            {t.condition} = <strong>{t.score} pts</strong>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                {SAFETY_FACTORS.map(f => renderFactor(f, sPct(f.key), sAdj(f.key)))}
               </div>
             </div>
-
-            {/* Upside factors */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp className="h-4 w-4 text-cyan-600" />
                 <h4 className="text-sm font-bold text-cyan-700">Score de Potentiel</h4>
               </div>
               <div className="space-y-3">
-                {UPSIDE_FACTORS.map(f => {
-                  const pct = getUpsidePct(f.key);
-                  return (
-                    <div key={f.key} className="rounded-xl border border-gray-100 p-3 bg-gray-50/50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-text-main">{f.label}</span>
-                        <span
-                          className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: `${f.color}15`, color: f.color }}
-                        >
-                          {pct}%
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-text-muted mb-2">{f.summary}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {f.tiers.map((t, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border"
-                            style={{ borderColor: `${t.color}40`, backgroundColor: `${t.color}10`, color: t.color }}
-                          >
-                            {t.condition} = <strong>{t.score} pts</strong>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+                {UPSIDE_FACTORS.map(f => renderFactor(f, uPct(f.key), uAdj(f.key)))}
               </div>
             </div>
           </div>
@@ -511,36 +431,19 @@ function ScoringLegend({ safetyWeights, upsideWeights }: { safetyWeights: Safety
   );
 }
 
-// ── Weight Slider (Duolingo-style) ──
+// ── Weight Slider ──
 
-function WeightSlider({
-  label, value, onChange, color,
-}: {
-  label: string; value: number; onChange: (v: number) => void; color: string;
-}) {
-  const pct = Math.min(value * 2, 100); // 50 max → 100% visual
+function WeightSlider({ label, value, onChange, color }: { label: string; value: number; onChange: (v: number) => void; color: string }) {
+  const pct = Math.min(value * 2, 100);
   return (
-    <div className="flex items-center gap-3 py-2">
-      <span className="text-xs text-text-main font-medium w-40 shrink-0">{label}</span>
+    <div className="flex items-center gap-2">
       <div className="flex-1 relative h-3 rounded-full bg-gray-100 overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-200"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-        <input
-          type="range"
-          min={0}
-          max={50}
-          step={5}
-          value={value}
+        <div className="h-full rounded-full transition-all duration-200" style={{ width: `${pct}%`, backgroundColor: color }} />
+        <input type="range" min={0} max={50} step={5} value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        />
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
       </div>
-      <span
-        className="text-xs font-bold w-12 text-center rounded-full py-1"
-        style={{ backgroundColor: `${color}15`, color }}
-      >
+      <span className="text-xs font-bold w-10 text-center rounded-full py-0.5" style={{ backgroundColor: `${color}15`, color }}>
         {value}%
       </span>
     </div>
@@ -550,27 +453,43 @@ function WeightSlider({
 // ── Weight Customizer Panel ──
 
 function WeightCustomizer({
-  safetyWeights, upsideWeights,
-  onSafetyChange, onUpsideChange, onReset,
+  safetyWeights, upsideWeights, safetyAdj, upsideAdj,
+  onSafetyWeight, onUpsideWeight, onSafetyAdj, onUpsideAdj, onReset,
 }: {
-  safetyWeights: SafetyWeights;
-  upsideWeights: UpsideWeights;
-  onSafetyChange: (key: keyof SafetyWeights, value: number) => void;
-  onUpsideChange: (key: keyof UpsideWeights, value: number) => void;
+  safetyWeights: SafetyWeights; upsideWeights: UpsideWeights;
+  safetyAdj: SafetyWeights; upsideAdj: UpsideWeights;
+  onSafetyWeight: (key: keyof SafetyWeights, value: number) => void;
+  onUpsideWeight: (key: keyof UpsideWeights, value: number) => void;
+  onSafetyAdj: (key: keyof SafetyWeights, value: number) => void;
+  onUpsideAdj: (key: keyof UpsideWeights, value: number) => void;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const isDefault = weightsAreDefault(safetyWeights, upsideWeights);
+  const isDefault = isAllDefault(safetyWeights, upsideWeights, safetyAdj, upsideAdj);
 
   const safetySum = Object.values(safetyWeights).reduce((a, b) => a + b, 0);
   const upsideSum = Object.values(upsideWeights).reduce((a, b) => a + b, 0);
 
+  interface FactorRow { key: string; label: string; color: string }
+  const safetyRows: FactorRow[] = [
+    { key: 'beta', label: 'Beta (volatilite)', color: '#3b82f6' },
+    { key: 'week52', label: 'Position 52 semaines', color: '#10b981' },
+    { key: 'dividend', label: 'Dividendes', color: '#8b5cf6' },
+    { key: 'pe', label: 'PE vs secteur', color: '#f59e0b' },
+    { key: 'eps', label: 'Benefices (BPA)', color: '#ec4899' },
+  ];
+
+  const upsideRows: FactorRow[] = [
+    { key: 'analyst', label: 'Cible analystes', color: '#06b6d4' },
+    { key: 'dcf', label: 'Valorisation DCF', color: '#8b5cf6' },
+    { key: 'epsGrowth', label: 'Croissance BPA', color: '#ec4899' },
+    { key: 'week52', label: 'Marge 52 semaines', color: '#10b981' },
+    { key: 'peSector', label: 'PE vs secteur', color: '#f59e0b' },
+  ];
+
   return (
     <div className="mb-5 rounded-2xl border border-gray-200 bg-white overflow-hidden">
-      <div
-        className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
-        onClick={() => setOpen(!open)}
-      >
+      <div className="p-4 cursor-pointer hover:bg-gray-50/50 transition-colors" onClick={() => setOpen(!open)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-violet-100 to-pink-100">
@@ -581,7 +500,7 @@ function WeightCustomizer({
                 Personnaliser les criteres
                 {!isDefault && <span className="ml-2 text-xs font-normal text-violet-500">(modifie)</span>}
               </p>
-              <p className="text-xs text-text-muted">Ajustez l&apos;importance de chaque facteur selon votre vision</p>
+              <p className="text-xs text-text-muted">Ajustez les poids et le niveau d&apos;exigence de chaque facteur</p>
             </div>
           </div>
           {open ? <ChevronUp className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
@@ -591,9 +510,10 @@ function WeightCustomizer({
       {open && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Safety weights */}
+
+            {/* Safety */}
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-emerald-600" />
                   <h4 className="text-sm font-bold text-emerald-700">Securite</h4>
@@ -602,19 +522,32 @@ function WeightCustomizer({
                   Total : {safetySum}%
                 </span>
               </div>
-              <WeightSlider label="Beta (volatilite)" value={safetyWeights.beta} onChange={v => onSafetyChange('beta', v)} color="#3b82f6" />
-              <WeightSlider label="Position 52 semaines" value={safetyWeights.week52} onChange={v => onSafetyChange('week52', v)} color="#10b981" />
-              <WeightSlider label="Dividendes" value={safetyWeights.dividend} onChange={v => onSafetyChange('dividend', v)} color="#8b5cf6" />
-              <WeightSlider label="PE vs secteur" value={safetyWeights.pe} onChange={v => onSafetyChange('pe', v)} color="#f59e0b" />
-              <WeightSlider label="Benefices (BPA)" value={safetyWeights.eps} onChange={v => onSafetyChange('eps', v)} color="#ec4899" />
-              {safetySum !== 100 && (
-                <p className="text-[10px] text-amber-600 mt-1">Les poids seront normalises automatiquement ({safetySum}% → 100%)</p>
-              )}
+              <div className="flex items-center gap-4 mb-3 text-[10px] text-text-light">
+                <span className="flex-1">Poids (importance)</span>
+                <span>Exigence (bareme)</span>
+              </div>
+              {safetyRows.map(r => (
+                <div key={r.key} className="mb-3">
+                  <p className="text-xs font-medium text-text-main mb-1">{r.label}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <WeightSlider
+                        label="" value={safetyWeights[r.key as keyof SafetyWeights]}
+                        onChange={v => onSafetyWeight(r.key as keyof SafetyWeights, v)} color={r.color}
+                      />
+                    </div>
+                    <ExigenceSelector
+                      value={safetyAdj[r.key as keyof SafetyWeights]}
+                      onChange={v => onSafetyAdj(r.key as keyof SafetyWeights, v)} color={r.color}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {/* Upside weights */}
+            {/* Upside */}
             <div className="rounded-xl border border-cyan-100 bg-cyan-50/30 p-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-cyan-600" />
                   <h4 className="text-sm font-bold text-cyan-700">Potentiel</h4>
@@ -623,18 +556,30 @@ function WeightCustomizer({
                   Total : {upsideSum}%
                 </span>
               </div>
-              <WeightSlider label="Cible analystes" value={upsideWeights.analyst} onChange={v => onUpsideChange('analyst', v)} color="#06b6d4" />
-              <WeightSlider label="Valorisation DCF" value={upsideWeights.dcf} onChange={v => onUpsideChange('dcf', v)} color="#8b5cf6" />
-              <WeightSlider label="Croissance BPA" value={upsideWeights.epsGrowth} onChange={v => onUpsideChange('epsGrowth', v)} color="#ec4899" />
-              <WeightSlider label="Marge 52 semaines" value={upsideWeights.week52} onChange={v => onUpsideChange('week52', v)} color="#10b981" />
-              <WeightSlider label="PE vs secteur" value={upsideWeights.peSector} onChange={v => onUpsideChange('peSector', v)} color="#f59e0b" />
-              {upsideSum !== 100 && (
-                <p className="text-[10px] text-amber-600 mt-1">Les poids seront normalises automatiquement ({upsideSum}% → 100%)</p>
-              )}
+              <div className="flex items-center gap-4 mb-3 text-[10px] text-text-light">
+                <span className="flex-1">Poids (importance)</span>
+                <span>Exigence (bareme)</span>
+              </div>
+              {upsideRows.map(r => (
+                <div key={r.key} className="mb-3">
+                  <p className="text-xs font-medium text-text-main mb-1">{r.label}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <WeightSlider
+                        label="" value={upsideWeights[r.key as keyof UpsideWeights]}
+                        onChange={v => onUpsideWeight(r.key as keyof UpsideWeights, v)} color={r.color}
+                      />
+                    </div>
+                    <ExigenceSelector
+                      value={upsideAdj[r.key as keyof UpsideWeights]}
+                      onChange={v => onUpsideAdj(r.key as keyof UpsideWeights, v)} color={r.color}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Reset button */}
           {!isDefault && (
             <div className="flex justify-center mt-4">
               <button
@@ -642,14 +587,13 @@ function WeightCustomizer({
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm text-text-muted hover:bg-gray-50 hover:text-text-main transition-colors"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Reinitialiser les poids par defaut
+                Reinitialiser tout par defaut
               </button>
             </div>
           )}
 
           <p className="text-[10px] text-text-light text-center mt-3">
-            Les poids personnalises sont sauvegardes automatiquement dans votre navigateur.
-            Relancez l&apos;analyse apres modification pour voir les nouveaux scores.
+            Sauvegardes automatiquement dans votre navigateur. Relancez l&apos;analyse apres modification.
           </p>
         </div>
       )}
@@ -669,9 +613,11 @@ export default function ScoringPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ScoringResult | null>(null);
 
-  // Custom weights state
+  // Custom weights + adjustments
   const [safetyWeights, setSafetyWeights] = useState<SafetyWeights>({ ...DEFAULT_SAFETY_WEIGHTS });
   const [upsideWeights, setUpsideWeights] = useState<UpsideWeights>({ ...DEFAULT_UPSIDE_WEIGHTS });
+  const [safetyAdj, setSafetyAdj] = useState<SafetyWeights>({ ...ZERO_SAFETY_ADJ });
+  const [upsideAdj, setUpsideAdj] = useState<UpsideWeights>({ ...ZERO_UPSIDE_ADJ });
   const [usedWeights, setUsedWeights] = useState<{ safety: SafetyWeights; upside: UpsideWeights } | null>(null);
   const [weightsLoaded, setWeightsLoaded] = useState(false);
 
@@ -683,6 +629,8 @@ export default function ScoringPage() {
         const parsed = JSON.parse(saved);
         if (parsed.safety) setSafetyWeights(w => ({ ...w, ...parsed.safety }));
         if (parsed.upside) setUpsideWeights(w => ({ ...w, ...parsed.upside }));
+        if (parsed.safetyAdj) setSafetyAdj(w => ({ ...w, ...parsed.safetyAdj }));
+        if (parsed.upsideAdj) setUpsideAdj(w => ({ ...w, ...parsed.upsideAdj }));
       }
     } catch { /* ignore */ }
     setWeightsLoaded(true);
@@ -691,27 +639,21 @@ export default function ScoringPage() {
   // Save to localStorage
   useEffect(() => {
     if (!weightsLoaded) return;
-    localStorage.setItem('scoring-weights', JSON.stringify({ safety: safetyWeights, upside: upsideWeights }));
-  }, [safetyWeights, upsideWeights, weightsLoaded]);
-
-  const handleSafetyChange = useCallback((key: keyof SafetyWeights, value: number) => {
-    setSafetyWeights(prev => ({ ...prev, [key]: value }));
-  }, []);
-
-  const handleUpsideChange = useCallback((key: keyof UpsideWeights, value: number) => {
-    setUpsideWeights(prev => ({ ...prev, [key]: value }));
-  }, []);
+    localStorage.setItem('scoring-weights', JSON.stringify({
+      safety: safetyWeights, upside: upsideWeights,
+      safetyAdj, upsideAdj,
+    }));
+  }, [safetyWeights, upsideWeights, safetyAdj, upsideAdj, weightsLoaded]);
 
   const handleReset = useCallback(() => {
     setSafetyWeights({ ...DEFAULT_SAFETY_WEIGHTS });
     setUpsideWeights({ ...DEFAULT_UPSIDE_WEIGHTS });
+    setSafetyAdj({ ...ZERO_SAFETY_ADJ });
+    setUpsideAdj({ ...ZERO_UPSIDE_ADJ });
   }, []);
 
   const handleRun = useCallback(async () => {
-    if (!selectedProfileId) {
-      toast('warning', 'Selectionnez un profil');
-      return;
-    }
+    if (!selectedProfileId) { toast('warning', 'Selectionnez un profil'); return; }
     setLoading(true);
     setData(null);
     try {
@@ -720,22 +662,22 @@ export default function ScoringPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile_id: selectedProfileId,
-          weights: { safety: safetyWeights, upside: upsideWeights },
+          weights: {
+            safety: safetyWeights,
+            upside: upsideWeights,
+            safetyAdj,
+            upsideAdj,
+          },
         }),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
       setData(await res.json());
       setUsedWeights({ safety: { ...safetyWeights }, upside: { ...upsideWeights } });
       toast('success', 'Scoring termine');
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Erreur');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedProfileId, safetyWeights, upsideWeights, toast]);
+    } finally { setLoading(false); }
+  }, [selectedProfileId, safetyWeights, upsideWeights, safetyAdj, upsideAdj, toast]);
 
   if (profilesLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
@@ -746,26 +688,21 @@ export default function ScoringPage() {
       <PageHeader
         title="Evaluer la qualite"
         description="Analysez la solidite et le potentiel de chaque titre de votre portefeuille modele"
-        action={
-          <Link href="/models">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
-          </Link>
-        }
+        action={<Link href="/models"><Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button></Link>}
       />
 
-      {/* Detailed legend */}
-      <ScoringLegend safetyWeights={safetyWeights} upsideWeights={upsideWeights} />
+      <ScoringLegend safetyWeights={safetyWeights} upsideWeights={upsideWeights} safetyAdj={safetyAdj} upsideAdj={upsideAdj} />
 
-      {/* Weight customizer (Duolingo-style) */}
       <WeightCustomizer
-        safetyWeights={safetyWeights}
-        upsideWeights={upsideWeights}
-        onSafetyChange={handleSafetyChange}
-        onUpsideChange={handleUpsideChange}
+        safetyWeights={safetyWeights} upsideWeights={upsideWeights}
+        safetyAdj={safetyAdj} upsideAdj={upsideAdj}
+        onSafetyWeight={useCallback((k: keyof SafetyWeights, v: number) => setSafetyWeights(p => ({ ...p, [k]: v })), [])}
+        onUpsideWeight={useCallback((k: keyof UpsideWeights, v: number) => setUpsideWeights(p => ({ ...p, [k]: v })), [])}
+        onSafetyAdj={useCallback((k: keyof SafetyWeights, v: number) => setSafetyAdj(p => ({ ...p, [k]: v })), [])}
+        onUpsideAdj={useCallback((k: keyof UpsideWeights, v: number) => setUpsideAdj(p => ({ ...p, [k]: v })), [])}
         onReset={handleReset}
       />
 
-      {/* Profile selector */}
       <Card className="mb-6">
         <div className="flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1">
@@ -777,9 +714,7 @@ export default function ScoringPage() {
             >
               <option value="">-- Selectionnez un profil --</option>
               {profiles.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.profile_number}. {p.name} ({p.equity_pct}/{p.bond_pct})
-                </option>
+                <option key={p.id} value={p.id}>{p.profile_number}. {p.name} ({p.equity_pct}/{p.bond_pct})</option>
               ))}
             </select>
           </div>
@@ -826,7 +761,6 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
     return Math.round(data.stocks.reduce((s, st) => s + fn(st) * st.weight, 0) / totalWeight * 10) / 10;
   }
 
-  // Compute effective weight percentages
   const sw = weights?.safety ?? DEFAULT_SAFETY_WEIGHTS;
   const uw = weights?.upside ?? DEFAULT_UPSIDE_WEIGHTS;
   const sSum = Object.values(sw).reduce((a, b) => a + b, 0);
@@ -851,21 +785,16 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
   ].filter(d => d.count > 0);
 
   const stockBarData = data.stocks.slice(0, 25).map(s => ({
-    name: s.symbol,
-    safety: s.safety.total,
-    upside: s.upside.total,
+    name: s.symbol, safety: s.safety.total, upside: s.upside.total,
   }));
 
   return (
     <div className="space-y-6">
-
-      {/* ── Hero banner with 3 gauges + verdict ── */}
+      {/* Hero */}
       <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-slate-50 to-white p-6">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-lg font-bold text-text-main">
-              Profil {data.profileNumber} — {data.profileName}
-            </h2>
+            <h2 className="text-lg font-bold text-text-main">Profil {data.profileNumber} — {data.profileName}</h2>
             <p className="text-sm text-text-muted">{data.nbStocks} titres analyses</p>
           </div>
           <div className="px-4 py-2 rounded-xl bg-white border border-gray-200 shadow-sm">
@@ -873,7 +802,6 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
             <p className="text-sm font-semibold" style={{ color: NAVY }}>{verdict.text}</p>
           </div>
         </div>
-
         <div className="flex items-center justify-center gap-8 md:gap-16 mt-4">
           <ScoreGauge score={ps.safety} label="Securite" size={110} />
           <ScoreGauge score={composite} label="Score global" size={140} />
@@ -881,11 +809,10 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
         </div>
       </div>
 
-      {/* ── Quadrant cards with descriptions ── */}
+      {/* Quadrant cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {(['star', 'safe', 'growth', 'watch'] as const).map(q => {
-          const cfg = QUADRANT_CONFIG[q];
-          const Icon = cfg.icon;
+          const cfg = QUADRANT_CONFIG[q]; const Icon = cfg.icon;
           const stocks = data.stocks.filter(s => s.quadrant === q);
           return (
             <div key={q} className={`rounded-xl border p-4 ${cfg.bg} ${cfg.border} transition-all hover:shadow-md`}>
@@ -899,19 +826,15 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               <p className="text-[11px] text-text-muted leading-snug mb-2">{cfg.desc}</p>
               <div className="flex flex-wrap gap-1">
                 {stocks.length > 0 ? stocks.map(s => (
-                  <span key={s.symbol} className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${cfg.bg} ${cfg.text} border ${cfg.border}`}>
-                    {s.symbol}
-                  </span>
-                )) : (
-                  <span className="text-xs text-text-light italic">Aucun</span>
-                )}
+                  <span key={s.symbol} className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${cfg.bg} ${cfg.text} border ${cfg.border}`}>{s.symbol}</span>
+                )) : <span className="text-xs text-text-light italic">Aucun</span>}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* ── Score details + Radar ── */}
+      {/* Score details + Radar */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <div className="flex items-center gap-2 mb-4">
@@ -924,12 +847,12 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                 <Shield className="h-3 w-3" /> Securite
               </p>
               {[
-                { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee de tous les criteres' },
+                { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee' },
                 { label: `Position 52 sem. (${sPct('week52')}%)`, value: wAvg(s => s.safety.week52Position), hint: 'Proche du low = meilleure opportunite' },
-                { label: `Beta / volatilite (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile = plus sur' },
+                { label: `Beta / volatilite (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile' },
                 { label: `Dividendes (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier = coussin' },
-                { label: `PE vs secteur (${sPct('pe')}%)`, value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas vs benchmark = sous-evalue' },
-                { label: `Benefices (${sPct('eps')}%)`, value: wAvg(s => s.safety.epsStability), hint: 'Benefices positifs = fondamentaux solides' },
+                { label: `PE vs secteur (${sPct('pe')}%)`, value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas = sous-evalue' },
+                { label: `Benefices (${sPct('eps')}%)`, value: wAvg(s => s.safety.epsStability), hint: 'BPA positif = solide' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -947,12 +870,12 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                 <TrendingUp className="h-3 w-3" /> Potentiel
               </p>
               {[
-                { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee de tous les criteres' },
-                { label: `Cible analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix actuel vs cible 12 mois' },
+                { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee' },
+                { label: `Cible analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix vs cible 12 mois' },
                 { label: `Marge 52 sem. (${uPct('week52')}%)`, value: wAvg(s => s.upside.week52Room), hint: 'Proche du low = plus de marge' },
-                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon les modeles internes' },
-                { label: `PE vs secteur (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = potentiel d\'expansion du multiple' },
-                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Benefices en croissance = moteur de hausse' },
+                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon modeles' },
+                { label: `PE vs secteur (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = expansion du multiple' },
+                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Croissance = moteur de hausse' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -978,11 +901,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               <Radar name="Score" dataKey="score" stroke={BRAND} fill={BRAND} fillOpacity={0.2} strokeWidth={2} />
             </RadarChart>
           </ResponsiveContainer>
-          <p className="text-[10px] text-text-light text-center mt-1">Plus la zone est large, meilleur est le portefeuille sur cette dimension</p>
+          <p className="text-[10px] text-text-light text-center mt-1">Plus la zone est large, meilleur est le portefeuille</p>
         </Card>
       </div>
 
-      {/* ── Charts row ── */}
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h3 className="text-sm font-semibold text-text-main mb-4">Repartition par categorie</h3>
@@ -992,9 +915,7 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               <YAxis tick={{ fontSize: 11, fill: '#586e82' }} allowDecimals={false} />
               <Tooltip contentStyle={tooltipStyle} />
               <Bar dataKey="count" name="Titres" radius={[6, 6, 0, 0]}>
-                {quadDist.map((d, i) => (
-                  <Cell key={i} fill={d.color} />
-                ))}
+                {quadDist.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1002,7 +923,7 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
 
         <Card>
           <h3 className="text-sm font-semibold text-text-main mb-1">Comparaison titre par titre</h3>
-          <p className="text-xs text-text-muted mb-3">Vert = securite, Cyan = potentiel de gains</p>
+          <p className="text-xs text-text-muted mb-3">Vert = securite, Cyan = potentiel</p>
           <ResponsiveContainer width="100%" height={Math.max(180, stockBarData.length * 22)}>
             <BarChart data={stockBarData} layout="vertical" margin={{ top: 5, right: 20, left: 50, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -1017,11 +938,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
         </Card>
       </div>
 
-      {/* ── Table with expandable rows ── */}
+      {/* Table */}
       <Card padding="none">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-text-main">Classement des titres</h3>
-          <p className="text-xs text-text-muted">Cliquez sur un titre pour voir le detail des scores</p>
+          <p className="text-xs text-text-muted">Cliquez sur un titre pour voir le detail</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1029,17 +950,9 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
                 <th className="px-4 py-2.5 w-8">#</th>
                 <th className="px-3 py-2.5">Titre</th>
-                <th className="px-3 py-2.5 text-center">
-                  <span className="flex items-center justify-center gap-1">
-                    <Shield className="h-3 w-3 text-emerald-500" /> Securite
-                  </span>
-                </th>
+                <th className="px-3 py-2.5 text-center"><span className="flex items-center justify-center gap-1"><Shield className="h-3 w-3 text-emerald-500" /> Securite</span></th>
                 <th className="px-3 py-2.5 w-20"></th>
-                <th className="px-3 py-2.5 text-center">
-                  <span className="flex items-center justify-center gap-1">
-                    <TrendingUp className="h-3 w-3 text-cyan-500" /> Potentiel
-                  </span>
-                </th>
+                <th className="px-3 py-2.5 text-center"><span className="flex items-center justify-center gap-1"><TrendingUp className="h-3 w-3 text-cyan-500" /> Potentiel</span></th>
                 <th className="px-3 py-2.5 w-20"></th>
                 <th className="px-3 py-2.5 text-center">Categorie</th>
                 <th className="px-3 py-2.5 text-right">Gain est.</th>
@@ -1049,10 +962,8 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
             </thead>
             <tbody>
               {data.stocks.map((s) => {
-                const qCfg = QUADRANT_CONFIG[s.quadrant];
-                const QIcon = qCfg.icon;
+                const qCfg = QUADRANT_CONFIG[s.quadrant]; const QIcon = qCfg.icon;
                 const isExpanded = expandedStock === s.symbol;
-
                 return (
                   <React.Fragment key={s.symbol}>
                     <tr
@@ -1066,7 +977,6 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                           <span className="text-xs text-text-muted truncate max-w-[140px]">{s.companyName}</span>
                         </div>
                       </td>
-
                       <td className="px-3 py-3 text-center">
                         <span className={`text-base font-bold ${scoreColor(s.safety.total)}`}>
                           {s.confidence === 'low' ? 'N/D' : fmtDec(s.safety.total)}
@@ -1079,7 +989,6 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                           </div>
                         )}
                       </td>
-
                       <td className="px-3 py-3 text-center">
                         <span className={`text-base font-bold ${scoreColor(s.upside.total)}`}>
                           {s.confidence === 'low' ? 'N/D' : fmtDec(s.upside.total)}
@@ -1092,14 +1001,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                           </div>
                         )}
                       </td>
-
                       <td className="px-3 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${qCfg.bg} ${qCfg.text}`}>
-                          <QIcon className="h-3 w-3" />
-                          {qCfg.label}
+                          <QIcon className="h-3 w-3" />{qCfg.label}
                         </span>
                       </td>
-
                       <td className="px-3 py-3 text-right font-mono">
                         {s.targetPrice > 0 ? (
                           <span className={`font-semibold ${s.estimatedGainPercent >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -1107,15 +1013,12 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                           </span>
                         ) : <span className="text-text-light">—</span>}
                       </td>
-
                       <td className="px-3 py-3 text-right text-text-muted font-mono">{fmtDec(s.weight)}%</td>
-
                       <td className="px-2 py-3 text-text-light">
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </td>
                     </tr>
 
-                    {/* Expanded detail row */}
                     {isExpanded && s.confidence !== 'low' && (
                       <tr className="bg-slate-50">
                         <td colSpan={10} className="px-4 py-4">
@@ -1126,10 +1029,10 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                               </p>
                               <MiniBreakdown items={[
                                 { label: `Position 52 sem. (${sPct('week52')}%)`, value: s.safety.week52Position, hint: 'Proche du low = meilleure opportunite' },
-                                { label: `Beta / volatilite (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile = plus sur' },
-                                { label: `Dividendes (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Dividende regulier = coussin de revenu' },
-                                { label: `PE vs secteur (${sPct('pe')}%)`, value: s.safety.peReasonableness, hint: 'PE bas vs benchmark = sous-evalue' },
-                                { label: `Benefices (${sPct('eps')}%)`, value: s.safety.epsStability, hint: 'BPA positif = fondamentaux solides' },
+                                { label: `Beta / volatilite (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile' },
+                                { label: `Dividendes (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Dividende regulier = coussin' },
+                                { label: `PE vs secteur (${sPct('pe')}%)`, value: s.safety.peReasonableness, hint: 'PE bas = sous-evalue' },
+                                { label: `Benefices (${sPct('eps')}%)`, value: s.safety.epsStability, hint: 'BPA positif = solide' },
                               ]} />
                             </div>
                             <div>
@@ -1137,11 +1040,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 <TrendingUp className="h-3 w-3" /> Detail potentiel — {s.upside.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: `Cible analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Ecart prix vs consensus 12 mois' },
-                                { label: `Marge 52 semaines (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
-                                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles internes' },
+                                { label: `Cible analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Ecart prix vs consensus' },
+                                { label: `Marge 52 sem. (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
+                                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles' },
                                 { label: `PE vs secteur (${uPct('peSector')}%)`, value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
-                                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Croissance des benefices = moteur' },
+                                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Croissance = moteur' },
                               ]} />
                             </div>
                           </div>

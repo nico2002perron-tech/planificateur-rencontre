@@ -88,6 +88,8 @@ export interface UpsideWeights {
 export interface CustomWeights {
   safety?: Partial<SafetyWeights>;
   upside?: Partial<UpsideWeights>;
+  safetyAdj?: Partial<SafetyWeights>;   // per-factor adjustment -2 to +2
+  upsideAdj?: Partial<UpsideWeights>;   // per-factor adjustment -2 to +2
 }
 
 export const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = {
@@ -128,6 +130,7 @@ function clamp(v: number, min = 0, max = 10): number {
 export function calculateSafetyScore(
   inputs: SafetyScoreInputs,
   customWeights?: Partial<SafetyWeights>,
+  adjustments?: Partial<SafetyWeights>,
 ): SafetyScoreBreakdown {
   const { currentPrice, week52High, week52Low, beta, dividendYield, pe, eps, sectorBenchmarkPE } = inputs;
   const w = normalizeWeights({ ...DEFAULT_SAFETY_WEIGHTS, ...customWeights });
@@ -183,6 +186,15 @@ export function calculateSafetyScore(
     epsStability = 1;
   }
 
+  // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
+  if (adjustments) {
+    week52Position = clamp(week52Position + (adjustments.week52 ?? 0));
+    betaScore = clamp(betaScore + (adjustments.beta ?? 0));
+    dividendScore = clamp(dividendScore + (adjustments.dividend ?? 0));
+    peReasonableness = clamp(peReasonableness + (adjustments.pe ?? 0));
+    epsStability = clamp(epsStability + (adjustments.eps ?? 0));
+  }
+
   // Weighted total (normalized)
   const total = clamp(
     week52Position * w.week52 +
@@ -219,6 +231,7 @@ export function calculateSafetyScore(
 export function calculateUpsideScore(
   inputs: UpsideScoreInputs,
   customWeights?: Partial<UpsideWeights>,
+  adjustments?: Partial<UpsideWeights>,
 ): UpsideScoreBreakdown {
   const {
     currentPrice, targetPrice, week52High, week52Low,
@@ -283,6 +296,15 @@ export function calculateUpsideScore(
     else if (gr >= 5) epsGrowthScore = 6;
     else if (gr >= 0) epsGrowthScore = 4;
     else epsGrowthScore = 2;
+  }
+
+  // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
+  if (adjustments) {
+    analystUpside = clamp(analystUpside + (adjustments.analyst ?? 0));
+    week52Room = clamp(week52Room + (adjustments.week52 ?? 0));
+    valuationUpside = clamp(valuationUpside + (adjustments.dcf ?? 0));
+    peSectorGap = clamp(peSectorGap + (adjustments.peSector ?? 0));
+    epsGrowthScore = clamp(epsGrowthScore + (adjustments.epsGrowth ?? 0));
   }
 
   // Weighted total (normalized)
@@ -378,7 +400,7 @@ export function calculateDualScores(
       pe: h.pe,
       eps: h.eps,
       sectorBenchmarkPE: bench.pe,
-    }, weights?.safety);
+    }, weights?.safety, weights?.safetyAdj);
 
     const upside = calculateUpsideScore({
       currentPrice: h.currentPrice,
@@ -391,7 +413,7 @@ export function calculateDualScores(
       earningsGrowth: h.earningsGrowth,
       dividendYield: h.dividendYield,
       estimatedGainPercent: h.estimatedGainPercent,
-    }, weights?.upside);
+    }, weights?.upside, weights?.upsideAdj);
 
     let quadrant: 'star' | 'safe' | 'growth' | 'watch';
     if (safety.total >= 6 && upside.total >= 6) quadrant = 'star';
