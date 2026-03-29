@@ -2,9 +2,10 @@
  * Dual Scoring: Safety Score + Upside Potential Score
  * Pure calculation module — no external API calls.
  *
- * Safety score: modeled on institutional risk frameworks (Graham/Dodd, MSCI).
- * 6 fundamental factors + red-flag overrides.
- * Weights are customizable per advisor.
+ * Safety score: institutional risk framework (Graham/Dodd, MSCI, Piotroski-inspired).
+ * 6 fundamental factors with continuous interpolation + PEG-adjusted valuation
+ * + realized volatility blend + red-flag overrides.
+ * Calibrated so a median S&P 500 / TSX 60 large-cap scores 6-7 ("Sûr").
  */
 
 import type { BenchmarkData } from './benchmarks';
@@ -14,9 +15,9 @@ import { getBenchmarkData } from './benchmarks';
 
 export interface SafetyScoreBreakdown {
   balanceSheetScore: number; // 0-10 (D/E + Current Ratio combined)
-  betaScore: number;         // 0-10
-  profitabilityScore: number;// 0-10 (margins + growth combined, EPS cap)
-  valuationScore: number;    // 0-10 (PE absolute)
+  betaScore: number;         // 0-10 (beta + 52w realized vol blended)
+  profitabilityScore: number;// 0-10 (margins + growth, EPS cap)
+  valuationScore: number;    // 0-10 (PE, PEG-adjusted when growth data available)
   sizeScore: number;         // 0-10 (market cap)
   dividendScore: number;     // 0-10
   total: number;             // 0-10 weighted, after red-flag caps
@@ -52,13 +53,16 @@ export interface SafetyScoreInputs {
   beta: number;
   dividendYield: number;   // decimal, e.g. 0.025
   pe: number;
-  eps: number;             // for red-flag check only
+  eps: number;             // for red-flag check + profitability cap
   profitMargins: number;   // decimal, e.g. 0.25 = 25%
   debtToEquity: number;    // e.g. 150 = 150%
   currentRatio: number;    // e.g. 1.5
   earningsGrowth: number;  // decimal, e.g. 0.12 = 12%
   marketCap: number;       // dollars
   sector: string;          // for sector-adjusted D/E (financials)
+  week52High: number;      // for realized volatility calculation
+  week52Low: number;
+  currentPrice: number;
 }
 
 export interface UpsideScoreInputs {
@@ -138,6 +142,28 @@ function rd(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
+/**
+ * Linear interpolation between anchor points.
+ * anchors: sorted array of [inputValue, outputScore].
+ * Values below first anchor → first score; above last → last score.
+ * Eliminates cliff effects between tiers for smoother, more precise scoring.
+ */
+function lerp(value: number, anchors: [number, number][]): number {
+  if (anchors.length === 0) return 5;
+  if (value <= anchors[0][0]) return anchors[0][1];
+  const last = anchors[anchors.length - 1];
+  if (value >= last[0]) return last[1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [x0, y0] = anchors[i];
+    const [x1, y1] = anchors[i + 1];
+    if (value <= x1) {
+      const t = (value - x0) / (x1 - x0);
+      return y0 + t * (y1 - y0);
+    }
+  }
+  return last[1];
+}
+
 const FINANCIAL_SECTORS = new Set([
   'Financial Services', 'Financials', 'Banks', 'Insurance',
   'financial services', 'financials',
@@ -153,118 +179,245 @@ export function calculateSafetyScore(
   const {
     beta, dividendYield, pe, eps, profitMargins, debtToEquity,
     currentRatio, earningsGrowth, marketCap, sector,
+    week52High, week52Low, currentPrice,
   } = inputs;
   const w = normalizeWeights({ ...DEFAULT_SAFETY_WEIGHTS, ...customWeights });
   const isFinancial = FINANCIAL_SECTORS.has(sector);
 
-  // ── 1. Bilan financier (D/E + Current Ratio combinés) ──
-  //    Score neutre (5) pour le secteur financier (business model leverage)
-  let debtSub = 5;
-  let liqSub = 5;
+  // ══════════════════════════════════════════════════════════════════
+  // Continuous interpolation (lerp) replaces step functions to
+  // eliminate arbitrary cliff effects. Each factor uses anchor points
+  // calibrated to real market distributions (S&P 500, TSX 60).
+  // A median large-cap naturally scores 6-7 ("Sûr").
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── 1. Balance Sheet (D/E × 0.6 + Current Ratio × 0.4) ──
+  //    Banks/insurance: neutral (capital structure is regulated, D/E is meaningless).
+  //    D/E = 0 from Yahoo: likely missing data → conservative neutral.
+  //    D/E > 0: continuous curve, S&P 500 median ~ 120-180%.
+  let debtSub: number;
+  let liqSub: number;
 
   if (isFinancial) {
-    // Banques/assureurs : D/E et CR ne s'appliquent pas normalement
-    debtSub = 5;
-    liqSub = 5;
+    debtSub = 6.5;
+    liqSub = 6.5;
   } else {
-    if (debtToEquity > 0) {
-      if (debtToEquity <= 30) debtSub = 10;
-      else if (debtToEquity <= 80) debtSub = 8;
-      else if (debtToEquity <= 150) debtSub = 6;
-      else if (debtToEquity <= 250) debtSub = 3;
-      else debtSub = 1;
+    if (debtToEquity <= 0) {
+      // D/E = 0: almost always means Yahoo didn't return the data.
+      // Genuinely zero-debt public companies are extremely rare.
+      // If other data exists (CR > 0), give slight benefit of the doubt.
+      debtSub = currentRatio > 0 ? 7 : 5.5;
+    } else {
+      debtSub = lerp(debtToEquity, [
+        [1, 10],      // near-zero debt (e.g., some tech companies)
+        [30, 9],      // very low
+        [80, 8],      // low
+        [130, 7],     // below median
+        [180, 6],     // around S&P median
+        [250, 4.5],   // elevated
+        [400, 2.5],   // high
+        [600, 1],     // dangerous
+      ]);
     }
-    if (currentRatio > 0) {
-      if (currentRatio >= 2.5) liqSub = 10;
-      else if (currentRatio >= 2.0) liqSub = 9;
-      else if (currentRatio >= 1.5) liqSub = 7;
-      else if (currentRatio >= 1.0) liqSub = 5;
-      else if (currentRatio >= 0.5) liqSub = 2;
-      else liqSub = 0;
+
+    if (currentRatio <= 0) {
+      // CR = 0: data missing (common for financials, some industries)
+      liqSub = 5;
+    } else {
+      liqSub = lerp(currentRatio, [
+        [0.3, 1],     // critically low
+        [0.6, 3],     // very low
+        [0.8, 4],     // low
+        [1.0, 5.5],   // break-even
+        [1.3, 6.5],   // adequate
+        [1.5, 7.5],   // good
+        [2.0, 8.5],   // very good
+        [3.0, 10],    // excellent
+      ]);
     }
   }
   let balanceSheetScore = debtSub * 0.6 + liqSub * 0.4;
 
-  // ── 2. Beta / Risque marché ──
-  let betaScore = 5;
-  if (beta < 0) {
-    betaScore = 7; // negatively correlated = defensive
-  } else if (beta > 0) {
-    if (beta <= 0.5) betaScore = 10;
-    else if (beta <= 0.8) betaScore = 8;
-    else if (beta <= 1.0) betaScore = 6;
-    else if (beta <= 1.3) betaScore = 4;
-    else if (beta <= 1.8) betaScore = 2;
-    else betaScore = 0;
+  // ── 2. Market Risk (Beta × 0.6 + Realized Volatility × 0.4) ──
+  //    Beta alone is insufficient: measures only systematic risk, can be stale,
+  //    and equals 0 when data is missing.
+  //    52-week price range / price ≈ annualized realized volatility,
+  //    capturing both systematic + idiosyncratic risk.
+  //    Blending both gives a more reliable risk picture.
+  let betaComponent = 5;
+  if (beta > 0) {
+    betaComponent = lerp(beta, [
+      [0.2, 10],    // ultra-low vol (utilities, REITs)
+      [0.5, 9],     // very defensive
+      [0.7, 8],     // defensive
+      [0.9, 6.5],   // below-market
+      [1.0, 5.5],   // market average
+      [1.1, 5],     // slightly above market
+      [1.3, 4],     // moderately volatile
+      [1.6, 2.5],   // high vol
+      [2.0, 1],     // very high vol
+      [2.5, 0],     // extreme
+    ]);
+  } else if (beta < 0) {
+    betaComponent = 8; // inverse correlation = defensive hedge
   }
 
-  // ── 3. Rentabilité (marges + croissance, cap BPA négatif) ──
+  let volComponent = 5; // neutral default if no 52-week data
+  if (week52High > week52Low && currentPrice > 0 && week52Low > 0) {
+    const rangeRatio = ((week52High - week52Low) / currentPrice) * 100;
+    // rangeRatio: ~10-15% = very stable, ~25-35% = typical, ~50%+ = volatile
+    volComponent = lerp(rangeRatio, [
+      [5, 10],      // 5% range = ultra-stable (rare)
+      [12, 9],      // 12% = very stable (utility-like)
+      [20, 7.5],    // 20% = stable large-cap
+      [30, 6],      // 30% = typical S&P 500 stock
+      [45, 4],      // 45% = volatile
+      [65, 2],      // 65% = very volatile
+      [100, 0.5],   // 100% = speculative
+    ]);
+  }
+
+  // Blend: if both available → 60/40 beta/vol. If only one → use that one.
+  let betaScore: number;
+  if (beta > 0 && week52High > week52Low && currentPrice > 0) {
+    betaScore = betaComponent * 0.6 + volComponent * 0.4;
+  } else if (beta > 0) {
+    betaScore = betaComponent;
+  } else if (week52High > week52Low && currentPrice > 0) {
+    betaScore = volComponent;
+  } else {
+    betaScore = 5; // no data at all → neutral
+  }
+
+  // ── 3. Profitability (Margins × 0.65 + Growth × 0.35, EPS cap) ──
+  //    Profit margins: S&P 500 median ~ 12-15%. Continuous curve.
+  //    Growth: earningsGrowth from Yahoo financialData.
+  //    EPS < 0 → hard cap at 3 (unprofitable = unreliable safety).
   let marginSub = 5;
   if (profitMargins !== 0) {
     const mPct = profitMargins * 100;
-    if (mPct >= 25) marginSub = 10;
-    else if (mPct >= 15) marginSub = 8;
-    else if (mPct >= 8) marginSub = 6;
-    else if (mPct >= 3) marginSub = 4;
-    else if (mPct >= 0) marginSub = 2;
-    else marginSub = 0;
+    marginSub = lerp(mPct, [
+      [-20, 0.5],   // deep losses
+      [-5, 2],      // moderate losses
+      [0, 3],       // breakeven
+      [3, 4.5],     // thin margins (retail, airlines)
+      [8, 6],       // moderate
+      [15, 8],      // good (S&P median ~ 12-15%)
+      [25, 9.5],    // excellent
+      [40, 10],     // exceptional (software, pharma)
+    ]);
   }
 
   let growthSub = 5;
   if (earningsGrowth !== 0) {
     const gr = earningsGrowth * 100;
-    if (gr >= 15) growthSub = 10;
-    else if (gr >= 5) growthSub = 8;
-    else if (gr >= 0) growthSub = 6;
-    else if (gr >= -10) growthSub = 3;
-    else growthSub = 1;
+    growthSub = lerp(gr, [
+      [-30, 1],     // severe decline
+      [-10, 3],     // moderate decline
+      [0, 5],       // flat
+      [5, 6.5],     // modest growth
+      [10, 7.5],    // good
+      [20, 9],      // strong
+      [35, 10],     // exceptional
+    ]);
   }
 
   let profitabilityScore = marginSub * 0.65 + growthSub * 0.35;
-  // Hard cap: BPA négatif = rentabilité plafonnée à 2/10
   if (eps < 0) {
-    profitabilityScore = Math.min(profitabilityScore, 2);
+    profitabilityScore = Math.min(profitabilityScore, 3);
   }
 
-  // ── 4. Valorisation (PE absolu — pas relatif au secteur) ──
-  //    PE très bas (<5) = signal ambigu (value trap possible)
-  let valuationScore = 4; // neutre-bas si pas de PE (pas de bénéfices)
+  // ── 4. Valuation (PE with PEG adjustment) ──
+  //    Base PE score via continuous curve, then PEG adjusts for growth context.
+  //    A PE of 30 with 25% growth (PEG 1.2) is much safer than PE 30 with 0% growth.
+  //    Very low PE (0-5) is suspicious: often one-time gains or dying businesses.
+  let valuationScore = 4; // default when PE = 0 (no data)
   if (pe > 0) {
-    if (pe >= 8 && pe <= 16) valuationScore = 10;
-    else if (pe > 5 && pe < 8) valuationScore = 8;
-    else if (pe > 16 && pe <= 22) valuationScore = 8;
-    else if (pe > 22 && pe <= 30) valuationScore = 6;
-    else if (pe > 30 && pe <= 45) valuationScore = 4;
-    else if (pe > 45 && pe <= 80) valuationScore = 2;
-    else if (pe > 80) valuationScore = 1;
-    else valuationScore = 6; // PE 0-5: très bas, signal ambigu
+    if (pe <= 5) {
+      // Very low PE: suspicious — often one-time gains, asset sales,
+      // or businesses in terminal decline. Not automatically "cheap."
+      valuationScore = 4;
+    } else {
+      valuationScore = lerp(pe, [
+        [5, 5],       // transition from suspicious zone
+        [8, 8.5],     // deep value
+        [12, 9.5],    // classic value sweet spot
+        [16, 9],      // reasonable value
+        [20, 8],      // fair value
+        [25, 6.5],    // growth premium
+        [30, 5.5],    // rich but common for quality growth
+        [40, 4],      // expensive
+        [55, 2.5],    // very expensive
+        [80, 1],      // speculative
+      ]);
+    }
+
+    // PEG adjustment: integrates growth rate into PE assessment.
+    // Only applies when meaningful growth data exists (> 2%) and PE is elevated (> 15).
+    // PEG < 1 = growth is cheap (safer); PEG > 2.5 = growth is overpriced (riskier).
+    if (earningsGrowth > 0.02 && pe > 15) {
+      const peg = pe / (earningsGrowth * 100);
+      let pegAdj = 0;
+      if (peg < 0.8) pegAdj = 1.5;        // very cheap growth
+      else if (peg < 1.0) pegAdj = 1.0;    // cheap growth
+      else if (peg < 1.5) pegAdj = 0.5;    // fair growth
+      else if (peg < 2.0) pegAdj = 0;      // neutral
+      else if (peg < 3.0) pegAdj = -0.5;   // expensive growth
+      else pegAdj = -1.0;                   // very expensive growth
+      valuationScore = clamp(valuationScore + pegAdj);
+    }
   } else if (pe < 0) {
-    valuationScore = 1; // bénéfices négatifs
+    valuationScore = 1.5; // negative PE = losses
   }
 
-  // ── 5. Taille (capitalisation boursière) ──
+  // ── 5. Size (Market Cap) ──
+  //    Continuous curve. Mega-cap = most stable/liquid/diversified.
   let sizeScore = 5;
   if (marketCap > 0) {
-    const capB = marketCap / 1e9; // en milliards
-    if (capB >= 200) sizeScore = 10;
-    else if (capB >= 50) sizeScore = 9;
-    else if (capB >= 10) sizeScore = 7;
-    else if (capB >= 2) sizeScore = 5;
-    else if (capB >= 0.5) sizeScore = 3;
-    else sizeScore = 1;
+    const capB = marketCap / 1e9;
+    sizeScore = lerp(capB, [
+      [0.3, 1],     // nano/micro cap
+      [0.5, 2.5],   // micro cap
+      [2, 4.5],     // small cap
+      [10, 7],      // mid cap
+      [50, 8.5],    // large cap
+      [200, 9.5],   // mega cap
+      [500, 10],    // ultra mega cap
+    ]);
   }
 
-  // ── 6. Dividende ──
-  let dividendScore = 3; // pas de dividende = peu de coussin
-  const yieldPct = dividendYield * 100;
-  if (yieldPct > 0) {
-    if (yieldPct >= 2 && yieldPct <= 4) dividendScore = 10;
-    else if (yieldPct > 4 && yieldPct <= 5) dividendScore = 8;
-    else if (yieldPct >= 1 && yieldPct < 2) dividendScore = 7;
-    else if (yieldPct > 5 && yieldPct <= 7) dividendScore = 5;
-    else if (yieldPct > 0.5 && yieldPct < 1) dividendScore = 5;
-    else if (yieldPct > 7) dividendScore = 3; // rendement piège
-    else dividendScore = 4; // très petit dividende
+  // ── 6. Dividend ──
+  //    No dividend = neutral (5): Berkshire, Google, Amazon are very safe.
+  //    Sweet spot: 2-4% yield. High yield (> 6%) flags potential trap,
+  //    especially combined with negative growth or negative margins.
+  let dividendScore = 5;
+  if (dividendYield > 0) {
+    const yieldPct = dividendYield * 100;
+    if (yieldPct <= 6) {
+      dividendScore = lerp(yieldPct, [
+        [0.1, 5.5],  // token dividend
+        [0.5, 6],    // small but consistent
+        [1.0, 7],    // moderate
+        [2.0, 9],    // sweet spot start
+        [3.0, 9.5],  // sweet spot
+        [4.0, 9],    // still good
+        [5.0, 7.5],  // high but watch payout
+        [6.0, 6],    // elevated risk
+      ]);
+    } else {
+      // High yield trap zone: yield > 6% is often unsustainable
+      dividendScore = lerp(yieldPct, [
+        [6, 5.5],
+        [7, 4],
+        [8, 3],
+        [10, 1.5],
+        [15, 0.5],
+      ]);
+      // Extra penalty: high yield + deteriorating fundamentals = classic trap
+      if (earningsGrowth < -0.05 || profitMargins < 0) {
+        dividendScore = Math.min(dividendScore, 2.5);
+      }
+    }
   }
 
   // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
@@ -287,35 +440,51 @@ export function calculateSafetyScore(
     dividendScore * w.dividend
   );
 
-  // ── Red-flag overrides — plafonnent le score final ──
+  // ── Red-flag overrides — hard caps on final score ──
+  // These catch structurally dangerous situations that weighted averages
+  // might miss. Each flag prevents a dangerously high composite.
   let redFlag: string | null = null;
 
-  if (eps < 0 && debtToEquity > 150) {
-    total = Math.min(total, 2.0);
-    redFlag = 'BPA negatif + endettement eleve';
-  }
-  if (profitMargins < 0 && currentRatio > 0 && currentRatio < 1.0) {
+  // RF1: Negative earnings + high leverage = distress risk
+  if (eps < 0 && debtToEquity > 200 && !isFinancial) {
     total = Math.min(total, 2.5);
-    redFlag = redFlag ?? 'Marges negatives + liquidite insuffisante';
+    redFlag = 'L\'entreprise perd de l\'argent et a beaucoup de dettes';
   }
-  if (beta > 2.0 && pe > 60) {
-    total = Math.min(total, 3.0);
-    redFlag = redFlag ?? 'Beta eleve + valorisation speculative';
+  // RF2: Negative margins + low liquidity = operational distress
+  if (profitMargins < 0 && currentRatio > 0 && currentRatio < 0.8 && !isFinancial) {
+    total = Math.min(total, 3);
+    redFlag = redFlag ?? 'L\'entreprise perd de l\'argent et manque de liquidites';
   }
+  // RF3: Extreme volatility + speculative valuation
+  if (beta > 2.0 && pe > 70) {
+    total = Math.min(total, 3.5);
+    redFlag = redFlag ?? 'Titre tres volatile avec un prix speculatif';
+  }
+  // RF4: Micro cap with no earnings
   if (marketCap > 0 && marketCap < 300_000_000 && eps <= 0) {
-    total = Math.min(total, 2.0);
-    redFlag = redFlag ?? 'Micro cap sans benefices';
+    total = Math.min(total, 2.5);
+    redFlag = redFlag ?? 'Tres petite entreprise sans profits';
+  }
+  // RF5: Extreme leverage alone (even with positive EPS)
+  if (debtToEquity > 500 && !isFinancial) {
+    total = Math.min(total, 3.5);
+    redFlag = redFlag ?? 'Niveau de dettes extremement eleve';
+  }
+  // RF6: High yield trap — yield > 8% with negative earnings
+  if (dividendYield > 0.08 && eps < 0) {
+    total = Math.min(total, 3);
+    redFlag = redFlag ?? 'Dividende eleve mais l\'entreprise perd de l\'argent — possible piege';
   }
 
   const rounded = rd(total);
 
   let label: string;
   let color: string;
-  if (rounded >= 8) { label = 'Tres sur'; color = '#10b981'; }
-  else if (rounded >= 6) { label = 'Sur'; color = '#22d3ee'; }
-  else if (rounded >= 4) { label = 'Modere'; color = '#f59e0b'; }
-  else if (rounded >= 2) { label = 'Risque'; color = '#f97316'; }
-  else { label = 'Tres risque'; color = '#ef4444'; }
+  if (rounded >= 8) { label = 'Tres solide'; color = '#10b981'; }
+  else if (rounded >= 6) { label = 'Solide'; color = '#22d3ee'; }
+  else if (rounded >= 4) { label = 'Correct'; color = '#f59e0b'; }
+  else if (rounded >= 2) { label = 'A surveiller'; color = '#f97316'; }
+  else { label = 'Risque eleve'; color = '#ef4444'; }
 
   return {
     balanceSheetScore: rd(balanceSheetScore),
@@ -513,6 +682,9 @@ export function calculateDualScores(
       earningsGrowth: h.earningsGrowth,
       marketCap: h.marketCap,
       sector: h.sector,
+      week52High: h.week52High,
+      week52Low: h.week52Low,
+      currentPrice: h.currentPrice,
     }, weights?.safety, weights?.safetyAdj);
 
     const upside = calculateUpsideScore({

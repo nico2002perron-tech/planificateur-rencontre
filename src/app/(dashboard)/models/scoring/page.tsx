@@ -141,31 +141,31 @@ interface LegendFactor {
 }
 
 const SAFETY_FACTORS: LegendFactor[] = [
-  { key: 'balanceSheet', label: 'Bilan financier (D/E + liquidite)', color: '#ef4444', summary: 'Solidite du bilan — dette et liquidites. Neutre pour les financieres.',
-    tiers: [{ condition: 'D/E < 30%, CR > 2', baseScore: 10 }, { condition: 'D/E 30-80%, CR 1.5+', baseScore: 8 }, { condition: 'D/E 80-150%', baseScore: 6 }, { condition: 'D/E 150-250%', baseScore: 3 }, { condition: 'D/E > 250%', baseScore: 1 }] },
-  { key: 'beta', label: 'Beta (risque marche)', color: '#3b82f6', summary: 'Volatilite par rapport au marche. Beta < 1 = defensif.',
-    tiers: [{ condition: 'Beta < 0.5', baseScore: 10 }, { condition: 'Beta 0.5-0.8', baseScore: 8 }, { condition: 'Beta 0.8-1.0', baseScore: 6 }, { condition: 'Beta 1.0-1.3', baseScore: 4 }, { condition: 'Beta > 1.8', baseScore: 0 }] },
-  { key: 'profitability', label: 'Rentabilite (marges + croissance)', color: '#ec4899', summary: 'Marges de profit + tendance des benefices. Plafonne a 2 si BPA negatif.',
-    tiers: [{ condition: 'Marge > 25%', baseScore: 10 }, { condition: 'Marge 15-25%', baseScore: 8 }, { condition: 'Marge 8-15%', baseScore: 6 }, { condition: 'Marge < 3%', baseScore: 2 }, { condition: 'BPA negatif', baseScore: 2 }] },
-  { key: 'valuation', label: 'Valorisation (PE)', color: '#f59e0b', summary: 'Ratio cours/benefices absolu. PE 8-16 = zone optimale de securite.',
-    tiers: [{ condition: 'PE 8-16', baseScore: 10 }, { condition: 'PE 16-22', baseScore: 8 }, { condition: 'PE 22-30', baseScore: 6 }, { condition: 'PE 30-45', baseScore: 4 }, { condition: 'PE > 80', baseScore: 1 }] },
-  { key: 'size', label: 'Capitalisation boursiere', color: '#06b6d4', summary: 'Les grandes entreprises sont plus stables et moins risquees.',
-    tiers: [{ condition: '> 200G$', baseScore: 10 }, { condition: '50-200G$', baseScore: 9 }, { condition: '10-50G$', baseScore: 7 }, { condition: '2-10G$', baseScore: 5 }, { condition: '< 500M$', baseScore: 1 }] },
-  { key: 'dividend', label: 'Dividende', color: '#8b5cf6', summary: 'Coussin de revenu et signal de discipline. Piege si > 7%.',
-    tiers: [{ condition: 'Rend. 2-4%', baseScore: 10 }, { condition: 'Rend. 4-5%', baseScore: 8 }, { condition: 'Rend. 1-2%', baseScore: 7 }, { condition: 'Aucun', baseScore: 3 }, { condition: '> 7% (piege)', baseScore: 3 }] },
+  { key: 'balanceSheet', label: 'Sante financiere', color: '#ef4444', summary: 'Est-ce que l\'entreprise a trop de dettes? A-t-elle assez de liquidites pour payer ses factures? Les banques sont evaluees separement.',
+    tiers: [{ condition: 'Peu de dettes', baseScore: 9.5 }, { condition: 'Dettes moderees', baseScore: 7.5 }, { condition: 'Niveau moyen', baseScore: 6 }, { condition: 'Tres endettee', baseScore: 3.5 }, { condition: 'Endettement critique', baseScore: 1 }] },
+  { key: 'beta', label: 'Stabilite du prix', color: '#3b82f6', summary: 'A quel point le titre bouge quand le marche fluctue? Combine la sensibilite au marche et les variations de prix des 12 derniers mois.',
+    tiers: [{ condition: 'Tres stable', baseScore: 9.5 }, { condition: 'Plutot stable', baseScore: 7.5 }, { condition: 'Comme le marche', baseScore: 5.5 }, { condition: 'Assez volatile', baseScore: 3 }, { condition: 'Tres volatile', baseScore: 0.5 }] },
+  { key: 'profitability', label: 'Rentabilite', color: '#ec4899', summary: 'L\'entreprise fait-elle de bons profits? Ses benefices sont-ils en croissance? Si elle perd de l\'argent, le score est automatiquement limite.',
+    tiers: [{ condition: 'Profits eleves', baseScore: 9.5 }, { condition: 'Bons profits', baseScore: 8 }, { condition: 'Profits corrects', baseScore: 6 }, { condition: 'Profits faibles', baseScore: 3.5 }, { condition: 'Perd de l\'argent', baseScore: 3 }] },
+  { key: 'valuation', label: 'Le titre est-il cher?', color: '#f59e0b', summary: 'Compare le prix de l\'action a ses benefices. Si l\'entreprise croit vite, un prix plus eleve est justifie. Un prix tres bas peut etre suspect.',
+    tiers: [{ condition: 'Aubaine', baseScore: 9 }, { condition: 'Prix raisonnable', baseScore: 8.5 }, { condition: 'Cher mais justifie', baseScore: 8 }, { condition: 'Assez cher', baseScore: 4.5 }, { condition: 'Tres speculatif', baseScore: 2 }] },
+  { key: 'size', label: 'Taille de l\'entreprise', color: '#06b6d4', summary: 'Les grandes entreprises sont generalement plus stables, mieux diversifiees et plus faciles a vendre en cas de besoin.',
+    tiers: [{ condition: 'Geante (> 200G$)', baseScore: 9.5 }, { condition: 'Tres grande', baseScore: 8.5 }, { condition: 'Grande', baseScore: 7 }, { condition: 'Moyenne', baseScore: 4.5 }, { condition: 'Petite (< 500M$)', baseScore: 2 }] },
+  { key: 'dividend', label: 'Revenu de dividende', color: '#8b5cf6', summary: 'Un dividende regulier donne un coussin de revenu. Pas de dividende = neutre. Un rendement trop eleve peut signaler un probleme.',
+    tiers: [{ condition: 'Ideal (2-4%)', baseScore: 9.5 }, { condition: 'Correct (1-2%)', baseScore: 7 }, { condition: 'Aucun dividende', baseScore: 5 }, { condition: 'Eleve (attention)', baseScore: 4 }, { condition: 'Signal d\'alarme', baseScore: 2 }] },
 ];
 
 const UPSIDE_FACTORS: LegendFactor[] = [
-  { key: 'analyst', label: 'Cible analystes', color: '#06b6d4', summary: 'Ecart entre le prix et la cible 12 mois',
-    tiers: [{ condition: 'Upside > 25%', baseScore: 8.5 }, { condition: 'Upside 5-15%', baseScore: 6.5 }, { condition: 'Upside 0%', baseScore: 3 }, { condition: 'Downside > 10%', baseScore: 1 }] },
-  { key: 'dcf', label: 'Valorisation DCF', color: '#8b5cf6', summary: 'Valeur intrinseque vs prix du marche',
-    tiers: [{ condition: 'Sous-eval. > 30%', baseScore: 8 }, { condition: 'Sous-eval. 5-15%', baseScore: 5.5 }, { condition: 'Surevalue', baseScore: 1 }] },
-  { key: 'epsGrowth', label: 'Croissance BPA', color: '#ec4899', summary: 'Benefices en croissance = moteur de hausse',
-    tiers: [{ condition: 'Croissance > 20%', baseScore: 8 }, { condition: 'Croissance 5-10%', baseScore: 6 }, { condition: 'Negative', baseScore: 2 }] },
-  { key: 'week52', label: 'Marge 52 semaines', color: '#10b981', summary: 'Loin du sommet = marge de hausse',
-    tiers: [{ condition: 'Pres du 52w low', baseScore: 10 }, { condition: 'Milieu du range', baseScore: 6.5 }, { condition: 'Pres du 52w high', baseScore: 3 }] },
-  { key: 'peSector', label: 'PE vs secteur', color: '#f59e0b', summary: 'PE bas = potentiel d\'expansion du multiple',
-    tiers: [{ condition: 'PE < 50% bench', baseScore: 9 }, { condition: 'PE < bench', baseScore: 6.5 }, { condition: 'PE > 1.2x bench', baseScore: 2 }] },
+  { key: 'analyst', label: 'Cible des analystes', color: '#06b6d4', summary: 'Ou les analystes de Bay Street / Wall Street pensent que le titre sera dans 12 mois? Plus la cible est haute vs le prix actuel, plus le potentiel est grand.',
+    tiers: [{ condition: 'Forte hausse attendue', baseScore: 8.5 }, { condition: 'Hausse moderee', baseScore: 6.5 }, { condition: 'Deja au prix cible', baseScore: 3 }, { condition: 'Baisse attendue', baseScore: 1 }] },
+  { key: 'dcf', label: 'Valeur reelle estimee', color: '#8b5cf6', summary: 'On calcule ce que l\'entreprise vaut reellement selon ses flux de tresorerie. Si le prix en bourse est plus bas, c\'est une bonne affaire potentielle.',
+    tiers: [{ condition: 'Tres sous-evalue', baseScore: 8 }, { condition: 'Legerement sous-evalue', baseScore: 5.5 }, { condition: 'Surevalue', baseScore: 1 }] },
+  { key: 'epsGrowth', label: 'Croissance des profits', color: '#ec4899', summary: 'Les benefices de l\'entreprise augmentent-ils? Des profits en hausse poussent generalement le prix de l\'action vers le haut.',
+    tiers: [{ condition: 'Forte croissance', baseScore: 8 }, { condition: 'Croissance moderee', baseScore: 6 }, { condition: 'Profits en baisse', baseScore: 2 }] },
+  { key: 'week52', label: 'Marge de progression', color: '#10b981', summary: 'Ou se situe le prix par rapport a son plus haut et son plus bas des 12 derniers mois? Plus on est loin du sommet, plus il y a de potentiel de hausse.',
+    tiers: [{ condition: 'Pres du plus bas', baseScore: 10 }, { condition: 'Au milieu', baseScore: 6.5 }, { condition: 'Pres du sommet', baseScore: 3 }] },
+  { key: 'peSector', label: 'Moins cher que le secteur?', color: '#f59e0b', summary: 'Compare le prix du titre a la moyenne de son secteur. Un titre moins cher que ses pairs a plus de chances de rattraper la moyenne.',
+    tiers: [{ condition: 'Bien moins cher', baseScore: 9 }, { condition: 'Sous la moyenne', baseScore: 6.5 }, { condition: 'Plus cher que le secteur', baseScore: 2 }] },
 ];
 
 const SCORE_SCALE = [
@@ -477,20 +477,20 @@ function WeightCustomizer({
 
   interface FactorRow { key: string; label: string; color: string }
   const safetyRows: FactorRow[] = [
-    { key: 'balanceSheet', label: 'Bilan financier', color: '#ef4444' },
-    { key: 'beta', label: 'Beta (risque marche)', color: '#3b82f6' },
+    { key: 'balanceSheet', label: 'Sante financiere', color: '#ef4444' },
+    { key: 'beta', label: 'Stabilite du prix', color: '#3b82f6' },
     { key: 'profitability', label: 'Rentabilite', color: '#ec4899' },
-    { key: 'valuation', label: 'Valorisation (PE)', color: '#f59e0b' },
-    { key: 'size', label: 'Capitalisation', color: '#06b6d4' },
-    { key: 'dividend', label: 'Dividende', color: '#8b5cf6' },
+    { key: 'valuation', label: 'Le titre est-il cher?', color: '#f59e0b' },
+    { key: 'size', label: 'Taille de l\'entreprise', color: '#06b6d4' },
+    { key: 'dividend', label: 'Revenu de dividende', color: '#8b5cf6' },
   ];
 
   const upsideRows: FactorRow[] = [
-    { key: 'analyst', label: 'Cible analystes', color: '#06b6d4' },
-    { key: 'dcf', label: 'Valorisation DCF', color: '#8b5cf6' },
-    { key: 'epsGrowth', label: 'Croissance BPA', color: '#ec4899' },
-    { key: 'week52', label: 'Marge 52 semaines', color: '#10b981' },
-    { key: 'peSector', label: 'PE vs secteur', color: '#f59e0b' },
+    { key: 'analyst', label: 'Cible des analystes', color: '#06b6d4' },
+    { key: 'dcf', label: 'Valeur reelle estimee', color: '#8b5cf6' },
+    { key: 'epsGrowth', label: 'Croissance des profits', color: '#ec4899' },
+    { key: 'week52', label: 'Marge de progression', color: '#10b981' },
+    { key: 'peSector', label: 'Moins cher que le secteur?', color: '#f59e0b' },
   ];
 
   return (
@@ -782,10 +782,10 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
   const radarData = [
     { dimension: 'Securite', score: ps.safety },
     { dimension: 'Potentiel', score: ps.upside },
-    { dimension: 'Bilan', score: wAvg(s => s.safety.balanceSheetScore) },
+    { dimension: 'Sante fin.', score: wAvg(s => s.safety.balanceSheetScore) },
     { dimension: 'Rentabilite', score: wAvg(s => s.safety.profitabilityScore) },
     { dimension: 'Cible anal.', score: wAvg(s => s.upside.analystUpside) },
-    { dimension: 'Crois. BPA', score: wAvg(s => s.upside.epsGrowth) },
+    { dimension: 'Croissance', score: wAvg(s => s.upside.epsGrowth) },
   ];
 
   const quadDist = [
@@ -858,13 +858,13 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                 <Shield className="h-3 w-3" /> Securite
               </p>
               {[
-                { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee (apres red flags)' },
-                { label: `Bilan financier (${sPct('balanceSheet')}%)`, value: wAvg(s => s.safety.balanceSheetScore), hint: 'D/E + liquidite combines' },
-                { label: `Beta / risque (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile' },
-                { label: `Rentabilite (${sPct('profitability')}%)`, value: wAvg(s => s.safety.profitabilityScore), hint: 'Marges + croissance BPA' },
-                { label: `Valorisation (${sPct('valuation')}%)`, value: wAvg(s => s.safety.valuationScore), hint: 'PE absolu — zone optimale 8-16' },
-                { label: `Capitalisation (${sPct('size')}%)`, value: wAvg(s => s.safety.sizeScore), hint: 'Blue chip = plus stable' },
-                { label: `Dividende (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Coussin de revenu' },
+                { label: 'Score global', value: ps.safety, hint: 'Moyenne de tous les criteres' },
+                { label: `Sante financiere (${sPct('balanceSheet')}%)`, value: wAvg(s => s.safety.balanceSheetScore), hint: 'Niveau d\'endettement et liquidites' },
+                { label: `Stabilite du prix (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Volatilite du titre vs le marche' },
+                { label: `Rentabilite (${sPct('profitability')}%)`, value: wAvg(s => s.safety.profitabilityScore), hint: 'Marges de profit et croissance' },
+                { label: `Le titre est-il cher? (${sPct('valuation')}%)`, value: wAvg(s => s.safety.valuationScore), hint: 'Prix vs benefices, ajuste pour la croissance' },
+                { label: `Taille (${sPct('size')}%)`, value: wAvg(s => s.safety.sizeScore), hint: 'Plus c\'est gros, plus c\'est stable' },
+                { label: `Dividende (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier verse aux actionnaires' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -883,11 +883,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
               </p>
               {[
                 { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee' },
-                { label: `Cible analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix vs cible 12 mois' },
-                { label: `Marge 52 sem. (${uPct('week52')}%)`, value: wAvg(s => s.upside.week52Room), hint: 'Proche du low = plus de marge' },
-                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon modeles' },
-                { label: `PE vs secteur (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = expansion du multiple' },
-                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Croissance = moteur de hausse' },
+                { label: `Cible des analystes (${uPct('analyst')}%)`, value: wAvg(s => s.upside.analystUpside), hint: 'Ou les pros voient le titre dans 12 mois' },
+                { label: `Marge de progression (${uPct('week52')}%)`, value: wAvg(s => s.upside.week52Room), hint: 'Loin du sommet = plus de potentiel' },
+                { label: `Valeur reelle estimee (${uPct('dcf')}%)`, value: wAvg(s => s.upside.valuationUpside), hint: 'Le titre vaut-il plus que son prix?' },
+                { label: `Moins cher que le secteur? (${uPct('peSector')}%)`, value: wAvg(s => s.upside.peSectorGap), hint: 'Compare aux entreprises similaires' },
+                { label: `Croissance des profits (${uPct('epsGrowth')}%)`, value: wAvg(s => s.upside.epsGrowth), hint: 'Profits en hausse = prix en hausse' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -1040,17 +1040,17 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 <Shield className="h-3 w-3" /> Detail securite — {s.safety.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: `Bilan financier (${sPct('balanceSheet')}%)`, value: s.safety.balanceSheetScore, hint: 'D/E + liquidite' },
-                                { label: `Beta / risque (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = defensif' },
-                                { label: `Rentabilite (${sPct('profitability')}%)`, value: s.safety.profitabilityScore, hint: 'Marges + croissance' },
-                                { label: `Valorisation (${sPct('valuation')}%)`, value: s.safety.valuationScore, hint: 'PE absolu' },
-                                { label: `Capitalisation (${sPct('size')}%)`, value: s.safety.sizeScore, hint: 'Taille = stabilite' },
-                                { label: `Dividende (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Coussin de revenu' },
+                                { label: `Sante financiere (${sPct('balanceSheet')}%)`, value: s.safety.balanceSheetScore, hint: 'Dettes et liquidites' },
+                                { label: `Stabilite du prix (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Volatilite du titre' },
+                                { label: `Rentabilite (${sPct('profitability')}%)`, value: s.safety.profitabilityScore, hint: 'Profits et croissance' },
+                                { label: `Le titre est-il cher? (${sPct('valuation')}%)`, value: s.safety.valuationScore, hint: 'Prix vs benefices' },
+                                { label: `Taille (${sPct('size')}%)`, value: s.safety.sizeScore, hint: 'Grande = plus stable' },
+                                { label: `Dividende (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Revenu verse' },
                               ]} />
                               {s.safety.redFlag && (
                                 <div className="mt-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
-                                  <p className="text-xs font-semibold text-red-700">Red flag : {s.safety.redFlag}</p>
-                                  <p className="text-[10px] text-red-500">Score plafonne automatiquement</p>
+                                  <p className="text-xs font-semibold text-red-700">Signal d&apos;alarme : {s.safety.redFlag}</p>
+                                  <p className="text-[10px] text-red-500">Le score est limite automatiquement a cause de ce risque</p>
                                 </div>
                               )}
                             </div>
@@ -1059,11 +1059,11 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 <TrendingUp className="h-3 w-3" /> Detail potentiel — {s.upside.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: `Cible analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Ecart prix vs consensus' },
-                                { label: `Marge 52 sem. (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
-                                { label: `Valorisation DCF (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles' },
-                                { label: `PE vs secteur (${uPct('peSector')}%)`, value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
-                                { label: `Croissance BPA (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Croissance = moteur' },
+                                { label: `Cible des analystes (${uPct('analyst')}%)`, value: s.upside.analystUpside, hint: 'Cible 12 mois vs prix actuel' },
+                                { label: `Marge de progression (${uPct('week52')}%)`, value: s.upside.week52Room, hint: 'Potentiel vs le sommet' },
+                                { label: `Valeur reelle estimee (${uPct('dcf')}%)`, value: s.upside.valuationUpside, hint: 'Vaut plus que son prix?' },
+                                { label: `Moins cher que le secteur? (${uPct('peSector')}%)`, value: s.upside.peSectorGap, hint: 'Compare aux pairs' },
+                                { label: `Croissance des profits (${uPct('epsGrowth')}%)`, value: s.upside.epsGrowth, hint: 'Profits en hausse' },
                               ]} />
                             </div>
                           </div>
