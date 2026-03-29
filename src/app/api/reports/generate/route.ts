@@ -129,6 +129,9 @@ export async function POST(request: NextRequest) {
               week52Low: yProfile.week52Low,
               dividendYield: yProfile.dividendYield,
               earningsGrowth: yProfile.earningsGrowth,
+              profitMargins: yProfile.profitMargins,
+              debtToEquity: yProfile.debtToEquity,
+              currentRatio: yProfile.currentRatio,
             };
             return { symbol, data };
           }
@@ -596,6 +599,10 @@ export async function POST(request: NextRequest) {
           estimatedGainPercent: hp.estimatedGainPercent,
           sector: hp.sector,
           assetClass: holding?.assetClass ?? 'EQUITY',
+          profitMargins: hp.profitMargins,
+          debtToEquity: hp.debtToEquity,
+          currentRatio: hp.currentRatio,
+          marketCap: hp.marketCap,
         };
       });
 

@@ -208,6 +208,9 @@ export interface YahooProfileData {
   week52High: number;      // summaryDetail.fiftyTwoWeekHigh
   week52Low: number;       // summaryDetail.fiftyTwoWeekLow
   earningsGrowth: number;  // financialData.earningsGrowth
+  debtToEquity: number;    // financialData.debtToEquity (e.g. 150 = 150%)
+  currentRatio: number;    // financialData.currentRatio
+  profitMargins: number;   // financialData.profitMargins (decimal, e.g. 0.25 = 25%)
 }
 
 /**
@@ -256,6 +259,9 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
       week52High: raw(sd.fiftyTwoWeekHigh),
       week52Low: raw(sd.fiftyTwoWeekLow),
       earningsGrowth: raw(fd.earningsGrowth),
+      debtToEquity: raw(fd.debtToEquity),
+      currentRatio: raw(fd.currentRatio),
+      profitMargins: raw(fd.profitMargins),
     };
   } catch {
     return null;

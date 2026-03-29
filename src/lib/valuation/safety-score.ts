@@ -1,6 +1,9 @@
 /**
  * Dual Scoring: Safety Score + Upside Potential Score
  * Pure calculation module — no external API calls.
+ *
+ * Safety score: modeled on institutional risk frameworks (Graham/Dodd, MSCI).
+ * 6 fundamental factors + red-flag overrides.
  * Weights are customizable per advisor.
  */
 
@@ -10,14 +13,16 @@ import { getBenchmarkData } from './benchmarks';
 // ── Interfaces ────────────────────────────────────────────────────
 
 export interface SafetyScoreBreakdown {
-  week52Position: number;    // 0-10
+  balanceSheetScore: number; // 0-10 (D/E + Current Ratio combined)
   betaScore: number;         // 0-10
+  profitabilityScore: number;// 0-10 (margins + growth combined, EPS cap)
+  valuationScore: number;    // 0-10 (PE absolute)
+  sizeScore: number;         // 0-10 (market cap)
   dividendScore: number;     // 0-10
-  peReasonableness: number;  // 0-10
-  epsStability: number;      // 0-10
-  total: number;             // 0-10 weighted
+  total: number;             // 0-10 weighted, after red-flag caps
   label: string;
   color: string;
+  redFlag: string | null;    // null if none, description if capped
 }
 
 export interface UpsideScoreBreakdown {
@@ -44,14 +49,16 @@ export interface StockDualScore {
 }
 
 export interface SafetyScoreInputs {
-  currentPrice: number;
-  week52High: number;
-  week52Low: number;
   beta: number;
-  dividendYield: number;  // decimal, e.g. 0.025
+  dividendYield: number;   // decimal, e.g. 0.025
   pe: number;
-  eps: number;
-  sectorBenchmarkPE: number;
+  eps: number;             // for red-flag check only
+  profitMargins: number;   // decimal, e.g. 0.25 = 25%
+  debtToEquity: number;    // e.g. 150 = 150%
+  currentRatio: number;    // e.g. 1.5
+  earningsGrowth: number;  // decimal, e.g. 0.12 = 12%
+  marketCap: number;       // dollars
+  sector: string;          // for sector-adjusted D/E (financials)
 }
 
 export interface UpsideScoreInputs {
@@ -70,11 +77,12 @@ export interface UpsideScoreInputs {
 // ── Customizable Weights ─────────────────────────────────────────
 
 export interface SafetyWeights {
-  week52: number;
+  balanceSheet: number;
   beta: number;
+  profitability: number;
+  valuation: number;
+  size: number;
   dividend: number;
-  pe: number;
-  eps: number;
 }
 
 export interface UpsideWeights {
@@ -93,11 +101,12 @@ export interface CustomWeights {
 }
 
 export const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = {
-  week52: 20,
-  beta: 25,
-  dividend: 20,
-  pe: 20,
-  eps: 15,
+  balanceSheet: 25,
+  beta: 20,
+  profitability: 20,
+  valuation: 15,
+  size: 10,
+  dividend: 10,
 };
 
 export const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = {
@@ -125,6 +134,15 @@ function clamp(v: number, min = 0, max = 10): number {
   return Math.min(max, Math.max(min, v));
 }
 
+function rd(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
+const FINANCIAL_SECTORS = new Set([
+  'Financial Services', 'Financials', 'Banks', 'Insurance',
+  'financial services', 'financials',
+]);
+
 // ── Safety Score Calculation ──────────────────────────────────────
 
 export function calculateSafetyScore(
@@ -132,79 +150,164 @@ export function calculateSafetyScore(
   customWeights?: Partial<SafetyWeights>,
   adjustments?: Partial<SafetyWeights>,
 ): SafetyScoreBreakdown {
-  const { currentPrice, week52High, week52Low, beta, dividendYield, pe, eps, sectorBenchmarkPE } = inputs;
+  const {
+    beta, dividendYield, pe, eps, profitMargins, debtToEquity,
+    currentRatio, earningsGrowth, marketCap, sector,
+  } = inputs;
   const w = normalizeWeights({ ...DEFAULT_SAFETY_WEIGHTS, ...customWeights });
+  const isFinancial = FINANCIAL_SECTORS.has(sector);
 
-  // 1. Position 52 semaines — plus pres du low = meilleure opportunite
-  //    Courbe adoucie: low = 10, milieu = 6.5, high = 3
-  let week52Position = 5;
-  if (week52High > week52Low && week52High > 0) {
-    const range = week52High - week52Low;
-    const positionPct = (currentPrice - week52Low) / range;
-    week52Position = clamp(10 - positionPct * 7);
+  // ── 1. Bilan financier (D/E + Current Ratio combinés) ──
+  //    Score neutre (5) pour le secteur financier (business model leverage)
+  let debtSub = 5;
+  let liqSub = 5;
+
+  if (isFinancial) {
+    // Banques/assureurs : D/E et CR ne s'appliquent pas normalement
+    debtSub = 5;
+    liqSub = 5;
+  } else {
+    if (debtToEquity > 0) {
+      if (debtToEquity <= 30) debtSub = 10;
+      else if (debtToEquity <= 80) debtSub = 8;
+      else if (debtToEquity <= 150) debtSub = 6;
+      else if (debtToEquity <= 250) debtSub = 3;
+      else debtSub = 1;
+    }
+    if (currentRatio > 0) {
+      if (currentRatio >= 2.5) liqSub = 10;
+      else if (currentRatio >= 2.0) liqSub = 9;
+      else if (currentRatio >= 1.5) liqSub = 7;
+      else if (currentRatio >= 1.0) liqSub = 5;
+      else if (currentRatio >= 0.5) liqSub = 2;
+      else liqSub = 0;
+    }
   }
+  let balanceSheetScore = debtSub * 0.6 + liqSub * 0.4;
 
-  // 2. Beta — lower beta = safer (courbe adoucie)
-  //    beta 0 → 10, beta 1.0 → 6.5, beta 2.0 → 3, beta 2.9+ → 0
+  // ── 2. Beta / Risque marché ──
   let betaScore = 5;
-  if (beta > 0) {
-    betaScore = clamp(10 - beta * 3.5);
+  if (beta < 0) {
+    betaScore = 7; // negatively correlated = defensive
+  } else if (beta > 0) {
+    if (beta <= 0.5) betaScore = 10;
+    else if (beta <= 0.8) betaScore = 8;
+    else if (beta <= 1.0) betaScore = 6;
+    else if (beta <= 1.3) betaScore = 4;
+    else if (beta <= 1.8) betaScore = 2;
+    else betaScore = 0;
   }
 
-  // 3. Rendement dividende — cushion, penalize traps > 8%
-  //    Petit dividende < 1.5% → 6.5 (adouci, etait 5.5)
-  //    Aucun dividende → 5 (neutre, titres growth)
-  let dividendScore = 5;
+  // ── 3. Rentabilité (marges + croissance, cap BPA négatif) ──
+  let marginSub = 5;
+  if (profitMargins !== 0) {
+    const mPct = profitMargins * 100;
+    if (mPct >= 25) marginSub = 10;
+    else if (mPct >= 15) marginSub = 8;
+    else if (mPct >= 8) marginSub = 6;
+    else if (mPct >= 3) marginSub = 4;
+    else if (mPct >= 0) marginSub = 2;
+    else marginSub = 0;
+  }
+
+  let growthSub = 5;
+  if (earningsGrowth !== 0) {
+    const gr = earningsGrowth * 100;
+    if (gr >= 15) growthSub = 10;
+    else if (gr >= 5) growthSub = 8;
+    else if (gr >= 0) growthSub = 6;
+    else if (gr >= -10) growthSub = 3;
+    else growthSub = 1;
+  }
+
+  let profitabilityScore = marginSub * 0.65 + growthSub * 0.35;
+  // Hard cap: BPA négatif = rentabilité plafonnée à 2/10
+  if (eps < 0) {
+    profitabilityScore = Math.min(profitabilityScore, 2);
+  }
+
+  // ── 4. Valorisation (PE absolu — pas relatif au secteur) ──
+  //    PE très bas (<5) = signal ambigu (value trap possible)
+  let valuationScore = 4; // neutre-bas si pas de PE (pas de bénéfices)
+  if (pe > 0) {
+    if (pe >= 8 && pe <= 16) valuationScore = 10;
+    else if (pe > 5 && pe < 8) valuationScore = 8;
+    else if (pe > 16 && pe <= 22) valuationScore = 8;
+    else if (pe > 22 && pe <= 30) valuationScore = 6;
+    else if (pe > 30 && pe <= 45) valuationScore = 4;
+    else if (pe > 45 && pe <= 80) valuationScore = 2;
+    else if (pe > 80) valuationScore = 1;
+    else valuationScore = 6; // PE 0-5: très bas, signal ambigu
+  } else if (pe < 0) {
+    valuationScore = 1; // bénéfices négatifs
+  }
+
+  // ── 5. Taille (capitalisation boursière) ──
+  let sizeScore = 5;
+  if (marketCap > 0) {
+    const capB = marketCap / 1e9; // en milliards
+    if (capB >= 200) sizeScore = 10;
+    else if (capB >= 50) sizeScore = 9;
+    else if (capB >= 10) sizeScore = 7;
+    else if (capB >= 2) sizeScore = 5;
+    else if (capB >= 0.5) sizeScore = 3;
+    else sizeScore = 1;
+  }
+
+  // ── 6. Dividende ──
+  let dividendScore = 3; // pas de dividende = peu de coussin
   const yieldPct = dividendYield * 100;
   if (yieldPct > 0) {
-    if (yieldPct >= 8) dividendScore = 3;
-    else if (yieldPct >= 5) dividendScore = 8;
-    else if (yieldPct >= 3) dividendScore = 9;
-    else if (yieldPct >= 1.5) dividendScore = 7;
-    else dividendScore = 6.5;
-  }
-
-  // 4. PE raisonnable — PE bas vs secteur = sous-evalue
-  let peReasonableness = 5;
-  if (pe > 0) {
-    const benchPE = sectorBenchmarkPE > 0 ? sectorBenchmarkPE : 20;
-    const ratio = pe / benchPE;
-    if (ratio < 0.5) peReasonableness = 8;
-    else if (ratio >= 0.5 && ratio <= 1.0) peReasonableness = 9;
-    else if (ratio > 1.0 && ratio <= 1.3) peReasonableness = 7;
-    else if (ratio > 1.3 && ratio <= 1.8) peReasonableness = 5;
-    else peReasonableness = 2;
-  }
-
-  // 5. EPS positif — positif = solide, negatif = risque
-  let epsStability = 5;
-  if (eps > 0) {
-    epsStability = 8;
-  } else if (eps === 0) {
-    epsStability = 4;
-  } else {
-    epsStability = 1;
+    if (yieldPct >= 2 && yieldPct <= 4) dividendScore = 10;
+    else if (yieldPct > 4 && yieldPct <= 5) dividendScore = 8;
+    else if (yieldPct >= 1 && yieldPct < 2) dividendScore = 7;
+    else if (yieldPct > 5 && yieldPct <= 7) dividendScore = 5;
+    else if (yieldPct > 0.5 && yieldPct < 1) dividendScore = 5;
+    else if (yieldPct > 7) dividendScore = 3; // rendement piège
+    else dividendScore = 4; // très petit dividende
   }
 
   // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
   if (adjustments) {
-    week52Position = clamp(week52Position + (adjustments.week52 ?? 0));
+    balanceSheetScore = clamp(balanceSheetScore + (adjustments.balanceSheet ?? 0));
     betaScore = clamp(betaScore + (adjustments.beta ?? 0));
+    profitabilityScore = clamp(profitabilityScore + (adjustments.profitability ?? 0));
+    valuationScore = clamp(valuationScore + (adjustments.valuation ?? 0));
+    sizeScore = clamp(sizeScore + (adjustments.size ?? 0));
     dividendScore = clamp(dividendScore + (adjustments.dividend ?? 0));
-    peReasonableness = clamp(peReasonableness + (adjustments.pe ?? 0));
-    epsStability = clamp(epsStability + (adjustments.eps ?? 0));
   }
 
   // Weighted total (normalized)
-  const total = clamp(
-    week52Position * w.week52 +
+  let total = clamp(
+    balanceSheetScore * w.balanceSheet +
     betaScore * w.beta +
-    dividendScore * w.dividend +
-    peReasonableness * w.pe +
-    epsStability * w.eps
+    profitabilityScore * w.profitability +
+    valuationScore * w.valuation +
+    sizeScore * w.size +
+    dividendScore * w.dividend
   );
 
-  const rounded = Math.round(total * 10) / 10;
+  // ── Red-flag overrides — plafonnent le score final ──
+  let redFlag: string | null = null;
+
+  if (eps < 0 && debtToEquity > 150) {
+    total = Math.min(total, 2.0);
+    redFlag = 'BPA negatif + endettement eleve';
+  }
+  if (profitMargins < 0 && currentRatio > 0 && currentRatio < 1.0) {
+    total = Math.min(total, 2.5);
+    redFlag = redFlag ?? 'Marges negatives + liquidite insuffisante';
+  }
+  if (beta > 2.0 && pe > 60) {
+    total = Math.min(total, 3.0);
+    redFlag = redFlag ?? 'Beta eleve + valorisation speculative';
+  }
+  if (marketCap > 0 && marketCap < 300_000_000 && eps <= 0) {
+    total = Math.min(total, 2.0);
+    redFlag = redFlag ?? 'Micro cap sans benefices';
+  }
+
+  const rounded = rd(total);
 
   let label: string;
   let color: string;
@@ -215,14 +318,16 @@ export function calculateSafetyScore(
   else { label = 'Tres risque'; color = '#ef4444'; }
 
   return {
-    week52Position: Math.round(week52Position * 10) / 10,
-    betaScore: Math.round(betaScore * 10) / 10,
-    dividendScore: Math.round(dividendScore * 10) / 10,
-    peReasonableness: Math.round(peReasonableness * 10) / 10,
-    epsStability: Math.round(epsStability * 10) / 10,
+    balanceSheetScore: rd(balanceSheetScore),
+    betaScore: rd(betaScore),
+    profitabilityScore: rd(profitabilityScore),
+    valuationScore: rd(valuationScore),
+    sizeScore: rd(sizeScore),
+    dividendScore: rd(dividendScore),
     total: rounded,
     label,
     color,
+    redFlag,
   };
 }
 
@@ -239,8 +344,7 @@ export function calculateUpsideScore(
   } = inputs;
   const w = normalizeWeights({ ...DEFAULT_UPSIDE_WEIGHTS, ...customWeights });
 
-  // 1. Cible analystes vs prix — higher upside = higher score
-  //    Adouci: 5-15% → 6.5 (etait 5.5)
+  // 1. Cible analystes vs prix
   let analystUpside = 5;
   if (targetPrice > 0 && currentPrice > 0) {
     const upside = ((targetPrice - currentPrice) / currentPrice) * 100;
@@ -253,8 +357,7 @@ export function calculateUpsideScore(
     else analystUpside = 1;
   }
 
-  // 2. Position 52 semaines — room to grow (courbe adoucie)
-  //    low = 10, milieu = 6.5, high = 3
+  // 2. Position 52 semaines — room to grow
   let week52Room = 5;
   if (week52High > week52Low && week52High > 0) {
     const range = week52High - week52Low;
@@ -286,7 +389,7 @@ export function calculateUpsideScore(
     else peSectorGap = 2;
   }
 
-  // 5. Croissance EPS — adouci: 5-10% → 6 (etait 5.5)
+  // 5. Croissance EPS
   let epsGrowthScore = 5;
   if (earningsGrowth !== 0) {
     const gr = earningsGrowth * 100;
@@ -298,7 +401,7 @@ export function calculateUpsideScore(
     else epsGrowthScore = 2;
   }
 
-  // Apply per-factor adjustments (Strict -1 / Normal 0 / Souple +1)
+  // Apply per-factor adjustments
   if (adjustments) {
     analystUpside = clamp(analystUpside + (adjustments.analyst ?? 0));
     week52Room = clamp(week52Room + (adjustments.week52 ?? 0));
@@ -316,7 +419,7 @@ export function calculateUpsideScore(
     epsGrowthScore * w.epsGrowth
   );
 
-  const rounded = Math.round(total * 10) / 10;
+  const rounded = rd(total);
 
   let label: string;
   let color: string;
@@ -327,12 +430,12 @@ export function calculateUpsideScore(
   else { label = 'Tres faible'; color = '#ef4444'; }
 
   return {
-    analystUpside: Math.round(analystUpside * 10) / 10,
-    week52Room: Math.round(week52Room * 10) / 10,
-    valuationUpside: Math.round(valuationUpside * 10) / 10,
-    peSectorGap: Math.round(peSectorGap * 10) / 10,
-    epsGrowth: Math.round(epsGrowthScore * 10) / 10,
-    totalReturn: 0, // retire du calcul
+    analystUpside: rd(analystUpside),
+    week52Room: rd(week52Room),
+    valuationUpside: rd(valuationUpside),
+    peSectorGap: rd(peSectorGap),
+    epsGrowth: rd(epsGrowthScore),
+    totalReturn: 0,
     total: rounded,
     label,
     color,
@@ -357,6 +460,10 @@ interface DualScoreHolding {
   estimatedGainPercent: number;
   sector: string;
   assetClass: string;
+  profitMargins: number;
+  debtToEquity: number;
+  currentRatio: number;
+  marketCap: number;
 }
 
 interface DualScoreValuation {
@@ -379,27 +486,33 @@ export function calculateDualScores(
     const bench = benchmarkMap?.get(h.symbol) ?? getBenchmarkData(h.symbol, h.sector);
     const val = valMap.get(h.symbol);
 
+    // Confidence based on available data points
     let realDataPoints = 0;
     if (h.pe > 0) realDataPoints++;
-    if (h.eps !== 0) realDataPoints++;
     if (h.beta > 0) realDataPoints++;
-    if (h.week52High > 0) realDataPoints++;
+    if (h.profitMargins !== 0) realDataPoints++;
+    if (h.debtToEquity > 0) realDataPoints++;
+    if (h.currentRatio > 0) realDataPoints++;
+    if (h.marketCap > 0) realDataPoints++;
     if (h.earningsGrowth !== 0) realDataPoints++;
+    if (h.dividendYield > 0) realDataPoints++;
 
     let confidence: 'high' | 'medium' | 'low';
-    if (realDataPoints >= 4) confidence = 'high';
-    else if (realDataPoints >= 2) confidence = 'medium';
+    if (realDataPoints >= 6) confidence = 'high';
+    else if (realDataPoints >= 3) confidence = 'medium';
     else confidence = 'low';
 
     const safety = calculateSafetyScore({
-      currentPrice: h.currentPrice,
-      week52High: h.week52High,
-      week52Low: h.week52Low,
       beta: h.beta,
       dividendYield: h.dividendYield,
       pe: h.pe,
       eps: h.eps,
-      sectorBenchmarkPE: bench.pe,
+      profitMargins: h.profitMargins,
+      debtToEquity: h.debtToEquity,
+      currentRatio: h.currentRatio,
+      earningsGrowth: h.earningsGrowth,
+      marketCap: h.marketCap,
+      sector: h.sector,
     }, weights?.safety, weights?.safetyAdj);
 
     const upside = calculateUpsideScore({

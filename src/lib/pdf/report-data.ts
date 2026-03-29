@@ -110,6 +110,9 @@ export interface HoldingProfile {
   week52Low: number;
   dividendYield: number;
   earningsGrowth: number;
+  profitMargins: number;
+  debtToEquity: number;
+  currentRatio: number;
 }
 
 export interface HistoricalPoint {
@@ -159,6 +162,9 @@ export interface FMPProfileData {
   week52Low?: number;
   dividendYield?: number;
   earningsGrowth?: number;
+  profitMargins?: number;
+  debtToEquity?: number;
+  currentRatio?: number;
 }
 
 export interface FMPTargetData {
@@ -548,6 +554,9 @@ export function buildFullReportData(
       week52Low: profile?.week52Low || 0,
       dividendYield: profile?.dividendYield || 0,
       earningsGrowth: profile?.earningsGrowth || 0,
+      profitMargins: profile?.profitMargins || 0,
+      debtToEquity: profile?.debtToEquity || 0,
+      currentRatio: profile?.currentRatio || 0,
     };
   });
 

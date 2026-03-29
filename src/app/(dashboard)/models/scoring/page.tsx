@@ -22,14 +22,16 @@ import {
 // ── Types ──
 
 interface SafetyBreakdown {
-  week52Position: number;
+  balanceSheetScore: number;
   betaScore: number;
+  profitabilityScore: number;
+  valuationScore: number;
+  sizeScore: number;
   dividendScore: number;
-  peReasonableness: number;
-  epsStability: number;
   total: number;
   label: string;
   color: string;
+  redFlag: string | null;
 }
 
 interface UpsideBreakdown {
@@ -72,11 +74,12 @@ interface ScoringResult {
 }
 
 interface SafetyWeights {
-  week52: number;
+  balanceSheet: number;
   beta: number;
+  profitability: number;
+  valuation: number;
+  size: number;
   dividend: number;
-  pe: number;
-  eps: number;
 }
 
 interface UpsideWeights {
@@ -87,9 +90,9 @@ interface UpsideWeights {
   epsGrowth: number;
 }
 
-const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = { week52: 20, beta: 25, dividend: 20, pe: 20, eps: 15 };
+const DEFAULT_SAFETY_WEIGHTS: SafetyWeights = { balanceSheet: 25, beta: 20, profitability: 20, valuation: 15, size: 10, dividend: 10 };
 const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { analyst: 30, week52: 15, dcf: 20, peSector: 15, epsGrowth: 20 };
-const ZERO_SAFETY_ADJ: SafetyWeights = { week52: 0, beta: 0, dividend: 0, pe: 0, eps: 0 };
+const ZERO_SAFETY_ADJ: SafetyWeights = { balanceSheet: 0, beta: 0, profitability: 0, valuation: 0, size: 0, dividend: 0 };
 const ZERO_UPSIDE_ADJ: UpsideWeights = { analyst: 0, week52: 0, dcf: 0, peSector: 0, epsGrowth: 0 };
 
 // ── Constantes ──
@@ -138,16 +141,18 @@ interface LegendFactor {
 }
 
 const SAFETY_FACTORS: LegendFactor[] = [
-  { key: 'beta', label: 'Beta (volatilite)', color: '#3b82f6', summary: 'Moins volatile = plus sur',
-    tiers: [{ condition: 'Beta < 0.5', baseScore: 8 }, { condition: 'Beta = 1.0', baseScore: 6.5 }, { condition: 'Beta > 2.0', baseScore: 3 }] },
-  { key: 'week52', label: 'Position 52 semaines', color: '#10b981', summary: 'Pres du bas annuel = meilleur prix',
-    tiers: [{ condition: 'Pres du 52w low', baseScore: 10 }, { condition: 'Milieu du range', baseScore: 6.5 }, { condition: 'Pres du 52w high', baseScore: 3 }] },
-  { key: 'dividend', label: 'Dividendes', color: '#8b5cf6', summary: 'Dividende regulier = coussin de revenu',
-    tiers: [{ condition: 'Rend. 3-5%', baseScore: 9 }, { condition: 'Rend. 1.5-3%', baseScore: 7 }, { condition: '< 1.5%', baseScore: 6.5 }, { condition: 'Aucun', baseScore: 5 }, { condition: '> 8% (piege)', baseScore: 3 }] },
-  { key: 'pe', label: 'PE vs secteur', color: '#f59e0b', summary: 'PE sous le benchmark = sous-evalue',
-    tiers: [{ condition: 'PE 0.5-1.0x bench', baseScore: 9 }, { condition: 'PE 1.0-1.3x', baseScore: 7 }, { condition: 'PE > 1.8x', baseScore: 2 }] },
-  { key: 'eps', label: 'Benefices (BPA)', color: '#ec4899', summary: 'Benefices positifs = fondamentaux solides',
-    tiers: [{ condition: 'BPA positif', baseScore: 8 }, { condition: 'Breakeven', baseScore: 4 }, { condition: 'BPA negatif', baseScore: 1 }] },
+  { key: 'balanceSheet', label: 'Bilan financier (D/E + liquidite)', color: '#ef4444', summary: 'Solidite du bilan — dette et liquidites. Neutre pour les financieres.',
+    tiers: [{ condition: 'D/E < 30%, CR > 2', baseScore: 10 }, { condition: 'D/E 30-80%, CR 1.5+', baseScore: 8 }, { condition: 'D/E 80-150%', baseScore: 6 }, { condition: 'D/E 150-250%', baseScore: 3 }, { condition: 'D/E > 250%', baseScore: 1 }] },
+  { key: 'beta', label: 'Beta (risque marche)', color: '#3b82f6', summary: 'Volatilite par rapport au marche. Beta < 1 = defensif.',
+    tiers: [{ condition: 'Beta < 0.5', baseScore: 10 }, { condition: 'Beta 0.5-0.8', baseScore: 8 }, { condition: 'Beta 0.8-1.0', baseScore: 6 }, { condition: 'Beta 1.0-1.3', baseScore: 4 }, { condition: 'Beta > 1.8', baseScore: 0 }] },
+  { key: 'profitability', label: 'Rentabilite (marges + croissance)', color: '#ec4899', summary: 'Marges de profit + tendance des benefices. Plafonne a 2 si BPA negatif.',
+    tiers: [{ condition: 'Marge > 25%', baseScore: 10 }, { condition: 'Marge 15-25%', baseScore: 8 }, { condition: 'Marge 8-15%', baseScore: 6 }, { condition: 'Marge < 3%', baseScore: 2 }, { condition: 'BPA negatif', baseScore: 2 }] },
+  { key: 'valuation', label: 'Valorisation (PE)', color: '#f59e0b', summary: 'Ratio cours/benefices absolu. PE 8-16 = zone optimale de securite.',
+    tiers: [{ condition: 'PE 8-16', baseScore: 10 }, { condition: 'PE 16-22', baseScore: 8 }, { condition: 'PE 22-30', baseScore: 6 }, { condition: 'PE 30-45', baseScore: 4 }, { condition: 'PE > 80', baseScore: 1 }] },
+  { key: 'size', label: 'Capitalisation boursiere', color: '#06b6d4', summary: 'Les grandes entreprises sont plus stables et moins risquees.',
+    tiers: [{ condition: '> 200G$', baseScore: 10 }, { condition: '50-200G$', baseScore: 9 }, { condition: '10-50G$', baseScore: 7 }, { condition: '2-10G$', baseScore: 5 }, { condition: '< 500M$', baseScore: 1 }] },
+  { key: 'dividend', label: 'Dividende', color: '#8b5cf6', summary: 'Coussin de revenu et signal de discipline. Piege si > 7%.',
+    tiers: [{ condition: 'Rend. 2-4%', baseScore: 10 }, { condition: 'Rend. 4-5%', baseScore: 8 }, { condition: 'Rend. 1-2%', baseScore: 7 }, { condition: 'Aucun', baseScore: 3 }, { condition: '> 7% (piege)', baseScore: 3 }] },
 ];
 
 const UPSIDE_FACTORS: LegendFactor[] = [
@@ -472,11 +477,12 @@ function WeightCustomizer({
 
   interface FactorRow { key: string; label: string; color: string }
   const safetyRows: FactorRow[] = [
-    { key: 'beta', label: 'Beta (volatilite)', color: '#3b82f6' },
-    { key: 'week52', label: 'Position 52 semaines', color: '#10b981' },
-    { key: 'dividend', label: 'Dividendes', color: '#8b5cf6' },
-    { key: 'pe', label: 'PE vs secteur', color: '#f59e0b' },
-    { key: 'eps', label: 'Benefices (BPA)', color: '#ec4899' },
+    { key: 'balanceSheet', label: 'Bilan financier', color: '#ef4444' },
+    { key: 'beta', label: 'Beta (risque marche)', color: '#3b82f6' },
+    { key: 'profitability', label: 'Rentabilite', color: '#ec4899' },
+    { key: 'valuation', label: 'Valorisation (PE)', color: '#f59e0b' },
+    { key: 'size', label: 'Capitalisation', color: '#06b6d4' },
+    { key: 'dividend', label: 'Dividende', color: '#8b5cf6' },
   ];
 
   const upsideRows: FactorRow[] = [
@@ -645,6 +651,11 @@ export default function ScoringPage() {
     }));
   }, [safetyWeights, upsideWeights, safetyAdj, upsideAdj, weightsLoaded]);
 
+  const handleSafetyWeight = useCallback((k: keyof SafetyWeights, v: number) => setSafetyWeights(p => ({ ...p, [k]: v })), []);
+  const handleUpsideWeight = useCallback((k: keyof UpsideWeights, v: number) => setUpsideWeights(p => ({ ...p, [k]: v })), []);
+  const handleSafetyAdj = useCallback((k: keyof SafetyWeights, v: number) => setSafetyAdj(p => ({ ...p, [k]: v })), []);
+  const handleUpsideAdj = useCallback((k: keyof UpsideWeights, v: number) => setUpsideAdj(p => ({ ...p, [k]: v })), []);
+
   const handleReset = useCallback(() => {
     setSafetyWeights({ ...DEFAULT_SAFETY_WEIGHTS });
     setUpsideWeights({ ...DEFAULT_UPSIDE_WEIGHTS });
@@ -696,10 +707,10 @@ export default function ScoringPage() {
       <WeightCustomizer
         safetyWeights={safetyWeights} upsideWeights={upsideWeights}
         safetyAdj={safetyAdj} upsideAdj={upsideAdj}
-        onSafetyWeight={useCallback((k: keyof SafetyWeights, v: number) => setSafetyWeights(p => ({ ...p, [k]: v })), [])}
-        onUpsideWeight={useCallback((k: keyof UpsideWeights, v: number) => setUpsideWeights(p => ({ ...p, [k]: v })), [])}
-        onSafetyAdj={useCallback((k: keyof SafetyWeights, v: number) => setSafetyAdj(p => ({ ...p, [k]: v })), [])}
-        onUpsideAdj={useCallback((k: keyof UpsideWeights, v: number) => setUpsideAdj(p => ({ ...p, [k]: v })), [])}
+        onSafetyWeight={handleSafetyWeight}
+        onUpsideWeight={handleUpsideWeight}
+        onSafetyAdj={handleSafetyAdj}
+        onUpsideAdj={handleUpsideAdj}
         onReset={handleReset}
       />
 
@@ -771,8 +782,8 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
   const radarData = [
     { dimension: 'Securite', score: ps.safety },
     { dimension: 'Potentiel', score: ps.upside },
-    { dimension: 'Beta', score: wAvg(s => s.safety.betaScore) },
-    { dimension: 'Dividende', score: wAvg(s => s.safety.dividendScore) },
+    { dimension: 'Bilan', score: wAvg(s => s.safety.balanceSheetScore) },
+    { dimension: 'Rentabilite', score: wAvg(s => s.safety.profitabilityScore) },
     { dimension: 'Cible anal.', score: wAvg(s => s.upside.analystUpside) },
     { dimension: 'Crois. BPA', score: wAvg(s => s.upside.epsGrowth) },
   ];
@@ -847,12 +858,13 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                 <Shield className="h-3 w-3" /> Securite
               </p>
               {[
-                { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee' },
-                { label: `Position 52 sem. (${sPct('week52')}%)`, value: wAvg(s => s.safety.week52Position), hint: 'Proche du low = meilleure opportunite' },
-                { label: `Beta / volatilite (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile' },
-                { label: `Dividendes (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier = coussin' },
-                { label: `PE vs secteur (${sPct('pe')}%)`, value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas = sous-evalue' },
-                { label: `Benefices (${sPct('eps')}%)`, value: wAvg(s => s.safety.epsStability), hint: 'BPA positif = solide' },
+                { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee (apres red flags)' },
+                { label: `Bilan financier (${sPct('balanceSheet')}%)`, value: wAvg(s => s.safety.balanceSheetScore), hint: 'D/E + liquidite combines' },
+                { label: `Beta / risque (${sPct('beta')}%)`, value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile' },
+                { label: `Rentabilite (${sPct('profitability')}%)`, value: wAvg(s => s.safety.profitabilityScore), hint: 'Marges + croissance BPA' },
+                { label: `Valorisation (${sPct('valuation')}%)`, value: wAvg(s => s.safety.valuationScore), hint: 'PE absolu — zone optimale 8-16' },
+                { label: `Capitalisation (${sPct('size')}%)`, value: wAvg(s => s.safety.sizeScore), hint: 'Blue chip = plus stable' },
+                { label: `Dividende (${sPct('dividend')}%)`, value: wAvg(s => s.safety.dividendScore), hint: 'Coussin de revenu' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -1028,12 +1040,19 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                                 <Shield className="h-3 w-3" /> Detail securite — {s.safety.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: `Position 52 sem. (${sPct('week52')}%)`, value: s.safety.week52Position, hint: 'Proche du low = meilleure opportunite' },
-                                { label: `Beta / volatilite (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile' },
-                                { label: `Dividendes (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Dividende regulier = coussin' },
-                                { label: `PE vs secteur (${sPct('pe')}%)`, value: s.safety.peReasonableness, hint: 'PE bas = sous-evalue' },
-                                { label: `Benefices (${sPct('eps')}%)`, value: s.safety.epsStability, hint: 'BPA positif = solide' },
+                                { label: `Bilan financier (${sPct('balanceSheet')}%)`, value: s.safety.balanceSheetScore, hint: 'D/E + liquidite' },
+                                { label: `Beta / risque (${sPct('beta')}%)`, value: s.safety.betaScore, hint: 'Beta < 1 = defensif' },
+                                { label: `Rentabilite (${sPct('profitability')}%)`, value: s.safety.profitabilityScore, hint: 'Marges + croissance' },
+                                { label: `Valorisation (${sPct('valuation')}%)`, value: s.safety.valuationScore, hint: 'PE absolu' },
+                                { label: `Capitalisation (${sPct('size')}%)`, value: s.safety.sizeScore, hint: 'Taille = stabilite' },
+                                { label: `Dividende (${sPct('dividend')}%)`, value: s.safety.dividendScore, hint: 'Coussin de revenu' },
                               ]} />
+                              {s.safety.redFlag && (
+                                <div className="mt-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
+                                  <p className="text-xs font-semibold text-red-700">Red flag : {s.safety.redFlag}</p>
+                                  <p className="text-[10px] text-red-500">Score plafonne automatiquement</p>
+                                </div>
+                              )}
                             </div>
                             <div>
                               <p className="text-xs font-semibold text-cyan-600 uppercase tracking-wide mb-1 flex items-center gap-1">

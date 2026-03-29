@@ -88,6 +88,9 @@ export async function POST(req: NextRequest) {
     targetPrice: number;
     estimatedGainPercent: number;
     marketCap: number;
+    profitMargins: number;
+    debtToEquity: number;
+    currentRatio: number;
   }
 
   const stockData: StockFundamentals[] = [];
@@ -128,6 +131,9 @@ export async function POST(req: NextRequest) {
         targetPrice,
         estimatedGainPercent: Math.round(gainPct * 100) / 100,
         marketCap: yProfile?.mktCap ?? 0,
+        profitMargins: yProfile?.profitMargins ?? 0,
+        debtToEquity: yProfile?.debtToEquity ?? 0,
+        currentRatio: yProfile?.currentRatio ?? 0,
       });
     }
   }
@@ -149,6 +155,10 @@ export async function POST(req: NextRequest) {
     estimatedGainPercent: s.estimatedGainPercent,
     sector: s.sector,
     assetClass: 'EQUITY',
+    profitMargins: s.profitMargins,
+    debtToEquity: s.debtToEquity,
+    currentRatio: s.currentRatio,
+    marketCap: s.marketCap,
   }));
 
   const rawScores = calculateDualScores(dualScoreInputs, [], undefined, weights as CustomWeights | undefined);
