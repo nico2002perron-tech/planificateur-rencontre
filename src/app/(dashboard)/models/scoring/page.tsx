@@ -55,6 +55,7 @@ interface ScoredStock {
   rank: number;
   quadrant: 'star' | 'safe' | 'growth' | 'watch';
   confidence: 'high' | 'medium' | 'low';
+  narrative: string;
   price: number;
   pe: number;
   dividendYield: number;
@@ -1073,6 +1074,15 @@ function ScoringView({ data, weights }: { data: ScoringResult; weights: { safety
                               ]} />
                             </div>
                           </div>
+                          {/* ── Mini-analyse qualitative ── */}
+                          {s.narrative && (
+                            <div className="mt-4 px-4 py-3 rounded-lg bg-white border border-slate-200 max-w-2xl mx-auto">
+                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                                <Info className="h-3 w-3" /> Analyse
+                              </p>
+                              <p className="text-sm text-text-secondary leading-relaxed">{s.narrative}</p>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}

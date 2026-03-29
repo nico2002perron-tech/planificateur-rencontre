@@ -47,6 +47,7 @@ export interface StockDualScore {
   rank: number;
   quadrant: 'star' | 'safe' | 'growth' | 'watch';
   confidence: 'high' | 'medium' | 'low';
+  narrative: string;  // qualitative mini-analysis explaining the scores
 }
 
 export interface SafetyScoreInputs {
@@ -58,8 +59,10 @@ export interface SafetyScoreInputs {
   debtToEquity: number;    // e.g. 150 = 150%
   currentRatio: number;    // e.g. 1.5
   earningsGrowth: number;  // decimal, e.g. 0.12 = 12%
+  revenueGrowth?: number;  // decimal, e.g. 0.08 = 8% (for growth-adjusted size)
   marketCap: number;       // dollars
   sector: string;          // for sector-adjusted D/E (financials)
+  sectorGrowthRate?: number; // decimal, e.g. 0.12 = 12% (from benchmarks, for growth context)
   week52High: number;      // for realized volatility calculation
   week52Low: number;
   currentPrice: number;
@@ -376,8 +379,12 @@ export function calculateSafetyScore(
     valuationScore = 1.5; // negative PE = losses
   }
 
-  // ── 5. Size (Market Cap) ──
-  //    Continuous curve. Mega-cap = most stable/liquid/diversified.
+  // ── 5. Size (Market Cap) — Growth-Adjusted ──
+  //    Base: mega-cap = most stable/liquid/diversified.
+  //    Adjustment: small/mid caps in high-growth sectors with strong revenue
+  //    growth get a bonus — they're small because they're early-stage, not weak.
+  //    A $3B company growing 25%/year in cybersecurity ≠ a $3B company
+  //    stagnating in a declining industry.
   let sizeScore = 5;
   if (marketCap > 0) {
     const capB = marketCap / 1e9;
@@ -390,6 +397,37 @@ export function calculateSafetyScore(
       [200, 9.5],   // mega cap
       [500, 10],    // ultra mega cap
     ]);
+
+    // Growth-adjusted size bonus for companies < $50B
+    // Uses the strongest signal between company growth and sector growth
+    if (capB < 50) {
+      const companyGr = Math.max(
+        (inputs.revenueGrowth ?? 0) * 100,
+        earningsGrowth * 100,
+      );
+      const sectorGr = (inputs.sectorGrowthRate ?? 0) * 100;
+      const growthSignal = Math.max(companyGr, sectorGr);
+
+      if (growthSignal > 8) {
+        // Inverse: smaller company → bigger bonus (more room to grow)
+        const sizeFactor = lerp(capB, [
+          [0.3, 1.0],   // micro-cap: full bonus
+          [2, 0.85],    // small-cap
+          [10, 0.5],    // mid-cap
+          [30, 0.2],
+          [50, 0],      // large-cap: no bonus needed
+        ]);
+        // Stronger growth → bigger bonus
+        const growthFactor = lerp(growthSignal, [
+          [8, 0.3],     // moderate growth
+          [15, 0.6],    // good growth
+          [25, 0.9],    // strong growth
+          [35, 1.0],    // exceptional
+        ]);
+        const bonus = sizeFactor * growthFactor * 2.5; // max ~2.5 pts
+        sizeScore = clamp(sizeScore + bonus);
+      }
+    }
   }
 
   // ── 6. Dividend ──
@@ -553,6 +591,21 @@ export function calculateUpsideScore(
   }
 
   let businessGrowth = revSub * 0.4 + earnSub * 0.6;
+
+  // Small-cap runway bonus: same growth rate has MORE upside potential
+  // when the company is smaller. A $3B company growing 20% can realistically
+  // double; a $300B company growing 20% cannot. Only amplifies existing growth.
+  if (marketCap > 0 && marketCap < 50e9 && businessGrowth > 5.5) {
+    const capB = marketCap / 1e9;
+    const runwayBonus = lerp(capB, [
+      [0.3, 2.0],   // micro-cap: huge runway
+      [2, 1.5],     // small-cap
+      [10, 0.8],    // mid-cap
+      [30, 0.3],
+      [50, 0],      // large: no bonus
+    ]);
+    businessGrowth = clamp(businessGrowth + runwayBonus);
+  }
 
   // ── 2. Cible des analystes ──
   //    Ecart entre le prix actuel et la cible consensus 12 mois.
@@ -740,6 +793,98 @@ export function calculateUpsideScore(
   };
 }
 
+// ── Qualitative Narrative Generator ──────────────────────────────
+// Generates a 2-4 sentence French mini-analysis for each stock,
+// highlighting key strengths, weaknesses, and sector context.
+// Rule-based (no AI), purely derived from the computed scores + inputs.
+
+function generateNarrative(
+  h: DualScoreHolding,
+  safety: SafetyScoreBreakdown,
+  upside: UpsideScoreBreakdown,
+  quadrant: string,
+  sectorBench: BenchmarkData,
+): string {
+  const parts: string[] = [];
+  const capB = h.marketCap > 0 ? h.marketCap / 1e9 : 0;
+  const sectorGr = sectorBench.gr_sales;
+
+  // ── 1. Lead with quadrant personality ──
+  if (quadrant === 'star') {
+    parts.push('Titre solide avec un bon potentiel de hausse.');
+  } else if (quadrant === 'safe') {
+    parts.push('Titre defensif qui privilegie la stabilite.');
+  } else if (quadrant === 'growth') {
+    parts.push('Profil de croissance avec un risque plus eleve.');
+  } else {
+    parts.push('Titre a surveiller de pres.');
+  }
+
+  // ── 2. Key strengths (score >= 7.5) ──
+  const strengthNames: string[] = [];
+  if (safety.balanceSheetScore >= 7.5) strengthNames.push('bilan solide');
+  if (safety.betaScore >= 7.5) strengthNames.push('prix stable');
+  if (safety.profitabilityScore >= 7.5) strengthNames.push('bonne rentabilite');
+  if (safety.valuationScore >= 7.5) strengthNames.push('prix raisonnable');
+  if (safety.sizeScore >= 7.5) strengthNames.push('grande entreprise');
+  if (safety.dividendScore >= 7.5) strengthNames.push('dividende attractif');
+  if (upside.businessGrowth >= 7.5) strengthNames.push('forte croissance');
+  if (upside.analystTarget >= 7.5) strengthNames.push('cible analystes favorable');
+  if (upside.valuationDiscount >= 7.5) strengthNames.push('sous-evalue');
+  if (upside.fcfYield >= 7.5) strengthNames.push('genere beaucoup de cash');
+  if (upside.capitalEfficiency >= 7.5) strengthNames.push('capital bien utilise');
+
+  const top = strengthNames.slice(0, 3);
+  if (top.length === 1) {
+    parts.push(`Point fort : ${top[0]}.`);
+  } else if (top.length >= 2) {
+    parts.push(`Points forts : ${top.slice(0, -1).join(', ')} et ${top[top.length - 1]}.`);
+  }
+
+  // ── 3. Key weaknesses (score <= 3.5), expressed as concerns ──
+  const weakNames: string[] = [];
+  if (safety.balanceSheetScore <= 3.5 && safety.balanceSheetScore > 0) weakNames.push('endettement eleve');
+  if (safety.betaScore <= 3.5 && safety.betaScore > 0) weakNames.push('prix volatile');
+  if (safety.profitabilityScore <= 3.5) weakNames.push('faible rentabilite');
+  if (safety.valuationScore <= 3.5 && safety.valuationScore > 0) weakNames.push('valorisation elevee');
+  if (safety.sizeScore <= 3.5 && safety.sizeScore > 0) weakNames.push('petite capitalisation');
+  if (upside.businessGrowth <= 3.5 && upside.businessGrowth > 0) weakNames.push('croissance faible');
+  if (upside.fcfYield <= 3.5 && upside.fcfYield > 0) weakNames.push('cash flow limite');
+  if (upside.capitalEfficiency <= 3.5 && upside.capitalEfficiency > 0) weakNames.push('faible retour sur capitaux');
+
+  const weak = weakNames.slice(0, 2);
+  if (weak.length === 1) {
+    parts.push(`Point a surveiller : ${weak[0]}.`);
+  } else if (weak.length >= 2) {
+    parts.push(`Points a surveiller : ${weak[0]} et ${weak[1]}.`);
+  }
+
+  // ── 4. Sector & growth context ──
+  if (capB > 0 && capB < 10 && h.revenueGrowth > 0.10 && sectorGr > 10) {
+    parts.push(`Small-cap dans un secteur en expansion (${sectorBench.name}, +${sectorGr}%/an) — piste de croissance importante.`);
+  } else if (capB > 0 && capB < 10 && h.revenueGrowth > 0.10) {
+    parts.push(`Petite entreprise en forte croissance (revenus +${Math.round(h.revenueGrowth * 100)}%).`);
+  } else if (sectorGr > 15 && capB < 50) {
+    parts.push(`Secteur porteur (${sectorBench.name}, +${sectorGr}%/an).`);
+  } else if (capB >= 200) {
+    parts.push('Mega-cap — grande liquidite et diversification.');
+  } else if (capB >= 50) {
+    parts.push('Grande entreprise — bonne stabilite.');
+  }
+
+  // ── 5. Dividend context (when significant) ──
+  if (h.dividendYield > 0.035) {
+    parts.push(`Dividende de ${(h.dividendYield * 100).toFixed(1)}% qui ajoute un coussin de revenu.`);
+  }
+
+  // ── 6. Red flag ──
+  if (safety.redFlag) {
+    parts.push(`Attention : ${safety.redFlag}.`);
+  }
+
+  return parts.join(' ');
+}
+
 // ── Combined Dual Scoring ────────────────────────────────────────
 
 interface DualScoreHolding {
@@ -804,6 +949,9 @@ export function calculateDualScores(
     else if (realDataPoints >= 3) confidence = 'medium';
     else confidence = 'low';
 
+    // Sector growth rate from benchmarks (for growth-adjusted size scoring)
+    const sectorGrowthRate = bench.gr_sales / 100; // e.g. 12% → 0.12
+
     const safety = calculateSafetyScore({
       beta: h.beta,
       dividendYield: h.dividendYield,
@@ -813,8 +961,10 @@ export function calculateDualScores(
       debtToEquity: h.debtToEquity,
       currentRatio: h.currentRatio,
       earningsGrowth: h.earningsGrowth,
+      revenueGrowth: h.revenueGrowth,
       marketCap: h.marketCap,
       sector: h.sector,
+      sectorGrowthRate,
       week52High: h.week52High,
       week52Low: h.week52Low,
       currentPrice: h.currentPrice,
@@ -841,6 +991,8 @@ export function calculateDualScores(
     else if (upside.total >= 6) quadrant = 'growth';
     else quadrant = 'watch';
 
+    const narrative = generateNarrative(h, safety, upside, quadrant, bench);
+
     scores.push({
       symbol: h.symbol,
       companyName: h.companyName,
@@ -850,6 +1002,7 @@ export function calculateDualScores(
       rank: 0,
       quadrant,
       confidence,
+      narrative,
     });
   }
 
