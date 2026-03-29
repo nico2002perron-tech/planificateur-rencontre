@@ -75,14 +75,13 @@ function clamp(v: number, min = 0, max = 10): number {
 export function calculateSafetyScore(inputs: SafetyScoreInputs): SafetyScoreBreakdown {
   const { currentPrice, week52High, week52Low, beta, dividendYield, pe, eps, sectorBenchmarkPE } = inputs;
 
-  // 1. Position 52 semaines (20%) — peak safety at ~65% of range
+  // 1. Position 52 semaines (20%) — plus pres du low = meilleure opportunite
   let week52Position = 5;
   if (week52High > week52Low && week52High > 0) {
     const range = week52High - week52Low;
-    const positionPct = (currentPrice - week52Low) / range; // 0 to 1
-    // Bell curve peaking at 0.65 — middle-high is safest
-    const distance = Math.abs(positionPct - 0.65);
-    week52Position = clamp(10 - distance * 16);
+    const positionPct = (currentPrice - week52Low) / range; // 0 (au low) to 1 (au high)
+    // Proche du low = score eleve, proche du high = score bas
+    week52Position = clamp(10 - positionPct * 10);
   }
 
   // 2. Beta (25%) — lower beta = safer
