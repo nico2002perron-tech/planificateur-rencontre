@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
-import { getYahooQuotes, getYahooProfile } from '@/lib/yahoo/client';
+import { getYahooQuotes, getYahooProfile, getYahooPriceTarget } from '@/lib/yahoo/client';
 import { generatePortfolio, type ProfileInput, type StockUniverse, type BondUniverse } from '@/lib/models/portfolio-generator';
-import { scoreOutOf10, type StockMetrics } from '@/lib/valuation/scoring';
-import { getBenchmarkData } from '@/lib/valuation/benchmarks';
+import { calculateDualScores, rankStocks } from '@/lib/valuation/safety-score';
 
 /**
  * POST /api/models/scoring
@@ -13,7 +12,7 @@ import { getBenchmarkData } from '@/lib/valuation/benchmarks';
  * Body: { profile_id: string, portfolio_value?: number }
  *
  * Genere un portefeuille, fetch les fondamentaux Yahoo pour chaque titre,
- * calcule les scores individuels et le score global du portefeuille.
+ * calcule les scores de securite + potentiel et le classement.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -73,109 +72,120 @@ export async function POST(req: NextRequest) {
   const allStocks = portfolio.sectors.flatMap(s => s.stocks);
   const symbols = allStocks.map(s => s.symbol);
 
-  interface ScoredStock {
+  interface StockFundamentals {
     symbol: string;
     name: string;
     sector: string;
     weight: number;
     price: number;
     pe: number;
+    eps: number;
+    beta: number;
     dividendYield: number;
+    week52High: number;
+    week52Low: number;
+    earningsGrowth: number;
+    targetPrice: number;
+    estimatedGainPercent: number;
     marketCap: number;
-    scores: { overall: number; health: number; growth: number; valuation: number; sector: number };
   }
 
-  const scoredStocks: ScoredStock[] = [];
+  const stockData: StockFundamentals[] = [];
   const BATCH = 4;
 
   for (let i = 0; i < symbols.length; i += BATCH) {
     const batch = symbols.slice(i, i + BATCH);
-    const profiles = await Promise.all(batch.map(s => getYahooProfile(s)));
+    const [profiles, targets] = await Promise.all([
+      Promise.all(batch.map(s => getYahooProfile(s))),
+      Promise.all(batch.map(s => getYahooPriceTarget(s))),
+    ]);
 
     for (let j = 0; j < batch.length; j++) {
       const sym = batch[j];
       const stock = allStocks.find(s => s.symbol === sym);
       const yProfile = profiles[j];
+      const yTarget = targets[j];
       if (!stock) continue;
 
-      const pe = 0; // Will be enriched from Yahoo
-      const divYield = yProfile?.dividendYield ?? 0;
-      const mktCap = yProfile?.mktCap ?? 0;
-      const sector = yProfile?.sector || stock.sector;
+      const currentPrice = stock.price;
+      const targetPrice = yTarget.targetMean ?? 0;
+      const gainPct = currentPrice > 0 && targetPrice > 0
+        ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
 
-      // Build metrics for scoring
-      const metrics: StockMetrics = {
-        ticker: sym,
-        price: stock.price,
-        pe: pe, // Yahoo doesn't always return P/E in profile, we use what we have
-        ps: 0,
-        sales_gr: 0,
-        eps_gr: 0,
-        net_cash: 0,
-        fcf_yield: 0,
-        rule_40: 0,
-      };
-
-      // Try to get P/E from price cache or calculate
-      const cachedPrice = priceMap.get(sym);
-      if (cachedPrice) {
-        // Check Supabase cache for pe_ratio
-        const { data: cached } = await supabase
-          .from('price_cache')
-          .select('pe_ratio, dividend_yield')
-          .eq('symbol', sym)
-          .maybeSingle();
-        if (cached?.pe_ratio) metrics.pe = cached.pe_ratio;
-      }
-
-      const bench = getBenchmarkData(sym, sector);
-      const scores = scoreOutOf10(metrics, bench);
-
-      scoredStocks.push({
+      stockData.push({
         symbol: sym,
         name: stock.name,
-        sector: stock.sector,
+        sector: yProfile?.sector || stock.sector,
         weight: stock.realWeight,
-        price: stock.price,
-        pe: metrics.pe,
-        dividendYield: Math.round(divYield * 10000) / 100,
-        marketCap: mktCap,
-        scores,
+        price: currentPrice,
+        pe: yProfile?.pe ?? 0,
+        eps: yProfile?.eps ?? 0,
+        beta: yProfile?.beta ?? 0,
+        dividendYield: yProfile?.dividendYield ?? 0,
+        week52High: yProfile?.week52High ?? 0,
+        week52Low: yProfile?.week52Low ?? 0,
+        earningsGrowth: yProfile?.earningsGrowth ?? 0,
+        targetPrice,
+        estimatedGainPercent: Math.round(gainPct * 100) / 100,
+        marketCap: yProfile?.mktCap ?? 0,
       });
     }
   }
 
-  // ── 4. Score global du portefeuille ──
-  const totalWeight = scoredStocks.reduce((s, st) => s + st.weight, 0);
+  // ── 4. Calculer dual scores ──
+  const dualScoreInputs = stockData.map(s => ({
+    symbol: s.symbol,
+    companyName: s.name,
+    currentPrice: s.price,
+    weight: s.weight,
+    beta: s.beta,
+    pe: s.pe,
+    eps: s.eps,
+    week52High: s.week52High,
+    week52Low: s.week52Low,
+    dividendYield: s.dividendYield,
+    earningsGrowth: s.earningsGrowth,
+    targetPrice: s.targetPrice,
+    estimatedGainPercent: s.estimatedGainPercent,
+    sector: s.sector,
+    assetClass: 'EQUITY',
+  }));
 
-  function weightedAvg(field: keyof ScoredStock['scores']): number {
-    if (totalWeight === 0) return 0;
-    const sum = scoredStocks.reduce((s, st) => s + st.scores[field] * st.weight, 0);
-    return Math.round((sum / totalWeight) * 10) / 10;
-  }
+  const rawScores = calculateDualScores(dualScoreInputs, []);
+  const rankedScores = rankStocks(rawScores);
 
-  const portfolioScores = {
-    overall: weightedAvg('overall'),
-    health: weightedAvg('health'),
-    growth: weightedAvg('growth'),
-    valuation: weightedAvg('valuation'),
-    sector: weightedAvg('sector'),
-  };
+  // ── 5. Portfolio-level aggregates ──
+  const totalWeight = rankedScores.reduce((s, sc) => s + sc.weight, 0);
+  const avgSafety = totalWeight > 0
+    ? Math.round(rankedScores.reduce((s, sc) => s + sc.safety.total * sc.weight, 0) / totalWeight * 10) / 10 : 0;
+  const avgUpside = totalWeight > 0
+    ? Math.round(rankedScores.reduce((s, sc) => s + sc.upside.total * sc.weight, 0) / totalWeight * 10) / 10 : 0;
 
-  // Distribution des scores
-  const distribution = {
-    excellent: scoredStocks.filter(s => s.scores.overall >= 8).length,
-    good: scoredStocks.filter(s => s.scores.overall >= 6 && s.scores.overall < 8).length,
-    average: scoredStocks.filter(s => s.scores.overall >= 4 && s.scores.overall < 6).length,
-    weak: scoredStocks.filter(s => s.scores.overall < 4).length,
+  const quadrantDistribution = {
+    star: rankedScores.filter(s => s.quadrant === 'star').length,
+    safe: rankedScores.filter(s => s.quadrant === 'safe').length,
+    growth: rankedScores.filter(s => s.quadrant === 'growth').length,
+    watch: rankedScores.filter(s => s.quadrant === 'watch').length,
   };
 
   return NextResponse.json({
     profileName: portfolio.profileName,
     profileNumber: portfolio.profileNumber,
-    nbStocks: scoredStocks.length,
-    portfolioScores,
-    distribution,
-    stocks: scoredStocks.sort((a, b) => b.scores.overall - a.scores.overall),
+    nbStocks: rankedScores.length,
+    portfolioScores: { safety: avgSafety, upside: avgUpside },
+    quadrantDistribution,
+    stocks: rankedScores.map(sc => {
+      const sd = stockData.find(s => s.symbol === sc.symbol);
+      return {
+        ...sc,
+        price: sd?.price ?? 0,
+        pe: sd?.pe ?? 0,
+        dividendYield: sd ? Math.round(sd.dividendYield * 10000) / 100 : 0,
+        marketCap: sd?.marketCap ?? 0,
+        targetPrice: sd?.targetPrice ?? 0,
+        estimatedGainPercent: sd?.estimatedGainPercent ?? 0,
+        sector: sd?.sector ?? '',
+      };
+    }),
   });
 }
