@@ -399,8 +399,11 @@ export function calculateSafetyScore(
     ]);
 
     // Growth-adjusted size bonus for companies < $50B
-    // Uses the strongest signal between company growth and sector growth
-    if (capB < 50) {
+    // Gate: company must be profitable (eps > 0) — unprofitable growth
+    // could just be cash burn, not genuine scaling.
+    // Curve peaks at $2-5B ("proven small-cap") rather than at the smallest
+    // sizes, because sub-$500M companies haven't yet proven they can scale.
+    if (capB < 50 && eps > 0) {
       const companyGr = Math.max(
         (inputs.revenueGrowth ?? 0) * 100,
         earningsGrowth * 100,
@@ -409,22 +412,25 @@ export function calculateSafetyScore(
       const growthSignal = Math.max(companyGr, sectorGr);
 
       if (growthSignal > 8) {
-        // Inverse: smaller company → bigger bonus (more room to grow)
+        // Peaks at $2-5B: proven enough to deserve the bonus.
+        // Sub-$500M: reduced bonus (not yet proven).
+        // >$30B: minimal bonus (already large enough).
         const sizeFactor = lerp(capB, [
-          [0.3, 1.0],   // micro-cap: full bonus
-          [2, 0.85],    // small-cap
-          [10, 0.5],    // mid-cap
+          [0.3, 0.3],   // micro-cap: limited (unproven)
+          [0.5, 0.5],   // small micro
+          [1, 0.7],     // approaching small-cap
+          [3, 1.0],     // sweet spot: proven small-cap
+          [10, 0.6],    // mid-cap: less needed
           [30, 0.2],
-          [50, 0],      // large-cap: no bonus needed
+          [50, 0],
         ]);
-        // Stronger growth → bigger bonus
         const growthFactor = lerp(growthSignal, [
-          [8, 0.3],     // moderate growth
-          [15, 0.6],    // good growth
-          [25, 0.9],    // strong growth
-          [35, 1.0],    // exceptional
+          [8, 0.3],
+          [15, 0.6],
+          [25, 0.9],
+          [35, 1.0],
         ]);
-        const bonus = sizeFactor * growthFactor * 2.5; // max ~2.5 pts
+        const bonus = sizeFactor * growthFactor * 2; // max ~2 pts (was 2.5)
         sizeScore = clamp(sizeScore + bonus);
       }
     }
@@ -595,14 +601,18 @@ export function calculateUpsideScore(
   // Small-cap runway bonus: same growth rate has MORE upside potential
   // when the company is smaller. A $3B company growing 20% can realistically
   // double; a $300B company growing 20% cannot. Only amplifies existing growth.
-  if (marketCap > 0 && marketCap < 50e9 && businessGrowth > 5.5) {
+  // Peaks at $2-5B (proven small-cap), not at micro-cap (too speculative).
+  // Micro-caps (<$500M) get a reduced bonus — high growth at that size
+  // hasn't been proven to be sustainable yet.
+  if (marketCap > 0 && marketCap < 50e9 && businessGrowth > 6) {
     const capB = marketCap / 1e9;
     const runwayBonus = lerp(capB, [
-      [0.3, 2.0],   // micro-cap: huge runway
-      [2, 1.5],     // small-cap
-      [10, 0.8],    // mid-cap
-      [30, 0.3],
-      [50, 0],      // large: no bonus
+      [0.3, 0.5],   // micro-cap: small bonus (unproven)
+      [1, 0.8],     // approaching small-cap
+      [3, 1.2],     // sweet spot: proven small-cap
+      [10, 0.6],    // mid-cap
+      [30, 0.2],
+      [50, 0],
     ]);
     businessGrowth = clamp(businessGrowth + runwayBonus);
   }
