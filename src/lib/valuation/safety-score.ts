@@ -84,15 +84,11 @@ export function calculateSafetyScore(inputs: SafetyScoreInputs): SafetyScoreBrea
     week52Position = clamp(10 - positionPct * 10);
   }
 
-  // 2. Beta (25%) — lower beta = safer
+  // 2. Beta (25%) — lower beta = safer (smooth curve)
   let betaScore = 5;
   if (beta > 0) {
-    if (beta <= 0.5) betaScore = 10;
-    else if (beta <= 0.8) betaScore = 8;
-    else if (beta <= 1.0) betaScore = 6.5;
-    else if (beta <= 1.2) betaScore = 5;
-    else if (beta <= 1.5) betaScore = 3;
-    else betaScore = 1;
+    // Continuous curve: beta 0 → 10, beta 1 → 6, beta 2+ → 0
+    betaScore = clamp(10 - beta * 4.5);
   }
 
   // 3. Rendement dividende (20%) — cushion, but penalize traps > 8%
@@ -104,32 +100,29 @@ export function calculateSafetyScore(inputs: SafetyScoreInputs): SafetyScoreBrea
     else if (yieldPct >= 3) dividendScore = 9;
     else if (yieldPct >= 1.5) dividendScore = 7;
     else dividendScore = 5.5;
-  } else {
-    dividendScore = 3; // no dividend = less safe
   }
+  // no dividend = neutre (titres growth comme NVDA, GOOG)
 
-  // 4. PE raisonnable (20%) — moderate PE (10-20) = reasonable
+  // 4. PE raisonnable (20%) — PE bas vs secteur = sous-evalue
   let peReasonableness = 5;
   if (pe > 0) {
     const benchPE = sectorBenchmarkPE > 0 ? sectorBenchmarkPE : 20;
     const ratio = pe / benchPE;
-    if (ratio >= 0.5 && ratio <= 1.0) peReasonableness = 9;
+    if (ratio < 0.5) peReasonableness = 8;          // tres sous-evalue
+    else if (ratio >= 0.5 && ratio <= 1.0) peReasonableness = 9;  // sweet spot
     else if (ratio > 1.0 && ratio <= 1.3) peReasonableness = 7;
     else if (ratio > 1.3 && ratio <= 1.8) peReasonableness = 5;
-    else if (ratio > 1.8) peReasonableness = 2;
-    else if (ratio < 0.5 && ratio > 0) peReasonableness = 6; // very low PE might be value trap
+    else peReasonableness = 2;                       // surevalu
   }
 
-  // 5. EPS positif (15%) — positive & stable earnings
+  // 5. EPS positif (15%) — positif = solide, negatif = risque
   let epsStability = 5;
   if (eps > 0) {
-    epsStability = 8;
-    if (eps > 3) epsStability = 9;
-    if (eps > 5) epsStability = 10;
+    epsStability = 8; // benefices positifs = bon signe
   } else if (eps === 0) {
-    epsStability = 4;
+    epsStability = 4; // breakeven
   } else {
-    epsStability = 1; // negative EPS
+    epsStability = 1; // pertes = risque
   }
 
   // Weighted total
@@ -172,7 +165,7 @@ export function calculateUpsideScore(inputs: UpsideScoreInputs): UpsideScoreBrea
     dividendYield, estimatedGainPercent,
   } = inputs;
 
-  // 1. Cible analystes vs prix (25%) — higher upside = higher score
+  // 1. Cible analystes vs prix (30%) — higher upside = higher score
   let analystUpside = 5;
   if (targetPrice > 0 && currentPrice > 0) {
     const upside = ((targetPrice - currentPrice) / currentPrice) * 100;
@@ -180,7 +173,7 @@ export function calculateUpsideScore(inputs: UpsideScoreInputs): UpsideScoreBrea
     else if (upside >= 25) analystUpside = 8.5;
     else if (upside >= 15) analystUpside = 7;
     else if (upside >= 5) analystUpside = 5.5;
-    else if (upside >= 0) analystUpside = 4;
+    else if (upside >= 0) analystUpside = 3;   // prix juste = peu de potentiel
     else if (upside >= -10) analystUpside = 2;
     else analystUpside = 1;
   }
@@ -218,7 +211,7 @@ export function calculateUpsideScore(inputs: UpsideScoreInputs): UpsideScoreBrea
     else peSectorGap = 2;
   }
 
-  // 5. Croissance EPS (15%)
+  // 5. Croissance EPS (20%) — poids augmente (ancien 15% + 5% redistribue)
   let epsGrowthScore = 5;
   if (earningsGrowth !== 0) {
     const gr = earningsGrowth * 100; // to percent
@@ -230,24 +223,16 @@ export function calculateUpsideScore(inputs: UpsideScoreInputs): UpsideScoreBrea
     else epsGrowthScore = 2;
   }
 
-  // 6. Rendement total combine (10%)
-  let totalReturnScore = 5;
-  const totalReturnPct = estimatedGainPercent + (dividendYield * 100);
-  if (totalReturnPct >= 30) totalReturnScore = 10;
-  else if (totalReturnPct >= 20) totalReturnScore = 8;
-  else if (totalReturnPct >= 12) totalReturnScore = 7;
-  else if (totalReturnPct >= 5) totalReturnScore = 5;
-  else if (totalReturnPct >= 0) totalReturnScore = 3;
-  else totalReturnScore = 1;
+  // Note: "rendement total" retire — double comptage avec cible analystes + dividende
+  // Poids redistribues: analystes 25→30%, 52s 15→15%, DCF 20→20%, PE 15→15%, EPS 15→20%
 
   // Weighted total
   const total = clamp(
-    analystUpside * 0.25 +
+    analystUpside * 0.30 +
     week52Room * 0.15 +
     valuationUpside * 0.20 +
     peSectorGap * 0.15 +
-    epsGrowthScore * 0.15 +
-    totalReturnScore * 0.10
+    epsGrowthScore * 0.20
   );
 
   const rounded = Math.round(total * 10) / 10;
@@ -266,7 +251,7 @@ export function calculateUpsideScore(inputs: UpsideScoreInputs): UpsideScoreBrea
     valuationUpside: Math.round(valuationUpside * 10) / 10,
     peSectorGap: Math.round(peSectorGap * 10) / 10,
     epsGrowth: Math.round(epsGrowthScore * 10) / 10,
-    totalReturn: Math.round(totalReturnScore * 10) / 10,
+    totalReturn: 0, // retire du calcul (double comptage)
     total: rounded,
     label,
     color,

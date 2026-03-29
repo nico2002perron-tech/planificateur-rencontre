@@ -471,11 +471,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
               </p>
               {[
                 { label: 'Score global', value: ps.safety, hint: 'Moyenne ponderee de tous les criteres' },
-                { label: 'Stabilite 52 sem.', value: wAvg(s => s.safety.week52Position), hint: 'Prix stable dans son range annuel' },
-                { label: 'Beta (volatilite)', value: wAvg(s => s.safety.betaScore), hint: 'Moins volatile = plus sur' },
+                { label: 'Position 52 sem.', value: wAvg(s => s.safety.week52Position), hint: 'Proche du low = meilleure opportunite' },
+                { label: 'Beta (volatilite)', value: wAvg(s => s.safety.betaScore), hint: 'Beta bas = moins volatile = plus sur' },
                 { label: 'Dividendes', value: wAvg(s => s.safety.dividendScore), hint: 'Revenu regulier = coussin' },
-                { label: 'PE raisonnable', value: wAvg(s => s.safety.peReasonableness), hint: 'Valorisation ni trop chere, ni trop basse' },
-                { label: 'Benefices (BPA)', value: wAvg(s => s.safety.epsStability), hint: 'Benefices positifs et solides' },
+                { label: 'PE vs secteur', value: wAvg(s => s.safety.peReasonableness), hint: 'PE bas vs benchmark = sous-evalue' },
+                { label: 'Benefices (BPA)', value: wAvg(s => s.safety.epsStability), hint: 'Benefices positifs = fondamentaux solides' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -494,11 +494,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
               </p>
               {[
                 { label: 'Score global', value: ps.upside, hint: 'Moyenne ponderee de tous les criteres' },
-                { label: 'Cible analystes', value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix actuel vs cible 12 mois' },
-                { label: 'Marge 52 sem.', value: wAvg(s => s.upside.week52Room), hint: 'Loin du sommet = plus de marge' },
-                { label: 'Valorisation DCF', value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon les modeles' },
-                { label: 'PE vs secteur', value: wAvg(s => s.upside.peSectorGap), hint: 'PE plus bas que la moyenne du secteur' },
-                { label: 'Croissance BPA', value: wAvg(s => s.upside.epsGrowth), hint: 'Benefices en croissance = moteur' },
+                { label: 'Cible analystes (30%)', value: wAvg(s => s.upside.analystUpside), hint: 'Ecart prix actuel vs cible 12 mois' },
+                { label: 'Marge 52 sem. (15%)', value: wAvg(s => s.upside.week52Room), hint: 'Proche du low = plus de marge' },
+                { label: 'Valorisation DCF (20%)', value: wAvg(s => s.upside.valuationUpside), hint: 'Sous-evalue selon les modeles internes' },
+                { label: 'PE vs secteur (15%)', value: wAvg(s => s.upside.peSectorGap), hint: 'PE bas = potentiel d\'expansion du multiple' },
+                { label: 'Croissance BPA (20%)', value: wAvg(s => s.upside.epsGrowth), hint: 'Benefices en croissance = moteur de hausse' },
               ].map(item => (
                 <div key={item.label} className="mb-2">
                   <div className="flex items-center justify-between">
@@ -671,11 +671,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
                                 <Shield className="h-3 w-3" /> Detail securite — {s.safety.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: 'Position 52 semaines', value: s.safety.week52Position, hint: 'Prix stable dans le range annuel' },
-                                { label: 'Beta (volatilite)', value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile' },
-                                { label: 'Rendement dividende', value: s.safety.dividendScore, hint: 'Dividende regulier = coussin' },
-                                { label: 'PE raisonnable', value: s.safety.peReasonableness, hint: 'PE modere vs secteur' },
-                                { label: 'Benefices (BPA)', value: s.safety.epsStability, hint: 'BPA positif et stable' },
+                                { label: 'Position 52 sem. (20%)', value: s.safety.week52Position, hint: 'Proche du low = meilleure opportunite' },
+                                { label: 'Beta / volatilite (25%)', value: s.safety.betaScore, hint: 'Beta < 1 = moins volatile = plus sur' },
+                                { label: 'Dividendes (20%)', value: s.safety.dividendScore, hint: 'Dividende regulier = coussin de revenu' },
+                                { label: 'PE vs secteur (20%)', value: s.safety.peReasonableness, hint: 'PE bas vs benchmark = sous-evalue' },
+                                { label: 'Benefices (15%)', value: s.safety.epsStability, hint: 'BPA positif = fondamentaux solides' },
                               ]} />
                             </div>
                             <div>
@@ -683,12 +683,11 @@ function ScoringView({ data }: { data: ScoringResult }) {
                                 <TrendingUp className="h-3 w-3" /> Detail potentiel — {s.upside.label}
                               </p>
                               <MiniBreakdown items={[
-                                { label: 'Cible analystes', value: s.upside.analystUpside, hint: 'Ecart prix vs consensus 12 mois' },
-                                { label: 'Marge 52 semaines', value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
-                                { label: 'Valorisation DCF', value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles internes' },
-                                { label: 'PE vs secteur', value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
-                                { label: 'Croissance BPA', value: s.upside.epsGrowth, hint: 'Croissance des benefices = moteur' },
-                                { label: 'Rendement total', value: s.upside.totalReturn, hint: 'Appreciation + dividende combine' },
+                                { label: 'Cible analystes (30%)', value: s.upside.analystUpside, hint: 'Ecart prix vs consensus 12 mois' },
+                                { label: 'Marge 52 semaines (15%)', value: s.upside.week52Room, hint: 'Loin du sommet = marge de hausse' },
+                                { label: 'Valorisation DCF (20%)', value: s.upside.valuationUpside, hint: 'Sous-evalue selon modeles internes' },
+                                { label: 'PE vs secteur (15%)', value: s.upside.peSectorGap, hint: 'PE bas = expansion du multiple' },
+                                { label: 'Croissance BPA (20%)', value: s.upside.epsGrowth, hint: 'Croissance des benefices = moteur' },
                               ]} />
                             </div>
                           </div>
