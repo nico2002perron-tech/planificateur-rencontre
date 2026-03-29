@@ -244,36 +244,38 @@ export function calculateSafetyScore(
   //    52-week price range / price ≈ annualized realized volatility,
   //    capturing both systematic + idiosyncratic risk.
   //    Blending both gives a more reliable risk picture.
-  let betaComponent = 5;
+  let betaComponent = 6.5;
   if (beta > 0) {
+    // Courbe permissive : beta 1.0 (marché) = 6.5 ("Solide").
+    // Seuls les titres nettement plus volatils que le marché sont pénalisés.
     betaComponent = lerp(beta, [
-      [0.2, 10],    // ultra-low vol (utilities, REITs)
-      [0.5, 9],     // very defensive
-      [0.7, 8],     // defensive
-      [0.9, 6.5],   // below-market
-      [1.0, 5.5],   // market average
-      [1.1, 5],     // slightly above market
-      [1.3, 4],     // moderately volatile
-      [1.6, 2.5],   // high vol
-      [2.0, 1],     // very high vol
-      [2.5, 0],     // extreme
+      [0.2, 10],    // ultra-stable (services publics, REITs)
+      [0.5, 9.5],   // très défensif
+      [0.7, 8.5],   // défensif
+      [0.9, 7.5],   // légèrement sous le marché
+      [1.0, 6.5],   // moyenne du marché — "Solide"
+      [1.2, 5.5],   // légèrement au-dessus — normal pour croissance
+      [1.4, 4.5],   // modérément volatile
+      [1.7, 3],     // volatile
+      [2.0, 1.5],   // très volatile
+      [2.5, 0],     // extrême
     ]);
   } else if (beta < 0) {
-    betaComponent = 8; // inverse correlation = defensive hedge
+    betaComponent = 8.5; // corrélation inverse = couverture défensive
   }
 
-  let volComponent = 5; // neutral default if no 52-week data
+  let volComponent = 6.5; // neutre si pas de données 52 semaines
   if (week52High > week52Low && currentPrice > 0 && week52Low > 0) {
     const rangeRatio = ((week52High - week52Low) / currentPrice) * 100;
-    // rangeRatio: ~10-15% = very stable, ~25-35% = typical, ~50%+ = volatile
+    // Courbe permissive : 30% de range (typique S&P 500) = 7 ("Solide").
     volComponent = lerp(rangeRatio, [
-      [5, 10],      // 5% range = ultra-stable (rare)
-      [12, 9],      // 12% = very stable (utility-like)
-      [20, 7.5],    // 20% = stable large-cap
-      [30, 6],      // 30% = typical S&P 500 stock
-      [45, 4],      // 45% = volatile
-      [65, 2],      // 65% = very volatile
-      [100, 0.5],   // 100% = speculative
+      [5, 10],      // 5% = ultra-stable (rare)
+      [12, 9.5],    // 12% = très stable
+      [20, 8.5],    // 20% = large-cap stable
+      [30, 7],      // 30% = typique S&P 500 — "Solide"
+      [45, 5],      // 45% = volatile
+      [65, 3],      // 65% = très volatile
+      [100, 0.5],   // 100% = spéculatif
     ]);
   }
 
