@@ -105,18 +105,6 @@ function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: number }) {
   );
 }
 
-// ── Encouraging message based on performance ──────────────────────────────
-
-function getEncouragingMessage(returnPct: number, daysActive: number): { emoji: string; text: string } {
-  if (daysActive === 0) return { emoji: '🚀', text: 'C\'est parti! Votre simulation est lancée.' };
-  if (returnPct > 5) return { emoji: '🔥', text: 'En feu! Votre portefeuille performe très bien!' };
-  if (returnPct > 2) return { emoji: '📈', text: 'Belle progression! Continuez comme ça!' };
-  if (returnPct > 0) return { emoji: '💪', text: 'En territoire positif, beau travail!' };
-  if (returnPct > -2) return { emoji: '😌', text: 'Léger recul, rien d\'inquiétant.' };
-  if (returnPct > -5) return { emoji: '🧘', text: 'Les marchés fluctuent, gardez le cap!' };
-  return { emoji: '💎', text: 'Patience! Les diamants se forment sous pression.' };
-}
-
 // ── Start Simulation Form ─────────────────────────────────────────────────
 
 function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; modelName: string; onStarted: () => void }) {
@@ -237,7 +225,7 @@ function DuoStat({ label, value, sub, icon, color = '#1CB0F6' }: {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────
 
-function SimulationDashboard({ modelId }: { modelId: string }) {
+function SimulationDashboard({ modelId, modelName }: { modelId: string; modelName: string }) {
   const { toast } = useToast();
   const { data, isLoading, mutate } = useSimulation(modelId);
   const [refreshing, setRefreshing] = useState(false);
@@ -408,7 +396,6 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
   );
   const displayInvested = actualInvested > 0 ? actualInvested : sim.initial_value;
-  const msg = getEncouragingMessage(stats.total_return_pct, stats.days_active);
 
   const topPerformers = [...live.holdings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct).slice(0, 3);
   const flopPerformers = [...live.holdings].sort((a, b) => a.gain_loss_pct - b.gain_loss_pct).slice(0, 3);
@@ -417,17 +404,14 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   return (
     <div className="space-y-6">
 
-      {/* ── Hero: Encouraging message + Refresh ── */}
+      {/* ── Hero: Model name + Refresh ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">{msg.emoji}</span>
-          <div>
-            <p className="font-extrabold text-text-main text-lg">{msg.text}</p>
-            <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5 mt-0.5">
-              <Calendar className="h-3 w-3" />
-              Jour {stats.days_active} · Depuis le {fmtDate(sim.start_date)}
-            </p>
-          </div>
+        <div>
+          <p className="font-extrabold text-text-main text-lg">{modelName}</p>
+          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5 mt-0.5">
+            <Calendar className="h-3 w-3" />
+            Jour {stats.days_active} · Depuis le {fmtDate(sim.start_date)}
+          </p>
         </div>
         <button onClick={handleRefresh}
           className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted hover:border-[#1CB0F6] hover:text-[#1CB0F6] transition-all"
@@ -992,19 +976,19 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
     <div>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => router.push(`/models/${id}`)} icon={<ArrowLeft className="h-4 w-4" />}>
-            {model.name}
+          <Button variant="ghost" size="sm" onClick={() => router.push('/models')} icon={<ArrowLeft className="h-4 w-4" />}>
+            Modèles
           </Button>
           <span className="text-text-light">/</span>
           <h1 className="text-lg font-extrabold text-text-main flex items-center gap-2">
             <Activity className="h-5 w-5 text-[#1CB0F6]" />
-            Simulation
+            {model.name} — Simulation
           </h1>
         </div>
       </div>
 
       {hasActiveSim ? (
-        <SimulationDashboard modelId={id} />
+        <SimulationDashboard modelId={id} modelName={model.name} />
       ) : (
         <StartSimulation modelId={id} modelName={model.name} onStarted={() => mutate()} />
       )}
