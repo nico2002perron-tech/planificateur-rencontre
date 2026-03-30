@@ -206,6 +206,24 @@ export async function GET(
     const symbols = holdings.map((h) => h.symbol);
     const benchSymbols = simulation.benchmarks || ['^GSPTSE', '^GSPC'];
 
+    // Backfill missing sector data from stock universe
+    const missingSectors = holdings.some((h) => !h.sector);
+    let sectorMap = new Map<string, string>();
+    if (missingSectors) {
+      const { data: universeStocks } = await supabase
+        .from('model_stock_universe')
+        .select('symbol, sector')
+        .in('symbol', symbols);
+      if (universeStocks) {
+        sectorMap = new Map(universeStocks.map((s) => [s.symbol, s.sector]));
+      }
+      for (const h of holdings) {
+        if (!h.sector && sectorMap.has(h.symbol)) {
+          h.sector = sectorMap.get(h.symbol);
+        }
+      }
+    }
+
     const [stockQuotes, benchQuotes] = await Promise.all([
       getYahooQuotes(symbols),
       getYahooQuotes(benchSymbols),
