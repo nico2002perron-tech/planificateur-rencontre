@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell,
+  ResponsiveContainer, Area, AreaChart, Line, PieChart, Pie, Cell,
 } from 'recharts';
 
 // ── Duolingo palette ──────────────────────────────────────────────────────
@@ -244,6 +244,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const [showAllHoldings, setShowAllHoldings] = useState(false);
   const [chartPeriod, setChartPeriod] = useState<'1J' | '1S' | '1M' | '3M' | '1A' | '5A' | 'Max'>('Max');
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [visibleBenchmarks, setVisibleBenchmarks] = useState<Set<string>>(new Set());
 
   // Period → cutoff date
   const periodCutoff = useMemo(() => {
@@ -255,7 +256,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     return cutoff.toISOString().split('T')[0];
   }, [chartPeriod]);
 
-  // Build ALL chart points (unfiltered)
+  // Build ALL chart points (unfiltered, with benchmark data)
   const allChartPoints = useMemo(() => {
     if (!data?.simulation) return [];
     const sim = data.simulation;
@@ -263,23 +264,52 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
       (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
     );
     const baseVal = actualInvested > 0 ? actualInvested : sim.initial_value;
-    const points: { date: string; dateLabel: string; portfolio: number }[] =
-      (data.snapshots || []).map((snap: SimulationSnapshot) => ({
-        date: snap.date, dateLabel: fmtDateShort(snap.date), portfolio: Math.round(snap.total_value),
-      }));
+    const benchStart = (sim.benchmark_start_prices || {}) as Record<string, number>;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const points: Record<string, any>[] =
+      (data.snapshots || []).map((snap: SimulationSnapshot) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pt: Record<string, any> = {
+          date: snap.date, dateLabel: fmtDateShort(snap.date), portfolio: Math.round(snap.total_value),
+        };
+        // Normalize benchmarks: scale their % return to portfolio start value
+        const bv = snap.benchmark_values || {};
+        for (const [sym, startPrice] of Object.entries(benchStart)) {
+          const curPrice = bv[sym];
+          if (startPrice > 0 && curPrice) {
+            pt[sym] = Math.round(baseVal * (curPrice / startPrice));
+          }
+        }
+        return pt;
+      });
+
     // Add/replace live point
     if (data?.live) {
       const today = new Date().toISOString().split('T')[0];
       const liveVal = Math.round(data.live.total_value);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const livePt: Record<string, any> = { date: today, dateLabel: 'Auj.', portfolio: liveVal };
+      for (const [sym, perf] of Object.entries(data.live.benchmarks || {})) {
+        const start = benchStart[sym];
+        if (start > 0 && perf.current) {
+          livePt[sym] = Math.round(baseVal * (perf.current / start));
+        }
+      }
       if (points.length > 0 && points[points.length - 1].date === today) {
-        points[points.length - 1] = { date: today, dateLabel: 'Auj.', portfolio: liveVal };
+        points[points.length - 1] = livePt;
       } else {
-        points.push({ date: today, dateLabel: 'Auj.', portfolio: liveVal });
+        points.push(livePt);
       }
     }
     // If only 1 point, prepend start value
     if (points.length === 1) {
-      points.unshift({ date: sim.start_date, dateLabel: 'Début', portfolio: Math.round(baseVal) });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const startPt: Record<string, any> = { date: sim.start_date, dateLabel: 'Début', portfolio: Math.round(baseVal) };
+      for (const sym of Object.keys(benchStart)) {
+        startPt[sym] = Math.round(baseVal); // all start at same value
+      }
+      points.unshift(startPt);
     }
     return points;
   }, [data?.snapshots, data?.simulation, data?.live]);
@@ -446,14 +476,19 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="dateLabel" hide />
-                  <YAxis hide domain={['dataMin', 'dataMax']} />
+                  <YAxis hide domain={visibleBenchmarks.size > 0 ? ['auto', 'auto'] : ['dataMin', 'dataMax']} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#fff', borderRadius: 16, border: 'none',
                       boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700,
                     }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    formatter={(value: any) => [fmtMoney(Number(value), sim.currency), 'Portefeuille']}
+                    formatter={(value: any, name: any) => {
+                      const label = name === 'portfolio'
+                        ? 'Portefeuille'
+                        : (BENCHMARK_LABELS[name as string] || name);
+                      return [fmtMoney(Number(value), sim.currency), label];
+                    }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     labelFormatter={(label: any) => `${label}`}
                     cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: '4 4' }}
@@ -462,6 +497,13 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                     fill={`url(#${gradId})`} dot={false}
                     activeDot={{ r: 6, fill: lineColor, stroke: '#fff', strokeWidth: 3 }}
                   />
+                  {Array.from(visibleBenchmarks).map((sym) => (
+                    <Line key={sym} type="monotone" dataKey={sym}
+                      stroke={BENCHMARK_COLORS[sym] || '#64748b'} strokeWidth={2}
+                      strokeDasharray="6 3" dot={false}
+                      activeDot={{ r: 4, fill: BENCHMARK_COLORS[sym] || '#64748b', stroke: '#fff', strokeWidth: 2 }}
+                    />
+                  ))}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -491,14 +533,32 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           }`}>
             <Trophy className="h-4 w-4" /> Mon portefeuille {fmtPct(stats.total_return_pct)}
           </div>
-          {Object.entries(live.benchmarks).map(([sym, perf]) => (
-            <div key={sym} className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted"
-              style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: BENCHMARK_COLORS[sym] || '#64748b' }} />
-              {BENCHMARK_LABELS[sym] || sym}
-              <span className={perf.return_pct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}>{fmtPct(perf.return_pct)}</span>
-            </div>
-          ))}
+          {Object.entries(live.benchmarks).map(([sym, perf]) => {
+            const active = visibleBenchmarks.has(sym);
+            const bColor = BENCHMARK_COLORS[sym] || '#64748b';
+            return (
+              <button key={sym}
+                onClick={() => setVisibleBenchmarks(prev => {
+                  const next = new Set(prev);
+                  if (next.has(sym)) next.delete(sym); else next.add(sym);
+                  return next;
+                })}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] text-sm font-bold transition-all cursor-pointer ${
+                  active
+                    ? 'text-white'
+                    : 'border-gray-200 bg-white text-text-muted hover:border-gray-300'
+                }`}
+                style={active
+                  ? { backgroundColor: bColor, borderColor: bColor, boxShadow: `0 3px 0 0 ${bColor}90` }
+                  : { boxShadow: '0 2px 0 0 #e5e7eb' }
+                }
+              >
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: active ? '#fff' : bColor }} />
+                {BENCHMARK_LABELS[sym] || sym}
+                <span className={active ? 'text-white/90' : (perf.return_pct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]')}>{fmtPct(perf.return_pct)}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
