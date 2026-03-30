@@ -1723,61 +1723,73 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 const holding = data.holdingProfiles.find(hp => hp.symbol === sc.symbol);
                 const divYield = holding ? holding.dividendYield * 100 : 0;
                 const totalReturnPct = (holding?.estimatedGainPercent ?? 0) + divYield;
+                const rowBg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
 
                 return (
-                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                    <Text style={{ ...styles.tdBold, width: '4%', textAlign: 'center', color: C.navy }}>{sc.rank}</Text>
-                    <Text style={{ ...styles.tdBold, width: '7%', fontSize: 8 }}>{sc.symbol}</Text>
-                    <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{sc.companyName.substring(0, 22)}</Text>
+                  <View key={i} wrap={false}>
+                    <View style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                      <Text style={{ ...styles.tdBold, width: '4%', textAlign: 'center', color: C.navy }}>{sc.rank}</Text>
+                      <Text style={{ ...styles.tdBold, width: '7%', fontSize: 8 }}>{sc.symbol}</Text>
+                      <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{sc.companyName.substring(0, 22)}</Text>
 
-                    {/* Safety score + bar */}
-                    <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.safety.color, fontSize: 9 }}>
-                      {sc.confidence === 'low' ? 'N/D' : sc.safety.total.toFixed(1)}
-                    </Text>
-                    <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                      {sc.confidence !== 'low' && (
-                        <View style={styles.dualScoreBarOuter}>
-                          <View style={{ ...styles.dualScoreBarInner, width: `${sc.safety.total * 10}%`, backgroundColor: scoreBarColor(sc.safety.total, 'safety') }} />
-                        </View>
-                      )}
-                    </View>
+                      {/* Safety score + bar */}
+                      <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.safety.color, fontSize: 9 }}>
+                        {sc.confidence === 'low' ? 'N/D' : sc.safety.total.toFixed(1)}
+                      </Text>
+                      <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                        {sc.confidence !== 'low' && (
+                          <View style={styles.dualScoreBarOuter}>
+                            <View style={{ ...styles.dualScoreBarInner, width: `${sc.safety.total * 10}%`, backgroundColor: scoreBarColor(sc.safety.total, 'safety') }} />
+                          </View>
+                        )}
+                      </View>
 
-                    {/* Upside score + bar */}
-                    <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.upside.color, fontSize: 9 }}>
-                      {sc.confidence === 'low' ? 'N/D' : sc.upside.total.toFixed(1)}
-                    </Text>
-                    <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                      {sc.confidence !== 'low' && (
-                        <View style={styles.dualScoreBarOuter}>
-                          <View style={{ ...styles.dualScoreBarInner, width: `${sc.upside.total * 10}%`, backgroundColor: scoreBarColor(sc.upside.total, 'upside') }} />
-                        </View>
-                      )}
-                    </View>
+                      {/* Upside score + bar */}
+                      <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.upside.color, fontSize: 9 }}>
+                        {sc.confidence === 'low' ? 'N/D' : sc.upside.total.toFixed(1)}
+                      </Text>
+                      <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
+                        {sc.confidence !== 'low' && (
+                          <View style={styles.dualScoreBarOuter}>
+                            <View style={{ ...styles.dualScoreBarInner, width: `${sc.upside.total * 10}%`, backgroundColor: scoreBarColor(sc.upside.total, 'upside') }} />
+                          </View>
+                        )}
+                      </View>
 
-                    {/* Quadrant badge */}
-                    <View style={{ width: '10%', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ ...styles.quadrantBadge, backgroundColor: qCfg.bg, color: qCfg.color }}>
-                        {qCfg.label}
+                      {/* Quadrant badge */}
+                      <View style={{ width: '10%', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ ...styles.quadrantBadge, backgroundColor: qCfg.bg, color: qCfg.color }}>
+                          {qCfg.label}
+                        </Text>
+                      </View>
+
+                      {/* Total return % */}
+                      <Text style={{
+                        ...styles.td, width: '9%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
+                        color: totalReturnPct >= 0 ? C.up : C.down,
+                      }}>
+                        {holding?.targetPrice && holding.targetPrice > 0 ? fmtPct(totalReturnPct) : '—'}
+                      </Text>
+
+                      {/* Weight */}
+                      <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>
+                        {sc.weight.toFixed(1)}%
+                      </Text>
+
+                      {/* Confidence */}
+                      <Text style={{ ...styles.td, width: '7%', textAlign: 'center', fontSize: 7, color: sc.confidence === 'high' ? C.up : sc.confidence === 'medium' ? C.warn : C.textTer }}>
+                        {sc.confidence === 'high' ? 'Eleve' : sc.confidence === 'medium' ? 'Moyen' : 'Faible'}
                       </Text>
                     </View>
 
-                    {/* Total return % */}
-                    <Text style={{
-                      ...styles.td, width: '9%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
-                      color: totalReturnPct >= 0 ? C.up : C.down,
-                    }}>
-                      {holding?.targetPrice && holding.targetPrice > 0 ? fmtPct(totalReturnPct) : '—'}
-                    </Text>
-
-                    {/* Weight */}
-                    <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>
-                      {sc.weight.toFixed(1)}%
-                    </Text>
-
-                    {/* Confidence */}
-                    <Text style={{ ...styles.td, width: '7%', textAlign: 'center', fontSize: 7, color: sc.confidence === 'high' ? C.up : sc.confidence === 'medium' ? C.warn : C.textTer }}>
-                      {sc.confidence === 'high' ? 'Eleve' : sc.confidence === 'medium' ? 'Moyen' : 'Faible'}
-                    </Text>
+                    {/* Narrative row */}
+                    {sc.narrative && sc.confidence !== 'low' && (
+                      <View style={{ backgroundColor: rowBg, paddingHorizontal: 10, paddingTop: 0, paddingBottom: 5 }}>
+                        <Text style={{ fontSize: 6.5, color: C.textSec, fontStyle: 'italic', lineHeight: 1.4, paddingLeft: 26 }}>
+                          {sc.narrative}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 );
               })}
@@ -1819,7 +1831,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
 
             <Text style={{ ...styles.noteText, marginTop: 6 }}>
-              Les scores sont bases sur: position 52 sem., beta, dividende, PE, EPS (securite) et cible analystes, valorisation DCF, PE sectoriel, croissance EPS, rendement total (potentiel). Les ETF et fonds sans donnees fondamentales affichent &quot;N/D&quot;.
+              Securite (6 facteurs) : sante financiere, stabilite du prix (52 sem. + beta), rentabilite (ROE + marges), valorisation (PE raisonnable), taille et solidite, rendement de dividende. Potentiel (6 facteurs) : croissance des benefices, cible analystes, sous-evaluation (DCF/PE sectoriel), efficacite du capital (FCF yield), revenu de dividende, ROE et qualite. Les ETF et fonds sans donnees fondamentales affichent &quot;N/D&quot;.
             </Text>
 
             <PageFooter num={5} total={totalPages} />

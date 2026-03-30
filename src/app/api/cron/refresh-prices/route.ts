@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getQuotes } from '@/lib/fmp/client';
 import { setCachedPrice, setCachedExchangeRate } from '@/lib/fmp/cache';
 import { getExchangeRate } from '@/lib/fmp/client';
+import { getYahooQuotes } from '@/lib/yahoo/client';
 
 export async function GET(request: NextRequest) {
   // Verify cron secret
@@ -55,9 +56,89 @@ export async function GET(request: NextRequest) {
       await setCachedExchangeRate('CAD/USD', 1 / usdCad);
     }
 
+    // ── Simulation Snapshots ─────────────────────────────────────
+    let simulationsSnapped = 0;
+    try {
+      const { data: activeSims } = await supabase
+        .from('model_simulations')
+        .select('*')
+        .eq('status', 'active');
+
+      if (activeSims && activeSims.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+
+        for (const sim of activeSims) {
+          try {
+            const simHoldings = sim.holdings_snapshot as { symbol: string; quantity: number; purchase_price: number }[];
+            const simSymbols = simHoldings.map((h) => h.symbol);
+            const benchSymbols = sim.benchmarks || ['^GSPTSE', '^GSPC'];
+
+            // Fetch current prices via Yahoo
+            const [stockQuotes, benchQuotes] = await Promise.all([
+              getYahooQuotes(simSymbols),
+              getYahooQuotes(benchSymbols),
+            ]);
+
+            const priceMap = new Map(stockQuotes.map((q) => [q.symbol, q.price]));
+
+            // Calculate total value and build holdings detail
+            let totalValue = 0;
+            const holdingsDetail = simHoldings.map((h) => {
+              const price = priceMap.get(h.symbol) || h.purchase_price;
+              const marketValue = h.quantity * price;
+              totalValue += marketValue;
+              return {
+                symbol: h.symbol,
+                price,
+                market_value: Math.round(marketValue * 100) / 100,
+                daily_change_pct: h.purchase_price > 0 ? Math.round(((price - h.purchase_price) / h.purchase_price) * 10000) / 100 : 0,
+              };
+            });
+
+            // Benchmark values
+            const benchmarkValues: Record<string, number> = {};
+            for (const bq of benchQuotes) {
+              benchmarkValues[bq.symbol] = bq.price;
+            }
+
+            // Get previous snapshot for daily return calculation
+            const { data: prevSnap } = await supabase
+              .from('simulation_snapshots')
+              .select('total_value')
+              .eq('simulation_id', sim.id)
+              .order('date', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const prevValue = prevSnap?.total_value || sim.initial_value;
+            const dailyReturn = prevValue > 0 ? (totalValue - prevValue) / prevValue : 0;
+
+            // Upsert snapshot (avoid duplicates for same day)
+            await supabase
+              .from('simulation_snapshots')
+              .upsert({
+                simulation_id: sim.id,
+                date: today,
+                total_value: Math.round(totalValue * 100) / 100,
+                daily_return: Math.round(dailyReturn * 1000000) / 1000000,
+                holdings_detail: holdingsDetail,
+                benchmark_values: benchmarkValues,
+              }, { onConflict: 'simulation_id,date' });
+
+            simulationsSnapped++;
+          } catch (simErr) {
+            console.error(`Snapshot error for sim ${sim.id}:`, simErr);
+          }
+        }
+      }
+    } catch (snapErr) {
+      console.error('Simulation snapshot error:', snapErr);
+    }
+
     return NextResponse.json({
       message: 'Prices refreshed',
       symbols_refreshed: refreshed,
+      simulations_snapped: simulationsSnapped,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

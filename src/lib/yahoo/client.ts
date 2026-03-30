@@ -412,6 +412,7 @@ export interface YahooQuote {
   name: string;
   currency: string;
   sector?: string;
+  dividendRate?: number;  // trailing annual dividend per share
 }
 
 /**
@@ -440,12 +441,15 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
           const currentPrice = p.regularMarketPrice?.raw ?? 0;
           if (currentPrice <= 0) return null;
 
+          const divRate = p.trailingAnnualDividendRate?.raw;
+
           return {
             symbol,
             price: Math.round(currentPrice * 100) / 100,
             name: p.shortName ?? p.longName ?? '',
             currency: p.currency ?? '',
             sector: undefined,
+            dividendRate: divRate && isFinite(divRate) && divRate > 0 ? Math.round(divRate * 10000) / 10000 : undefined,
           } as YahooQuote;
         } catch {
           return null;

@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useModel, type ModelHolding } from '@/lib/hooks/useModels';
 import { RISK_PROFILES, ASSET_CLASSES, REGIONS } from '@/lib/utils/constants';
 import Link from 'next/link';
-import { Save, Trash2, Search, X, ArrowLeft, Rocket } from 'lucide-react';
+import { Save, Trash2, Search, X, ArrowLeft, Rocket, Activity } from 'lucide-react';
 
 // ── Types & helpers ──────────────────────────────────────────────
 
@@ -355,6 +355,9 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
             <Button variant="ghost" onClick={() => router.push('/models')} icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
             {!editing ? (
               <>
+                <Link href={`/models/${id}/simulation`}>
+                  <Button variant="outline" icon={<Activity className="h-4 w-4" />}>Simulation</Button>
+                </Link>
                 <Link href={`/models/${id}/apply`}>
                   <Button variant="outline" icon={<Rocket className="h-4 w-4" />}>Appliquer à un client</Button>
                 </Link>

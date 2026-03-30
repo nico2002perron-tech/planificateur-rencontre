@@ -414,3 +414,45 @@ ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 -- Note: RLS policies will be configured when Supabase project is created.
 -- The app uses service_role key for server-side operations, bypassing RLS.
 -- Client-side Supabase access is NOT used — all data goes through Next.js API routes.
+
+-- ============================================
+-- 21. MODEL_SIMULATIONS (simulations en temps réel)
+-- ============================================
+CREATE TABLE model_simulations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  model_id UUID NOT NULL REFERENCES model_portfolios(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  initial_value NUMERIC(18,2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'CAD' CHECK (currency IN ('CAD', 'USD')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'closed')),
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  end_date DATE,
+  holdings_snapshot JSONB NOT NULL DEFAULT '[]',
+  benchmarks TEXT[] DEFAULT ARRAY['^GSPTSE', '^GSPC'],
+  benchmark_start_prices JSONB DEFAULT '{}',
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_model_simulations_model ON model_simulations(model_id);
+CREATE INDEX idx_model_simulations_status ON model_simulations(status);
+
+CREATE TRIGGER model_simulations_updated_at BEFORE UPDATE ON model_simulations FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- 22. SIMULATION_SNAPSHOTS (NAV quotidien)
+-- ============================================
+CREATE TABLE simulation_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  simulation_id UUID NOT NULL REFERENCES model_simulations(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  total_value NUMERIC(18,2) NOT NULL,
+  daily_return NUMERIC(10,6),
+  holdings_detail JSONB NOT NULL DEFAULT '[]',
+  benchmark_values JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(simulation_id, date)
+);
+
+CREATE INDEX idx_simulation_snapshots_sim ON simulation_snapshots(simulation_id, date DESC);

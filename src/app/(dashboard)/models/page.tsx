@@ -106,6 +106,17 @@ const JOURNEY_STEPS: JourneyStep[] = [
   },
   {
     number: 6,
+    title: 'Simuler en temps reel',
+    description: 'Suivez votre modele comme un vrai portefeuille avec les prix du marche',
+    icon: <TrendingUp className="h-5 w-5" />,
+    href: '/models',
+    color: 'text-cyan-600',
+    bgColor: 'bg-cyan-50',
+    borderColor: 'border-cyan-200',
+    category: 'analyze',
+  },
+  {
+    number: 7,
     title: 'Comparer avec un client',
     description: 'Collez les positions Croesus et voyez les ecarts',
     icon: <ArrowRightLeft className="h-5 w-5" />,
@@ -116,7 +127,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
     category: 'act',
   },
   {
-    number: 7,
+    number: 8,
     title: 'Reequilibrer',
     description: 'Detectez les derives et generez un plan de transactions',
     icon: <Scale className="h-5 w-5" />,
@@ -127,7 +138,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
     category: 'act',
   },
   {
-    number: 8,
+    number: 9,
     title: 'Communiquer au client',
     description: 'Generez un email professionnel resume par IA',
     icon: <Mail className="h-5 w-5" />,
