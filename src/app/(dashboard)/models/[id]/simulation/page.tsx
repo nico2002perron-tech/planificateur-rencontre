@@ -304,8 +304,8 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   }, [data?.live?.holdings]);
 
   // Allocation data (by sector, with target vs actual)
-  const allocationData = useMemo(() => {
-    if (!data?.live?.holdings || !data?.simulation) return [];
+  const { allocationData, bondTargetPct } = useMemo(() => {
+    if (!data?.live?.holdings || !data?.simulation) return { allocationData: [], bondTargetPct: 0 };
     const totalLive = data.live.holdings.reduce((s, h) => s + h.market_value, 0);
     // Actual: group current market values by sector
     const actualMap = new Map<string, number>();
@@ -319,14 +319,21 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
       const sec = h.sector || h.asset_class || 'EQUITY';
       targetMap.set(sec, (targetMap.get(sec) || 0) + h.weight);
     }
+    // Total stock target weight (may be < 100% if bonds exist)
+    const totalStockTarget = Array.from(targetMap.values()).reduce((s, v) => s + v, 0);
+    const bondPct = Math.max(0, Math.round((100 - totalStockTarget) * 100) / 100);
+    // Normalize targets to equity-only scale so comparison is apples-to-apples
+    const normalizer = totalStockTarget > 0 ? 100 / totalStockTarget : 1;
     // Merge all sectors
     const allSectors = new Set([...actualMap.keys(), ...targetMap.keys()]);
-    return Array.from(allSectors).map((sec) => {
+    const result = Array.from(allSectors).map((sec) => {
       const actualValue = actualMap.get(sec) || 0;
       const actualPct = totalLive > 0 ? Math.round((actualValue / totalLive) * 10000) / 100 : 0;
-      const targetPct = Math.round((targetMap.get(sec) || 0) * 100) / 100;
+      const rawTarget = targetMap.get(sec) || 0;
+      const targetPct = Math.round(rawTarget * normalizer * 100) / 100;
       return { name: sec, value: Math.round(actualValue), actualPct, targetPct };
     }).sort((a, b) => b.value - a.value);
+    return { allocationData: result, bondTargetPct: bondPct };
   }, [data?.live?.holdings, data?.simulation]);
 
   // Region data
@@ -694,6 +701,11 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
               </div>
             ))}
           </div>
+          {bondTargetPct > 0 && (
+            <p className="text-[10px] font-bold text-text-light text-center mt-3">
+              Obligations ({bondTargetPct.toFixed(0)}% du modèle) non incluses — cibles normalisées sur la portion actions
+            </p>
+          )}
         </div>
 
         {/* Region */}
