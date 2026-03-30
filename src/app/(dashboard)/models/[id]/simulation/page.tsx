@@ -4,7 +4,6 @@ import { useState, use, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModel } from '@/lib/hooks/useModels';
@@ -12,65 +11,106 @@ import { useSimulation, type LiveHolding, type SimulationSnapshot } from '@/lib/
 import Link from 'next/link';
 import {
   ArrowLeft, TrendingUp, TrendingDown,
-  DollarSign, Calendar, BarChart3, Activity, Target,
-  ChevronUp, ChevronDown, RefreshCw, Zap,
+  DollarSign, Activity, Target,
+  ChevronUp, ChevronDown, RefreshCw, Zap, Trophy,
+  Shield, Flame, Calendar, BarChart3,
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip,
   ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell,
 } from 'recharts';
 
-// ── Constants ────────────────────────────────────────────────────────────
+// ── Duolingo palette ──────────────────────────────────────────────────────
 
-const BENCHMARK_LABELS: Record<string, string> = {
-  '^GSPTSE': 'S&P/TSX',
-  '^GSPC': 'S&P 500',
-  '^IXIC': 'NASDAQ',
-};
+const DUO_COLORS = ['#58CC02', '#CE82FF', '#1CB0F6', '#FF9600', '#FF4B4B', '#FFC800', '#00CD9C'];
 
-const BENCHMARK_COLORS: Record<string, string> = {
-  '^GSPTSE': '#64748b',
-  '^GSPC': '#03045e',
-  '^IXIC': '#7c3aed',
-};
+function duoColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return DUO_COLORS[Math.abs(hash) % DUO_COLORS.length];
+}
 
+// ── Constants ─────────────────────────────────────────────────────────────
+
+const BENCHMARK_LABELS: Record<string, string> = { '^GSPTSE': 'S&P/TSX', '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ' };
+const BENCHMARK_COLORS: Record<string, string> = { '^GSPTSE': '#64748b', '^GSPC': '#03045e', '^IXIC': '#7c3aed' };
 const SECTOR_COLORS: Record<string, string> = {
-  EQUITY: '#00b4d8',
-  FIXED_INCOME: '#03045e',
-  CASH: '#94a3b8',
-  ALTERNATIVE: '#f59e0b',
-  REAL_ESTATE: '#10b981',
-  COMMODITY: '#ef4444',
+  EQUITY: '#1CB0F6', FIXED_INCOME: '#CE82FF', CASH: '#94a3b8',
+  ALTERNATIVE: '#FF9600', REAL_ESTATE: '#58CC02', COMMODITY: '#FF4B4B',
 };
-
+const SECTOR_LABELS: Record<string, string> = {
+  EQUITY: 'Actions', FIXED_INCOME: 'Obligations', CASH: 'Encaisse',
+  ALTERNATIVE: 'Alternatifs', REAL_ESTATE: 'Immobilier', COMMODITY: 'Commodités',
+};
 const REGION_LABELS: Record<string, string> = {
-  CA: 'Canada',
-  US: 'États-Unis',
-  INTL: 'International',
-  EM: 'Marchés émergents',
+  CA: 'Canada', US: 'États-Unis', INTL: 'International', EM: 'Marchés émergents',
 };
 
 function fmtMoney(v: number, currency = 'CAD'): string {
   return v.toLocaleString('fr-CA', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
-
 function fmtMoneyFull(v: number, currency = 'CAD'): string {
   return v.toLocaleString('fr-CA', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function fmtPct(v: number): string { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`; }
+function fmtDate(d: string): string { return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }); }
+function fmtDateShort(d: string): string { return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }); }
 
-function fmtPct(v: number): string {
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+// ── Stock Avatar (Duolingo style) ─────────────────────────────────────────
+
+function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: number }) {
+  const [imgError, setImgError] = useState(false);
+  const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '');
+  const color = duoColor(ticker);
+
+  // Try loading a real logo, fallback to colorful initials
+  if (!imgError) {
+    return (
+      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`}
+          alt={ticker}
+          width={size}
+          height={size}
+          className="rounded-2xl border-[3px] object-contain bg-white"
+          style={{ borderColor: color + '40' }}
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-2xl border-[3px] flex items-center justify-center flex-shrink-0"
+      style={{
+        width: size, height: size,
+        backgroundColor: color + '18',
+        borderColor: color + '50',
+        boxShadow: `0 3px 0 0 ${color}30`,
+      }}
+    >
+      <span className="font-extrabold" style={{ color, fontSize: size * 0.32 }}>
+        {ticker.slice(0, 3)}
+      </span>
+    </div>
+  );
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' });
+// ── Encouraging message based on performance ──────────────────────────────
+
+function getEncouragingMessage(returnPct: number, daysActive: number): { emoji: string; text: string } {
+  if (daysActive === 0) return { emoji: '🚀', text: 'C\'est parti! Votre simulation est lancée.' };
+  if (returnPct > 5) return { emoji: '🔥', text: 'En feu! Votre portefeuille performe très bien!' };
+  if (returnPct > 2) return { emoji: '📈', text: 'Belle progression! Continuez comme ça!' };
+  if (returnPct > 0) return { emoji: '💪', text: 'En territoire positif, beau travail!' };
+  if (returnPct > -2) return { emoji: '😌', text: 'Léger recul, rien d\'inquiétant.' };
+  if (returnPct > -5) return { emoji: '🧘', text: 'Les marchés fluctuent, gardez le cap!' };
+  return { emoji: '💎', text: 'Patience! Les diamants se forment sous pression.' };
 }
 
-function fmtDateShort(d: string): string {
-  return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
-}
-
-// ── Start Simulation Form ────────────────────────────────────────────────
+// ── Start Simulation Form ─────────────────────────────────────────────────
 
 function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; modelName: string; onStarted: () => void }) {
   const { toast } = useToast();
@@ -79,10 +119,7 @@ function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; m
   const [starting, setStarting] = useState(false);
 
   async function handleStart() {
-    if (amount < 1000) {
-      toast('warning', 'Le montant minimum est de 1 000$');
-      return;
-    }
+    if (amount < 1000) { toast('warning', 'Le montant minimum est de 1 000$'); return; }
     setStarting(true);
     try {
       const res = await fetch(`/api/models/${modelId}/simulation`, {
@@ -91,17 +128,11 @@ function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; m
         body: JSON.stringify({ initial_value: amount, currency }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        toast('error', data.error || 'Erreur');
-        return;
-      }
+      if (!res.ok) { toast('error', data.error || 'Erreur'); return; }
       toast('success', `Simulation démarrée avec ${data.holdings_count} positions`);
       onStarted();
-    } catch {
-      toast('error', 'Erreur lors du démarrage');
-    } finally {
-      setStarting(false);
-    }
+    } catch { toast('error', 'Erreur lors du démarrage'); }
+    finally { setStarting(false); }
   }
 
   const presets = [25000, 50000, 100000, 250000, 500000, 1000000];
@@ -109,188 +140,140 @@ function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; m
   return (
     <div className="max-w-2xl mx-auto mt-8">
       <div className="text-center mb-8">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-primary/20 to-brand-accent/20 flex items-center justify-center mx-auto mb-5">
-          <Activity className="h-10 w-10 text-brand-primary" />
-        </div>
-        <h2 className="text-2xl font-bold text-text-main mb-2">Démarrer une simulation</h2>
+        <div className="text-6xl mb-4">🎯</div>
+        <h2 className="text-2xl font-extrabold text-text-main mb-2">Prêt à simuler?</h2>
         <p className="text-text-muted max-w-md mx-auto">
-          Simulez le portefeuille <strong>{modelName}</strong> comme un vrai compte d&apos;investissement
-          avec des prix réels du marché.
+          Suivez <strong>{modelName}</strong> comme un vrai portefeuille avec des prix réels du marché.
         </p>
       </div>
 
-      <Card className="!p-8">
+      <div className="rounded-3xl border-[3px] border-gray-200 bg-white p-8" style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
         <div className="space-y-6">
-          {/* Amount */}
           <div>
-            <label className="block text-sm font-semibold text-text-main mb-2">
-              Montant initial d&apos;investissement
-            </label>
+            <label className="block text-sm font-bold text-text-main mb-2">Montant initial</label>
             <div className="relative">
               <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
               <input
-                type="number"
-                min={1000}
-                step={1000}
-                value={amount}
+                type="number" min={1000} step={1000} value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full pl-12 pr-16 py-4 rounded-xl border-2 border-gray-200 text-2xl font-bold text-text-main focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 focus:outline-none transition-all"
+                className="w-full pl-12 pr-16 py-4 rounded-2xl border-[3px] border-gray-200 text-2xl font-extrabold text-text-main focus:border-[#58CC02] focus:ring-4 focus:ring-[#58CC02]/10 focus:outline-none transition-all"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg font-semibold text-text-muted">
-                {currency}
-              </span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-text-muted">{currency}</span>
             </div>
             <div className="flex flex-wrap gap-2 mt-3">
               {presets.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setAmount(p)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                <button key={p} type="button" onClick={() => setAmount(p)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     amount === p
-                      ? 'bg-brand-primary text-white shadow-md'
+                      ? 'bg-[#58CC02] text-white shadow-md'
                       : 'bg-gray-100 text-text-muted hover:bg-gray-200'
                   }`}
-                >
-                  {fmtMoney(p)}
-                </button>
+                  style={amount === p ? { boxShadow: '0 3px 0 0 #46a302' } : {}}
+                >{fmtMoney(p)}</button>
               ))}
             </div>
           </div>
 
-          {/* Currency */}
           <div>
-            <label className="block text-sm font-semibold text-text-main mb-2">Devise</label>
+            <label className="block text-sm font-bold text-text-main mb-2">Devise</label>
             <div className="flex gap-3">
               {['CAD', 'USD'].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCurrency(c)}
-                  className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                <button key={c} type="button" onClick={() => setCurrency(c)}
+                  className={`flex-1 py-3 rounded-2xl border-[3px] text-sm font-bold transition-all ${
                     currency === c
-                      ? 'border-brand-primary bg-brand-primary/5 text-brand-primary'
+                      ? 'border-[#1CB0F6] bg-[#1CB0F6]/5 text-[#1CB0F6]'
                       : 'border-gray-200 text-text-muted hover:border-gray-300'
                   }`}
-                >
-                  {c === 'CAD' ? '🇨🇦 Dollar canadien' : '🇺🇸 Dollar américain'}
-                </button>
+                >{c === 'CAD' ? '🇨🇦 Dollar canadien' : '🇺🇸 Dollar américain'}</button>
               ))}
             </div>
           </div>
 
-          {/* Info */}
-          <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-            <p className="text-xs text-sky-700 leading-relaxed">
-              <strong>Comment ça fonctionne :</strong> Les prix actuels du marché seront gelés comme prix d&apos;achat.
-              Les quantités seront calculées selon les pondérations du modèle. Chaque jour, les prix seront mis à jour
-              pour suivre la performance réelle de votre portefeuille virtuel.
+          <div className="bg-[#1CB0F6]/10 border-2 border-[#1CB0F6]/20 rounded-2xl p-4">
+            <p className="text-xs text-[#0a7fad] leading-relaxed font-medium">
+              <strong>💡 Comment ça marche :</strong> Les prix du marché sont gelés comme prix d&apos;achat.
+              Ensuite, les prix se mettent à jour en temps réel pour suivre la vraie performance.
             </p>
           </div>
 
-          {/* Start button */}
-          <Button
-            className="w-full !py-4 !text-base"
-            loading={starting}
-            onClick={handleStart}
-            icon={<Zap className="h-5 w-5" />}
+          <button onClick={handleStart} disabled={starting}
+            className="w-full py-4 rounded-2xl border-[3px] border-b-[5px] border-[#58CC02] bg-[#58CC02] text-white text-base font-extrabold uppercase tracking-wide hover:bg-[#4db802] active:border-b-[3px] active:mt-[2px] transition-all disabled:opacity-60"
+            style={{ boxShadow: 'none' }}
           >
-            Démarrer la simulation — {fmtMoney(amount, currency)}
-          </Button>
+            {starting ? 'Démarrage...' : `🚀 C'est parti! — ${fmtMoney(amount, currency)}`}
+          </button>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
 
-// ── Stat Card ────────────────────────────────────────────────────────────
+// ── Duo Stat Badge ────────────────────────────────────────────────────────
 
-function StatCard({
-  label, value, sub, icon, color = 'text-text-main', highlight = false,
-}: {
-  label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; highlight?: boolean;
+function DuoStat({ label, value, sub, icon, color = '#1CB0F6' }: {
+  label: string; value: string; sub?: string; icon: React.ReactNode; color?: string;
 }) {
   return (
-    <div className={`rounded-xl border p-4 transition-all ${
-      highlight ? 'border-brand-primary/30 bg-gradient-to-br from-brand-primary/5 to-brand-accent/5 shadow-sm' : 'border-gray-200 bg-white'
-    }`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`p-1.5 rounded-lg ${highlight ? 'bg-brand-primary/10 text-brand-primary' : 'bg-gray-100 text-text-muted'}`}>
-          {icon}
+    <div className="rounded-2xl border-[3px] bg-white p-4 transition-all hover:scale-[1.02]"
+      style={{ borderColor: color + '30', boxShadow: `0 3px 0 0 ${color}20` }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="p-1.5 rounded-xl" style={{ backgroundColor: color + '15' }}>
+          <span style={{ color }}>{icon}</span>
         </div>
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wide">{label}</span>
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
       </div>
-      <p className={`text-xl font-bold ${color}`}>{value}</p>
-      {sub && <p className="text-xs text-text-muted mt-0.5">{sub}</p>}
+      <p className="text-xl font-extrabold" style={{ color }}>{value}</p>
+      {sub && <p className="text-xs font-semibold text-text-muted mt-0.5">{sub}</p>}
     </div>
   );
 }
 
-// ── Main Dashboard ───────────────────────────────────────────────────────
+// ── Main Dashboard ────────────────────────────────────────────────────────
 
 function SimulationDashboard({ modelId }: { modelId: string }) {
   const { toast } = useToast();
   const { data, isLoading, mutate } = useSimulation(modelId);
   const [refreshing, setRefreshing] = useState(false);
-  const [sortField, setSortField] = useState<'gain_loss_pct' | 'market_value' | 'weight'>('market_value');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [showAllHoldings, setShowAllHoldings] = useState(false);
 
-  // Build chart data (dollar values — Wealthsimple style)
+  // Build chart data (dollar values)
   const chartDataWithLive = useMemo(() => {
     if (!data?.simulation) return [];
-
     const sim = data.simulation;
     const actualInvested = sim.holdings_snapshot.reduce(
       (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
     );
     const baseVal = actualInvested > 0 ? actualInvested : sim.initial_value;
-
-    // Build points from snapshots
     const points: Record<string, string | number>[] = (data.snapshots || []).map((snap: SimulationSnapshot) => ({
-      date: snap.date,
-      dateLabel: fmtDateShort(snap.date),
-      portfolio: Math.round(snap.total_value),
+      date: snap.date, dateLabel: fmtDateShort(snap.date), portfolio: Math.round(snap.total_value),
     }));
-
-    // Always add/replace live point so chart shows from day 1
     if (data?.live) {
       const today = new Date().toISOString().split('T')[0];
       const liveVal = Math.round(data.live.total_value);
-
-      // Replace last point if same day, otherwise append
       if (points.length > 0 && points[points.length - 1].date === today) {
         points[points.length - 1] = { date: today, dateLabel: 'Auj.', portfolio: liveVal };
       } else {
         points.push({ date: today, dateLabel: 'Auj.', portfolio: liveVal });
       }
     }
-
-    // If only 1 point, prepend the start value so we have a line
     if (points.length === 1) {
       points.unshift({ date: sim.start_date, dateLabel: 'Début', portfolio: Math.round(baseVal) });
     }
-
     return points;
   }, [data?.snapshots, data?.simulation, data?.live]);
 
-  // Sort holdings
+  // Sorted holdings
   const sortedHoldings = useMemo(() => {
     if (!data?.live?.holdings) return [];
-    const sorted = [...data.live.holdings];
-    sorted.sort((a: LiveHolding, b: LiveHolding) => {
-      const av = a[sortField], bv = b[sortField];
-      return sortDir === 'desc' ? (bv as number) - (av as number) : (av as number) - (bv as number);
-    });
-    return sorted;
-  }, [data?.live?.holdings, sortField, sortDir]);
+    return [...data.live.holdings].sort((a, b) => b.market_value - a.market_value);
+  }, [data?.live?.holdings]);
 
   // Allocation data
   const allocationData = useMemo(() => {
     if (!data?.live?.holdings) return [];
     const map = new Map<string, number>();
     for (const h of data.live.holdings) {
-      const key = h.asset_class || 'EQUITY';
-      map.set(key, (map.get(key) || 0) + h.market_value);
+      map.set(h.asset_class || 'EQUITY', (map.get(h.asset_class || 'EQUITY') || 0) + h.market_value);
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value: Math.round(value) }));
   }, [data?.live?.holdings]);
@@ -300,8 +283,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     if (!data?.live?.holdings) return [];
     const map = new Map<string, number>();
     for (const h of data.live.holdings) {
-      const key = h.region || 'US';
-      map.set(key, (map.get(key) || 0) + h.market_value);
+      map.set(h.region || 'US', (map.get(h.region || 'US') || 0) + h.market_value);
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value: Math.round(value) }));
   }, [data?.live?.holdings]);
@@ -313,243 +295,77 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     toast('success', 'Prix mis à jour');
   }
 
-  function toggleSort(field: typeof sortField) {
-    if (sortField === field) {
-      setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
-    } else {
-      setSortField(field);
-      setSortDir('desc');
-    }
-  }
-
-  if (isLoading) {
-    return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
-  }
-
-  if (!data?.simulation || !data?.live || !data?.stats) {
-    return <StartSimulation modelId={modelId} modelName="" onStarted={() => mutate()} />;
-  }
+  if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
+  if (!data?.simulation || !data?.live || !data?.stats) return <StartSimulation modelId={modelId} modelName="" onStarted={() => mutate()} />;
 
   const sim = data.simulation;
   const live = data.live;
   const stats = data.stats;
   const isPositive = stats.total_return >= 0;
-
-  // Actual invested amount from holdings snapshot
   const actualInvested = sim.holdings_snapshot.reduce(
     (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
   );
   const displayInvested = actualInvested > 0 ? actualInvested : sim.initial_value;
+  const msg = getEncouragingMessage(stats.total_return_pct, stats.days_active);
 
-  // Top/Flop
   const topPerformers = [...live.holdings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct).slice(0, 3);
   const flopPerformers = [...live.holdings].sort((a, b) => a.gain_loss_pct - b.gain_loss_pct).slice(0, 3);
+  const displayedHoldings = showAllHoldings ? sortedHoldings : sortedHoldings.slice(0, 8);
 
   return (
     <div className="space-y-6">
 
-      {/* ── Header Bar ── */}
+      {/* ── Hero: Encouraging message + Refresh ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h2 className="text-xl font-bold text-text-main">{sim.name}</h2>
-            <Badge variant="success">Active</Badge>
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">{msg.emoji}</span>
+          <div>
+            <p className="font-extrabold text-text-main text-lg">{msg.text}</p>
+            <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5 mt-0.5">
+              <Calendar className="h-3 w-3" />
+              Jour {stats.days_active} · Depuis le {fmtDate(sim.start_date)}
+            </p>
           </div>
-          <p className="text-sm text-text-muted flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5" />
-            Démarrée le {fmtDate(sim.start_date)} · {stats.days_active} jour{stats.days_active !== 1 ? 's' : ''}
-          </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={handleRefresh} icon={<RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />}>
-            Rafraîchir
-          </Button>
-        </div>
+        <button onClick={handleRefresh}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted hover:border-[#1CB0F6] hover:text-[#1CB0F6] transition-all"
+          style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Rafraîchir
+        </button>
       </div>
 
-      {/* ── Big Numbers ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        <StatCard
-          label="Valeur actuelle"
-          value={fmtMoney(live.total_value + stats.total_income, sim.currency)}
-          sub={`Investi: ${fmtMoney(displayInvested, sim.currency)}`}
-          icon={<DollarSign className="h-4 w-4" />}
-          highlight
-        />
-        <StatCard
-          label="Rendement total"
-          value={`${isPositive ? '+' : ''}${fmtMoney(stats.total_return, sim.currency)}`}
-          sub={fmtPct(stats.total_return_pct)}
-          icon={isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-          color={isPositive ? 'text-emerald-600' : 'text-red-600'}
-        />
-        <StatCard
-          label="Rend. annualisé"
-          value={fmtPct(stats.annualized_return)}
-          icon={<Target className="h-4 w-4" />}
-          color={stats.annualized_return >= 0 ? 'text-emerald-600' : 'text-red-600'}
-        />
-        <StatCard
-          label="Volatilité"
-          value={`${stats.volatility.toFixed(1)}%`}
-          sub={`Sharpe: ${stats.sharpe.toFixed(2)}`}
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Drawdown max"
-          value={`-${stats.max_drawdown.toFixed(1)}%`}
-          icon={<TrendingDown className="h-4 w-4" />}
-          color={stats.max_drawdown > 10 ? 'text-red-600' : 'text-text-main'}
-        />
-        <StatCard
-          label="Meilleur / Pire jour"
-          value={`${stats.best_day >= 0 ? '+' : ''}${stats.best_day.toFixed(1)}%`}
-          sub={`Pire: ${stats.worst_day.toFixed(1)}%`}
-          icon={<BarChart3 className="h-4 w-4" />}
-        />
-      </div>
-
-      {/* ── Income Breakdown ── */}
-      {stats.total_income > 0 && (
-        <Card>
-          <h3 className="font-semibold text-text-main mb-3">Décomposition du rendement</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Capital gains */}
-            <div className="rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-3 h-3 rounded-full bg-brand-primary" />
-                <span className="text-xs font-medium text-text-muted uppercase tracking-wide">Gains en capital</span>
-              </div>
-              <p className={`text-lg font-bold ${stats.capital_gain >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {stats.capital_gain >= 0 ? '+' : ''}{fmtMoney(stats.capital_gain, sim.currency)}
-              </p>
-              <p className="text-xs text-text-muted">{fmtPct(stats.capital_gain_pct)} · Appréciation des prix</p>
-            </div>
-            {/* Dividend income */}
-            {stats.dividend_income > 0 && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                  <span className="text-xs font-medium text-emerald-700 uppercase tracking-wide">Revenus de dividendes</span>
-                </div>
-                <p className="text-lg font-bold text-emerald-700">
-                  +{fmtMoney(stats.dividend_income, sim.currency)}
-                </p>
-                <p className="text-xs text-emerald-600">Dividendes actions accumulés</p>
-              </div>
-            )}
-            {/* Fixed income */}
-            {stats.fixed_income > 0 && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full bg-blue-600" />
-                  <span className="text-xs font-medium text-blue-700 uppercase tracking-wide">Revenus fixes</span>
-                </div>
-                <p className="text-lg font-bold text-blue-700">
-                  +{fmtMoney(stats.fixed_income, sim.currency)}
-                </p>
-                <p className="text-xs text-blue-600">Distributions obligataires</p>
-              </div>
-            )}
-            {/* If no separate income, show combined */}
-            {stats.dividend_income === 0 && stats.fixed_income === 0 && stats.total_income > 0 && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                  <span className="text-xs font-medium text-emerald-700 uppercase tracking-wide">Revenus totaux</span>
-                </div>
-                <p className="text-lg font-bold text-emerald-700">
-                  +{fmtMoney(stats.total_income, sim.currency)}
-                </p>
-              </div>
-            )}
-          </div>
-          {/* Total bar */}
-          <div className="mt-4 pt-3 border-t border-gray-100">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-text-main">Rendement total</span>
-              <span className={`text-sm font-bold ${isPositive ? 'text-emerald-700' : 'text-red-700'}`}>
-                {isPositive ? '+' : ''}{fmtMoney(stats.total_return, sim.currency)} ({fmtPct(stats.total_return_pct)})
-              </span>
-            </div>
-            <div className="h-2.5 rounded-full bg-gray-100 mt-2 overflow-hidden flex">
-              {stats.capital_gain > 0 && (
-                <div
-                  className="h-full bg-brand-primary"
-                  style={{ width: `${Math.max((stats.capital_gain / (stats.capital_gain + stats.total_income)) * 100, 0)}%` }}
-                  title={`Capital: ${fmtMoney(stats.capital_gain, sim.currency)}`}
-                />
-              )}
-              {stats.dividend_income > 0 && (
-                <div
-                  className="h-full bg-emerald-500"
-                  style={{ width: `${(stats.dividend_income / (stats.capital_gain + stats.total_income)) * 100}%` }}
-                  title={`Dividendes: ${fmtMoney(stats.dividend_income, sim.currency)}`}
-                />
-              )}
-              {stats.fixed_income > 0 && (
-                <div
-                  className="h-full bg-blue-600"
-                  style={{ width: `${(stats.fixed_income / (stats.capital_gain + stats.total_income)) * 100}%` }}
-                  title={`Revenu fixe: ${fmtMoney(stats.fixed_income, sim.currency)}`}
-                />
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* ── Benchmark Comparison Pills ── */}
-      {Object.keys(live.benchmarks).length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 ${
-            isPositive ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
-          }`}>
-            <div className="w-3 h-3 rounded-full bg-brand-primary" />
-            <span className="text-xs font-semibold text-text-main">Portefeuille</span>
-            <span className={`text-sm font-bold ${isPositive ? 'text-emerald-700' : 'text-red-700'}`}>
-              {fmtPct(stats.total_return_pct)}
-            </span>
-          </div>
-          {Object.entries(live.benchmarks).map(([sym, perf]) => (
-            <div key={sym} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 bg-gray-50">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: BENCHMARK_COLORS[sym] || '#64748b' }} />
-              <span className="text-xs font-semibold text-text-muted">{BENCHMARK_LABELS[sym] || sym}</span>
-              <span className={`text-sm font-bold ${perf.return_pct >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                {fmtPct(perf.return_pct)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Performance Chart (Wealthsimple style) ── */}
+      {/* ── Chart (Wealthsimple style) ── */}
       {chartDataWithLive.length >= 2 && (() => {
         const firstVal = Number(chartDataWithLive[0].portfolio);
         const lastVal = Number(chartDataWithLive[chartDataWithLive.length - 1].portfolio);
         const chartPositive = lastVal >= firstVal;
-        const lineColor = chartPositive ? '#16a34a' : '#dc2626';
-        const gradId = chartPositive ? 'gradGreen' : 'gradRed';
+        const lineColor = chartPositive ? '#58CC02' : '#FF4B4B';
+        const gradId = chartPositive ? 'gradUp' : 'gradDown';
 
         return (
-          <Card className="!p-0 overflow-hidden">
+          <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden" style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
             <div className="px-6 pt-5 pb-2">
-              <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Valeur du portefeuille</p>
+              <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-1">Valeur du portefeuille</p>
               <div className="flex items-end gap-3">
-                <span className="text-3xl font-bold text-text-main">{fmtMoney(lastVal, sim.currency)}</span>
-                <span className={`text-sm font-semibold px-2 py-0.5 rounded-md ${
-                  chartPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                <span className="text-4xl font-extrabold text-text-main">{fmtMoney(lastVal, sim.currency)}</span>
+                <span className={`text-sm font-extrabold px-3 py-1 rounded-xl ${
+                  chartPositive ? 'bg-[#58CC02]/10 text-[#58CC02]' : 'bg-[#FF4B4B]/10 text-[#FF4B4B]'
                 }`}>
-                  {fmtPct(stats.total_return_pct)}
+                  {chartPositive ? '▲' : '▼'} {fmtPct(stats.total_return_pct)}
                 </span>
               </div>
+              <p className="text-xs font-semibold text-text-muted mt-1">
+                Investi: {fmtMoney(displayInvested, sim.currency)}
+              </p>
             </div>
-            <div className="h-[280px] -mx-1">
+            <div className="h-[260px] -mx-1">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartDataWithLive} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.15} />
+                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.2} />
                       <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -557,13 +373,8 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                   <YAxis hide domain={['dataMin', 'dataMax']} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: 'rgba(255,255,255,0.95)',
-                      backdropFilter: 'blur(8px)',
-                      borderRadius: 12,
-                      border: 'none',
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
-                      padding: '10px 14px',
-                      fontSize: 13,
+                      backgroundColor: '#fff', borderRadius: 16, border: 'none',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700,
                     }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     formatter={(value: any) => [fmtMoney(Number(value), sim.currency), 'Portefeuille']}
@@ -571,184 +382,185 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                     labelFormatter={(label: any) => `${label}`}
                     cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: '4 4' }}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="portfolio"
-                    stroke={lineColor}
-                    strokeWidth={2.5}
-                    fill={`url(#${gradId})`}
-                    dot={false}
-                    activeDot={{ r: 5, fill: lineColor, stroke: '#fff', strokeWidth: 2 }}
+                  <Area type="monotone" dataKey="portfolio" stroke={lineColor} strokeWidth={3}
+                    fill={`url(#${gradId})`} dot={false}
+                    activeDot={{ r: 6, fill: lineColor, stroke: '#fff', strokeWidth: 3 }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            {/* Date labels at bottom */}
-            <div className="flex justify-between px-6 pb-4 text-[11px] text-text-light">
+            <div className="flex justify-between px-6 pb-4 text-[11px] font-bold text-text-light">
               <span>{String(chartDataWithLive[0].dateLabel)}</span>
               <span>{String(chartDataWithLive[chartDataWithLive.length - 1].dateLabel)}</span>
             </div>
-          </Card>
+          </div>
         );
       })()}
 
-      {/* ── Holdings Table ── */}
-      <Card className="!p-0 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-text-main">Positions ({live.holdings.length})</h3>
-            <p className="text-xs text-text-muted">Performance individuelle de chaque titre depuis l&apos;achat</p>
+      {/* ── Benchmark Pills ── */}
+      {Object.keys(live.benchmarks).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] font-bold text-sm ${
+            isPositive ? 'border-[#58CC02]/30 bg-[#58CC02]/5 text-[#58CC02]' : 'border-[#FF4B4B]/30 bg-[#FF4B4B]/5 text-[#FF4B4B]'
+          }`}>
+            <Trophy className="h-4 w-4" /> Mon portefeuille {fmtPct(stats.total_return_pct)}
           </div>
+          {Object.entries(live.benchmarks).map(([sym, perf]) => (
+            <div key={sym} className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted"
+              style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: BENCHMARK_COLORS[sym] || '#64748b' }} />
+              {BENCHMARK_LABELS[sym] || sym}
+              <span className={perf.return_pct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}>{fmtPct(perf.return_pct)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Stats Grid (Duo badges) ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <DuoStat label="Rendement" value={fmtPct(stats.total_return_pct)}
+          sub={`${isPositive ? '+' : ''}${fmtMoney(stats.total_return, sim.currency)}`}
+          icon={isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+          color={isPositive ? '#58CC02' : '#FF4B4B'} />
+        <DuoStat label="Annualisé" value={fmtPct(stats.annualized_return)}
+          icon={<Target className="h-4 w-4" />}
+          color={stats.annualized_return >= 0 ? '#58CC02' : '#FF4B4B'} />
+        <DuoStat label="Volatilité" value={`${stats.volatility.toFixed(1)}%`}
+          sub={`Sharpe: ${stats.sharpe.toFixed(2)}`}
+          icon={<Activity className="h-4 w-4" />} color="#FF9600" />
+        <DuoStat label="Drawdown max" value={`-${stats.max_drawdown.toFixed(1)}%`}
+          icon={<Shield className="h-4 w-4" />} color={stats.max_drawdown > 10 ? '#FF4B4B' : '#1CB0F6'} />
+        <DuoStat label="Série" value={`${stats.days_active}j`}
+          sub={stats.days_active >= 7 ? 'Continue comme ça!' : 'Ça commence!'}
+          icon={<Flame className="h-4 w-4" />} color="#FFC800" />
+      </div>
+
+      {/* ── Holdings (Card-based, Duolingo style) ── */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-extrabold text-text-main">
+            Mes positions <span className="text-text-muted font-bold">({live.holdings.length})</span>
+          </h3>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50/80 text-text-muted border-b border-gray-100">
-                <th className="text-left py-3 px-4 font-semibold">Titre</th>
-                <th className="text-right py-3 px-3 font-semibold">Qté</th>
-                <th className="text-right py-3 px-3 font-semibold">Px achat</th>
-                <th className="text-right py-3 px-3 font-semibold">Px actuel</th>
-                <th className="text-right py-3 px-3 font-semibold cursor-pointer hover:text-brand-primary" onClick={() => toggleSort('market_value')}>
-                  <span className="flex items-center justify-end gap-1">
-                    Val. marché
-                    {sortField === 'market_value' && (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)}
-                  </span>
-                </th>
-                <th className="text-right py-3 px-3 font-semibold cursor-pointer hover:text-brand-primary" onClick={() => toggleSort('weight')}>
-                  <span className="flex items-center justify-end gap-1">
-                    Poids
-                    {sortField === 'weight' && (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)}
-                  </span>
-                </th>
-                <th className="text-right py-3 px-3 font-semibold">P&amp;L $</th>
-                <th className="text-right py-3 px-3 font-semibold cursor-pointer hover:text-brand-primary" onClick={() => toggleSort('gain_loss_pct')}>
-                  <span className="flex items-center justify-end gap-1">
-                    P&amp;L %
-                    {sortField === 'gain_loss_pct' && (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)}
-                  </span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedHoldings.map((h: LiveHolding, i: number) => {
-                const isUp = h.gain_loss >= 0;
-                return (
-                  <tr key={h.symbol} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-primary/10 to-brand-accent/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-bold text-brand-primary">{h.symbol.replace('.TO', '').slice(0, 3)}</span>
-                        </div>
-                        <div>
-                          <span className="font-mono font-semibold text-text-main text-xs">{h.symbol}</span>
-                          <p className="text-[11px] text-text-muted truncate max-w-[150px]">{h.name}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="text-right py-3 px-3 font-mono text-xs text-text-muted">
-                      {h.quantity < 1 ? h.quantity.toFixed(4) : h.quantity < 100 ? h.quantity.toFixed(2) : Math.round(h.quantity).toLocaleString()}
-                    </td>
-                    <td className="text-right py-3 px-3 font-mono text-xs text-text-muted">
-                      {fmtMoneyFull(h.purchase_price)}
-                    </td>
-                    <td className="text-right py-3 px-3 font-mono text-xs font-semibold text-text-main">
-                      {fmtMoneyFull(h.current_price)}
-                    </td>
-                    <td className="text-right py-3 px-3 font-semibold text-text-main">
-                      {fmtMoney(h.market_value)}
-                    </td>
-                    <td className="text-right py-3 px-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-brand-primary" style={{ width: `${Math.min(h.weight, 100)}%` }} />
-                        </div>
-                        <span className="text-xs font-medium text-text-muted w-10 text-right">{h.weight.toFixed(1)}%</span>
-                      </div>
-                    </td>
-                    <td className={`text-right py-3 px-3 font-semibold ${isUp ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {isUp ? '+' : ''}{fmtMoney(h.gain_loss)}
-                    </td>
-                    <td className="text-right py-3 px-3">
-                      <span className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-bold ${
-                        isUp ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                      }`}>
-                        {isUp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        {Math.abs(h.gain_loss_pct).toFixed(2)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-gray-50 border-t-2 border-gray-200">
-                <td className="py-3 px-4 font-bold text-text-main">Total</td>
-                <td colSpan={3}></td>
-                <td className="text-right py-3 px-3 font-bold text-text-main text-base">
-                  {fmtMoney(live.total_value, sim.currency)}
-                </td>
-                <td className="text-right py-3 px-3 font-bold text-text-muted">100%</td>
-                <td className={`text-right py-3 px-3 font-bold ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {isPositive ? '+' : ''}{fmtMoney(stats.total_return, sim.currency)}
-                </td>
-                <td className="text-right py-3 px-3">
-                  <span className={`inline-flex items-center gap-0.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                    isPositive ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {fmtPct(stats.total_return_pct)}
-                  </span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+        <div className="space-y-3">
+          {displayedHoldings.map((h: LiveHolding) => {
+            const isUp = h.gain_loss >= 0;
+            const pnlColor = isUp ? '#58CC02' : '#FF4B4B';
+            return (
+              <div key={h.symbol}
+                className="flex items-center gap-4 rounded-2xl border-[3px] border-gray-200 bg-white p-4 transition-all hover:border-[#1CB0F6]/40 hover:scale-[1.01]"
+                style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+              >
+                {/* Logo */}
+                <StockAvatar symbol={h.symbol} />
+
+                {/* Name + Ticker */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-text-main text-sm">{h.symbol.replace('.TO', '').replace('.V', '')}</span>
+                    <span className="text-[10px] font-bold text-text-light bg-gray-100 px-1.5 py-0.5 rounded-md">
+                      {h.weight.toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-text-muted truncate">{h.name}</p>
+                  <div className="flex items-center gap-2 mt-1 text-[11px] text-text-light">
+                    <span>{h.quantity < 1 ? h.quantity.toFixed(4) : h.quantity < 100 ? h.quantity.toFixed(2) : Math.round(h.quantity).toLocaleString()} parts</span>
+                    <span>·</span>
+                    <span>Acheté {fmtMoneyFull(h.purchase_price)}</span>
+                    <span>→</span>
+                    <span className="font-semibold text-text-main">{fmtMoneyFull(h.current_price)}</span>
+                  </div>
+                </div>
+
+                {/* P&L */}
+                <div className="text-right flex-shrink-0">
+                  <p className="font-extrabold text-base" style={{ color: pnlColor }}>
+                    {fmtMoney(h.market_value, sim.currency)}
+                  </p>
+                  <div className="flex items-center justify-end gap-1 mt-0.5">
+                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-extrabold"
+                      style={{ backgroundColor: pnlColor + '12', color: pnlColor }}>
+                      {isUp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {Math.abs(h.gain_loss_pct).toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-bold mt-0.5" style={{ color: pnlColor }}>
+                    {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </Card>
+
+        {sortedHoldings.length > 8 && (
+          <button onClick={() => setShowAllHoldings(!showAllHoldings)}
+            className="w-full mt-3 py-3 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-extrabold text-[#1CB0F6] hover:bg-[#1CB0F6]/5 transition-all"
+            style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+          >
+            {showAllHoldings ? 'Voir moins' : `Voir les ${sortedHoldings.length - 8} autres positions`}
+          </button>
+        )}
+
+        {/* Total bar */}
+        <div className="mt-3 rounded-2xl border-[3px] bg-white p-4 flex items-center justify-between"
+          style={{ borderColor: isPositive ? '#58CC02' + '40' : '#FF4B4B' + '40', boxShadow: `0 3px 0 0 ${isPositive ? '#58CC02' : '#FF4B4B'}20` }}>
+          <div>
+            <span className="text-sm font-extrabold text-text-main">Total portefeuille</span>
+            <p className="text-xs font-bold text-text-muted">{live.holdings.length} positions</p>
+          </div>
+          <div className="text-right">
+            <span className="text-xl font-extrabold text-text-main">{fmtMoney(live.total_value, sim.currency)}</span>
+            <p className="text-sm font-extrabold" style={{ color: isPositive ? '#58CC02' : '#FF4B4B' }}>
+              {isPositive ? '+' : ''}{fmtMoney(stats.total_return, sim.currency)} ({fmtPct(stats.total_return_pct)})
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Bottom Row: Top/Flop + Allocation + Region ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* Top / Flop */}
-        <Card>
-          <h3 className="font-semibold text-text-main mb-4 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
-            Meilleurs / Pires
+        <div className="rounded-2xl border-[3px] border-gray-200 bg-white p-5" style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}>
+          <h3 className="font-extrabold text-text-main mb-4 flex items-center gap-2">
+            <span className="text-xl">🏆</span> Podium
           </h3>
-          <div className="space-y-2 mb-4">
-            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Top performeurs</p>
-            {topPerformers.map((h) => (
-              <div key={h.symbol} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-emerald-50/50">
-                <span className="font-mono text-xs font-semibold text-text-main">{h.symbol}</span>
-                <span className="text-xs font-bold text-emerald-700">{fmtPct(h.gain_loss_pct)}</span>
-              </div>
-            ))}
+          <div className="space-y-2 mb-5">
+            {topPerformers.map((h, i) => {
+              const medals = ['🥇', '🥈', '🥉'];
+              return (
+                <div key={h.symbol} className="flex items-center gap-3 py-2 px-3 rounded-xl bg-[#58CC02]/5 border-2 border-[#58CC02]/15">
+                  <span className="text-lg">{medals[i]}</span>
+                  <StockAvatar symbol={h.symbol} size={32} />
+                  <span className="font-extrabold text-text-main text-sm flex-1">{h.symbol.replace('.TO', '')}</span>
+                  <span className="text-sm font-extrabold text-[#58CC02]">{fmtPct(h.gain_loss_pct)}</span>
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">À surveiller</p>
           <div className="space-y-2">
-            <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Moins performants</p>
             {flopPerformers.map((h) => (
-              <div key={h.symbol} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-red-50/50">
-                <span className="font-mono text-xs font-semibold text-text-main">{h.symbol}</span>
-                <span className="text-xs font-bold text-red-700">{fmtPct(h.gain_loss_pct)}</span>
+              <div key={h.symbol} className="flex items-center gap-3 py-2 px-3 rounded-xl bg-[#FF4B4B]/5 border-2 border-[#FF4B4B]/15">
+                <StockAvatar symbol={h.symbol} size={32} />
+                <span className="font-extrabold text-text-main text-sm flex-1">{h.symbol.replace('.TO', '')}</span>
+                <span className="text-sm font-extrabold text-[#FF4B4B]">{fmtPct(h.gain_loss_pct)}</span>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
 
         {/* Allocation Pie */}
-        <Card>
-          <h3 className="font-semibold text-text-main mb-4">Répartition par classe</h3>
-          <div className="h-[200px]">
+        <div className="rounded-2xl border-[3px] border-gray-200 bg-white p-5" style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}>
+          <h3 className="font-extrabold text-text-main mb-4 flex items-center gap-2">
+            <span className="text-xl">🎯</span> Répartition
+          </h3>
+          <div className="h-[180px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={allocationData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
+                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" strokeWidth={3} stroke="#fff">
                   {allocationData.map((entry, i) => (
                     <Cell key={i} fill={SECTOR_COLORS[entry.name] || '#94a3b8'} />
                   ))}
@@ -756,54 +568,84 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   formatter={(value: any) => fmtMoney(Number(value), sim.currency)}
-                  contentStyle={{ borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: 12, fontWeight: 700 }}
                 />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex flex-wrap justify-center gap-3 mt-2">
+          <div className="flex flex-wrap justify-center gap-2 mt-2">
             {allocationData.map((entry) => (
-              <div key={entry.name} className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
-                <span className="text-[11px] text-text-muted">{entry.name}</span>
+              <div key={entry.name} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
+                <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
               </div>
             ))}
           </div>
-        </Card>
+        </div>
 
-        {/* Region breakdown */}
-        <Card>
-          <h3 className="font-semibold text-text-main mb-4">Répartition géographique</h3>
-          <div className="space-y-3 mt-6">
+        {/* Region */}
+        <div className="rounded-2xl border-[3px] border-gray-200 bg-white p-5" style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}>
+          <h3 className="font-extrabold text-text-main mb-4 flex items-center gap-2">
+            <span className="text-xl">🌍</span> Géographie
+          </h3>
+          <div className="space-y-4 mt-4">
             {regionData.map((r) => {
               const total = regionData.reduce((s, x) => s + x.value, 0);
               const pct = total > 0 ? (r.value / total) * 100 : 0;
+              const regionEmoji: Record<string, string> = { CA: '🇨🇦', US: '🇺🇸', INTL: '🌐', EM: '🌏' };
               return (
                 <div key={r.name}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-medium text-text-main">{REGION_LABELS[r.name] || r.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-text-muted">{fmtMoney(r.value, sim.currency)}</span>
-                      <span className="text-xs font-bold text-text-main">{pct.toFixed(1)}%</span>
-                    </div>
+                    <span className="text-sm font-extrabold text-text-main flex items-center gap-2">
+                      <span>{regionEmoji[r.name] || '🌐'}</span>
+                      {REGION_LABELS[r.name] || r.name}
+                    </span>
+                    <span className="text-sm font-extrabold text-text-main">{pct.toFixed(0)}%</span>
                   </div>
-                  <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-brand-primary to-brand-accent transition-all duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="h-3 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: duoColor(r.name) }} />
                   </div>
                 </div>
               );
             })}
           </div>
-        </Card>
+        </div>
       </div>
+
+      {/* ── Income Breakdown (only if income > 0) ── */}
+      {stats.total_income > 0 && (
+        <div className="rounded-2xl border-[3px] border-[#58CC02]/30 bg-[#58CC02]/5 p-5" style={{ boxShadow: '0 3px 0 0 #58CC0220' }}>
+          <h3 className="font-extrabold text-text-main mb-3 flex items-center gap-2">
+            <span className="text-xl">💰</span> Revenus accumulés
+          </h3>
+          <div className="flex flex-wrap gap-4">
+            {stats.dividend_income > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📊</span>
+                <div>
+                  <p className="text-xs font-bold text-text-muted">Dividendes</p>
+                  <p className="text-lg font-extrabold text-[#58CC02]">+{fmtMoney(stats.dividend_income, sim.currency)}</p>
+                </div>
+              </div>
+            )}
+            {stats.fixed_income > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🏛️</span>
+                <div>
+                  <p className="text-xs font-bold text-text-muted">Revenu fixe</p>
+                  <p className="text-lg font-extrabold text-[#1CB0F6]">+{fmtMoney(stats.fixed_income, sim.currency)}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Page Component ───────────────────────────────────────────────────────
+// ── Page Component ────────────────────────────────────────────────────────
 
 export default function SimulationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -811,9 +653,7 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
   const { model, isLoading: modelLoading } = useModel(id);
   const { data, isLoading: simLoading, mutate } = useSimulation(id);
 
-  if (modelLoading || simLoading) {
-    return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
-  }
+  if (modelLoading || simLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
 
   if (!model) {
     return (
@@ -824,20 +664,18 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  // Show dashboard only for active simulations (not closed/paused)
   const hasActiveSim = !!data?.simulation && data.simulation.status === 'active';
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.push(`/models/${id}`)} icon={<ArrowLeft className="h-4 w-4" />}>
             {model.name}
           </Button>
           <span className="text-text-light">/</span>
-          <h1 className="text-lg font-bold text-text-main flex items-center gap-2">
-            <Activity className="h-5 w-5 text-brand-primary" />
+          <h1 className="text-lg font-extrabold text-text-main flex items-center gap-2">
+            <Activity className="h-5 w-5 text-[#1CB0F6]" />
             Simulation
           </h1>
         </div>
@@ -846,11 +684,7 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
       {hasActiveSim ? (
         <SimulationDashboard modelId={id} />
       ) : (
-        <StartSimulation
-          modelId={id}
-          modelName={model.name}
-          onStarted={() => mutate()}
-        />
+        <StartSimulation modelId={id} modelName={model.name} onStarted={() => mutate()} />
       )}
     </div>
   );
