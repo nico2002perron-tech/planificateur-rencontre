@@ -412,7 +412,9 @@ export interface YahooQuote {
   name: string;
   currency: string;
   sector?: string;
-  dividendRate?: number;  // trailing annual dividend per share
+  dividendRate?: number;   // trailing annual dividend per share
+  dividendYield?: number;  // e.g. 0.025 = 2.5%
+  exDividendDate?: string; // ISO date string (YYYY-MM-DD)
 }
 
 /**
@@ -430,18 +432,26 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
       batch.map(async (symbol) => {
         try {
           const ySym = toYahooSymbol(symbol);
-          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price`;
+          const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=price,summaryDetail`;
           const res = await yahooFetch(url);
           if (!res.ok) return null;
 
           const json = await res.json();
-          const p = json?.quoteSummary?.result?.[0]?.price;
+          const result0 = json?.quoteSummary?.result?.[0];
+          const p = result0?.price;
+          const sd = result0?.summaryDetail;
           if (!p) return null;
 
           const currentPrice = p.regularMarketPrice?.raw ?? 0;
           if (currentPrice <= 0) return null;
 
           const divRate = p.trailingAnnualDividendRate?.raw;
+          const divYield = sd?.dividendYield?.raw;
+          const exDivRaw = sd?.exDividendDate?.raw;
+          let exDivDate: string | undefined;
+          if (exDivRaw && typeof exDivRaw === 'number') {
+            exDivDate = new Date(exDivRaw * 1000).toISOString().split('T')[0];
+          }
 
           return {
             symbol,
@@ -450,6 +460,8 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
             currency: p.currency ?? '',
             sector: undefined,
             dividendRate: divRate && isFinite(divRate) && divRate > 0 ? Math.round(divRate * 10000) / 10000 : undefined,
+            dividendYield: divYield && isFinite(divYield) && divYield > 0 ? Math.round(divYield * 10000) / 10000 : undefined,
+            exDividendDate: exDivDate,
           } as YahooQuote;
         } catch {
           return null;

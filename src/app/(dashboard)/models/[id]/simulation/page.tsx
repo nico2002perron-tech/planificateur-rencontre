@@ -587,7 +587,25 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                   </div>
                 </div>
 
-                {/* Row 3 — Weight bar */}
+                {/* Row 3 — Dividend info (if applicable) */}
+                {(h.dividend_yield && h.dividend_yield > 0) && (
+                  <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Dividende</span>
+                    <span className="text-xs font-extrabold text-emerald-600">{h.dividend_yield.toFixed(2)}%</span>
+                    {h.annual_dividend && h.annual_dividend > 0 && (
+                      <span className="text-[10px] font-bold text-emerald-500">
+                        ({fmtMoneyFull(h.annual_dividend)}/action · ~{fmtMoney(Math.round(h.quantity * h.annual_dividend), sim.currency)}/an)
+                      </span>
+                    )}
+                    {h.ex_dividend_date && (
+                      <span className="ml-auto text-[10px] font-bold text-emerald-500">
+                        Ex-div: {fmtDate(h.ex_dividend_date)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Row 4 — Weight bar */}
                 <div className="mt-3 flex items-center gap-3">
                   <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
                     <div className="h-full rounded-full bg-[#1CB0F6] transition-all duration-500"

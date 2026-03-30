@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
   const uniqueSymbols = [...new Set(neededSymbols)];
 
   let priceMap = new Map<string, number>();
+  const divYieldMap = new Map<string, number>();
 
   if (uniqueSymbols.length > 0) {
     // D'abord vérifier le cache Supabase
@@ -128,12 +129,14 @@ export async function POST(req: NextRequest) {
       const yahooQuotes = await getYahooQuotes(stale);
       for (const q of yahooQuotes) {
         priceMap.set(q.symbol, q.price);
+        if (q.dividendYield) divYieldMap.set(q.symbol, Math.round(q.dividendYield * 10000) / 100); // convert to %
         // Mettre en cache pour la prochaine fois
         await supabase.from('price_cache').upsert({
           symbol: q.symbol,
           price: q.price,
           company_name: q.name,
           change_percent: 0,
+          dividend_yield: q.dividendYield ? Math.round(q.dividendYield * 10000) / 100 : null,
           fetched_at: new Date().toISOString(),
         });
       }
@@ -148,6 +151,7 @@ export async function POST(req: NextRequest) {
     stocks,
     bonds,
     prices: priceMap,
+    dividendYields: divYieldMap,
     bypassLimits: hasUserSelection,
   });
 

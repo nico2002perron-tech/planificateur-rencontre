@@ -66,8 +66,9 @@ export interface GeneratorParams {
   portfolioValue: number;
   stocks: StockUniverse[];
   bonds: BondUniverse[];
-  prices: Map<string, number>; // symbol → current price
-  bypassLimits?: boolean;      // true = use all stocks passed (user-curated selection)
+  prices: Map<string, number>;           // symbol → current price
+  dividendYields?: Map<string, number>;  // symbol → dividend yield (%)
+  bypassLimits?: boolean;                // true = use all stocks passed (user-curated selection)
 }
 
 // ── Résultat ──
@@ -161,7 +162,7 @@ const SECTOR_LABELS: Record<string, string> = {
 // ── Algorithme principal ──
 
 export function generatePortfolio(params: GeneratorParams): GeneratedPortfolio {
-  const { profile, portfolioValue, stocks, bonds, prices, bypassLimits } = params;
+  const { profile, portfolioValue, stocks, bonds, prices, dividendYields, bypassLimits } = params;
   const { equity_pct, bond_pct, nb_bonds, sectors: sectorConfigs, bond_config } = profile;
 
   const equityBudget = portfolioValue * (equity_pct / 100);
@@ -210,6 +211,7 @@ export function generatePortfolio(params: GeneratorParams): GeneratedPortfolio {
       const realValue = quantity * price;
       sectorTotalValue += realValue;
 
+      const divYield = dividendYields?.get(stock.symbol);
       const gs: GeneratedStock = {
         symbol: stock.symbol,
         name: stock.name,
@@ -220,6 +222,7 @@ export function generatePortfolio(params: GeneratorParams): GeneratedPortfolio {
         realValue,
         targetWeight: Math.round(targetWeight * 100) / 100,
         realWeight: 0, // calculé après
+        dividendYield: divYield && divYield > 0 ? divYield : undefined,
       };
       sectorGeneratedStocks.push(gs);
       allGeneratedStocks.push(gs);

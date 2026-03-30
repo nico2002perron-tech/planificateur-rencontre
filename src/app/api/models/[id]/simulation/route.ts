@@ -28,7 +28,9 @@ interface SimHolding {
   region?: string;
   sector?: string;
   etf_sector_weights?: ETFSectorWeight[] | null; // sector breakdown for ETFs (null = checked, not an ETF)
-  annual_dividend?: number; // annual dividend per share (stocks + ETF distributions)
+  annual_dividend?: number;    // annual dividend per share (stocks + ETF distributions)
+  dividend_yield?: number;     // e.g. 2.5 = 2.5%
+  ex_dividend_date?: string;   // ISO date (YYYY-MM-DD)
 }
 
 // ── POST: Start a new simulation ─────────────────────────────────────────
@@ -84,6 +86,8 @@ export async function POST(
     const quotes = await getYahooQuotes(holdingSymbols);
     const priceMap = new Map(quotes.map((q) => [q.symbol, q.price]));
     const divMap = new Map(quotes.map((q) => [q.symbol, q.dividendRate]));
+    const divYieldMap = new Map(quotes.map((q) => [q.symbol, q.dividendYield]));
+    const exDivMap = new Map(quotes.map((q) => [q.symbol, q.exDividendDate]));
 
     // Calculate quantities and build holdings snapshot
     const holdingsSnapshot: SimHolding[] = [];
@@ -107,6 +111,8 @@ export async function POST(
         region: h.region,
         sector: h.sector,
         annual_dividend: annualDiv && annualDiv > 0 ? annualDiv : undefined,
+        dividend_yield: divYieldMap.get(h.symbol) ? Math.round((divYieldMap.get(h.symbol)!) * 10000) / 100 : undefined,
+        ex_dividend_date: exDivMap.get(h.symbol) || undefined,
       });
 
       allocatedValue += quantity * price;
@@ -338,6 +344,9 @@ export async function GET(
         region: h.region,
         sector: h.sector,
         etf_sector_weights: h.etf_sector_weights,
+        annual_dividend: h.annual_dividend,
+        dividend_yield: h.dividend_yield,
+        ex_dividend_date: h.ex_dividend_date,
       };
     });
 

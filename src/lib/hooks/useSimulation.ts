@@ -31,6 +31,9 @@ export interface LiveHolding {
   region?: string;
   sector?: string;
   etf_sector_weights?: ETFSectorWeight[] | null;
+  annual_dividend?: number;
+  dividend_yield?: number;
+  ex_dividend_date?: string;
 }
 
 export interface SimulationSnapshot {

@@ -38,6 +38,7 @@ interface GeneratedStock {
   realValue: number;
   targetWeight: number;
   realWeight: number;
+  dividendYield?: number; // %
 }
 
 interface GeneratedBond {
@@ -1015,6 +1016,11 @@ function PortfolioResult({ portfolio: p, onSave, onRegenerate }: {
                             <Badge variant={stock.stock_type === 'obligatoire' ? 'info' : 'default'} className="text-[10px]">
                               {stock.stock_type === 'obligatoire' ? 'Oblig.' : 'Var.'}
                             </Badge>
+                            {stock.dividendYield && stock.dividendYield > 0 && (
+                              <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                Div. {fmtDec(stock.dividendYield)}%
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-text-muted truncate">{stock.name}</p>
                         </div>
