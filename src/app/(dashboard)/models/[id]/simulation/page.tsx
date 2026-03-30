@@ -486,47 +486,70 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           {displayedHoldings.map((h: LiveHolding) => {
             const isUp = h.gain_loss >= 0;
             const pnlColor = isUp ? '#58CC02' : '#FF4B4B';
+            const qtyLabel = h.quantity < 1
+              ? h.quantity.toFixed(4)
+              : h.quantity < 100
+                ? h.quantity.toFixed(2)
+                : Math.round(h.quantity).toLocaleString();
+
             return (
               <div key={h.symbol}
-                className="flex items-center gap-4 rounded-2xl border-[3px] border-gray-200 bg-white p-4 transition-all hover:border-[#1CB0F6]/40 hover:scale-[1.01]"
+                className="rounded-2xl border-[3px] border-gray-200 bg-white p-5 transition-all hover:border-[#1CB0F6]/40"
                 style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
               >
-                {/* Logo */}
-                <StockAvatar symbol={h.symbol} />
-
-                {/* Name + Ticker */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-text-main text-sm">{h.symbol.replace('.TO', '').replace('.V', '')}</span>
-                    <span className="text-[10px] font-bold text-text-light bg-gray-100 px-1.5 py-0.5 rounded-md">
-                      {h.weight.toFixed(1)}%
-                    </span>
+                {/* Row 1 — Identity */}
+                <div className="flex items-center gap-3.5 mb-4">
+                  <StockAvatar symbol={h.symbol} size={48} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-extrabold text-text-main text-base truncate">{h.name}</p>
+                    <p className="text-xs font-bold text-text-muted">{h.symbol} · {qtyLabel} {h.quantity === 1 ? 'action' : 'actions'}</p>
                   </div>
-                  <p className="text-xs font-semibold text-text-muted truncate">{h.name}</p>
-                  <div className="flex items-center gap-2 mt-1 text-[11px] text-text-light">
-                    <span>{h.quantity < 1 ? h.quantity.toFixed(4) : h.quantity < 100 ? h.quantity.toFixed(2) : Math.round(h.quantity).toLocaleString()} parts</span>
-                    <span>·</span>
-                    <span>Acheté {fmtMoneyFull(h.purchase_price)}</span>
-                    <span>→</span>
-                    <span className="font-semibold text-text-main">{fmtMoneyFull(h.current_price)}</span>
-                  </div>
-                </div>
-
-                {/* P&L */}
-                <div className="text-right flex-shrink-0">
-                  <p className="font-extrabold text-base" style={{ color: pnlColor }}>
-                    {fmtMoney(h.market_value, sim.currency)}
-                  </p>
-                  <div className="flex items-center justify-end gap-1 mt-0.5">
-                    <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-extrabold"
+                  {/* P&L badge */}
+                  <div className="flex-shrink-0 text-right">
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-extrabold"
                       style={{ backgroundColor: pnlColor + '12', color: pnlColor }}>
-                      {isUp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {isUp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       {Math.abs(h.gain_loss_pct).toFixed(2)}%
                     </span>
                   </div>
-                  <p className="text-[11px] font-bold mt-0.5" style={{ color: pnlColor }}>
-                    {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
-                  </p>
+                </div>
+
+                {/* Row 2 — Key numbers in clear labeled boxes */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {/* Buy price */}
+                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Acheté à</p>
+                    <p className="text-sm font-extrabold text-text-muted">{fmtMoneyFull(h.purchase_price)}</p>
+                  </div>
+                  {/* Current price */}
+                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Prix actuel</p>
+                    <p className="text-sm font-extrabold text-text-main">{fmtMoneyFull(h.current_price)}</p>
+                  </div>
+                  {/* Total value */}
+                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Valeur totale</p>
+                    <p className="text-sm font-extrabold text-text-main">{fmtMoney(h.market_value, sim.currency)}</p>
+                  </div>
+                  {/* Gain / Loss */}
+                  <div className="rounded-xl px-3 py-2.5"
+                    style={{ backgroundColor: pnlColor + '08' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: pnlColor + '90' }}>
+                      {isUp ? 'Gain' : 'Perte'}
+                    </p>
+                    <p className="text-sm font-extrabold" style={{ color: pnlColor }}>
+                      {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Row 3 — Weight bar */}
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-[#1CB0F6] transition-all duration-500"
+                      style={{ width: `${Math.min(h.weight, 100)}%` }} />
+                  </div>
+                  <span className="text-[11px] font-extrabold text-text-muted w-16 text-right">{h.weight.toFixed(1)}% du total</span>
                 </div>
               </div>
             );
