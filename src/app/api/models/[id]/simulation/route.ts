@@ -266,9 +266,14 @@ export async function GET(
       volatility = Math.sqrt(variance) * Math.sqrt(252) * 100;
     }
 
+    // Actual invested amount (sum of quantity * purchase_price from snapshot)
+    // This may be less than initial_value if some holdings had no price available
+    const actualInvested = holdings.reduce((sum, h) => sum + h.quantity * h.purchase_price, 0);
+    const baseValue = actualInvested > 0 ? actualInvested : simulation.initial_value;
+
     // Max drawdown
     let maxDrawdown = 0;
-    let peak = simulation.initial_value;
+    let peak = baseValue;
     for (const snap of snapshots || []) {
       const val = Number(snap.total_value);
       if (val > peak) peak = val;
@@ -297,18 +302,18 @@ export async function GET(
     totalFixedIncome = Math.round(totalFixedIncome * 100) / 100;
     const totalIncome = totalDividendIncome + totalFixedIncome;
 
-    // Capital gains (price appreciation only)
-    const capitalGain = liveTotal - simulation.initial_value;
+    // Capital gains (price appreciation only — based on actual invested amount)
+    const capitalGain = liveTotal - baseValue;
 
     // Total return (capital + income)
     const totalReturn = capitalGain + totalIncome;
-    const totalReturnPct = simulation.initial_value > 0
-      ? (totalReturn / simulation.initial_value) * 100 : 0;
+    const totalReturnPct = baseValue > 0
+      ? (totalReturn / baseValue) * 100 : 0;
 
     // Annualized return
     const yearsActive = daysActive / 365.25;
     const annualizedReturn = yearsActive > 0.05
-      ? (Math.pow(liveTotal / simulation.initial_value, 1 / yearsActive) - 1) * 100 : totalReturnPct;
+      ? (Math.pow(liveTotal / baseValue, 1 / yearsActive) - 1) * 100 : totalReturnPct;
 
     // Best and worst day
     const bestDay = dailyReturns.length > 0 ? Math.max(...dailyReturns) * 100 : 0;
@@ -326,7 +331,7 @@ export async function GET(
         total_return: Math.round(totalReturn * 100) / 100,
         total_return_pct: Math.round(totalReturnPct * 100) / 100,
         capital_gain: Math.round(capitalGain * 100) / 100,
-        capital_gain_pct: simulation.initial_value > 0 ? Math.round((capitalGain / simulation.initial_value) * 10000) / 100 : 0,
+        capital_gain_pct: baseValue > 0 ? Math.round((capitalGain / baseValue) * 10000) / 100 : 0,
         dividend_income: totalDividendIncome,
         fixed_income: totalFixedIncome,
         total_income: totalIncome,

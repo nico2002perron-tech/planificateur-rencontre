@@ -240,7 +240,12 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     if (!data?.snapshots || data.snapshots.length === 0 || !data.simulation) return [];
 
     const sim = data.simulation;
-    const initialVal = sim.initial_value;
+    // Use actual invested amount (sum of qty * purchase_price) as base,
+    // not initial_value which may be higher if some holdings had no price
+    const actualInvested = sim.holdings_snapshot.reduce(
+      (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
+    );
+    const initialVal = actualInvested > 0 ? actualInvested : sim.initial_value;
     const benchStarts = sim.benchmark_start_prices;
 
     return data.snapshots.map((snap: SimulationSnapshot) => {
@@ -265,7 +270,10 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     if (!data?.live || !data?.simulation || chartData.length === 0) return chartData;
 
     const sim = data.simulation;
-    const initialVal = sim.initial_value;
+    const actualInvested = sim.holdings_snapshot.reduce(
+      (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
+    );
+    const initialVal = actualInvested > 0 ? actualInvested : sim.initial_value;
     const benchStarts = sim.benchmark_start_prices;
 
     const livePoint: Record<string, string | number> = {
@@ -369,6 +377,12 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const isClosed = sim.status === 'closed';
   const isPositive = stats.total_return >= 0;
 
+  // Actual invested amount from holdings snapshot
+  const actualInvested = sim.holdings_snapshot.reduce(
+    (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
+  );
+  const displayInvested = actualInvested > 0 ? actualInvested : sim.initial_value;
+
   // Top/Flop
   const topPerformers = [...live.holdings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct).slice(0, 3);
   const flopPerformers = [...live.holdings].sort((a, b) => a.gain_loss_pct - b.gain_loss_pct).slice(0, 3);
@@ -420,7 +434,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
         <StatCard
           label="Valeur actuelle"
           value={fmtMoney(live.total_value + stats.total_income, sim.currency)}
-          sub={`Investi: ${fmtMoney(sim.initial_value, sim.currency)}`}
+          sub={`Investi: ${fmtMoney(displayInvested, sim.currency)}`}
           icon={<DollarSign className="h-4 w-4" />}
           highlight
         />
