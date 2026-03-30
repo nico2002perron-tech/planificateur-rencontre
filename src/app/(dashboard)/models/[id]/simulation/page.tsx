@@ -13,7 +13,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown,
   DollarSign, Activity, Target,
   ChevronUp, ChevronDown, RefreshCw, Zap, Trophy,
-  Shield, Flame, Calendar, BarChart3,
+  Shield, Calendar, BarChart3,
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip,
@@ -235,18 +235,31 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const { data, isLoading, mutate } = useSimulation(modelId);
   const [refreshing, setRefreshing] = useState(false);
   const [showAllHoldings, setShowAllHoldings] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState<'1J' | '1S' | '1M' | '3M' | '1A' | '5A' | 'Max'>('Max');
 
-  // Build chart data (dollar values)
-  const chartDataWithLive = useMemo(() => {
+  // Period → cutoff date
+  const periodCutoff = useMemo(() => {
+    const now = new Date();
+    const daysMap: Record<string, number> = { '1J': 1, '1S': 7, '1M': 30, '3M': 90, '1A': 365, '5A': 1825 };
+    const days = daysMap[chartPeriod];
+    if (!days) return null; // 'Max'
+    const cutoff = new Date(now.getTime() - days * 86400000);
+    return cutoff.toISOString().split('T')[0];
+  }, [chartPeriod]);
+
+  // Build ALL chart points (unfiltered)
+  const allChartPoints = useMemo(() => {
     if (!data?.simulation) return [];
     const sim = data.simulation;
     const actualInvested = sim.holdings_snapshot.reduce(
       (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
     );
     const baseVal = actualInvested > 0 ? actualInvested : sim.initial_value;
-    const points: Record<string, string | number>[] = (data.snapshots || []).map((snap: SimulationSnapshot) => ({
-      date: snap.date, dateLabel: fmtDateShort(snap.date), portfolio: Math.round(snap.total_value),
-    }));
+    const points: { date: string; dateLabel: string; portfolio: number }[] =
+      (data.snapshots || []).map((snap: SimulationSnapshot) => ({
+        date: snap.date, dateLabel: fmtDateShort(snap.date), portfolio: Math.round(snap.total_value),
+      }));
+    // Add/replace live point
     if (data?.live) {
       const today = new Date().toISOString().split('T')[0];
       const liveVal = Math.round(data.live.total_value);
@@ -256,11 +269,26 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
         points.push({ date: today, dateLabel: 'Auj.', portfolio: liveVal });
       }
     }
+    // If only 1 point, prepend start value
     if (points.length === 1) {
       points.unshift({ date: sim.start_date, dateLabel: 'Début', portfolio: Math.round(baseVal) });
     }
     return points;
   }, [data?.snapshots, data?.simulation, data?.live]);
+
+  // Filtered chart data based on period
+  const chartDataWithLive = useMemo(() => {
+    if (!periodCutoff) return allChartPoints; // 'Max'
+    const filtered = allChartPoints.filter((p) => p.date >= periodCutoff);
+    // Always need at least 2 points — if filtered has <2, grab the last point before cutoff + filtered
+    if (filtered.length < 2 && allChartPoints.length >= 2) {
+      const beforeCutoff = allChartPoints.filter((p) => p.date < periodCutoff);
+      if (beforeCutoff.length > 0) {
+        return [beforeCutoff[beforeCutoff.length - 1], ...filtered];
+      }
+    }
+    return filtered.length >= 2 ? filtered : allChartPoints;
+  }, [allChartPoints, periodCutoff]);
 
   // Sorted holdings
   const sortedHoldings = useMemo(() => {
@@ -336,13 +364,16 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
         </button>
       </div>
 
-      {/* ── Chart (Wealthsimple style) ── */}
+      {/* ── Chart (Wealthsimple style + period selector) ── */}
       {chartDataWithLive.length >= 2 && (() => {
         const firstVal = Number(chartDataWithLive[0].portfolio);
         const lastVal = Number(chartDataWithLive[chartDataWithLive.length - 1].portfolio);
         const chartPositive = lastVal >= firstVal;
+        const periodReturn = firstVal > 0 ? ((lastVal - firstVal) / firstVal) * 100 : 0;
+        const periodDollar = lastVal - firstVal;
         const lineColor = chartPositive ? '#58CC02' : '#FF4B4B';
         const gradId = chartPositive ? 'gradUp' : 'gradDown';
+        const periods: Array<typeof chartPeriod> = ['1J', '1S', '1M', '3M', '1A', '5A', 'Max'];
 
         return (
           <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden" style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
@@ -353,13 +384,14 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                 <span className={`text-sm font-extrabold px-3 py-1 rounded-xl ${
                   chartPositive ? 'bg-[#58CC02]/10 text-[#58CC02]' : 'bg-[#FF4B4B]/10 text-[#FF4B4B]'
                 }`}>
-                  {chartPositive ? '▲' : '▼'} {fmtPct(stats.total_return_pct)}
+                  {chartPositive ? '▲' : '▼'} {fmtPct(periodReturn)}
                 </span>
               </div>
               <p className="text-xs font-semibold text-text-muted mt-1">
-                Investi: {fmtMoney(displayInvested, sim.currency)}
+                {chartPositive ? '+' : ''}{fmtMoney(periodDollar, sim.currency)} · Investi: {fmtMoney(displayInvested, sim.currency)}
               </p>
             </div>
+
             <div className="h-[260px] -mx-1">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartDataWithLive} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
@@ -389,9 +421,19 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex justify-between px-6 pb-4 text-[11px] font-bold text-text-light">
-              <span>{String(chartDataWithLive[0].dateLabel)}</span>
-              <span>{String(chartDataWithLive[chartDataWithLive.length - 1].dateLabel)}</span>
+
+            {/* Period selector */}
+            <div className="flex justify-center gap-1 px-6 pb-5 pt-1">
+              {periods.map((p) => (
+                <button key={p} onClick={() => setChartPeriod(p)}
+                  className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                    chartPeriod === p
+                      ? 'bg-[#1CB0F6] text-white'
+                      : 'text-text-muted hover:bg-gray-100'
+                  }`}
+                  style={chartPeriod === p ? { boxShadow: '0 3px 0 0 #0a8fd4' } : {}}
+                >{p}</button>
+              ))}
             </div>
           </div>
         );
@@ -417,7 +459,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
       )}
 
       {/* ── Stats Grid (Duo badges) ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <DuoStat label="Rendement" value={fmtPct(stats.total_return_pct)}
           sub={`${isPositive ? '+' : ''}${fmtMoney(stats.total_return, sim.currency)}`}
           icon={isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
@@ -430,9 +472,6 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           icon={<Activity className="h-4 w-4" />} color="#FF9600" />
         <DuoStat label="Drawdown max" value={`-${stats.max_drawdown.toFixed(1)}%`}
           icon={<Shield className="h-4 w-4" />} color={stats.max_drawdown > 10 ? '#FF4B4B' : '#1CB0F6'} />
-        <DuoStat label="Série" value={`${stats.days_active}j`}
-          sub={stats.days_active >= 7 ? 'Continue comme ça!' : 'Ça commence!'}
-          icon={<Flame className="h-4 w-4" />} color="#FFC800" />
       </div>
 
       {/* ── Holdings (Card-based, Duolingo style) ── */}
