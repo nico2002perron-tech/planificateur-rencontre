@@ -2,9 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
-import { getYahooQuotes } from '@/lib/yahoo/client';
+import { getYahooQuotes, getYahooETFSectors } from '@/lib/yahoo/client';
+
+// ── Yahoo → internal sector mapping ──────────────────────────────────────
+const YAHOO_TO_INTERNAL: Record<string, string> = {
+  'Technology': 'TECHNOLOGY', 'Healthcare': 'HEALTHCARE',
+  'Financial Services': 'FINANCIALS', 'Energy': 'ENERGY',
+  'Basic Materials': 'MATERIALS', 'Industrials': 'INDUSTRIALS',
+  'Consumer Cyclical': 'CONSUMER_DISC', 'Consumer Defensive': 'CONSUMER_STAPLES',
+  'Utilities': 'UTILITIES', 'Real Estate': 'REAL_ESTATE',
+  'Communication Services': 'TELECOM',
+};
 
 // ── Types ────────────────────────────────────────────────────────────────
+
+interface ETFSectorWeight { sector: string; weight: number }
 
 interface SimHolding {
   symbol: string;
@@ -15,6 +27,7 @@ interface SimHolding {
   asset_class: string;
   region?: string;
   sector?: string;
+  etf_sector_weights?: ETFSectorWeight[]; // sector breakdown for ETFs
   annual_dividend?: number; // annual dividend per share (stocks + ETF distributions)
 }
 
@@ -105,6 +118,34 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // Fetch ETF sector breakdowns (parallel, best-effort)
+    await Promise.all(
+      holdingsSnapshot.map(async (h) => {
+        try {
+          const raw = await getYahooETFSectors(h.symbol);
+          if (!raw || raw.length === 0) return;
+          // Map Yahoo sector names to internal keys and aggregate
+          const sMap = new Map<string, number>();
+          let unmapped = 0;
+          for (const { sector, weight } of raw) {
+            const internal = YAHOO_TO_INTERNAL[sector];
+            if (internal) sMap.set(internal, (sMap.get(internal) || 0) + weight);
+            else unmapped += weight;
+          }
+          // Redistribute unmapped weight proportionally
+          if (unmapped > 0.01 && sMap.size > 0) {
+            const total = [...sMap.values()].reduce((a, b) => a + b, 0);
+            for (const [k, v] of sMap) sMap.set(k, v + unmapped * (v / total));
+          }
+          const weights = [...sMap.entries()]
+            .map(([sector, weight]) => ({ sector, weight: Math.round(weight * 1000) / 1000 }))
+            .filter((s) => s.weight > 0.005)
+            .sort((a, b) => b.weight - a.weight);
+          if (weights.length > 0) h.etf_sector_weights = weights;
+        } catch { /* ignore — not an ETF or Yahoo error */ }
+      })
+    );
 
     // Fetch benchmark start prices
     const benchQuotes = await getYahooQuotes(benchmarks);
@@ -224,6 +265,35 @@ export async function GET(
       }
     }
 
+    // Backfill ETF sector breakdowns for old simulations
+    const missingETFSectors = holdings.some((h) => !h.etf_sector_weights);
+    if (missingETFSectors) {
+      await Promise.all(
+        holdings.filter((h) => !h.etf_sector_weights).map(async (h) => {
+          try {
+            const raw = await getYahooETFSectors(h.symbol);
+            if (!raw || raw.length === 0) return;
+            const sMap = new Map<string, number>();
+            let unmapped = 0;
+            for (const { sector, weight } of raw) {
+              const internal = YAHOO_TO_INTERNAL[sector];
+              if (internal) sMap.set(internal, (sMap.get(internal) || 0) + weight);
+              else unmapped += weight;
+            }
+            if (unmapped > 0.01 && sMap.size > 0) {
+              const total = [...sMap.values()].reduce((a, b) => a + b, 0);
+              for (const [k, v] of sMap) sMap.set(k, v + unmapped * (v / total));
+            }
+            const weights = [...sMap.entries()]
+              .map(([sector, weight]) => ({ sector, weight: Math.round(weight * 1000) / 1000 }))
+              .filter((s) => s.weight > 0.005)
+              .sort((a, b) => b.weight - a.weight);
+            if (weights.length > 0) h.etf_sector_weights = weights;
+          } catch { /* not an ETF */ }
+        })
+      );
+    }
+
     const [stockQuotes, benchQuotes] = await Promise.all([
       getYahooQuotes(symbols),
       getYahooQuotes(benchSymbols),
@@ -254,6 +324,7 @@ export async function GET(
         asset_class: h.asset_class,
         region: h.region,
         sector: h.sector,
+        etf_sector_weights: h.etf_sector_weights,
       };
     });
 

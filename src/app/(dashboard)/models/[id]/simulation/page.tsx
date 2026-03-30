@@ -304,21 +304,34 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     return [...data.live.holdings].sort((a, b) => b.market_value - a.market_value);
   }, [data?.live?.holdings]);
 
-  // Allocation data (by sector, with target vs actual)
+  // Allocation data (by sector, with target vs actual — ETFs split by underlying sectors)
   const { allocationData, bondTargetPct } = useMemo(() => {
     if (!data?.live?.holdings || !data?.simulation) return { allocationData: [], bondTargetPct: 0 };
     const totalLive = data.live.holdings.reduce((s, h) => s + h.market_value, 0);
-    // Actual: group current market values by sector
+    // Actual: group current market values by sector (split ETFs)
     const actualMap = new Map<string, number>();
     for (const h of data.live.holdings) {
-      const sec = h.sector || h.asset_class || 'EQUITY';
-      actualMap.set(sec, (actualMap.get(sec) || 0) + h.market_value);
+      if (h.etf_sector_weights && h.etf_sector_weights.length > 0) {
+        // Split ETF value across its underlying sectors
+        for (const sw of h.etf_sector_weights) {
+          actualMap.set(sw.sector, (actualMap.get(sw.sector) || 0) + h.market_value * sw.weight);
+        }
+      } else {
+        const sec = h.sector || h.asset_class || 'EQUITY';
+        actualMap.set(sec, (actualMap.get(sec) || 0) + h.market_value);
+      }
     }
-    // Target: group original weights by sector from snapshot
+    // Target: group original weights by sector from snapshot (split ETFs)
     const targetMap = new Map<string, number>();
     for (const h of data.simulation.holdings_snapshot) {
-      const sec = h.sector || h.asset_class || 'EQUITY';
-      targetMap.set(sec, (targetMap.get(sec) || 0) + h.weight);
+      if (h.etf_sector_weights && h.etf_sector_weights.length > 0) {
+        for (const sw of h.etf_sector_weights) {
+          targetMap.set(sw.sector, (targetMap.get(sw.sector) || 0) + h.weight * sw.weight);
+        }
+      } else {
+        const sec = h.sector || h.asset_class || 'EQUITY';
+        targetMap.set(sec, (targetMap.get(sec) || 0) + h.weight);
+      }
     }
     // Total stock target weight (may be < 100% if bonds exist)
     const totalStockTarget = Array.from(targetMap.values()).reduce((s, v) => s + v, 0);
@@ -714,9 +727,21 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
 
         {/* Sector Detail Modal */}
         {selectedSector && (() => {
-          const sectorHoldings = live.holdings.filter((h) => (h.sector || h.asset_class || 'EQUITY') === selectedSector)
-            .sort((a, b) => b.market_value - a.market_value);
-          const sectorTotal = sectorHoldings.reduce((s, h) => s + h.market_value, 0);
+          // Direct stock holdings in this sector
+          const directHoldings = live.holdings
+            .filter((h) => !h.etf_sector_weights?.length && (h.sector || h.asset_class || 'EQUITY') === selectedSector);
+          // ETFs that have exposure to this sector
+          const etfHoldings = live.holdings
+            .filter((h) => h.etf_sector_weights?.some((sw) => sw.sector === selectedSector))
+            .map((h) => {
+              const sw = h.etf_sector_weights!.find((s) => s.sector === selectedSector)!;
+              return { ...h, sector_exposure: sw.weight, sector_value: h.market_value * sw.weight };
+            });
+          const sectorHoldings = [
+            ...directHoldings.map((h) => ({ ...h, sector_exposure: 1, sector_value: h.market_value })),
+            ...etfHoldings,
+          ].sort((a, b) => b.sector_value - a.sector_value);
+          const sectorTotal = sectorHoldings.reduce((s, h) => s + h.sector_value, 0);
           const sectorInfo = allocationData.find((a) => a.name === selectedSector);
           const color = SECTOR_COLORS[selectedSector] || '#94a3b8';
 
@@ -776,7 +801,9 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                   {sectorHoldings.map((h) => {
                     const isUp = h.gain_loss >= 0;
                     const pnlColor = isUp ? '#58CC02' : '#FF4B4B';
-                    const weightInSector = sectorTotal > 0 ? (h.market_value / sectorTotal) * 100 : 0;
+                    const isETF = h.sector_exposure < 1;
+                    const sectorValue = h.sector_value;
+                    const weightInSector = sectorTotal > 0 ? (sectorValue / sectorTotal) * 100 : 0;
 
                     return (
                       <div key={h.symbol}
@@ -786,8 +813,16 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                         <div className="flex items-center gap-3 mb-3">
                           <StockAvatar symbol={h.symbol} size={40} />
                           <div className="flex-1 min-w-0">
-                            <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
-                            <p className="text-[11px] font-bold text-text-muted">{h.symbol}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
+                              {isETF && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-[#CE82FF]/10 text-[#CE82FF] text-[9px] font-extrabold uppercase flex-shrink-0">ETF</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] font-bold text-text-muted">
+                              {h.symbol}
+                              {isETF && <span className="text-text-light"> · {(h.sector_exposure * 100).toFixed(1)}% du fonds dans ce secteur</span>}
+                            </p>
                           </div>
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold"
                             style={{ backgroundColor: pnlColor + '12', color: pnlColor }}>
@@ -798,13 +833,13 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
 
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div className="rounded-lg bg-gray-50 px-2 py-1.5">
-                            <p className="text-[9px] font-bold text-text-light uppercase">Valeur</p>
-                            <p className="text-xs font-extrabold text-text-main">{fmtMoney(h.market_value, sim.currency)}</p>
+                            <p className="text-[9px] font-bold text-text-light uppercase">{isETF ? 'Exposition' : 'Valeur'}</p>
+                            <p className="text-xs font-extrabold text-text-main">{fmtMoney(sectorValue, sim.currency)}</p>
                           </div>
                           <div className="rounded-lg bg-gray-50 px-2 py-1.5">
-                            <p className="text-[9px] font-bold text-text-light uppercase">Gain/Perte</p>
-                            <p className="text-xs font-extrabold" style={{ color: pnlColor }}>
-                              {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
+                            <p className="text-[9px] font-bold text-text-light uppercase">{isETF ? 'Valeur totale' : 'Gain/Perte'}</p>
+                            <p className="text-xs font-extrabold" style={{ color: isETF ? undefined : pnlColor }}>
+                              {isETF ? fmtMoney(h.market_value, sim.currency) : `${isUp ? '+' : ''}${fmtMoney(h.gain_loss, sim.currency)}`}
                             </p>
                           </div>
                           <div className="rounded-lg bg-gray-50 px-2 py-1.5">

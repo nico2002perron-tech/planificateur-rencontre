@@ -2,6 +2,8 @@ import useSWR from 'swr';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+export interface ETFSectorWeight { sector: string; weight: number }
+
 export interface SimHolding {
   symbol: string;
   name: string;
@@ -11,6 +13,7 @@ export interface SimHolding {
   asset_class: string;
   region?: string;
   sector?: string;
+  etf_sector_weights?: ETFSectorWeight[];
 }
 
 export interface LiveHolding {
@@ -27,6 +30,7 @@ export interface LiveHolding {
   asset_class: string;
   region?: string;
   sector?: string;
+  etf_sector_weights?: ETFSectorWeight[];
 }
 
 export interface SimulationSnapshot {
