@@ -82,6 +82,33 @@ export function toYahooSymbol(symbol: string): string {
                .replace(/\.([A-Z]{1,3})\.V$/i, '-$1.V');
 }
 
+// ── USD/CAD Exchange Rate (cached, for .TO fallback conversion) ───────────────
+
+let usdCadCache: { rate: number; ts: number } | null = null;
+
+/**
+ * Fetch current USD/CAD exchange rate from Yahoo Finance.
+ * Cached for 1 hour. Used to convert US price targets to CAD
+ * when falling back to US tickers for interlisted .TO stocks.
+ */
+export async function getUsdCadRate(): Promise<number> {
+  if (usdCadCache && Date.now() - usdCadCache.ts < 3_600_000) return usdCadCache.rate;
+
+  try {
+    const url = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/USDCAD%3DX?modules=price';
+    const res = await yahooFetch(url);
+    if (!res.ok) return usdCadCache?.rate ?? 1.38; // fallback to approximate
+    const json = await res.json();
+    const rate = json?.quoteSummary?.result?.[0]?.price?.regularMarketPrice?.raw;
+    if (rate && isFinite(rate) && rate > 0) {
+      usdCadCache = { rate, ts: Date.now() };
+      return rate;
+    }
+  } catch { /* use fallback */ }
+
+  return usdCadCache?.rate ?? 1.38;
+}
+
 // ── Prix cible 1 an ───────────────────────────────────────────────────────────
 
 const EMPTY_TARGET: YahooPriceTarget = { targetLow: null, targetMean: null, targetHigh: null, numAnalysts: 0, recommendationKey: 'none' };
@@ -120,15 +147,25 @@ async function fetchYahooPriceTargetDirect(sym: string): Promise<YahooPriceTarge
 /**
  * Fetch analyst price target from Yahoo Finance.
  * Falls back to US base ticker for interlisted .TO stocks with no target.
+ * When falling back, converts USD targets to CAD using live exchange rate.
  */
 export async function getYahooPriceTarget(symbol: string): Promise<YahooPriceTarget> {
   const result = await fetchYahooPriceTargetDirect(symbol);
 
-  // Fallback: .TO with no analyst target → try US ticker
+  // Fallback: .TO with no analyst target → try US ticker, convert USD → CAD
   if (symbol.endsWith('.TO') && !result.targetMean) {
     const usTicker = symbol.replace('.TO', '');
     const usResult = await fetchYahooPriceTargetDirect(usTicker);
-    if (usResult.targetMean) return usResult;
+    if (usResult.targetMean) {
+      const rate = await getUsdCadRate();
+      return {
+        targetLow: usResult.targetLow ? Math.round(usResult.targetLow * rate * 100) / 100 : null,
+        targetMean: usResult.targetMean ? Math.round(usResult.targetMean * rate * 100) / 100 : null,
+        targetHigh: usResult.targetHigh ? Math.round(usResult.targetHigh * rate * 100) / 100 : null,
+        numAnalysts: usResult.numAnalysts,
+        recommendationKey: usResult.recommendationKey,
+      };
+    }
   }
 
   return result;
@@ -324,14 +361,24 @@ export async function getYahooProfile(symbol: string): Promise<YahooProfileData 
   const result = await fetchYahooProfileDirect(symbol);
 
   // Fallback: .TO symbols with sparse data → try US base ticker
+  // Converts USD absolute values (mktCap, FCF, EPS, lastDiv) to CAD.
+  // Ratios (PE, margins, beta, yields, growth rates) are currency-agnostic.
   if (symbol.endsWith('.TO')) {
     const isSparse = !result || profileDataPoints(result) < 3;
     if (isSparse) {
       const usTicker = symbol.replace('.TO', '');
       const usResult = await fetchYahooProfileDirect(usTicker);
       if (usResult && profileDataPoints(usResult) >= 3) {
-        // Use US fundamentals but keep the original .TO symbol
-        return { ...usResult, symbol };
+        const rate = await getUsdCadRate();
+        return {
+          ...usResult,
+          symbol,
+          // Convert absolute USD values to CAD
+          mktCap: Math.round(usResult.mktCap * rate),
+          freeCashflow: Math.round(usResult.freeCashflow * rate),
+          eps: Math.round(usResult.eps * rate * 100) / 100,
+          lastDiv: Math.round(usResult.lastDiv * rate * 100) / 100,
+        };
       }
     }
   }
