@@ -11,7 +11,7 @@ import { useModel } from '@/lib/hooks/useModels';
 import { useSimulation, type LiveHolding, type SimulationSnapshot } from '@/lib/hooks/useSimulation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Play, Pause, Square, TrendingUp, TrendingDown,
+  ArrowLeft, TrendingUp, TrendingDown,
   DollarSign, Calendar, BarChart3, Activity, Target,
   ChevronUp, ChevronDown, RefreshCw, Zap,
 } from 'lucide-react';
@@ -330,21 +330,6 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value: Math.round(value) }));
   }, [data?.live?.holdings]);
 
-  async function handleStatusChange(newStatus: 'active' | 'paused' | 'closed') {
-    try {
-      const res = await fetch(`/api/models/${modelId}/simulation`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error();
-      toast('success', newStatus === 'closed' ? 'Simulation terminée' : newStatus === 'paused' ? 'Simulation mise en pause' : 'Simulation reprise');
-      mutate();
-    } catch {
-      toast('error', 'Erreur');
-    }
-  }
-
   async function handleRefresh() {
     setRefreshing(true);
     await mutate();
@@ -372,9 +357,6 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const sim = data.simulation;
   const live = data.live;
   const stats = data.stats;
-  const isActive = sim.status === 'active';
-  const isPaused = sim.status === 'paused';
-  const isClosed = sim.status === 'closed';
   const isPositive = stats.total_return >= 0;
 
   // Actual invested amount from holdings snapshot
@@ -395,37 +377,17 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h2 className="text-xl font-bold text-text-main">{sim.name}</h2>
-            <Badge variant={isActive ? 'success' : isPaused ? 'warning' : 'default'}>
-              {isActive ? 'Active' : isPaused ? 'En pause' : 'Terminée'}
-            </Badge>
+            <Badge variant="success">Active</Badge>
           </div>
           <p className="text-sm text-text-muted flex items-center gap-2">
             <Calendar className="h-3.5 w-3.5" />
             Démarrée le {fmtDate(sim.start_date)} · {stats.days_active} jour{stats.days_active !== 1 ? 's' : ''}
-            {isClosed && sim.end_date && ` · Fermée le ${fmtDate(sim.end_date)}`}
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={handleRefresh} icon={<RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />}>
             Rafraîchir
           </Button>
-          {isActive && (
-            <Button variant="ghost" size="sm" onClick={() => handleStatusChange('paused')} icon={<Pause className="h-3.5 w-3.5" />}>
-              Pause
-            </Button>
-          )}
-          {isPaused && (
-            <Button variant="ghost" size="sm" onClick={() => handleStatusChange('active')} icon={<Play className="h-3.5 w-3.5" />}>
-              Reprendre
-            </Button>
-          )}
-          {!isClosed && (
-            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => {
-              if (confirm('Êtes-vous sûr de vouloir terminer cette simulation?')) handleStatusChange('closed');
-            }} icon={<Square className="h-3.5 w-3.5" />}>
-              Terminer
-            </Button>
-          )}
         </div>
       </div>
 
@@ -878,7 +840,8 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const hasSim = !!data?.simulation;
+  // Show dashboard only for active simulations (not closed/paused)
+  const hasActiveSim = !!data?.simulation && data.simulation.status === 'active';
 
   return (
     <div>
@@ -896,7 +859,7 @@ export default function SimulationPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {hasSim ? (
+      {hasActiveSim ? (
         <SimulationDashboard modelId={id} />
       ) : (
         <StartSimulation
