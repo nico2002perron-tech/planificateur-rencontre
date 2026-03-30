@@ -16,7 +16,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Zap,
 } from 'lucide-react';
 import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  XAxis, YAxis, Tooltip,
   ResponsiveContainer, Area, AreaChart, PieChart, Pie, Cell,
 } from 'recharts';
 
@@ -235,67 +235,43 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const [sortField, setSortField] = useState<'gain_loss_pct' | 'market_value' | 'weight'>('market_value');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  // Build chart data
-  const chartData = useMemo(() => {
-    if (!data?.snapshots || data.snapshots.length === 0 || !data.simulation) return [];
-
-    const sim = data.simulation;
-    // Use actual invested amount (sum of qty * purchase_price) as base,
-    // not initial_value which may be higher if some holdings had no price
-    const actualInvested = sim.holdings_snapshot.reduce(
-      (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
-    );
-    const initialVal = actualInvested > 0 ? actualInvested : sim.initial_value;
-    const benchStarts = sim.benchmark_start_prices;
-
-    return data.snapshots.map((snap: SimulationSnapshot) => {
-      const point: Record<string, string | number> = {
-        date: snap.date,
-        dateLabel: fmtDateShort(snap.date),
-        portfolio: Math.round((snap.total_value / initialVal) * 10000) / 100,
-      };
-
-      for (const bSym of sim.benchmarks) {
-        const startPrice = benchStarts[bSym] || 1;
-        const currentPrice = snap.benchmark_values?.[bSym] || startPrice;
-        point[bSym] = Math.round((currentPrice / startPrice) * 10000) / 100;
-      }
-
-      return point;
-    });
-  }, [data?.snapshots, data?.simulation]);
-
-  // Add live point to chart
+  // Build chart data (dollar values — Wealthsimple style)
   const chartDataWithLive = useMemo(() => {
-    if (!data?.live || !data?.simulation || chartData.length === 0) return chartData;
+    if (!data?.simulation) return [];
 
     const sim = data.simulation;
     const actualInvested = sim.holdings_snapshot.reduce(
       (sum: number, h: { quantity: number; purchase_price: number }) => sum + h.quantity * h.purchase_price, 0
     );
-    const initialVal = actualInvested > 0 ? actualInvested : sim.initial_value;
-    const benchStarts = sim.benchmark_start_prices;
+    const baseVal = actualInvested > 0 ? actualInvested : sim.initial_value;
 
-    const livePoint: Record<string, string | number> = {
-      date: new Date().toISOString().split('T')[0],
-      dateLabel: 'Maintenant',
-      portfolio: Math.round((data.live.total_value / initialVal) * 10000) / 100,
-    };
+    // Build points from snapshots
+    const points: Record<string, string | number>[] = (data.snapshots || []).map((snap: SimulationSnapshot) => ({
+      date: snap.date,
+      dateLabel: fmtDateShort(snap.date),
+      portfolio: Math.round(snap.total_value),
+    }));
 
-    for (const bSym of sim.benchmarks) {
-      const startPrice = benchStarts[bSym] || 1;
-      const currentPerf = data.live.benchmarks?.[bSym];
-      if (currentPerf) {
-        livePoint[bSym] = Math.round((currentPerf.current / startPrice) * 10000) / 100;
+    // Always add/replace live point so chart shows from day 1
+    if (data?.live) {
+      const today = new Date().toISOString().split('T')[0];
+      const liveVal = Math.round(data.live.total_value);
+
+      // Replace last point if same day, otherwise append
+      if (points.length > 0 && points[points.length - 1].date === today) {
+        points[points.length - 1] = { date: today, dateLabel: 'Auj.', portfolio: liveVal };
+      } else {
+        points.push({ date: today, dateLabel: 'Auj.', portfolio: liveVal });
       }
     }
 
-    // Only add if different date than last snapshot
-    const lastSnap = chartData[chartData.length - 1];
-    if (lastSnap && lastSnap.date === livePoint.date) return chartData;
+    // If only 1 point, prepend the start value so we have a line
+    if (points.length === 1) {
+      points.unshift({ date: sim.start_date, dateLabel: 'Début', portfolio: Math.round(baseVal) });
+    }
 
-    return [...chartData, livePoint];
-  }, [chartData, data?.live, data?.simulation]);
+    return points;
+  }, [data?.snapshots, data?.simulation, data?.live]);
 
   // Sort holdings
   const sortedHoldings = useMemo(() => {
@@ -547,66 +523,74 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
         </div>
       )}
 
-      {/* ── Performance Chart ── */}
-      <Card>
-        <h3 className="font-semibold text-text-main mb-1">Performance (base 100)</h3>
-        <p className="text-xs text-text-muted mb-4">Rendement cumulatif depuis le début de la simulation</p>
+      {/* ── Performance Chart (Wealthsimple style) ── */}
+      {chartDataWithLive.length >= 2 && (() => {
+        const firstVal = Number(chartDataWithLive[0].portfolio);
+        const lastVal = Number(chartDataWithLive[chartDataWithLive.length - 1].portfolio);
+        const chartPositive = lastVal >= firstVal;
+        const lineColor = chartPositive ? '#16a34a' : '#dc2626';
+        const gradId = chartPositive ? 'gradGreen' : 'gradRed';
 
-        {chartDataWithLive.length > 1 ? (
-          <div className="h-[340px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartDataWithLive} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#00b4d8" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="dateLabel" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  tickLine={false}
-                  axisLine={false}
-                  domain={['auto', 'auto']}
-                  tickFormatter={(v: number) => `${v}`}
-                />
-                <Tooltip
-                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: 12 }}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any, name: any) => {
-                    const label = name === 'portfolio' ? 'Portefeuille' : BENCHMARK_LABELS[name] || name;
-                    return [`${Number(value).toFixed(2)}`, label];
-                  }}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  labelFormatter={(label: any) => `${label}`}
-                />
-                <Area type="monotone" dataKey="portfolio" stroke="#00b4d8" strokeWidth={2.5} fill="url(#portfolioGrad)" dot={false} activeDot={{ r: 4, fill: '#00b4d8' }} />
-                {sim.benchmarks.map((bSym) => (
-                  <Line
-                    key={bSym}
-                    type="monotone"
-                    dataKey={bSym}
-                    stroke={BENCHMARK_COLORS[bSym] || '#94a3b8'}
-                    strokeWidth={1.5}
-                    strokeDasharray="6 3"
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-[340px] flex items-center justify-center text-text-muted text-sm">
-            <div className="text-center">
-              <Activity className="h-8 w-8 mx-auto mb-2 text-text-light" />
-              <p>Le graphique apparaîtra après le premier jour de marché.</p>
-              <p className="text-xs mt-1">Les données sont mises à jour quotidiennement.</p>
+        return (
+          <Card className="!p-0 overflow-hidden">
+            <div className="px-6 pt-5 pb-2">
+              <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Valeur du portefeuille</p>
+              <div className="flex items-end gap-3">
+                <span className="text-3xl font-bold text-text-main">{fmtMoney(lastVal, sim.currency)}</span>
+                <span className={`text-sm font-semibold px-2 py-0.5 rounded-md ${
+                  chartPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                }`}>
+                  {fmtPct(stats.total_return_pct)}
+                </span>
+              </div>
             </div>
-          </div>
-        )}
-      </Card>
+            <div className="h-[280px] -mx-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartDataWithLive} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.15} />
+                      <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="dateLabel" hide />
+                  <YAxis hide domain={['dataMin', 'dataMax']} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(255,255,255,0.95)',
+                      backdropFilter: 'blur(8px)',
+                      borderRadius: 12,
+                      border: 'none',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+                      padding: '10px 14px',
+                      fontSize: 13,
+                    }}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    formatter={(value: any) => [fmtMoney(Number(value), sim.currency), 'Portefeuille']}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    labelFormatter={(label: any) => `${label}`}
+                    cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: '4 4' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="portfolio"
+                    stroke={lineColor}
+                    strokeWidth={2.5}
+                    fill={`url(#${gradId})`}
+                    dot={false}
+                    activeDot={{ r: 5, fill: lineColor, stroke: '#fff', strokeWidth: 2 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Date labels at bottom */}
+            <div className="flex justify-between px-6 pb-4 text-[11px] text-text-light">
+              <span>{String(chartDataWithLive[0].dateLabel)}</span>
+              <span>{String(chartDataWithLive[chartDataWithLive.length - 1].dateLabel)}</span>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Holdings Table ── */}
       <Card className="!p-0 overflow-hidden">
