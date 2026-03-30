@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, Line, Legend,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, Line, ReferenceLine,
 } from 'recharts';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -16,7 +16,54 @@ import { useSymbolSearch } from '@/lib/hooks/useQuotes';
 import {
   ArrowLeft, Search, Plus, Trash2, TrendingUp, TrendingDown,
   Target, DollarSign, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp, X,
+  CalendarDays,
 } from 'lucide-react';
+
+// ── Duolingo Color hash ─────────────────────────────────────────────────
+const DUO_COLORS = ['#58CC02', '#CE82FF', '#1CB0F6', '#FF9600', '#FF4B4B', '#FFC800', '#00CD9C'];
+function duoColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return DUO_COLORS[Math.abs(hash) % DUO_COLORS.length];
+}
+
+// ── Stock Avatar (logo or colorful initials) ────────────────────────────
+function StockAvatar({ symbol, size = 36 }: { symbol: string; size?: number }) {
+  const [imgError, setImgError] = useState(false);
+  const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '');
+  const color = duoColor(ticker);
+
+  if (!imgError) {
+    return (
+      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`}
+          alt={ticker}
+          width={size}
+          height={size}
+          className="rounded-xl border-[2px] object-contain bg-white"
+          style={{ borderColor: color + '40' }}
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border-[2px] flex items-center justify-center flex-shrink-0"
+      style={{
+        width: size, height: size,
+        backgroundColor: color + '18',
+        borderColor: color + '50',
+      }}
+    >
+      <span className="font-extrabold" style={{ color, fontSize: size * 0.32 }}>
+        {ticker.slice(0, 3)}
+      </span>
+    </div>
+  );
+}
 
 // ── Duolingo palette & constants ────────────────────────────────────────
 
@@ -254,65 +301,77 @@ export default function ComparePage() {
     return { totalValue, projectedValue, gainPct };
   }, [selectedModel, quotesMap, allTargets, clientStats.totalValue]);
 
-  // ── Chart data: Past performance ──
-  const pastChartData = useMemo(() => {
-    if (!clientHist?.dates?.length) return [];
-    const dates = clientHist.dates;
-    return dates.map((d, i) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pt: Record<string, any> = {
-        date: d,
-        dateLabel: fmtDateShort(d),
-        client: clientHist.portfolio[i] ?? 100,
-      };
-      if (modelHist?.dates?.length && modelHist.portfolio[i] !== undefined) {
-        pt.model = modelHist.portfolio[i];
-      }
-      // Benchmarks from client history
+  // ── Unified chart: past ($ values) + future projection ──
+  const { unifiedChartData, todayIndex } = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pts: Record<string, any>[] = [];
+    let todayIdx = 0;
+
+    // PAST: convert normalised base-100 back to dollar values
+    if (clientHist?.dates?.length && clientStats.totalValue > 0) {
+      const lastPastClient = clientHist.portfolio[clientHist.portfolio.length - 1] || 100;
+      const dollarPerUnit = clientStats.totalValue / lastPastClient;
+
+      const lastPastModel = modelHist?.portfolio?.length
+        ? modelHist.portfolio[modelHist.portfolio.length - 1] || 100
+        : 100;
+      const modelDollarPerUnit = modelStats ? modelStats.totalValue / lastPastModel : 0;
+
+      // Benchmark: last value → same dollar scale
+      const benchDollarPerUnit: Record<string, number> = {};
       for (const [sym, vals] of Object.entries(clientHist.benchmarks || {})) {
-        if (vals[i] !== undefined) pt[sym] = vals[i];
-      }
-      return pt;
-    });
-  }, [clientHist, modelHist]);
-
-  // ── Chart data: Future projection (12 months) ──
-  const projectionChartData = useMemo(() => {
-    if (clientStats.totalValue === 0) return [];
-    const now = new Date();
-    const points = [];
-    const months = 12;
-
-    for (let m = 0; m <= months; m++) {
-      const date = new Date(now);
-      date.setMonth(date.getMonth() + m);
-      const label = date.toLocaleDateString('fr-CA', { month: 'short', year: m === 0 || m === 12 ? '2-digit' : undefined });
-      const progress = m / months;
-
-      // Linear interpolation: current → projected
-      const clientVal = clientStats.totalValue + (clientStats.projectedValue - clientStats.totalValue) * progress;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pt: Record<string, any> = {
-        dateLabel: label,
-        client: Math.round(clientVal),
-      };
-
-      if (modelStats) {
-        const modelVal = modelStats.totalValue + (modelStats.projectedValue - modelStats.totalValue) * progress;
-        pt.model = Math.round(modelVal);
+        const lastBench = vals[vals.length - 1] || 100;
+        benchDollarPerUnit[sym] = clientStats.totalValue / lastBench;
       }
 
-      // Benchmark projections: use average historical ~10% annual
-      const benchReturns: Record<string, number> = { '^GSPTSE': 8, '^GSPC': 10, '^IXIC': 12 };
-      for (const [sym, annualPct] of Object.entries(benchReturns)) {
-        const benchVal = clientStats.totalValue * (1 + (annualPct / 100) * progress);
-        pt[sym] = Math.round(benchVal);
+      for (let i = 0; i < clientHist.dates.length; i++) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pt: Record<string, any> = {
+          dateLabel: fmtDateShort(clientHist.dates[i]),
+          zone: 'past',
+          client: Math.round((clientHist.portfolio[i] ?? 100) * dollarPerUnit),
+        };
+        if (modelHist?.portfolio?.[i] !== undefined && modelDollarPerUnit > 0) {
+          pt.model = Math.round(modelHist.portfolio[i] * modelDollarPerUnit);
+        }
+        for (const [sym, vals] of Object.entries(clientHist.benchmarks || {})) {
+          if (vals[i] !== undefined) {
+            pt[sym] = Math.round(vals[i] * (benchDollarPerUnit[sym] || 1));
+          }
+        }
+        pts.push(pt);
       }
-
-      points.push(pt);
+      todayIdx = pts.length - 1;
     }
-    return points;
-  }, [clientStats, modelStats]);
+
+    // FUTURE: linear interpolation from today to target (13 monthly points including today)
+    if (clientStats.totalValue > 0) {
+      const months = 12;
+      const benchReturns: Record<string, number> = { '^GSPTSE': 8, '^GSPC': 10, '^IXIC': 12 };
+
+      for (let m = 1; m <= months; m++) {
+        const date = new Date();
+        date.setMonth(date.getMonth() + m);
+        const label = date.toLocaleDateString('fr-CA', { month: 'short' }) + (m === 12 ? ` '${String(date.getFullYear()).slice(2)}` : '');
+        const progress = m / months;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pt: Record<string, any> = {
+          dateLabel: label,
+          zone: 'future',
+          client: Math.round(clientStats.totalValue + (clientStats.projectedValue - clientStats.totalValue) * progress),
+        };
+        if (modelStats) {
+          pt.model = Math.round(modelStats.totalValue + (modelStats.projectedValue - modelStats.totalValue) * progress);
+        }
+        for (const [sym, annualPct] of Object.entries(benchReturns)) {
+          pt[sym] = Math.round(clientStats.totalValue * (1 + (annualPct / 100) * progress));
+        }
+        pts.push(pt);
+      }
+    }
+
+    return { unifiedChartData: pts, todayIndex: todayIdx };
+  }, [clientHist, modelHist, clientStats, modelStats]);
 
   // ── Handlers ──
   const addHolding = useCallback((symbol: string, name: string) => {
@@ -401,13 +460,9 @@ export default function ComparePage() {
                       <div key={h.symbol}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-2xl border-[3px] border-gray-100 bg-white hover:border-[#1CB0F6]/30 transition-all"
                         style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
-                        {/* Symbol badge */}
-                        <div className="px-2 py-1 rounded-xl bg-[#1CB0F6]/10 text-[#1CB0F6] font-extrabold text-xs flex-shrink-0">
-                          {h.symbol}
-                        </div>
-                        {/* Name */}
+                        <StockAvatar symbol={h.symbol} size={36} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-text-main truncate">{h.name}</p>
+                          <p className="text-xs font-bold text-text-main truncate">{h.symbol} <span className="font-semibold text-text-muted">· {h.name}</span></p>
                           <div className="flex items-center gap-2 text-[10px] font-semibold text-text-muted">
                             {price > 0 && <span>{fmtMoney(price)}</span>}
                             {targetGain !== null && (
@@ -417,16 +472,13 @@ export default function ComparePage() {
                             )}
                           </div>
                         </div>
-                        {/* Quantity */}
                         <input type="number" min={0} value={h.quantity}
                           onChange={(e) => updateQuantity(h.symbol, parseInt(e.target.value) || 0)}
                           className="w-16 text-center text-sm font-extrabold text-text-main border-[2px] border-gray-200 rounded-xl py-1 focus:border-[#1CB0F6] focus:outline-none"
                         />
-                        {/* Value */}
                         <span className="text-xs font-bold text-text-main w-20 text-right">
                           {mv > 0 ? fmtMoney(mv) : '—'}
                         </span>
-                        {/* Remove */}
                         <button onClick={() => removeHolding(h.symbol)}
                           className="text-text-muted/40 hover:text-[#FF4B4B] transition-colors">
                           <Trash2 className="h-3.5 w-3.5" />
@@ -543,11 +595,9 @@ export default function ComparePage() {
                       <div key={h.symbol}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-2xl border-[3px] border-gray-100 bg-white"
                         style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
-                        <div className="px-2 py-1 rounded-xl bg-[#58CC02]/10 text-[#58CC02] font-extrabold text-xs flex-shrink-0">
-                          {h.symbol}
-                        </div>
+                        <StockAvatar symbol={h.symbol} size={36} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-text-main truncate">{h.name}</p>
+                          <p className="text-xs font-bold text-text-main truncate">{h.symbol} <span className="font-semibold text-text-muted">· {h.name}</span></p>
                           <div className="flex items-center gap-2 text-[10px] font-semibold text-text-muted">
                             <span>{fmtDec(h.weight)}%</span>
                             {price > 0 && <span>· {fmtMoney(price)}</span>}
@@ -601,87 +651,80 @@ export default function ComparePage() {
       {canCompare && (
         <>
           {/* ── Head-to-Head Stats ── */}
-          <div className="rounded-3xl border-[3px] border-[#CE82FF]/30 bg-white p-6"
+          <div className="rounded-3xl border-[3px] border-[#CE82FF]/30 bg-white p-5"
             style={{ boxShadow: '0 4px 0 0 #CE82FF20' }}>
-            <h3 className="font-extrabold text-text-main text-center mb-5 flex items-center justify-center gap-2">
-              <Target className="h-5 w-5 text-[#CE82FF]" />
-              Face à face — Projection 12 mois
-            </h3>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
               {/* Client col */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1CB0F6]/10">
+              <div className="text-center space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-[#1CB0F6]/10">
                   <Briefcase className="h-3.5 w-3.5 text-[#1CB0F6]" />
                   <span className="text-xs font-extrabold text-[#1CB0F6]">Client</span>
                 </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-text-main">{fmtMoney(clientStats.projectedValue)}</p>
-                  <p className={`text-sm font-extrabold ${clientStats.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                    {fmtPct(clientStats.gainPct)}
-                  </p>
-                </div>
+                <p className="text-xs font-bold text-text-muted">Aujourd&apos;hui</p>
+                <p className="text-xl font-extrabold text-text-main">{fmtMoney(clientStats.totalValue)}</p>
+                <p className="text-xs font-bold text-text-muted">Cible 12m</p>
+                <p className="text-lg font-extrabold text-[#CE82FF]">{fmtMoney(clientStats.projectedValue)}</p>
+                <p className={`text-sm font-extrabold ${clientStats.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                  {fmtPct(clientStats.gainPct)}
+                </p>
               </div>
               {/* VS */}
-              <div className="flex items-center justify-center">
-                <div className="w-14 h-14 rounded-full bg-[#CE82FF]/10 border-[3px] border-[#CE82FF]/30 flex items-center justify-center">
-                  <span className="font-extrabold text-[#CE82FF] text-lg">VS</span>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full bg-[#CE82FF]/10 border-[3px] border-[#CE82FF]/30 flex items-center justify-center">
+                  <span className="font-extrabold text-[#CE82FF]">VS</span>
                 </div>
-              </div>
-              {/* Model col */}
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#58CC02]/10">
-                  <Trophy className="h-3.5 w-3.5 text-[#58CC02]" />
-                  <span className="text-xs font-extrabold text-[#58CC02]">Modèle</span>
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-text-main">{modelStats ? fmtMoney(modelStats.projectedValue) : '—'}</p>
-                  <p className={`text-sm font-extrabold ${(modelStats?.gainPct ?? 0) >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                    {modelStats ? fmtPct(modelStats.gainPct) : '—'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Gain difference highlight */}
-            {modelStats && (
-              <div className="mt-5 text-center">
-                {(() => {
+                {modelStats && (() => {
                   const diff = modelStats.gainPct - clientStats.gainPct;
-                  const absDiff = Math.abs(diff);
-                  const dollarDiff = (modelStats.projectedValue) - clientStats.projectedValue;
                   const modelWins = diff > 0;
+                  const dollarDiff = modelStats.projectedValue - clientStats.projectedValue;
                   return (
-                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl border-[3px] font-extrabold text-sm ${
+                    <div className={`px-3 py-1.5 rounded-xl border-[2px] text-[10px] font-extrabold text-center ${
                       modelWins
                         ? 'border-[#58CC02]/30 bg-[#58CC02]/5 text-[#58CC02]'
                         : 'border-[#1CB0F6]/30 bg-[#1CB0F6]/5 text-[#1CB0F6]'
-                    }`} style={{ boxShadow: modelWins ? '0 3px 0 0 #58CC0220' : '0 3px 0 0 #1CB0F620' }}>
-                      {modelWins ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                      {modelWins ? 'Le modèle' : 'Le client'} surperforme de {fmtDec(absDiff)}% ({fmtMoney(Math.abs(dollarDiff))})
+                    }`}>
+                      {modelWins ? '▲' : '▼'} {fmtDec(Math.abs(diff))}%
+                      <br />{fmtMoney(Math.abs(dollarDiff))}
                     </div>
                   );
                 })()}
               </div>
-            )}
+              {/* Model col */}
+              <div className="text-center space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-[#58CC02]/10">
+                  <Trophy className="h-3.5 w-3.5 text-[#58CC02]" />
+                  <span className="text-xs font-extrabold text-[#58CC02]">Modèle</span>
+                </div>
+                <p className="text-xs font-bold text-text-muted">Aujourd&apos;hui</p>
+                <p className="text-xl font-extrabold text-text-main">{modelStats ? fmtMoney(modelStats.totalValue) : '—'}</p>
+                <p className="text-xs font-bold text-text-muted">Cible 12m</p>
+                <p className="text-lg font-extrabold text-[#CE82FF]">{modelStats ? fmtMoney(modelStats.projectedValue) : '—'}</p>
+                <p className={`text-sm font-extrabold ${(modelStats?.gainPct ?? 0) >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                  {modelStats ? fmtPct(modelStats.gainPct) : '—'}
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* ── Past Performance Chart ── */}
+          {/* ── UNIFIED CHART: Past + Future ── */}
           <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
             style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
             <div className="px-6 pt-5 pb-2">
               <h3 className="font-extrabold text-text-main flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-[#FF9600]" />
-                Rendement passé (12 mois)
+                Passé 12 mois + Projection 12 mois
               </h3>
-              <p className="text-xs font-semibold text-text-muted mt-1">Performance normalisée (base 100)</p>
+              <p className="text-xs font-semibold text-text-muted mt-1">
+                Valeur en $ — la ligne verticale marque aujourd&apos;hui, à droite les cours cibles analystes
+              </p>
             </div>
 
             {clientHistLoading || modelHistLoading ? (
               <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-            ) : pastChartData.length >= 2 ? (
-              <div className="h-[300px] px-2">
+            ) : unifiedChartData.length >= 2 ? (
+              <div className="h-[340px] px-2">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={pastChartData} margin={{ top: 8, right: 10, left: 10, bottom: 0 }}>
+                  <AreaChart data={unifiedChartData} margin={{ top: 8, right: 10, left: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gradClient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={DUO.blue} stopOpacity={0.15} />
@@ -693,28 +736,33 @@ export default function ComparePage() {
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="dateLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} domain={['auto', 'auto']}
-                      tickFormatter={(v: number) => `${v}`} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+                      domain={['auto', 'auto']}
+                      tickFormatter={(v: number) => {
+                        if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
+                        if (v >= 1000) return `${Math.round(v / 1000)}k`;
+                        return `${v}`;
+                      }} />
+                    {/* Vertical "TODAY" reference line */}
+                    {todayIndex > 0 && (
+                      <ReferenceLine x={unifiedChartData[todayIndex]?.dateLabel} stroke="#CE82FF" strokeWidth={2} strokeDasharray="4 4"
+                        label={{ value: "Auj.", position: 'top', fill: '#CE82FF', fontSize: 11, fontWeight: 800 }} />
+                    )}
                     <Tooltip
                       contentStyle={{ backgroundColor: '#fff', borderRadius: 16, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       formatter={(value: any, name: any) => {
-                        const labels: Record<string, string> = {
-                          client: 'Client', model: 'Modèle',
-                          ...BENCHMARK_LABELS,
-                        };
-                        return [`${Number(value).toFixed(1)}`, labels[name] || name];
+                        const labels: Record<string, string> = { client: 'Client', model: 'Modèle', ...BENCHMARK_LABELS };
+                        return [fmtMoney(Number(value)), labels[name] || name];
                       }}
                     />
                     <Area type="monotone" dataKey="client" stroke={DUO.blue} strokeWidth={3}
                       fill="url(#gradClient)" dot={false}
                       activeDot={{ r: 5, fill: DUO.blue, stroke: '#fff', strokeWidth: 2 }} />
-                    {modelHist && (
-                      <Area type="monotone" dataKey="model" stroke={DUO.green} strokeWidth={3}
-                        fill="url(#gradModel)" dot={false}
-                        activeDot={{ r: 5, fill: DUO.green, stroke: '#fff', strokeWidth: 2 }} />
-                    )}
-                    {Object.keys(clientHist?.benchmarks || {}).map(sym => (
+                    <Area type="monotone" dataKey="model" stroke={DUO.green} strokeWidth={3}
+                      fill="url(#gradModel)" dot={false}
+                      activeDot={{ r: 5, fill: DUO.green, stroke: '#fff', strokeWidth: 2 }} />
+                    {Object.keys(BENCHMARK_LABELS).map(sym => (
                       <Line key={sym} type="monotone" dataKey={sym}
                         stroke={BENCHMARK_COLORS[sym] || '#94a3b8'} strokeWidth={1.5}
                         strokeDasharray="6 3" dot={false} />
@@ -724,103 +772,26 @@ export default function ComparePage() {
               </div>
             ) : (
               <div className="flex justify-center py-12 text-sm text-text-muted">
-                Pas assez de données historiques
+                Chargement des données historiques...
               </div>
             )}
 
-            {/* Chart legend */}
-            <div className="flex flex-wrap justify-center gap-3 px-6 pb-5 pt-2">
+            {/* Legend */}
+            <div className="flex flex-wrap justify-center gap-3 px-6 pb-4 pt-2">
               <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.blue }} /> Client
+                <div className="w-4 h-1.5 rounded-full" style={{ backgroundColor: DUO.blue }} /> Client
               </span>
-              {selectedModel && (
-                <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                  <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.green }} /> Modèle
-                </span>
-              )}
+              <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                <div className="w-4 h-1.5 rounded-full" style={{ backgroundColor: DUO.green }} /> Modèle
+              </span>
               {Object.entries(BENCHMARK_LABELS).map(([sym, label]) => (
                 <span key={sym} className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                  <div className="w-3 h-0.5 rounded-full border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLORS[sym] }} /> {label}
+                  <div className="w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLORS[sym] }} /> {label}
                 </span>
               ))}
-            </div>
-          </div>
-
-          {/* ── Future Projection Chart ── */}
-          <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
-            style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
-            <div className="px-6 pt-5 pb-2">
-              <h3 className="font-extrabold text-text-main flex items-center gap-2">
-                <Target className="h-5 w-5 text-[#CE82FF]" />
-                Projection 12 mois (cours cibles analystes)
-              </h3>
-              <p className="text-xs font-semibold text-text-muted mt-1">
-                Interpolation linéaire vers les prix cibles consensus
-              </p>
-            </div>
-
-            {projectionChartData.length > 0 ? (
-              <div className="h-[280px] px-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={projectionChartData} margin={{ top: 8, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradProjClient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={DUO.blue} stopOpacity={0.12} />
-                        <stop offset="100%" stopColor={DUO.blue} stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradProjModel" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={DUO.green} stopOpacity={0.12} />
-                        <stop offset="100%" stopColor={DUO.green} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="dateLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
-                      domain={['auto', 'auto']}
-                      tickFormatter={(v: number) => fmtMoney(v)} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#fff', borderRadius: 16, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      formatter={(value: any, name: any) => {
-                        const labels: Record<string, string> = {
-                          client: 'Client', model: 'Modèle',
-                          ...BENCHMARK_LABELS,
-                        };
-                        return [fmtMoney(Number(value)), labels[name] || name];
-                      }}
-                    />
-                    <Area type="monotone" dataKey="client" stroke={DUO.blue} strokeWidth={3}
-                      fill="url(#gradProjClient)" dot={false}
-                      activeDot={{ r: 5, fill: DUO.blue, stroke: '#fff', strokeWidth: 2 }} />
-                    {modelStats && (
-                      <Area type="monotone" dataKey="model" stroke={DUO.green} strokeWidth={3}
-                        fill="url(#gradProjModel)" dot={false}
-                        activeDot={{ r: 5, fill: DUO.green, stroke: '#fff', strokeWidth: 2 }} />
-                    )}
-                    {Object.keys(BENCHMARK_LABELS).map(sym => (
-                      <Line key={sym} type="monotone" dataKey={sym}
-                        stroke={BENCHMARK_COLORS[sym] || '#94a3b8'} strokeWidth={1.5}
-                        strokeDasharray="6 3" dot={false} />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ) : null}
-
-            {/* Chart legend */}
-            <div className="flex flex-wrap justify-center gap-3 px-6 pb-5 pt-2">
-              <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.blue }} /> Client
+              <span className="flex items-center gap-1.5 text-xs font-bold text-[#CE82FF]">
+                <div className="w-4 h-0.5 border-t-2 border-dashed border-[#CE82FF]" /> Aujourd&apos;hui
               </span>
-              {modelStats && (
-                <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                  <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.green }} /> Modèle
-                </span>
-              )}
-              {Object.entries(BENCHMARK_LABELS).map(([sym, label]) => (
-                <span key={sym} className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
-                  <div className="w-3 h-0.5 rounded-full border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLORS[sym] }} /> {label}
-                </span>
-              ))}
             </div>
           </div>
 
@@ -856,6 +827,7 @@ export default function ComparePage() {
                       <tr key={sym} className="border-t border-gray-50 hover:bg-gray-50/50">
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
+                            <StockAvatar symbol={sym} size={28} />
                             <span className="font-extrabold text-text-main text-xs">{sym}</span>
                             {inClient && <span className="w-2 h-2 rounded-full bg-[#1CB0F6]" title="Client" />}
                             {inModel && <span className="w-2 h-2 rounded-full bg-[#58CC02]" title="Modèle" />}
