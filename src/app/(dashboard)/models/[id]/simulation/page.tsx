@@ -13,7 +13,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown,
   DollarSign, Activity, Target,
   ChevronUp, ChevronDown, RefreshCw, Zap, Trophy,
-  Shield, Calendar, BarChart3,
+  Shield, Calendar, BarChart3, X,
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip,
@@ -243,6 +243,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [showAllHoldings, setShowAllHoldings] = useState(false);
   const [chartPeriod, setChartPeriod] = useState<'1J' | '1S' | '1M' | '3M' | '1A' | '5A' | 'Max'>('Max');
+  const [selectedSector, setSelectedSector] = useState<string | null>(null);
 
   // Period → cutoff date
   const periodCutoff = useMemo(() => {
@@ -649,12 +650,14 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           <h3 className="font-extrabold text-text-main mb-4 flex items-center gap-2">
             <Target className="h-5 w-5 text-[#1CB0F6]" /> Répartition sectorielle
           </h3>
-          <div className="h-[180px]">
+          <div className="h-[180px] cursor-pointer">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" strokeWidth={3} stroke="#fff">
+                <Pie data={allocationData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" strokeWidth={3} stroke="#fff"
+                  onClick={(_, index) => setSelectedSector(allocationData[index]?.name || null)}
+                >
                   {allocationData.map((entry, i) => (
-                    <Cell key={i} fill={SECTOR_COLORS[entry.name] || '#94a3b8'} />
+                    <Cell key={i} fill={SECTOR_COLORS[entry.name] || '#94a3b8'} className="cursor-pointer hover:opacity-80 transition-opacity" />
                   ))}
                 </Pie>
                 <Tooltip
@@ -684,7 +687,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] font-bold text-text-light mt-2">{fmtMoney(d.value, sim.currency)}</p>
+                        <p className="text-[10px] font-bold text-text-light mt-2">{fmtMoney(d.value, sim.currency)} · Cliquer pour détails</p>
                       </div>
                     );
                   }}
@@ -694,11 +697,12 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           </div>
           <div className="flex flex-wrap justify-center gap-2 mt-2">
             {allocationData.map((entry) => (
-              <div key={entry.name} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-50 group relative">
+              <button key={entry.name} onClick={() => setSelectedSector(entry.name)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
                 <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
                 <span className="text-[11px] font-extrabold text-text-main">{entry.actualPct.toFixed(1)}%</span>
-              </div>
+              </button>
             ))}
           </div>
           {bondTargetPct > 0 && (
@@ -707,6 +711,125 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
             </p>
           )}
         </div>
+
+        {/* Sector Detail Modal */}
+        {selectedSector && (() => {
+          const sectorHoldings = live.holdings.filter((h) => (h.sector || h.asset_class || 'EQUITY') === selectedSector)
+            .sort((a, b) => b.market_value - a.market_value);
+          const sectorTotal = sectorHoldings.reduce((s, h) => s + h.market_value, 0);
+          const sectorInfo = allocationData.find((a) => a.name === selectedSector);
+          const color = SECTOR_COLORS[selectedSector] || '#94a3b8';
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelectedSector(null)}>
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+              <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border-[3px] bg-white"
+                style={{ borderColor: color + '40', boxShadow: `0 6px 0 0 ${color}20` }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="sticky top-0 z-10 bg-white rounded-t-3xl px-6 pt-5 pb-4 border-b-2 border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: color + '15' }}>
+                        <Target className="h-5 w-5" style={{ color }} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-extrabold text-text-main">{SECTOR_LABELS[selectedSector] || selectedSector}</h3>
+                        <p className="text-xs font-bold text-text-muted">
+                          {sectorHoldings.length} position{sectorHoldings.length !== 1 ? 's' : ''} · {fmtMoney(sectorTotal, sim.currency)}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedSector(null)}
+                      className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+                      <X className="h-5 w-5 text-text-muted" />
+                    </button>
+                  </div>
+
+                  {/* Actual vs Target summary */}
+                  {sectorInfo && (
+                    <div className="flex gap-3 mt-3">
+                      <div className="flex-1 rounded-xl px-3 py-2" style={{ backgroundColor: color + '08' }}>
+                        <p className="text-[10px] font-bold text-text-muted uppercase">Actuel</p>
+                        <p className="text-base font-extrabold" style={{ color }}>{sectorInfo.actualPct.toFixed(1)}%</p>
+                      </div>
+                      <div className="flex-1 rounded-xl bg-gray-50 px-3 py-2">
+                        <p className="text-[10px] font-bold text-text-muted uppercase">Cible</p>
+                        <p className="text-base font-extrabold text-text-main">{sectorInfo.targetPct.toFixed(1)}%</p>
+                      </div>
+                      <div className="flex-1 rounded-xl bg-gray-50 px-3 py-2">
+                        <p className="text-[10px] font-bold text-text-muted uppercase">Écart</p>
+                        <p className={`text-base font-extrabold ${
+                          Math.abs(sectorInfo.actualPct - sectorInfo.targetPct) < 1 ? 'text-[#58CC02]'
+                            : sectorInfo.actualPct > sectorInfo.targetPct ? 'text-[#FF9600]' : 'text-[#FF4B4B]'
+                        }`}>
+                          {sectorInfo.actualPct - sectorInfo.targetPct >= 0 ? '+' : ''}{(sectorInfo.actualPct - sectorInfo.targetPct).toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Holdings list */}
+                <div className="px-6 py-4 space-y-3">
+                  {sectorHoldings.map((h) => {
+                    const isUp = h.gain_loss >= 0;
+                    const pnlColor = isUp ? '#58CC02' : '#FF4B4B';
+                    const weightInSector = sectorTotal > 0 ? (h.market_value / sectorTotal) * 100 : 0;
+
+                    return (
+                      <div key={h.symbol}
+                        className="rounded-2xl border-[3px] border-gray-200 bg-white p-4 transition-all hover:border-gray-300"
+                        style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <StockAvatar symbol={h.symbol} size={40} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
+                            <p className="text-[11px] font-bold text-text-muted">{h.symbol}</p>
+                          </div>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-extrabold"
+                            style={{ backgroundColor: pnlColor + '12', color: pnlColor }}>
+                            {isUp ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            {Math.abs(h.gain_loss_pct).toFixed(2)}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="rounded-lg bg-gray-50 px-2 py-1.5">
+                            <p className="text-[9px] font-bold text-text-light uppercase">Valeur</p>
+                            <p className="text-xs font-extrabold text-text-main">{fmtMoney(h.market_value, sim.currency)}</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 px-2 py-1.5">
+                            <p className="text-[9px] font-bold text-text-light uppercase">Gain/Perte</p>
+                            <p className="text-xs font-extrabold" style={{ color: pnlColor }}>
+                              {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 px-2 py-1.5">
+                            <p className="text-[9px] font-bold text-text-light uppercase">Poids secteur</p>
+                            <p className="text-xs font-extrabold" style={{ color }}>{weightInSector.toFixed(1)}%</p>
+                          </div>
+                        </div>
+
+                        {/* Weight bar within sector */}
+                        <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(weightInSector, 100)}%`, backgroundColor: color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {sectorHoldings.length === 0 && (
+                    <p className="text-center text-sm text-text-muted py-8">Aucune position dans ce secteur</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Region */}
         <div className="rounded-2xl border-[3px] border-gray-200 bg-white p-5" style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}>
