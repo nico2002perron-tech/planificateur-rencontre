@@ -526,7 +526,7 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           </h3>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {displayedHoldings.map((h: LiveHolding) => {
             const isUp = h.gain_loss >= 0;
             const pnlColor = isUp ? '#58CC02' : '#FF4B4B';
@@ -538,80 +538,41 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
 
             return (
               <div key={h.symbol}
-                className="rounded-2xl border-[3px] border-gray-200 bg-white p-5 transition-all hover:border-[#1CB0F6]/40"
-                style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+                className="rounded-xl border-2 border-gray-200 bg-white px-4 py-3 transition-all hover:border-[#1CB0F6]/40"
+                style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}
               >
-                {/* Row 1 — Identity */}
-                <div className="flex items-center gap-3.5 mb-4">
-                  <StockAvatar symbol={h.symbol} size={48} />
+                {/* Row 1 — Identity + value + P&L */}
+                <div className="flex items-center gap-3">
+                  <StockAvatar symbol={h.symbol} size={36} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-extrabold text-text-main text-base truncate">{h.name}</p>
-                    <p className="text-xs font-bold text-text-muted">{h.symbol} · {qtyLabel} {h.quantity === 1 ? 'action' : 'actions'}</p>
+                    <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
+                    <p className="text-[11px] font-bold text-text-muted">
+                      {h.symbol} · {qtyLabel} act. · {fmtMoneyFull(h.current_price)}
+                      {h.dividend_yield && h.dividend_yield > 0 && (
+                        <span className="text-emerald-500"> · Div. {h.dividend_yield.toFixed(1)}%</span>
+                      )}
+                      {h.ex_dividend_date && (
+                        <span className="text-emerald-400"> · Ex {fmtDateShort(h.ex_dividend_date)}</span>
+                      )}
+                    </p>
                   </div>
-                  {/* P&L badge */}
                   <div className="flex-shrink-0 text-right">
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-extrabold"
-                      style={{ backgroundColor: pnlColor + '12', color: pnlColor }}>
-                      {isUp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    <p className="text-sm font-extrabold text-text-main">{fmtMoney(h.market_value, sim.currency)}</p>
+                    <span className="inline-flex items-center gap-0.5 text-xs font-extrabold" style={{ color: pnlColor }}>
+                      {isUp ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                       {Math.abs(h.gain_loss_pct).toFixed(2)}%
+                      <span className="font-bold text-text-light ml-1">({isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)})</span>
                     </span>
                   </div>
                 </div>
 
-                {/* Row 2 — Key numbers in clear labeled boxes */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                  {/* Buy price */}
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Acheté à</p>
-                    <p className="text-sm font-extrabold text-text-muted">{fmtMoneyFull(h.purchase_price)}</p>
-                  </div>
-                  {/* Current price */}
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Prix actuel</p>
-                    <p className="text-sm font-extrabold text-text-main">{fmtMoneyFull(h.current_price)}</p>
-                  </div>
-                  {/* Total value */}
-                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
-                    <p className="text-[10px] font-bold text-text-light uppercase tracking-wider mb-0.5">Valeur totale</p>
-                    <p className="text-sm font-extrabold text-text-main">{fmtMoney(h.market_value, sim.currency)}</p>
-                  </div>
-                  {/* Gain / Loss */}
-                  <div className="rounded-xl px-3 py-2.5"
-                    style={{ backgroundColor: pnlColor + '08' }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: pnlColor + '90' }}>
-                      {isUp ? 'Gain' : 'Perte'}
-                    </p>
-                    <p className="text-sm font-extrabold" style={{ color: pnlColor }}>
-                      {isUp ? '+' : ''}{fmtMoney(h.gain_loss, sim.currency)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Row 3 — Dividend info (if applicable) */}
-                {(h.dividend_yield && h.dividend_yield > 0) && (
-                  <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Dividende</span>
-                    <span className="text-xs font-extrabold text-emerald-600">{h.dividend_yield.toFixed(2)}%</span>
-                    {h.annual_dividend && h.annual_dividend > 0 && (
-                      <span className="text-[10px] font-bold text-emerald-500">
-                        ({fmtMoneyFull(h.annual_dividend)}/action · ~{fmtMoney(Math.round(h.quantity * h.annual_dividend), sim.currency)}/an)
-                      </span>
-                    )}
-                    {h.ex_dividend_date && (
-                      <span className="ml-auto text-[10px] font-bold text-emerald-500">
-                        Ex-div: {fmtDate(h.ex_dividend_date)}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Row 4 — Weight bar */}
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                {/* Row 2 — Weight bar */}
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                     <div className="h-full rounded-full bg-[#1CB0F6] transition-all duration-500"
                       style={{ width: `${Math.min(h.weight, 100)}%` }} />
                   </div>
-                  <span className="text-[11px] font-extrabold text-text-muted w-16 text-right">{h.weight.toFixed(1)}% du total</span>
+                  <span className="text-[10px] font-extrabold text-text-muted w-14 text-right">{h.weight.toFixed(1)}%</span>
                 </div>
               </div>
             );
