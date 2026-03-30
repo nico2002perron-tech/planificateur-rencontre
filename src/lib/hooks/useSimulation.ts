@@ -13,7 +13,7 @@ export interface SimHolding {
   asset_class: string;
   region?: string;
   sector?: string;
-  etf_sector_weights?: ETFSectorWeight[];
+  etf_sector_weights?: ETFSectorWeight[] | null;
 }
 
 export interface LiveHolding {
@@ -30,7 +30,7 @@ export interface LiveHolding {
   asset_class: string;
   region?: string;
   sector?: string;
-  etf_sector_weights?: ETFSectorWeight[];
+  etf_sector_weights?: ETFSectorWeight[] | null;
 }
 
 export interface SimulationSnapshot {

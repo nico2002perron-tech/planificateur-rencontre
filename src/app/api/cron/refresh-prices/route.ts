@@ -81,17 +81,35 @@ export async function GET(request: NextRequest) {
 
             const priceMap = new Map(stockQuotes.map((q) => [q.symbol, q.price]));
 
+            // Get previous snapshot for daily return and daily change calculations
+            const { data: prevSnap } = await supabase
+              .from('simulation_snapshots')
+              .select('total_value, holdings_detail')
+              .eq('simulation_id', sim.id)
+              .order('date', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            // Build a map of previous prices per symbol
+            const prevPriceMap = new Map<string, number>();
+            if (prevSnap?.holdings_detail) {
+              for (const ph of prevSnap.holdings_detail as { symbol: string; price: number }[]) {
+                prevPriceMap.set(ph.symbol, ph.price);
+              }
+            }
+
             // Calculate total value and build holdings detail
             let totalValue = 0;
             const holdingsDetail = simHoldings.map((h) => {
               const price = priceMap.get(h.symbol) || h.purchase_price;
+              const prevPrice = prevPriceMap.get(h.symbol) || h.purchase_price;
               const marketValue = h.quantity * price;
               totalValue += marketValue;
               return {
                 symbol: h.symbol,
                 price,
                 market_value: Math.round(marketValue * 100) / 100,
-                daily_change_pct: h.purchase_price > 0 ? Math.round(((price - h.purchase_price) / h.purchase_price) * 10000) / 100 : 0,
+                daily_change_pct: prevPrice > 0 ? Math.round(((price - prevPrice) / prevPrice) * 10000) / 100 : 0,
               };
             });
 
@@ -101,16 +119,9 @@ export async function GET(request: NextRequest) {
               benchmarkValues[bq.symbol] = bq.price;
             }
 
-            // Get previous snapshot for daily return calculation
-            const { data: prevSnap } = await supabase
-              .from('simulation_snapshots')
-              .select('total_value')
-              .eq('simulation_id', sim.id)
-              .order('date', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-
-            const prevValue = prevSnap?.total_value || sim.initial_value;
+            // Daily return vs previous snapshot (fallback to actual invested, not initial_value)
+            const actualInvested = simHoldings.reduce((sum, h) => sum + h.quantity * h.purchase_price, 0);
+            const prevValue = prevSnap?.total_value || (actualInvested > 0 ? actualInvested : sim.initial_value);
             const dailyReturn = prevValue > 0 ? (totalValue - prevValue) / prevValue : 0;
 
             // Upsert snapshot (avoid duplicates for same day)

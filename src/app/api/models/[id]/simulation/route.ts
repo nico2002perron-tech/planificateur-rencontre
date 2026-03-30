@@ -27,7 +27,7 @@ interface SimHolding {
   asset_class: string;
   region?: string;
   sector?: string;
-  etf_sector_weights?: ETFSectorWeight[]; // sector breakdown for ETFs
+  etf_sector_weights?: ETFSectorWeight[] | null; // sector breakdown for ETFs (null = checked, not an ETF)
   annual_dividend?: number; // annual dividend per share (stocks + ETF distributions)
 }
 
@@ -265,14 +265,19 @@ export async function GET(
       }
     }
 
-    // Backfill ETF sector breakdowns for old simulations
-    const missingETFSectors = holdings.some((h) => !h.etf_sector_weights);
+    // Backfill ETF sector breakdowns for old simulations (only once, then persist)
+    const missingETFSectors = holdings.some((h) => h.etf_sector_weights === undefined);
     if (missingETFSectors) {
+      let updated = false;
       await Promise.all(
-        holdings.filter((h) => !h.etf_sector_weights).map(async (h) => {
+        holdings.filter((h) => h.etf_sector_weights === undefined).map(async (h) => {
           try {
             const raw = await getYahooETFSectors(h.symbol);
-            if (!raw || raw.length === 0) return;
+            if (!raw || raw.length === 0) {
+              h.etf_sector_weights = null; // mark as "tried, not an ETF"
+              updated = true;
+              return;
+            }
             const sMap = new Map<string, number>();
             let unmapped = 0;
             for (const { sector, weight } of raw) {
@@ -288,10 +293,18 @@ export async function GET(
               .map(([sector, weight]) => ({ sector, weight: Math.round(weight * 1000) / 1000 }))
               .filter((s) => s.weight > 0.005)
               .sort((a, b) => b.weight - a.weight);
-            if (weights.length > 0) h.etf_sector_weights = weights;
+            h.etf_sector_weights = weights.length > 0 ? weights : null;
+            updated = true;
           } catch { /* not an ETF */ }
         })
       );
+      // Persist enriched snapshot back to DB so we don't re-fetch every time
+      if (updated) {
+        await supabase
+          .from('model_simulations')
+          .update({ holdings_snapshot: holdings })
+          .eq('id', simulation.id);
+      }
     }
 
     const [stockQuotes, benchQuotes] = await Promise.all([
@@ -402,10 +415,11 @@ export async function GET(
     const totalReturnPct = baseValue > 0
       ? (totalReturn / baseValue) * 100 : 0;
 
-    // Annualized return
+    // Annualized return (includes income)
     const yearsActive = daysActive / 365.25;
+    const totalValueWithIncome = liveTotal + totalIncome;
     const annualizedReturn = yearsActive > 0.05
-      ? (Math.pow(liveTotal / baseValue, 1 / yearsActive) - 1) * 100 : totalReturnPct;
+      ? (Math.pow(totalValueWithIncome / baseValue, 1 / yearsActive) - 1) * 100 : totalReturnPct;
 
     // Best and worst day
     const bestDay = dailyReturns.length > 0 ? Math.max(...dailyReturns) * 100 : 0;
