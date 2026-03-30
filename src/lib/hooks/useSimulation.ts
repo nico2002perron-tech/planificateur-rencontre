@@ -10,6 +10,7 @@ export interface SimHolding {
   weight: number;
   asset_class: string;
   region?: string;
+  sector?: string;
 }
 
 export interface LiveHolding {
@@ -25,6 +26,7 @@ export interface LiveHolding {
   weight: number;
   asset_class: string;
   region?: string;
+  sector?: string;
 }
 
 export interface SimulationSnapshot {

@@ -8,6 +8,7 @@ export interface ModelHolding {
   weight: number;
   asset_class: string;
   region?: string;
+  sector?: string;
 }
 
 export interface ModelPortfolio {

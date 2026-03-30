@@ -14,6 +14,7 @@ interface SimHolding {
   weight: number;
   asset_class: string;
   region?: string;
+  sector?: string;
   annual_dividend?: number; // annual dividend per share (stocks + ETF distributions)
 }
 
@@ -75,7 +76,7 @@ export async function POST(
     const holdingsSnapshot: SimHolding[] = [];
     let allocatedValue = 0;
 
-    for (const h of model.holdings as { symbol: string; name: string; weight: number; asset_class: string; region?: string }[]) {
+    for (const h of model.holdings as { symbol: string; name: string; weight: number; asset_class: string; region?: string; sector?: string }[]) {
       const price = priceMap.get(h.symbol);
       if (!price || price <= 0) continue;
 
@@ -91,6 +92,7 @@ export async function POST(
         weight: h.weight,
         asset_class: h.asset_class,
         region: h.region,
+        sector: h.sector,
         annual_dividend: annualDiv && annualDiv > 0 ? annualDiv : undefined,
       });
 
@@ -233,6 +235,7 @@ export async function GET(
         weight: 0, // computed below
         asset_class: h.asset_class,
         region: h.region,
+        sector: h.sector,
       };
     });
 

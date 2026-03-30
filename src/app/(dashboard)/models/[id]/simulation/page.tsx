@@ -35,12 +35,19 @@ function duoColor(str: string): string {
 const BENCHMARK_LABELS: Record<string, string> = { '^GSPTSE': 'S&P/TSX', '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ' };
 const BENCHMARK_COLORS: Record<string, string> = { '^GSPTSE': '#64748b', '^GSPC': '#03045e', '^IXIC': '#7c3aed' };
 const SECTOR_COLORS: Record<string, string> = {
-  EQUITY: '#1CB0F6', FIXED_INCOME: '#CE82FF', CASH: '#94a3b8',
-  ALTERNATIVE: '#FF9600', REAL_ESTATE: '#58CC02', COMMODITY: '#FF4B4B',
+  TECHNOLOGY: '#1CB0F6', HEALTHCARE: '#CE82FF', FINANCIALS: '#FF9600',
+  ENERGY: '#FF4B4B', MATERIALS: '#FFC800', INDUSTRIALS: '#58CC02',
+  CONSUMER_DISC: '#00CD9C', CONSUMER_STAPLES: '#7c3aed', UTILITIES: '#64748b',
+  REAL_ESTATE: '#f472b6', TELECOM: '#0ea5e9', MILITARY: '#475569',
+  EQUITY: '#94a3b8', FIXED_INCOME: '#a78bfa', CASH: '#d1d5db',
 };
 const SECTOR_LABELS: Record<string, string> = {
+  TECHNOLOGY: 'Technologie', HEALTHCARE: 'Santé', FINANCIALS: 'Finance',
+  ENERGY: 'Énergie', MATERIALS: 'Matériaux', INDUSTRIALS: 'Industriels',
+  CONSUMER_DISC: 'Cons. discrétionnaire', CONSUMER_STAPLES: 'Cons. de base',
+  UTILITIES: 'Services publics', REAL_ESTATE: 'Immobilier',
+  TELECOM: 'Télécommunications', MILITARY: 'Militaire',
   EQUITY: 'Actions', FIXED_INCOME: 'Obligations', CASH: 'Encaisse',
-  ALTERNATIVE: 'Alternatifs', REAL_ESTATE: 'Immobilier', COMMODITY: 'Commodités',
 };
 const REGION_LABELS: Record<string, string> = {
   CA: 'Canada', US: 'États-Unis', INTL: 'International', EM: 'Marchés émergents',
@@ -296,15 +303,31 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
     return [...data.live.holdings].sort((a, b) => b.market_value - a.market_value);
   }, [data?.live?.holdings]);
 
-  // Allocation data
+  // Allocation data (by sector, with target vs actual)
   const allocationData = useMemo(() => {
-    if (!data?.live?.holdings) return [];
-    const map = new Map<string, number>();
+    if (!data?.live?.holdings || !data?.simulation) return [];
+    const totalLive = data.live.holdings.reduce((s, h) => s + h.market_value, 0);
+    // Actual: group current market values by sector
+    const actualMap = new Map<string, number>();
     for (const h of data.live.holdings) {
-      map.set(h.asset_class || 'EQUITY', (map.get(h.asset_class || 'EQUITY') || 0) + h.market_value);
+      const sec = h.sector || h.asset_class || 'EQUITY';
+      actualMap.set(sec, (actualMap.get(sec) || 0) + h.market_value);
     }
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value: Math.round(value) }));
-  }, [data?.live?.holdings]);
+    // Target: group original weights by sector from snapshot
+    const targetMap = new Map<string, number>();
+    for (const h of data.simulation.holdings_snapshot) {
+      const sec = h.sector || h.asset_class || 'EQUITY';
+      targetMap.set(sec, (targetMap.get(sec) || 0) + h.weight);
+    }
+    // Merge all sectors
+    const allSectors = new Set([...actualMap.keys(), ...targetMap.keys()]);
+    return Array.from(allSectors).map((sec) => {
+      const actualValue = actualMap.get(sec) || 0;
+      const actualPct = totalLive > 0 ? Math.round((actualValue / totalLive) * 10000) / 100 : 0;
+      const targetPct = Math.round((targetMap.get(sec) || 0) * 100) / 100;
+      return { name: sec, value: Math.round(actualValue), actualPct, targetPct };
+    }).sort((a, b) => b.value - a.value);
+  }, [data?.live?.holdings, data?.simulation]);
 
   // Region data
   const regionData = useMemo(() => {
@@ -614,10 +637,10 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
           </div>
         </div>
 
-        {/* Allocation Pie */}
+        {/* Sector Allocation */}
         <div className="rounded-2xl border-[3px] border-gray-200 bg-white p-5" style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}>
           <h3 className="font-extrabold text-text-main mb-4 flex items-center gap-2">
-            <span className="text-xl">🎯</span> Répartition
+            <Target className="h-5 w-5 text-[#1CB0F6]" /> Répartition sectorielle
           </h3>
           <div className="h-[180px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -628,18 +651,46 @@ function SimulationDashboard({ modelId }: { modelId: string }) {
                   ))}
                 </Pie>
                 <Tooltip
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any) => fmtMoney(Number(value), sim.currency)}
-                  contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: 12, fontWeight: 700 }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0].payload as { name: string; value: number; actualPct: number; targetPct: number };
+                    const diff = d.actualPct - d.targetPct;
+                    return (
+                      <div className="rounded-2xl bg-white px-4 py-3 border-[3px] border-gray-200" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 180 }}>
+                        <p className="text-sm font-extrabold text-text-main mb-2 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: SECTOR_COLORS[d.name] || '#94a3b8' }} />
+                          {SECTOR_LABELS[d.name] || d.name}
+                        </p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-bold text-text-muted">Actuel</span>
+                            <span className="font-extrabold text-text-main">{d.actualPct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="font-bold text-text-muted">Cible</span>
+                            <span className="font-extrabold text-text-main">{d.targetPct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between text-xs pt-1 border-t border-gray-100">
+                            <span className="font-bold text-text-muted">Écart</span>
+                            <span className={`font-extrabold ${Math.abs(diff) < 1 ? 'text-[#58CC02]' : diff > 0 ? 'text-[#FF9600]' : 'text-[#FF4B4B]'}`}>
+                              {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-bold text-text-light mt-2">{fmtMoney(d.value, sim.currency)}</p>
+                      </div>
+                    );
+                  }}
                 />
               </PieChart>
             </ResponsiveContainer>
           </div>
           <div className="flex flex-wrap justify-center gap-2 mt-2">
             {allocationData.map((entry) => (
-              <div key={entry.name} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50">
+              <div key={entry.name} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-50 group relative">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
                 <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
+                <span className="text-[11px] font-extrabold text-text-main">{entry.actualPct.toFixed(1)}%</span>
               </div>
             ))}
           </div>

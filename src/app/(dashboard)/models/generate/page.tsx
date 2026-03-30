@@ -311,6 +311,7 @@ export default function GeneratePage() {
         weight: Math.round((s.realValue / totalValue) * 10000) / 100,
         asset_class: 'EQUITY' as const,
         region: s.symbol.endsWith('.TO') || s.symbol.endsWith('.V') ? 'CA' : 'US',
+        sector: s.sector,
       }));
 
       const profile = profiles.find(p => p.id === selectedProfileId);
