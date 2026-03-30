@@ -109,7 +109,7 @@ const JOURNEY_STEPS: JourneyStep[] = [
     title: 'Simuler en temps reel',
     description: 'Suivez votre modele comme un vrai portefeuille avec les prix du marche',
     icon: <TrendingUp className="h-5 w-5" />,
-    href: '/models',
+    href: '/models/simulation',
     color: 'text-cyan-600',
     bgColor: 'bg-cyan-50',
     borderColor: 'border-cyan-200',
