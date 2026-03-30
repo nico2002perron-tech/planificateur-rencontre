@@ -1,870 +1,899 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Link from 'next/link';
+import useSWR from 'swr';
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, Line, Legend,
 } from 'recharts';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
-import { parseCroesusData, type ParsedHolding } from '@/lib/parsers/croesus-parser';
-import { StepNav } from '@/components/models/StepNav';
+import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
+import { useQuotes } from '@/lib/hooks/useQuotes';
+import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
+import { useSymbolSearch } from '@/lib/hooks/useQuotes';
 import {
-  ArrowLeft, Zap, ArrowRightLeft, ClipboardPaste,
-  TrendingUp, TrendingDown, Minus, AlertTriangle, Check,
-  ShoppingCart, Ban, Copy, ArrowUpCircle, ArrowDownCircle,
+  ArrowLeft, Search, Plus, Trash2, TrendingUp, TrendingDown,
+  Target, DollarSign, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp, X,
 } from 'lucide-react';
 
-// ── Types miroir du generateur ──
+// ── Duolingo palette & constants ────────────────────────────────────────
 
-interface GeneratedStock {
-  symbol: string;
-  name: string;
-  sector: string;
-  stock_type: string;
-  price: number;
-  quantity: number;
-  realValue: number;
-  targetWeight: number;
-  realWeight: number;
-}
-
-interface GeneratedBond {
-  description: string;
-  issuer: string | null;
-  cusip: string | null;
-  coupon: number | null;
-  maturity: string | null;
-  price: number;
-  yieldPct: number | null;
-  quantity: number;
-  realValue: number;
-  targetWeight: number;
-  realWeight: number;
-  is_mandatory: boolean;
-  source: string;
-}
-
-interface SectorSummary {
-  sector: string;
-  sectorLabel: string;
-  targetWeight: number;
-  realWeight: number;
-  stocks: GeneratedStock[];
-  totalValue: number;
-}
-
-interface GeneratedPortfolio {
-  profileName: string;
-  profileNumber: number;
-  portfolioValue: number;
-  equityPct: number;
-  bondPct: number;
-  totalStockValue: number;
-  totalBondValue: number;
-  cashRemaining: number;
-  realEquityPct: number;
-  realBondPct: number;
-  realCashPct: number;
-  sectors: SectorSummary[];
-  bonds: GeneratedBond[];
-  stats: { nbStocks: number; nbBonds: number; nbSectors: number; avgDividendYield: number; avgBondYield: number; estimatedAnnualIncome: number };
-  generatedAt: string;
-}
-
-// ── Constantes ──
-
-const BRAND = '#00b4d8';
-const GREEN = '#10b981';
-const RED = '#ef4444';
-const AMBER = '#f59e0b';
-
-const tooltipStyle = {
-  borderRadius: 8,
-  border: '1px solid #e5e7eb',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-  fontSize: 12,
+const DUO = {
+  green: '#58CC02', greenDark: '#46a302',
+  blue: '#1CB0F6', blueDark: '#0a8fd4',
+  purple: '#CE82FF', purpleDark: '#a855f7',
+  orange: '#FF9600', orangeDark: '#d97706',
+  red: '#FF4B4B', redDark: '#dc2626',
+  yellow: '#FFC800',
+  teal: '#00CD9C',
 };
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const BENCHMARK_LABELS: Record<string, string> = { '^GSPTSE': 'S&P/TSX', '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ' };
+const BENCHMARK_COLORS: Record<string, string> = { '^GSPTSE': '#64748b', '^GSPC': '#03045e', '^IXIC': '#7c3aed' };
+
+function fmtMoney(n: number, currency = 'CAD') {
+  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+}
+function fmtPct(n: number) { return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`; }
+function fmtDec(n: number, d = 2) { return n.toFixed(d); }
+function fmtDateShort(d: string) {
+  const date = new Date(d + 'T12:00:00');
+  return date.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
 }
 
-function fmtDec(n: number, d = 2) {
-  return new Intl.NumberFormat('fr-CA', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
-}
+// ── Types ───────────────────────────────────────────────────────────────
 
-// ── Types de comparaison ──
-
-interface ComparedPosition {
+interface ClientHolding {
   symbol: string;
   name: string;
-  // Modele
-  modelQty: number;
-  modelValue: number;
-  modelWeight: number;
-  // Actuel
-  actualQty: number;
-  actualValue: number;
-  actualWeight: number;
-  // Ecart
-  qtyDiff: number;
-  valueDiff: number;
-  weightDiff: number;
-  status: 'match' | 'overweight' | 'underweight' | 'missing' | 'extra';
-  sector?: string;
+  quantity: number;
 }
 
-// ════════════════════════════════════════
-// PAGE PRINCIPALE
-// ════════════════════════════════════════
+interface PortfolioHistoryData {
+  dates: string[];
+  portfolio: number[];
+  benchmarks: Record<string, number[]>;
+}
 
-export default function ComparePage() {
-  const { profiles, isLoading: profilesLoading } = useInvestmentProfiles();
-  const { toast } = useToast();
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-  // Step 1: Generer le modele
-  const [selectedProfileId, setSelectedProfileId] = useState('');
-  const [portfolioValue, setPortfolioValue] = useState(0); // sera calcule depuis Croesus
-  const [generating, setGenerating] = useState(false);
-  const [model, setModel] = useState<GeneratedPortfolio | null>(null);
+// ── Symbol Search Inline ────────────────────────────────────────────────
 
-  // Step 2: Coller Croesus
-  const [rawText, setRawText] = useState('');
-  const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
-  const [parsed, setParsed] = useState(false);
-
-  // Parse Croesus
-  function handleParse() {
-    if (!rawText.trim()) {
-      toast('warning', 'Collez les donnees Croesus');
-      return;
-    }
-    const result = parseCroesusData(rawText);
-    if (result.holdings.length === 0) {
-      toast('error', 'Aucune position detectee');
-      return;
-    }
-    setHoldings(result.holdings);
-    setParsed(true);
-
-    // Calculer la valeur totale du portefeuille
-    const total = result.holdings.reduce((sum, h) => sum + h.marketValue, 0);
-    setPortfolioValue(total);
-
-    toast('success', `${result.holdings.length} positions detectees (${fmt(total)})`);
-  }
-
-  // Generer le modele basé sur la valeur du portefeuille Croesus
-  async function handleGenerate() {
-    if (!selectedProfileId) {
-      toast('warning', 'Selectionnez un profil');
-      return;
-    }
-    if (portfolioValue <= 0) {
-      toast('warning', 'Collez d\'abord les positions Croesus');
-      return;
-    }
-
-    setGenerating(true);
-    try {
-      const res = await fetch('/api/models/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          profile_id: selectedProfileId,
-          portfolio_value: portfolioValue,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
-      const data = await res.json();
-      setModel(data.portfolio);
-      toast('success', 'Modele genere — comparaison prete');
-    } catch (e) {
-      toast('error', e instanceof Error ? e.message : 'Erreur');
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  if (profilesLoading) {
-    return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
-  }
+function InlineSymbolSearch({ onSelect }: { onSelect: (symbol: string, name: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const { results, isLoading } = useSymbolSearch(query);
 
   return (
-    <div>
-      <PageHeader
-        title="Comparaison Modele vs Positions"
-        description="Comparez un portefeuille modele avec les positions reelles d'un client"
-        action={
-          <Link href="/models">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
-          </Link>
-        }
-      />
-
-      {/* ── Etape 1 & 2 cote a cote ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Coller Croesus */}
-        <Card>
-          <div className="flex items-center gap-2 mb-3">
-            <ClipboardPaste className="h-4 w-4 text-text-muted" />
-            <h3 className="text-sm font-semibold text-text-main">1. Positions actuelles (Croesus)</h3>
-          </div>
-          <textarea
-            value={rawText}
-            onChange={(e) => { setRawText(e.target.value); setParsed(false); setModel(null); }}
-            placeholder="Collez ici les positions depuis Croesus (Ctrl+V)..."
-            rows={6}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary resize-none mb-3"
-          />
-          <div className="flex items-center justify-between">
-            <Button size="sm" onClick={handleParse} disabled={!rawText.trim()}>
-              Analyser
-            </Button>
-            {parsed && (
-              <div className="flex items-center gap-2">
-                <Badge variant="success">{holdings.length} positions</Badge>
-                <Badge variant="info">{fmt(portfolioValue)}</Badge>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* Generer modele */}
-        <Card>
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="h-4 w-4 text-text-muted" />
-            <h3 className="text-sm font-semibold text-text-main">2. Portefeuille modele</h3>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs text-text-muted mb-1">Profil d'investissement</label>
-              <select
-                value={selectedProfileId}
-                onChange={(e) => { setSelectedProfileId(e.target.value); setModel(null); }}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-              >
-                <option value="">-- Selectionnez --</option>
-                {profiles.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.profile_number}. {p.name} ({p.equity_pct}/{p.bond_pct})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs text-text-muted mb-1">Valeur cible</label>
-              <input
-                type="text"
-                readOnly
-                value={portfolioValue > 0 ? fmt(portfolioValue) : 'Detectee automatiquement depuis Croesus'}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-text-muted"
-              />
-            </div>
-
-            <Button
-              size="sm"
-              loading={generating}
-              disabled={!selectedProfileId || portfolioValue <= 0}
-              onClick={handleGenerate}
-              icon={<ArrowRightLeft className="h-3.5 w-3.5" />}
-            >
-              Generer et comparer
-            </Button>
-
-            {model && (
-              <div className="flex gap-2">
-                <Badge variant="success">{model.stats.nbStocks} actions</Badge>
-                <Badge variant="info">{model.stats.nbBonds} obligations</Badge>
-              </div>
-            )}
-          </div>
-        </Card>
+    <div className="relative">
+      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl border-[3px] border-dashed border-gray-200 bg-gray-50/50 hover:border-[#1CB0F6] transition-all">
+        <Search className="h-4 w-4 text-text-muted flex-shrink-0" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => query && setOpen(true)}
+          placeholder="Ajouter un titre (ex: AAPL, RY.TO)..."
+          className="flex-1 bg-transparent text-sm font-semibold text-text-main placeholder:text-text-muted/50 focus:outline-none"
+        />
+        {query && (
+          <button onClick={() => { setQuery(''); setOpen(false); }} className="text-text-muted hover:text-text-main">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
-
-      {/* ── Resultat comparaison ── */}
-      {generating && (
-        <div className="flex flex-col items-center justify-center py-16">
-          <Spinner size="lg" />
-          <p className="text-sm text-text-muted mt-4">Generation du modele...</p>
+      {open && query.length >= 1 && (
+        <div className="absolute z-30 top-full mt-1 w-full bg-white rounded-2xl shadow-xl border-[3px] border-gray-100 max-h-64 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex justify-center py-4"><Spinner size="sm" /></div>
+          ) : results.length === 0 ? (
+            <p className="text-sm text-text-muted text-center py-4">Aucun résultat</p>
+          ) : (
+            results.map((r: { symbol: string; name: string; exchangeShortName: string }) => (
+              <button key={r.symbol}
+                className="w-full text-left px-4 py-3 hover:bg-[#1CB0F6]/5 transition-colors flex items-center justify-between"
+                onClick={() => { onSelect(r.symbol, r.name); setQuery(''); setOpen(false); }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-0.5 rounded-lg bg-[#1CB0F6]/10 text-[#1CB0F6] font-extrabold text-xs">{r.symbol}</span>
+                  <span className="text-sm font-semibold text-text-main truncate max-w-[200px]">{r.name}</span>
+                </div>
+                <span className="text-[10px] font-bold text-text-muted bg-gray-100 px-2 py-0.5 rounded-lg">{r.exchangeShortName}</span>
+              </button>
+            ))
+          )}
         </div>
       )}
-
-      {model && parsed && !generating && (
-        <ComparisonView model={model} holdings={holdings} totalValue={portfolioValue} />
-      )}
-
-      <StepNav current={6} />
     </div>
   );
 }
 
-// ════════════════════════════════════════
-// VUE COMPARAISON
-// ════════════════════════════════════════
+// ── Duo Stat Card ───────────────────────────────────────────────────────
 
-function ComparisonView({ model, holdings, totalValue }: {
-  model: GeneratedPortfolio;
-  holdings: ParsedHolding[];
-  totalValue: number;
+function DuoStat({ label, value, sub, color, icon }: {
+  label: string; value: string; sub?: string; color: string; icon: React.ReactNode;
 }) {
-  // ── Construire la comparaison actions ──
-  const comparison = useMemo(() => {
-    // Collecter les actions du modele
-    const modelStocks = new Map<string, GeneratedStock>();
-    for (const sec of model.sectors) {
-      for (const s of sec.stocks) {
-        modelStocks.set(s.symbol.toUpperCase(), s);
-      }
-    }
+  return (
+    <div className="rounded-2xl border-[3px] p-3"
+      style={{ borderColor: color + '30', boxShadow: `0 3px 0 0 ${color}20` }}>
+      <div className="flex items-center gap-2 mb-1">
+        <div className="p-1.5 rounded-xl" style={{ backgroundColor: color + '15' }}>
+          <span style={{ color }}>{icon}</span>
+        </div>
+        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="text-lg font-extrabold" style={{ color }}>{value}</p>
+      {sub && <p className="text-xs font-semibold text-text-muted mt-0.5">{sub}</p>}
+    </div>
+  );
+}
 
-    // Collecter les equities actuelles (EQUITY + ETF + PREFERRED)
-    const actualEquities = new Map<string, ParsedHolding>();
-    for (const h of holdings) {
-      if (['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType) && h.marketValue > 0) {
-        actualEquities.set(h.symbol.toUpperCase(), h);
-      }
-    }
+// ═════════════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ═════════════════════════════════════════════════════════════════════════
 
-    // Collecter les fixed income actuelles
-    const actualBonds = holdings.filter(h => h.assetType === 'FIXED_INCOME' && h.marketValue > 0);
+export default function ComparePage() {
+  const { toast } = useToast();
+  const { models, isLoading: modelsLoading } = useModels();
 
-    const positions: ComparedPosition[] = [];
+  // ── Client portfolio state ──
+  const [clientHoldings, setClientHoldings] = useState<ClientHolding[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [showModelPicker, setShowModelPicker] = useState(false);
 
-    // 1. Positions dans le modele
-    for (const [sym, ms] of modelStocks) {
-      const actual = actualEquities.get(sym);
-      const actualValue = actual?.marketValue ?? 0;
-      const actualQty = actual?.quantity ?? 0;
-      const actualWeight = totalValue > 0 ? (actualValue / totalValue) * 100 : 0;
-      const weightDiff = actualWeight - ms.realWeight;
+  // ── Derived symbols ──
+  const clientSymbols = useMemo(() => clientHoldings.map(h => h.symbol), [clientHoldings]);
+  const selectedModel = useMemo(() => models?.find(m => m.id === selectedModelId) || null, [models, selectedModelId]);
+  const modelSymbols = useMemo(() => selectedModel?.holdings.map(h => h.symbol) || [], [selectedModel]);
+  const allSymbols = useMemo(() => [...new Set([...clientSymbols, ...modelSymbols])], [clientSymbols, modelSymbols]);
 
-      let status: ComparedPosition['status'];
-      if (!actual) {
-        status = 'missing';
-      } else if (Math.abs(weightDiff) < 0.5) {
-        status = 'match';
-      } else if (weightDiff > 0) {
-        status = 'overweight';
+  // ── Data hooks ──
+  const { quotesMap, isLoading: quotesLoading } = useQuotes(allSymbols);
+  const { targets: allTargets, isLoading: targetsLoading } = usePriceTargetConsensus(allSymbols);
+
+  // ── Portfolio history (client) ──
+  const clientWeights = useMemo(() => {
+    if (clientHoldings.length === 0) return [];
+    const total = clientHoldings.reduce((s, h) => {
+      const price = quotesMap.get(h.symbol)?.price || 0;
+      return s + h.quantity * price;
+    }, 0);
+    if (total === 0) return [];
+    return clientHoldings.map(h => {
+      const price = quotesMap.get(h.symbol)?.price || 0;
+      return { symbol: h.symbol, weight: total > 0 ? (h.quantity * price / total) * 100 : 0 };
+    });
+  }, [clientHoldings, quotesMap]);
+
+  const modelWeights = useMemo(() => {
+    if (!selectedModel) return [];
+    return selectedModel.holdings.map(h => ({ symbol: h.symbol, weight: h.weight }));
+  }, [selectedModel]);
+
+  // SWR for portfolio history (client)
+  const clientHistKey = clientWeights.length > 0
+    ? JSON.stringify({ holdings: clientWeights, type: 'client' })
+    : null;
+  const { data: clientHist, isLoading: clientHistLoading } = useSWR<PortfolioHistoryData>(
+    clientHistKey,
+    async () => {
+      const res = await fetch('/api/portfolio-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings: clientWeights, months: 12 }),
+      });
+      return res.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60_000 }
+  );
+
+  // SWR for portfolio history (model)
+  const modelHistKey = modelWeights.length > 0
+    ? JSON.stringify({ holdings: modelWeights, type: 'model' })
+    : null;
+  const { data: modelHist, isLoading: modelHistLoading } = useSWR<PortfolioHistoryData>(
+    modelHistKey,
+    async () => {
+      const res = await fetch('/api/portfolio-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings: modelWeights, months: 12 }),
+      });
+      return res.json();
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60_000 }
+  );
+
+  // ── Client portfolio calculations ──
+  const clientStats = useMemo(() => {
+    let totalValue = 0, projectedValue = 0, totalDivIncome = 0;
+    for (const h of clientHoldings) {
+      const q = quotesMap.get(h.symbol);
+      const price = q?.price || 0;
+      const mv = h.quantity * price;
+      totalValue += mv;
+
+      const t = allTargets[h.symbol];
+      if (t?.targetConsensus > 0) {
+        projectedValue += h.quantity * t.targetConsensus;
       } else {
-        status = 'underweight';
+        projectedValue += mv; // no target → flat
       }
 
-      positions.push({
-        symbol: ms.symbol,
-        name: ms.name,
-        modelQty: ms.quantity,
-        modelValue: ms.realValue,
-        modelWeight: ms.realWeight,
-        actualQty,
-        actualValue,
-        actualWeight: Math.round(actualWeight * 100) / 100,
-        qtyDiff: actualQty - ms.quantity,
-        valueDiff: actualValue - ms.realValue,
-        weightDiff: Math.round(weightDiff * 100) / 100,
-        status,
-        sector: ms.sector,
-      });
-
-      // Retirer du set actuel
-      actualEquities.delete(sym);
+      // Estimate dividend from yield (price × divYield)
+      // We'll use the pe_ratio field as proxy if available, otherwise skip
+      // Actually dividendYield isn't in QuoteData, so we'll compute from targets
     }
+    const gainPct = totalValue > 0 ? ((projectedValue - totalValue) / totalValue) * 100 : 0;
+    return { totalValue, projectedValue, gainPct, divIncome: totalDivIncome };
+  }, [clientHoldings, quotesMap, allTargets]);
 
-    // 2. Positions extra (dans le portefeuille mais pas dans le modele)
-    for (const [sym, h] of actualEquities) {
-      const actualWeight = totalValue > 0 ? (h.marketValue / totalValue) * 100 : 0;
-      positions.push({
-        symbol: sym,
-        name: h.name,
-        modelQty: 0,
-        modelValue: 0,
-        modelWeight: 0,
-        actualQty: h.quantity,
-        actualValue: h.marketValue,
-        actualWeight: Math.round(actualWeight * 100) / 100,
-        qtyDiff: h.quantity,
-        valueDiff: h.marketValue,
-        weightDiff: Math.round(actualWeight * 100) / 100,
-        status: 'extra',
-      });
+  // ── Model portfolio calculations (scaled to client value) ──
+  const modelStats = useMemo(() => {
+    if (!selectedModel || clientStats.totalValue === 0) return null;
+    const scale = clientStats.totalValue;
+    let totalValue = 0, projectedValue = 0;
+
+    for (const h of selectedModel.holdings) {
+      const q = quotesMap.get(h.symbol);
+      const price = q?.price || 0;
+      const alloc = (h.weight / 100) * scale;
+      totalValue += alloc;
+
+      const t = allTargets[h.symbol];
+      if (t?.targetConsensus > 0 && price > 0) {
+        const targetGain = (t.targetConsensus - price) / price;
+        projectedValue += alloc * (1 + targetGain);
+      } else {
+        projectedValue += alloc;
+      }
     }
+    const gainPct = totalValue > 0 ? ((projectedValue - totalValue) / totalValue) * 100 : 0;
+    return { totalValue, projectedValue, gainPct };
+  }, [selectedModel, quotesMap, allTargets, clientStats.totalValue]);
 
-    // Stats
-    const match = positions.filter(p => p.status === 'match').length;
-    const overweight = positions.filter(p => p.status === 'overweight').length;
-    const underweight = positions.filter(p => p.status === 'underweight').length;
-    const missing = positions.filter(p => p.status === 'missing').length;
-    const extra = positions.filter(p => p.status === 'extra').length;
-    const adherence = positions.length > 0
-      ? Math.round(((match + overweight + underweight) / (positions.length - extra)) * 100)
-      : 0;
+  // ── Chart data: Past performance ──
+  const pastChartData = useMemo(() => {
+    if (!clientHist?.dates?.length) return [];
+    const dates = clientHist.dates;
+    return dates.map((d, i) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pt: Record<string, any> = {
+        date: d,
+        dateLabel: fmtDateShort(d),
+        client: clientHist.portfolio[i] ?? 100,
+      };
+      if (modelHist?.dates?.length && modelHist.portfolio[i] !== undefined) {
+        pt.model = modelHist.portfolio[i];
+      }
+      // Benchmarks from client history
+      for (const [sym, vals] of Object.entries(clientHist.benchmarks || {})) {
+        if (vals[i] !== undefined) pt[sym] = vals[i];
+      }
+      return pt;
+    });
+  }, [clientHist, modelHist]);
 
-    // Allocation actuelle
-    const actualEquityTotal = holdings
-      .filter(h => ['EQUITY', 'ETF', 'PREFERRED'].includes(h.assetType))
-      .reduce((s, h) => s + h.marketValue, 0);
-    const actualBondTotal = actualBonds.reduce((s, h) => s + h.marketValue, 0);
-    const actualCash = holdings
-      .filter(h => h.assetType === 'CASH')
-      .reduce((s, h) => s + h.marketValue, 0);
+  // ── Chart data: Future projection (12 months) ──
+  const projectionChartData = useMemo(() => {
+    if (clientStats.totalValue === 0) return [];
+    const now = new Date();
+    const points = [];
+    const months = 12;
 
-    return {
-      positions: positions.sort((a, b) => {
-        const order = { missing: 0, underweight: 1, overweight: 2, match: 3, extra: 4 };
-        return order[a.status] - order[b.status];
-      }),
-      stats: { match, overweight, underweight, missing, extra, adherence },
-      allocation: {
-        modelEquity: model.realEquityPct,
-        modelBond: model.realBondPct,
-        modelCash: model.realCashPct,
-        actualEquity: totalValue > 0 ? Math.round((actualEquityTotal / totalValue) * 10000) / 100 : 0,
-        actualBond: totalValue > 0 ? Math.round((actualBondTotal / totalValue) * 10000) / 100 : 0,
-        actualCash: totalValue > 0 ? Math.round((actualCash / totalValue) * 10000) / 100 : 0,
-      },
-      modelBonds: model.bonds,
-      actualBonds,
-    };
-  }, [model, holdings, totalValue]);
+    for (let m = 0; m <= months; m++) {
+      const date = new Date(now);
+      date.setMonth(date.getMonth() + m);
+      const label = date.toLocaleDateString('fr-CA', { month: 'short', year: m === 0 || m === 12 ? '2-digit' : undefined });
+      const progress = m / months;
 
-  const { positions, stats, allocation } = comparison;
+      // Linear interpolation: current → projected
+      const clientVal = clientStats.totalValue + (clientStats.projectedValue - clientStats.totalValue) * progress;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pt: Record<string, any> = {
+        dateLabel: label,
+        client: Math.round(clientVal),
+      };
 
-  // Donnees bar chart allocation
-  const allocChart = [
-    { name: 'Actions', modele: allocation.modelEquity, actuel: allocation.actualEquity },
-    { name: 'Obligations', modele: allocation.modelBond, actuel: allocation.actualBond },
-    { name: 'Liquidites', modele: allocation.modelCash, actuel: allocation.actualCash },
-  ];
+      if (modelStats) {
+        const modelVal = modelStats.totalValue + (modelStats.projectedValue - modelStats.totalValue) * progress;
+        pt.model = Math.round(modelVal);
+      }
+
+      // Benchmark projections: use average historical ~10% annual
+      const benchReturns: Record<string, number> = { '^GSPTSE': 8, '^GSPC': 10, '^IXIC': 12 };
+      for (const [sym, annualPct] of Object.entries(benchReturns)) {
+        const benchVal = clientStats.totalValue * (1 + (annualPct / 100) * progress);
+        pt[sym] = Math.round(benchVal);
+      }
+
+      points.push(pt);
+    }
+    return points;
+  }, [clientStats, modelStats]);
+
+  // ── Handlers ──
+  const addHolding = useCallback((symbol: string, name: string) => {
+    if (clientHoldings.find(h => h.symbol === symbol)) {
+      toast('warning', `${symbol} est déjà dans la liste`);
+      return;
+    }
+    setClientHoldings(prev => [...prev, { symbol, name, quantity: 1 }]);
+  }, [clientHoldings, toast]);
+
+  const updateQuantity = useCallback((symbol: string, qty: number) => {
+    setClientHoldings(prev => prev.map(h => h.symbol === symbol ? { ...h, quantity: Math.max(0, qty) } : h));
+  }, []);
+
+  const removeHolding = useCallback((symbol: string) => {
+    setClientHoldings(prev => prev.filter(h => h.symbol !== symbol));
+  }, []);
+
+  // ── Compare ready? ──
+  const hasClient = clientHoldings.length > 0 && clientStats.totalValue > 0;
+  const hasModel = !!selectedModel;
+  const canCompare = hasClient && hasModel;
+  const isLoadingData = quotesLoading || targetsLoading;
 
   return (
     <div className="space-y-6">
-      {/* ── Stats resume ── */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-bold text-emerald-600">{stats.adherence}%</p>
-          <p className="text-xs text-text-muted">Adherence</p>
-        </Card>
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-semibold text-emerald-600">{stats.match}</p>
-          <p className="text-xs text-text-muted">Conformes</p>
-        </Card>
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-semibold text-amber-500">{stats.overweight}</p>
-          <p className="text-xs text-text-muted">Surponderes</p>
-        </Card>
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-semibold text-orange-500">{stats.underweight}</p>
-          <p className="text-xs text-text-muted">Sous-ponderes</p>
-        </Card>
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-semibold text-red-500">{stats.missing}</p>
-          <p className="text-xs text-text-muted">Manquants</p>
-        </Card>
-        <Card padding="sm" className="text-center">
-          <p className="text-2xl font-semibold text-gray-400">{stats.extra}</p>
-          <p className="text-xs text-text-muted">Hors modele</p>
-        </Card>
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/models">
+            <Button variant="ghost" size="sm" icon={<ArrowLeft className="h-4 w-4" />}>Modèles</Button>
+          </Link>
+          <span className="text-text-light">/</span>
+          <h1 className="text-lg font-extrabold text-text-main flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-[#CE82FF]" />
+            Comparer avec un client
+          </h1>
+        </div>
       </div>
 
-      {/* ── Allocation chart ── */}
-      <Card>
-        <h3 className="text-sm font-semibold text-text-main mb-4">Allocation globale : Modele vs Actuel</h3>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={allocChart} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#586e82' }} />
-            <YAxis tick={{ fontSize: 11, fill: '#586e82' }} tickFormatter={(v: number) => `${v}%`} />
-            <Tooltip
-              contentStyle={tooltipStyle}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter={(value: any, name: any) => [
-                `${fmtDec(Number(value) || 0)}%`,
-                name === 'modele' ? 'Modele' : 'Actuel',
-              ]}
-            />
-            <Bar dataKey="modele" fill={BRAND} radius={[4, 4, 0, 0]} />
-            <Bar dataKey="actuel" fill="#6366f1" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-        <div className="flex justify-center gap-6 mt-2">
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: BRAND }} /> Modele
-          </div>
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#6366f1' }} /> Actuel
+      {/* ── Two-Column Layout ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* ════════ LEFT: Client Portfolio ════════ */}
+        <div className="space-y-4">
+          <div className="rounded-3xl border-[3px] border-[#1CB0F6]/30 bg-white overflow-hidden"
+            style={{ boxShadow: '0 4px 0 0 #1CB0F620' }}>
+            {/* Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-[#1CB0F6]/5 to-transparent border-b-[3px] border-[#1CB0F6]/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#1CB0F6]/10 flex items-center justify-center">
+                  <Briefcase className="h-5 w-5 text-[#1CB0F6]" />
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-text-main">Portefeuille du client</h2>
+                  <p className="text-xs font-semibold text-text-muted">Ajoutez les titres du relevé d&apos;investissement</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 pt-4">
+              <InlineSymbolSearch onSelect={addHolding} />
+            </div>
+
+            {/* Holdings list */}
+            <div className="px-5 py-4 space-y-2">
+              {clientHoldings.length === 0 ? (
+                <div className="text-center py-8">
+                  <Search className="h-8 w-8 text-text-muted/30 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-text-muted">Aucun titre ajouté</p>
+                  <p className="text-xs text-text-muted/70 mt-1">Recherchez et ajoutez les positions du client</p>
+                </div>
+              ) : (
+                <>
+                  {clientHoldings.map((h) => {
+                    const q = quotesMap.get(h.symbol);
+                    const price = q?.price || 0;
+                    const mv = h.quantity * price;
+                    const t = allTargets[h.symbol];
+                    const targetGain = t?.targetConsensus && price > 0
+                      ? ((t.targetConsensus - price) / price) * 100
+                      : null;
+
+                    return (
+                      <div key={h.symbol}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-2xl border-[3px] border-gray-100 bg-white hover:border-[#1CB0F6]/30 transition-all"
+                        style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
+                        {/* Symbol badge */}
+                        <div className="px-2 py-1 rounded-xl bg-[#1CB0F6]/10 text-[#1CB0F6] font-extrabold text-xs flex-shrink-0">
+                          {h.symbol}
+                        </div>
+                        {/* Name */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-text-main truncate">{h.name}</p>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold text-text-muted">
+                            {price > 0 && <span>{fmtMoney(price)}</span>}
+                            {targetGain !== null && (
+                              <span className={`px-1.5 py-0.5 rounded-lg ${targetGain >= 0 ? 'bg-[#58CC02]/10 text-[#58CC02]' : 'bg-[#FF4B4B]/10 text-[#FF4B4B]'}`}>
+                                Cible {fmtPct(targetGain)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Quantity */}
+                        <input type="number" min={0} value={h.quantity}
+                          onChange={(e) => updateQuantity(h.symbol, parseInt(e.target.value) || 0)}
+                          className="w-16 text-center text-sm font-extrabold text-text-main border-[2px] border-gray-200 rounded-xl py-1 focus:border-[#1CB0F6] focus:outline-none"
+                        />
+                        {/* Value */}
+                        <span className="text-xs font-bold text-text-main w-20 text-right">
+                          {mv > 0 ? fmtMoney(mv) : '—'}
+                        </span>
+                        {/* Remove */}
+                        <button onClick={() => removeHolding(h.symbol)}
+                          className="text-text-muted/40 hover:text-[#FF4B4B] transition-colors">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+
+            {/* Client summary */}
+            {hasClient && (
+              <div className="px-5 pb-5">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-[#1CB0F6]/5 border-[2px] border-[#1CB0F6]/20 p-2.5 text-center">
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Valeur</p>
+                    <p className="text-sm font-extrabold text-[#1CB0F6]">{fmtMoney(clientStats.totalValue)}</p>
+                  </div>
+                  <div className="rounded-xl bg-[#CE82FF]/5 border-[2px] border-[#CE82FF]/20 p-2.5 text-center">
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Cible 12m</p>
+                    <p className="text-sm font-extrabold text-[#CE82FF]">{fmtMoney(clientStats.projectedValue)}</p>
+                  </div>
+                  <div className={`rounded-xl p-2.5 text-center border-[2px] ${
+                    clientStats.gainPct >= 0
+                      ? 'bg-[#58CC02]/5 border-[#58CC02]/20'
+                      : 'bg-[#FF4B4B]/5 border-[#FF4B4B]/20'
+                  }`}>
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Gain estimé</p>
+                    <p className={`text-sm font-extrabold ${clientStats.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                      {fmtPct(clientStats.gainPct)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      </Card>
 
-      {/* ── Ecart par position (bar chart) ── */}
-      {positions.filter(p => p.status !== 'extra').length > 0 && (
-        <Card>
-          <h3 className="text-sm font-semibold text-text-main mb-4">Ecart de poids par position</h3>
-          <ResponsiveContainer width="100%" height={Math.max(200, positions.filter(p => p.status !== 'extra').length * 28)}>
-            <BarChart
-              data={positions.filter(p => p.status !== 'extra').map(p => ({
-                name: p.symbol,
-                ecart: p.weightDiff,
-              }))}
-              layout="vertical"
-              margin={{ top: 5, right: 20, left: 60, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#586e82' }} tickFormatter={(v: number) => `${v > 0 ? '+' : ''}${v}%`} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#586e82' }} width={55} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(value: any) => [`${Number(value) > 0 ? '+' : ''}${fmtDec(Number(value))}%`, 'Ecart']}
-              />
-              <Bar dataKey="ecart" radius={[0, 4, 4, 0]}>
-                {positions.filter(p => p.status !== 'extra').map((p, i) => (
-                  <Cell
-                    key={i}
-                    fill={
-                      p.status === 'missing' ? RED
-                      : p.status === 'underweight' ? AMBER
-                      : p.status === 'overweight' ? '#6366f1'
-                      : GREEN
-                    }
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
+        {/* ════════ RIGHT: Model Portfolio ════════ */}
+        <div className="space-y-4">
+          <div className="rounded-3xl border-[3px] border-[#58CC02]/30 bg-white overflow-hidden"
+            style={{ boxShadow: '0 4px 0 0 #58CC0220' }}>
+            {/* Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-[#58CC02]/5 to-transparent border-b-[3px] border-[#58CC02]/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#58CC02]/10 flex items-center justify-center">
+                  <Trophy className="h-5 w-5 text-[#58CC02]" />
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-text-main">Portefeuille modèle</h2>
+                  <p className="text-xs font-semibold text-text-muted">Sélectionnez un modèle pour comparer</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Model selector */}
+            <div className="px-5 pt-4">
+              <button onClick={() => setShowModelPicker(!showModelPicker)}
+                className="w-full flex items-center justify-between px-4 py-3 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-main hover:border-[#58CC02] transition-all"
+                style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
+                <span>{selectedModel ? selectedModel.name : 'Choisir un modèle...'}</span>
+                {showModelPicker ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+
+              {showModelPicker && (
+                <div className="mt-2 rounded-2xl border-[3px] border-gray-100 bg-white overflow-hidden max-h-64 overflow-y-auto"
+                  style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
+                  {modelsLoading ? (
+                    <div className="flex justify-center py-4"><Spinner size="sm" /></div>
+                  ) : !models?.length ? (
+                    <p className="text-sm text-text-muted text-center py-4">Aucun modèle disponible</p>
+                  ) : (
+                    models.map((m) => (
+                      <button key={m.id}
+                        onClick={() => { setSelectedModelId(m.id); setShowModelPicker(false); }}
+                        className={`w-full text-left px-4 py-3 hover:bg-[#58CC02]/5 transition-colors flex items-center justify-between ${
+                          selectedModelId === m.id ? 'bg-[#58CC02]/10' : ''
+                        }`}>
+                        <div>
+                          <span className="font-bold text-sm text-text-main">{m.name}</span>
+                          <span className="text-xs text-text-muted ml-2">{m.holdings.length} titres · {m.risk_level}</span>
+                        </div>
+                        {selectedModelId === m.id && (
+                          <div className="w-5 h-5 rounded-full bg-[#58CC02] flex items-center justify-center">
+                            <span className="text-white text-xs">✓</span>
+                          </div>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Model holdings */}
+            <div className="px-5 py-4 space-y-2">
+              {!selectedModel ? (
+                <div className="text-center py-8">
+                  <Trophy className="h-8 w-8 text-text-muted/30 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-text-muted">Aucun modèle sélectionné</p>
+                </div>
+              ) : (
+                <>
+                  {selectedModel.holdings.map((h) => {
+                    const q = quotesMap.get(h.symbol);
+                    const price = q?.price || 0;
+                    const t = allTargets[h.symbol];
+                    const targetGain = t?.targetConsensus && price > 0
+                      ? ((t.targetConsensus - price) / price) * 100
+                      : null;
+
+                    return (
+                      <div key={h.symbol}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-2xl border-[3px] border-gray-100 bg-white"
+                        style={{ boxShadow: '0 2px 0 0 #e5e7eb' }}>
+                        <div className="px-2 py-1 rounded-xl bg-[#58CC02]/10 text-[#58CC02] font-extrabold text-xs flex-shrink-0">
+                          {h.symbol}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-text-main truncate">{h.name}</p>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold text-text-muted">
+                            <span>{fmtDec(h.weight)}%</span>
+                            {price > 0 && <span>· {fmtMoney(price)}</span>}
+                            {targetGain !== null && (
+                              <span className={`px-1.5 py-0.5 rounded-lg ${targetGain >= 0 ? 'bg-[#58CC02]/10 text-[#58CC02]' : 'bg-[#FF4B4B]/10 text-[#FF4B4B]'}`}>
+                                Cible {fmtPct(targetGain)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+
+            {/* Model summary */}
+            {modelStats && (
+              <div className="px-5 pb-5">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-[#58CC02]/5 border-[2px] border-[#58CC02]/20 p-2.5 text-center">
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Valeur</p>
+                    <p className="text-sm font-extrabold text-[#58CC02]">{fmtMoney(modelStats.totalValue)}</p>
+                  </div>
+                  <div className="rounded-xl bg-[#CE82FF]/5 border-[2px] border-[#CE82FF]/20 p-2.5 text-center">
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Cible 12m</p>
+                    <p className="text-sm font-extrabold text-[#CE82FF]">{fmtMoney(modelStats.projectedValue)}</p>
+                  </div>
+                  <div className={`rounded-xl p-2.5 text-center border-[2px] ${
+                    modelStats.gainPct >= 0
+                      ? 'bg-[#58CC02]/5 border-[#58CC02]/20'
+                      : 'bg-[#FF4B4B]/5 border-[#FF4B4B]/20'
+                  }`}>
+                    <p className="text-[10px] font-bold text-text-muted uppercase">Gain estimé</p>
+                    <p className={`text-sm font-extrabold ${modelStats.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                      {fmtPct(modelStats.gainPct)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* COMPARISON SECTION */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {canCompare && (
+        <>
+          {/* ── Head-to-Head Stats ── */}
+          <div className="rounded-3xl border-[3px] border-[#CE82FF]/30 bg-white p-6"
+            style={{ boxShadow: '0 4px 0 0 #CE82FF20' }}>
+            <h3 className="font-extrabold text-text-main text-center mb-5 flex items-center justify-center gap-2">
+              <Target className="h-5 w-5 text-[#CE82FF]" />
+              Face à face — Projection 12 mois
+            </h3>
+            <div className="grid grid-cols-3 gap-4">
+              {/* Client col */}
+              <div className="text-center space-y-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1CB0F6]/10">
+                  <Briefcase className="h-3.5 w-3.5 text-[#1CB0F6]" />
+                  <span className="text-xs font-extrabold text-[#1CB0F6]">Client</span>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-text-main">{fmtMoney(clientStats.projectedValue)}</p>
+                  <p className={`text-sm font-extrabold ${clientStats.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                    {fmtPct(clientStats.gainPct)}
+                  </p>
+                </div>
+              </div>
+              {/* VS */}
+              <div className="flex items-center justify-center">
+                <div className="w-14 h-14 rounded-full bg-[#CE82FF]/10 border-[3px] border-[#CE82FF]/30 flex items-center justify-center">
+                  <span className="font-extrabold text-[#CE82FF] text-lg">VS</span>
+                </div>
+              </div>
+              {/* Model col */}
+              <div className="text-center space-y-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#58CC02]/10">
+                  <Trophy className="h-3.5 w-3.5 text-[#58CC02]" />
+                  <span className="text-xs font-extrabold text-[#58CC02]">Modèle</span>
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-text-main">{modelStats ? fmtMoney(modelStats.projectedValue) : '—'}</p>
+                  <p className={`text-sm font-extrabold ${(modelStats?.gainPct ?? 0) >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                    {modelStats ? fmtPct(modelStats.gainPct) : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Gain difference highlight */}
+            {modelStats && (
+              <div className="mt-5 text-center">
+                {(() => {
+                  const diff = modelStats.gainPct - clientStats.gainPct;
+                  const absDiff = Math.abs(diff);
+                  const dollarDiff = (modelStats.projectedValue) - clientStats.projectedValue;
+                  const modelWins = diff > 0;
+                  return (
+                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl border-[3px] font-extrabold text-sm ${
+                      modelWins
+                        ? 'border-[#58CC02]/30 bg-[#58CC02]/5 text-[#58CC02]'
+                        : 'border-[#1CB0F6]/30 bg-[#1CB0F6]/5 text-[#1CB0F6]'
+                    }`} style={{ boxShadow: modelWins ? '0 3px 0 0 #58CC0220' : '0 3px 0 0 #1CB0F620' }}>
+                      {modelWins ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                      {modelWins ? 'Le modèle' : 'Le client'} surperforme de {fmtDec(absDiff)}% ({fmtMoney(Math.abs(dollarDiff))})
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* ── Past Performance Chart ── */}
+          <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
+            style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
+            <div className="px-6 pt-5 pb-2">
+              <h3 className="font-extrabold text-text-main flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-[#FF9600]" />
+                Rendement passé (12 mois)
+              </h3>
+              <p className="text-xs font-semibold text-text-muted mt-1">Performance normalisée (base 100)</p>
+            </div>
+
+            {clientHistLoading || modelHistLoading ? (
+              <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+            ) : pastChartData.length >= 2 ? (
+              <div className="h-[300px] px-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={pastChartData} margin={{ top: 8, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradClient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={DUO.blue} stopOpacity={0.15} />
+                        <stop offset="100%" stopColor={DUO.blue} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradModel" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={DUO.green} stopOpacity={0.15} />
+                        <stop offset="100%" stopColor={DUO.green} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="dateLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} domain={['auto', 'auto']}
+                      tickFormatter={(v: number) => `${v}`} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: 16, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={(value: any, name: any) => {
+                        const labels: Record<string, string> = {
+                          client: 'Client', model: 'Modèle',
+                          ...BENCHMARK_LABELS,
+                        };
+                        return [`${Number(value).toFixed(1)}`, labels[name] || name];
+                      }}
+                    />
+                    <Area type="monotone" dataKey="client" stroke={DUO.blue} strokeWidth={3}
+                      fill="url(#gradClient)" dot={false}
+                      activeDot={{ r: 5, fill: DUO.blue, stroke: '#fff', strokeWidth: 2 }} />
+                    {modelHist && (
+                      <Area type="monotone" dataKey="model" stroke={DUO.green} strokeWidth={3}
+                        fill="url(#gradModel)" dot={false}
+                        activeDot={{ r: 5, fill: DUO.green, stroke: '#fff', strokeWidth: 2 }} />
+                    )}
+                    {Object.keys(clientHist?.benchmarks || {}).map(sym => (
+                      <Line key={sym} type="monotone" dataKey={sym}
+                        stroke={BENCHMARK_COLORS[sym] || '#94a3b8'} strokeWidth={1.5}
+                        strokeDasharray="6 3" dot={false} />
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex justify-center py-12 text-sm text-text-muted">
+                Pas assez de données historiques
+              </div>
+            )}
+
+            {/* Chart legend */}
+            <div className="flex flex-wrap justify-center gap-3 px-6 pb-5 pt-2">
+              <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.blue }} /> Client
+              </span>
+              {selectedModel && (
+                <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                  <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.green }} /> Modèle
+                </span>
+              )}
+              {Object.entries(BENCHMARK_LABELS).map(([sym, label]) => (
+                <span key={sym} className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                  <div className="w-3 h-0.5 rounded-full border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLORS[sym] }} /> {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Future Projection Chart ── */}
+          <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
+            style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
+            <div className="px-6 pt-5 pb-2">
+              <h3 className="font-extrabold text-text-main flex items-center gap-2">
+                <Target className="h-5 w-5 text-[#CE82FF]" />
+                Projection 12 mois (cours cibles analystes)
+              </h3>
+              <p className="text-xs font-semibold text-text-muted mt-1">
+                Interpolation linéaire vers les prix cibles consensus
+              </p>
+            </div>
+
+            {projectionChartData.length > 0 ? (
+              <div className="h-[280px] px-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={projectionChartData} margin={{ top: 8, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradProjClient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={DUO.blue} stopOpacity={0.12} />
+                        <stop offset="100%" stopColor={DUO.blue} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradProjModel" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={DUO.green} stopOpacity={0.12} />
+                        <stop offset="100%" stopColor={DUO.green} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="dateLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+                      domain={['auto', 'auto']}
+                      tickFormatter={(v: number) => fmtMoney(v)} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: 16, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={(value: any, name: any) => {
+                        const labels: Record<string, string> = {
+                          client: 'Client', model: 'Modèle',
+                          ...BENCHMARK_LABELS,
+                        };
+                        return [fmtMoney(Number(value)), labels[name] || name];
+                      }}
+                    />
+                    <Area type="monotone" dataKey="client" stroke={DUO.blue} strokeWidth={3}
+                      fill="url(#gradProjClient)" dot={false}
+                      activeDot={{ r: 5, fill: DUO.blue, stroke: '#fff', strokeWidth: 2 }} />
+                    {modelStats && (
+                      <Area type="monotone" dataKey="model" stroke={DUO.green} strokeWidth={3}
+                        fill="url(#gradProjModel)" dot={false}
+                        activeDot={{ r: 5, fill: DUO.green, stroke: '#fff', strokeWidth: 2 }} />
+                    )}
+                    {Object.keys(BENCHMARK_LABELS).map(sym => (
+                      <Line key={sym} type="monotone" dataKey={sym}
+                        stroke={BENCHMARK_COLORS[sym] || '#94a3b8'} strokeWidth={1.5}
+                        strokeDasharray="6 3" dot={false} />
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : null}
+
+            {/* Chart legend */}
+            <div className="flex flex-wrap justify-center gap-3 px-6 pb-5 pt-2">
+              <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.blue }} /> Client
+              </span>
+              {modelStats && (
+                <span className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                  <div className="w-3 h-1.5 rounded-full" style={{ backgroundColor: DUO.green }} /> Modèle
+                </span>
+              )}
+              {Object.entries(BENCHMARK_LABELS).map(([sym, label]) => (
+                <span key={sym} className="flex items-center gap-1.5 text-xs font-bold text-text-muted">
+                  <div className="w-3 h-0.5 rounded-full border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLORS[sym] }} /> {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Detailed Holdings Comparison ── */}
+          <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
+            style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
+            <div className="px-6 py-4 border-b-[3px] border-gray-100">
+              <h3 className="font-extrabold text-text-main">Détail par position — Cours cibles</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[10px] text-text-muted uppercase tracking-wider border-b border-gray-100 font-bold">
+                    <th className="px-4 py-3">Titre</th>
+                    <th className="px-3 py-3 text-right">Prix actuel</th>
+                    <th className="px-3 py-3 text-right">Cible 12m</th>
+                    <th className="px-3 py-3 text-right">Gain estimé</th>
+                    <th className="px-3 py-3 text-center">Analystes</th>
+                    <th className="px-3 py-3 text-center">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allSymbols.map((sym) => {
+                    const q = quotesMap.get(sym);
+                    const price = q?.price || 0;
+                    const t = allTargets[sym];
+                    const target = t?.targetConsensus || 0;
+                    const gain = price > 0 && target > 0 ? ((target - price) / price) * 100 : 0;
+                    const inClient = clientHoldings.some(h => h.symbol === sym);
+                    const inModel = selectedModel?.holdings.some(h => h.symbol === sym);
+
+                    return (
+                      <tr key={sym} className="border-t border-gray-50 hover:bg-gray-50/50">
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-text-main text-xs">{sym}</span>
+                            {inClient && <span className="w-2 h-2 rounded-full bg-[#1CB0F6]" title="Client" />}
+                            {inModel && <span className="w-2 h-2 rounded-full bg-[#58CC02]" title="Modèle" />}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{price > 0 ? `$${fmtDec(price)}` : '—'}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs font-bold">{target > 0 ? `$${fmtDec(target)}` : '—'}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono text-xs font-extrabold ${gain >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                          {target > 0 ? fmtPct(gain) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-xs text-text-muted">
+                          {t?.numberOfAnalysts || '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {t?.source && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                              t.source === 'yahoo' ? 'bg-purple-100 text-purple-700'
+                              : t.source === 'fmp' ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-600'
+                            }`}>{t.source}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* ── Tableau detail ── */}
-      <Card padding="none">
-        <div className="px-5 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-text-main">Detail des positions</h3>
+      {/* ── Loading overlay ── */}
+      {isLoadingData && hasClient && (
+        <div className="flex justify-center py-8">
+          <Spinner size="lg" />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
-                <th className="px-4 py-2.5 w-8"></th>
-                <th className="px-3 py-2.5">Symbole</th>
-                <th className="px-3 py-2.5">Nom</th>
-                <th className="px-3 py-2.5 text-right">Qte Modele</th>
-                <th className="px-3 py-2.5 text-right">Qte Actuel</th>
-                <th className="px-3 py-2.5 text-right">Ecart Qte</th>
-                <th className="px-3 py-2.5 text-right">Poids Modele</th>
-                <th className="px-3 py-2.5 text-right">Poids Actuel</th>
-                <th className="px-3 py-2.5 text-right">Ecart Poids</th>
-                <th className="px-3 py-2.5 text-center">Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map(p => (
-                <tr key={p.symbol} className={`border-t border-gray-50 hover:bg-gray-50/50 ${
-                  p.status === 'missing' ? 'bg-red-50/30' : p.status === 'extra' ? 'bg-gray-50/50' : ''
-                }`}>
-                  <td className="px-4 py-2">
-                    <StatusIcon status={p.status} />
-                  </td>
-                  <td className="px-3 py-2 font-mono font-medium text-text-main">{p.symbol}</td>
-                  <td className="px-3 py-2 text-text-muted max-w-[180px] truncate">{p.name}</td>
-                  <td className="px-3 py-2 text-right font-mono">{p.modelQty || '—'}</td>
-                  <td className="px-3 py-2 text-right font-mono">{p.actualQty || '—'}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-semibold ${
-                    p.qtyDiff > 0 ? 'text-emerald-600' : p.qtyDiff < 0 ? 'text-red-500' : 'text-text-muted'
-                  }`}>
-                    {p.qtyDiff > 0 ? '+' : ''}{p.qtyDiff || '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-text-muted">{p.modelWeight ? `${fmtDec(p.modelWeight)}%` : '—'}</td>
-                  <td className="px-3 py-2 text-right font-mono text-text-muted">{p.actualWeight ? `${fmtDec(p.actualWeight)}%` : '—'}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-semibold ${
-                    p.weightDiff > 0.5 ? 'text-emerald-600' : p.weightDiff < -0.5 ? 'text-red-500' : 'text-text-muted'
-                  }`}>
-                    {p.weightDiff !== 0 ? `${p.weightDiff > 0 ? '+' : ''}${fmtDec(p.weightDiff)}%` : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <StatusBadge status={p.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* ── Transactions suggerees ── */}
-      <SuggestedTransactions positions={positions} holdings={holdings} model={model} />
+      )}
     </div>
   );
-}
-
-// ════════════════════════════════════════
-// TRANSACTIONS SUGGEREES
-// ════════════════════════════════════════
-
-interface Transaction {
-  action: 'BUY' | 'SELL';
-  symbol: string;
-  name: string;
-  quantity: number;
-  estimatedPrice: number;
-  estimatedValue: number;
-  reason: string;
-}
-
-function SuggestedTransactions({ positions, holdings, model }: {
-  positions: ComparedPosition[];
-  holdings: ParsedHolding[];
-  model: GeneratedPortfolio;
-}) {
-  const { toast } = useToast();
-  const [showSells, setShowSells] = useState(true);
-
-  const transactions = useMemo(() => {
-    const txs: Transaction[] = [];
-
-    // Prix lookup depuis les holdings Croesus
-    const holdingPrices = new Map<string, number>();
-    for (const h of holdings) {
-      if (h.marketPrice > 0) holdingPrices.set(h.symbol.toUpperCase(), h.marketPrice);
-    }
-
-    // Prix lookup depuis le modele
-    const modelPrices = new Map<string, number>();
-    for (const sec of model.sectors) {
-      for (const s of sec.stocks) {
-        modelPrices.set(s.symbol.toUpperCase(), s.price);
-      }
-    }
-
-    for (const p of positions) {
-      const sym = p.symbol.toUpperCase();
-      const price = modelPrices.get(sym) || holdingPrices.get(sym) || 0;
-
-      if (p.status === 'missing') {
-        // Acheter la totalite
-        txs.push({
-          action: 'BUY',
-          symbol: p.symbol,
-          name: p.name,
-          quantity: p.modelQty,
-          estimatedPrice: price,
-          estimatedValue: p.modelQty * price,
-          reason: 'Position absente du portefeuille',
-        });
-      } else if (p.status === 'underweight' && p.qtyDiff < 0) {
-        // Acheter la difference
-        const qty = Math.abs(p.qtyDiff);
-        txs.push({
-          action: 'BUY',
-          symbol: p.symbol,
-          name: p.name,
-          quantity: qty,
-          estimatedPrice: price,
-          estimatedValue: qty * price,
-          reason: `Sous-pondere de ${fmtDec(Math.abs(p.weightDiff))}%`,
-        });
-      } else if (p.status === 'overweight' && p.qtyDiff > 0) {
-        // Vendre l'exces
-        const qty = p.qtyDiff;
-        txs.push({
-          action: 'SELL',
-          symbol: p.symbol,
-          name: p.name,
-          quantity: qty,
-          estimatedPrice: price,
-          estimatedValue: qty * price,
-          reason: `Surpondere de ${fmtDec(p.weightDiff)}%`,
-        });
-      } else if (p.status === 'extra') {
-        // Vendre la totalite
-        txs.push({
-          action: 'SELL',
-          symbol: p.symbol,
-          name: p.name,
-          quantity: p.actualQty,
-          estimatedPrice: price,
-          estimatedValue: p.actualQty * price,
-          reason: 'Position hors modele',
-        });
-      }
-    }
-
-    return txs;
-  }, [positions, holdings, model]);
-
-  const buys = transactions.filter(t => t.action === 'BUY');
-  const sells = transactions.filter(t => t.action === 'SELL');
-  const totalBuys = buys.reduce((s, t) => s + t.estimatedValue, 0);
-  const totalSells = sells.reduce((s, t) => s + t.estimatedValue, 0);
-  const net = totalSells - totalBuys;
-
-  const displayedTxs = showSells ? transactions : buys;
-
-  // Copier au clipboard
-  function handleCopy() {
-    const lines = [
-      'Action\tSymbole\tNom\tQuantite\tPrix est.\tValeur est.\tRaison',
-      ...displayedTxs.map(t =>
-        `${t.action}\t${t.symbol}\t${t.name}\t${t.quantity}\t${fmtDec(t.estimatedPrice)}\t${fmt(t.estimatedValue)}\t${t.reason}`
-      ),
-    ];
-    navigator.clipboard.writeText(lines.join('\n'));
-    toast('success', 'Transactions copiees au presse-papier');
-  }
-
-  if (transactions.length === 0) {
-    return (
-      <Card className="text-center py-8">
-        <Check className="h-10 w-10 text-emerald-500 mx-auto mb-2" />
-        <h3 className="font-semibold text-text-main">Aucune transaction necessaire</h3>
-        <p className="text-sm text-text-muted">Le portefeuille est conforme au modele.</p>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text-main">Transactions suggerees</h3>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showSells}
-              onChange={(e) => setShowSells(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            Afficher les ventes
-          </label>
-          <Button variant="ghost" size="sm" onClick={handleCopy} icon={<Copy className="h-3.5 w-3.5" />}>
-            Copier
-          </Button>
-        </div>
-      </div>
-
-      {/* Resume financier */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card padding="sm">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
-            <span className="text-xs text-text-muted">Achats ({buys.length})</span>
-          </div>
-          <p className="text-lg font-semibold text-emerald-600">{fmt(totalBuys)}</p>
-        </Card>
-        <Card padding="sm">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowDownCircle className="h-4 w-4 text-red-500" />
-            <span className="text-xs text-text-muted">Ventes ({sells.length})</span>
-          </div>
-          <p className="text-lg font-semibold text-red-500">{fmt(totalSells)}</p>
-        </Card>
-        <Card padding="sm">
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowRightLeft className="h-4 w-4 text-text-muted" />
-            <span className="text-xs text-text-muted">Flux net</span>
-          </div>
-          <p className={`text-lg font-semibold ${net >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-            {net >= 0 ? '+' : ''}{fmt(net)}
-          </p>
-        </Card>
-        <Card padding="sm">
-          <div className="flex items-center gap-2 mb-1">
-            <ShoppingCart className="h-4 w-4 text-text-muted" />
-            <span className="text-xs text-text-muted">Total transactions</span>
-          </div>
-          <p className="text-lg font-semibold text-text-main">{transactions.length}</p>
-        </Card>
-      </div>
-
-      {/* Tableau transactions */}
-      <Card padding="none">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-gray-100">
-                <th className="px-4 py-2.5 w-20">Action</th>
-                <th className="px-3 py-2.5">Symbole</th>
-                <th className="px-3 py-2.5">Nom</th>
-                <th className="px-3 py-2.5 text-right">Quantite</th>
-                <th className="px-3 py-2.5 text-right">Prix est.</th>
-                <th className="px-3 py-2.5 text-right">Valeur est.</th>
-                <th className="px-3 py-2.5">Raison</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedTxs.map((t, i) => (
-                <tr key={`${t.symbol}-${i}`} className={`border-t border-gray-50 hover:bg-gray-50/50 ${
-                  t.action === 'BUY' ? 'bg-emerald-50/20' : 'bg-red-50/20'
-                }`}>
-                  <td className="px-4 py-2.5">
-                    <Badge variant={t.action === 'BUY' ? 'success' : 'danger'}>
-                      {t.action === 'BUY' ? (
-                        <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3" /> Achat</span>
-                      ) : (
-                        <span className="flex items-center gap-1"><Ban className="h-3 w-3" /> Vente</span>
-                      )}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2.5 font-mono font-medium text-text-main">{t.symbol}</td>
-                  <td className="px-3 py-2.5 text-text-muted max-w-[160px] truncate">{t.name}</td>
-                  <td className="px-3 py-2.5 text-right font-mono font-semibold">{t.quantity}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-text-muted">
-                    {t.estimatedPrice > 0 ? `${fmtDec(t.estimatedPrice)}` : '—'}
-                  </td>
-                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${
-                    t.action === 'BUY' ? 'text-emerald-600' : 'text-red-500'
-                  }`}>
-                    {t.estimatedValue > 0 ? fmt(t.estimatedValue) : '—'}
-                  </td>
-                  <td className="px-3 py-2.5 text-text-muted text-xs">{t.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <p className="text-xs text-text-light">
-        Les prix estimes proviennent de Yahoo Finance et Croesus. Les quantites sont indicatives et doivent etre validees avant execution.
-      </p>
-    </div>
-  );
-}
-
-// ── Composants utilitaires ──
-
-function StatusIcon({ status }: { status: ComparedPosition['status'] }) {
-  switch (status) {
-    case 'match':
-      return <Check className="h-4 w-4 text-emerald-500" />;
-    case 'overweight':
-      return <TrendingUp className="h-4 w-4 text-amber-500" />;
-    case 'underweight':
-      return <TrendingDown className="h-4 w-4 text-orange-500" />;
-    case 'missing':
-      return <AlertTriangle className="h-4 w-4 text-red-500" />;
-    case 'extra':
-      return <Minus className="h-4 w-4 text-gray-400" />;
-  }
-}
-
-function StatusBadge({ status }: { status: ComparedPosition['status'] }) {
-  const map: Record<string, { variant: 'success' | 'warning' | 'danger' | 'default' | 'info'; label: string }> = {
-    match: { variant: 'success', label: 'Conforme' },
-    overweight: { variant: 'warning', label: 'Surpondere' },
-    underweight: { variant: 'warning', label: 'Sous-pondere' },
-    missing: { variant: 'danger', label: 'Manquant' },
-    extra: { variant: 'default', label: 'Hors modele' },
-  };
-  const m = map[status];
-  return <Badge variant={m.variant}>{m.label}</Badge>;
 }
