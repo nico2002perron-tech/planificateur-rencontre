@@ -197,7 +197,7 @@ export async function getYahooNews(symbol: string, count = 8): Promise<YahooNews
     if (!res.ok) return [];
 
     const json = await res.json();
-    const items = json?.finance?.result?.[0]?.news ?? [];
+    const items = json?.news ?? [];
 
     return (items as Record<string, unknown>[]).map((item) => ({
       title:       String(item.title ?? ''),
