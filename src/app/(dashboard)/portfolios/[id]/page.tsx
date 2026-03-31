@@ -12,6 +12,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { useSymbolsNews } from '@/lib/hooks/useNews';
+import { useSymbolLogos } from '@/lib/hooks/useLogos';
 import { formatCurrency, formatPercent } from '@/lib/utils/format';
 import { AdvancedChart } from '@/components/tradingview/AdvancedChart';
 import { TechnicalAnalysis } from '@/components/tradingview/TechnicalAnalysis';
@@ -43,6 +44,7 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
   // News system
   const symbols = useMemo(() => (holdings || []).map((h) => h.symbol), [holdings]);
   const { newsMap } = useSymbolsNews(symbols);
+  const { logos } = useSymbolLogos(symbols);
   const [newsModalSymbol, setNewsModalSymbol] = useState<string | null>(null);
   const selectedNews = newsModalSymbol ? newsMap[newsModalSymbol] : null;
 
@@ -118,6 +120,18 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                           <TableRow key={h.id}>
                             <TableCell>
                               <div className="flex items-center gap-2">
+                                {logos[h.symbol] ? (
+                                  <img
+                                    src={logos[h.symbol]!}
+                                    alt=""
+                                    className="h-7 w-7 rounded-full object-contain bg-white border border-gray-100 shrink-0"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                ) : (
+                                  <span className="flex items-center justify-center h-7 w-7 rounded-full bg-gray-100 text-[10px] font-bold text-text-muted shrink-0">
+                                    {h.symbol.replace(/\.(TO|V|NE)$/, '').slice(0, 2)}
+                                  </span>
+                                )}
                                 <span className="font-semibold">{h.symbol}</span>
                                 <NewsBadge
                                   symbolNews={newsMap[h.symbol]}
