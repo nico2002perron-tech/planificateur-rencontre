@@ -359,17 +359,20 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
   const { allocationData, bondTargetPct } = useMemo(() => {
     if (!data?.live?.holdings || !data?.simulation) return { allocationData: [], bondTargetPct: 0 };
     const totalLive = data.live.holdings.reduce((s, h) => s + h.market_value, 0);
-    // Actual: group current market values by sector (split ETFs)
+    // Actual: group current market values AND cost basis by sector (split ETFs)
     const actualMap = new Map<string, number>();
+    const costMap = new Map<string, number>();
     for (const h of data.live.holdings) {
       if (h.etf_sector_weights && h.etf_sector_weights.length > 0) {
         // Split ETF value across its underlying sectors
         for (const sw of h.etf_sector_weights) {
           actualMap.set(sw.sector, (actualMap.get(sw.sector) || 0) + h.market_value * sw.weight);
+          costMap.set(sw.sector, (costMap.get(sw.sector) || 0) + h.cost_basis * sw.weight);
         }
       } else {
         const sec = h.sector || h.asset_class || 'EQUITY';
         actualMap.set(sec, (actualMap.get(sec) || 0) + h.market_value);
+        costMap.set(sec, (costMap.get(sec) || 0) + h.cost_basis);
       }
     }
     // Target: group original weights by sector from snapshot (split ETFs)
@@ -393,10 +396,12 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
     const allSectors = new Set([...actualMap.keys(), ...targetMap.keys()]);
     const result = Array.from(allSectors).map((sec) => {
       const actualValue = actualMap.get(sec) || 0;
+      const costValue = costMap.get(sec) || 0;
       const actualPct = totalLive > 0 ? Math.round((actualValue / totalLive) * 10000) / 100 : 0;
       const rawTarget = targetMap.get(sec) || 0;
       const targetPct = Math.round(rawTarget * normalizer * 100) / 100;
-      return { name: sec, value: Math.round(actualValue), actualPct, targetPct };
+      const gainPct = costValue > 0 ? Math.round(((actualValue - costValue) / costValue) * 10000) / 100 : 0;
+      return { name: sec, value: Math.round(actualValue), actualPct, targetPct, gainPct };
     }).sort((a, b) => b.value - a.value);
     return { allocationData: result, bondTargetPct: bondPct };
   }, [data?.live?.holdings, data?.simulation]);
@@ -738,7 +743,7 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
                 <Tooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
-                    const d = payload[0].payload as { name: string; value: number; actualPct: number; targetPct: number };
+                    const d = payload[0].payload as { name: string; value: number; actualPct: number; targetPct: number; gainPct: number };
                     const diff = d.actualPct - d.targetPct;
                     return (
                       <div className="rounded-2xl bg-white px-4 py-3 border-[3px] border-gray-200" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 180 }}>
@@ -761,6 +766,12 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
                               {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
                             </span>
                           </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="font-bold text-text-muted">Rendement</span>
+                            <span className={`font-extrabold ${d.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                              {d.gainPct >= 0 ? '+' : ''}{d.gainPct.toFixed(1)}%
+                            </span>
+                          </div>
                         </div>
                         <p className="text-[10px] font-bold text-text-light mt-2">{fmtMoney(d.value, sim.currency)} · Cliquer pour détails</p>
                       </div>
@@ -777,6 +788,9 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
                 <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
                 <span className="text-[11px] font-extrabold text-text-main">{entry.actualPct.toFixed(1)}%</span>
+                <span className={`text-[10px] font-extrabold ${entry.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                  {entry.gainPct >= 0 ? '+' : ''}{entry.gainPct.toFixed(1)}%
+                </span>
               </button>
             ))}
           </div>
