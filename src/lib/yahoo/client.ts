@@ -190,24 +190,53 @@ export async function getYahooPriceTargets(symbols: string[]): Promise<Map<strin
 
 // ── News ──────────────────────────────────────────────────────────────────────
 
+/** Resolve a ticker symbol to its company name via Yahoo search (for better news lookup) */
+async function resolveCompanyName(symbol: string): Promise<string | null> {
+  try {
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=0&quotesCount=1&enableFuzzyQuery=false`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const quote = json?.quotes?.[0];
+    if (!quote) return null;
+    // Use longname or shortname — strip suffixes like "Inc.", "Corp." etc. for cleaner search
+    return quote.longname || quote.shortname || null;
+  } catch {
+    return null;
+  }
+}
+
+function parseNewsItems(items: Record<string, unknown>[]): YahooNewsItem[] {
+  return items.map((item) => ({
+    title:       String(item.title ?? ''),
+    publisher:   String(item.publisher ?? ''),
+    link:        String(item.link ?? ''),
+    publishedAt: item.providerPublishTime
+      ? new Date(Number(item.providerPublishTime) * 1000).toISOString()
+      : '',
+    thumbnail:   (item.thumbnail as { resolutions?: { url: string }[] })?.resolutions?.[0]?.url,
+  }));
+}
+
 export async function getYahooNews(symbol: string, count = 8): Promise<YahooNewsItem[]> {
   try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=${count}&quotesCount=0&enableFuzzyQuery=false`;
-    const res = await yahooFetch(url);
+    // Step 1: resolve the company name from the ticker for better news results
+    const companyName = await resolveCompanyName(symbol);
+    const searchQuery = companyName || symbol;
+
+    // Step 2: search news by company name (much more relevant than ticker search)
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(searchQuery)}&newsCount=${count}&quotesCount=0&enableFuzzyQuery=false`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
     if (!res.ok) return [];
 
     const json = await res.json();
     const items = json?.news ?? [];
 
-    return (items as Record<string, unknown>[]).map((item) => ({
-      title:       String(item.title ?? ''),
-      publisher:   String(item.publisher ?? ''),
-      link:        String(item.link ?? ''),
-      publishedAt: item.providerPublishTime
-        ? new Date(Number(item.providerPublishTime) * 1000).toISOString()
-        : '',
-      thumbnail:   (item.thumbnail as { resolutions?: { url: string }[] })?.resolutions?.[0]?.url,
-    }));
+    return parseNewsItems(items as Record<string, unknown>[]);
   } catch {
     return [];
   }
