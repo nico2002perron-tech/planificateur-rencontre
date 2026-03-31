@@ -8,6 +8,9 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModel } from '@/lib/hooks/useModels';
 import { useSimulation, type LiveHolding, type SimulationSnapshot } from '@/lib/hooks/useSimulation';
+import { useSymbolsNews } from '@/lib/hooks/useNews';
+import { NewsBadge } from '@/components/portfolios/NewsBadge';
+import { NewsModal } from '@/components/portfolios/NewsModal';
 import Link from 'next/link';
 import {
   ArrowLeft, TrendingUp, TrendingDown,
@@ -233,6 +236,12 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
   const [chartPeriod, setChartPeriod] = useState<'1J' | '1S' | '1M' | '3M' | '1A' | '5A' | 'Max'>('Max');
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [visibleBenchmarks, setVisibleBenchmarks] = useState<Set<string>>(new Set());
+
+  // News system
+  const holdingSymbols = useMemo(() => (data?.live?.holdings || []).map((h) => h.symbol), [data?.live?.holdings]);
+  const { newsMap } = useSymbolsNews(holdingSymbols);
+  const [newsModalSymbol, setNewsModalSymbol] = useState<string | null>(null);
+  const selectedNews = newsModalSymbol ? newsMap[newsModalSymbol] : null;
 
   // Period → cutoff date
   const periodCutoff = useMemo(() => {
@@ -589,7 +598,13 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
                 <div className="flex items-center gap-3">
                   <StockAvatar symbol={h.symbol} size={36} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-extrabold text-text-main text-sm truncate">{h.name}</p>
+                      <NewsBadge
+                        symbolNews={newsMap[h.symbol]}
+                        onClick={() => setNewsModalSymbol(h.symbol)}
+                      />
+                    </div>
                     <p className="text-[11px] font-bold text-text-muted">
                       {h.symbol} · {qtyLabel} act. · {fmtMoneyFull(h.current_price)}
                       {h.dividend_yield && h.dividend_yield > 0 && (
@@ -947,6 +962,15 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
           </div>
         </div>
       )}
+
+      {/* News Modal */}
+      <NewsModal
+        open={!!newsModalSymbol}
+        onClose={() => setNewsModalSymbol(null)}
+        symbol={newsModalSymbol || ''}
+        articles={selectedNews?.articles || []}
+        hasEarnings={selectedNews?.hasEarnings || false}
+      />
     </div>
   );
 }
