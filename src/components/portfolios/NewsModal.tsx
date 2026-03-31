@@ -13,7 +13,6 @@ interface NewsModalProps {
   onClose: () => void;
   symbol: string;
   articles: YahooNewsItem[];
-  hasEarnings: boolean;
 }
 
 function timeAgo(isoDate: string): string {
@@ -31,7 +30,7 @@ function ArticleCard({ article }: { article: YahooNewsItem }) {
 
   const handleTranslate = useCallback(async () => {
     if (translated) {
-      setTranslated(null); // toggle back to original
+      setTranslated(null);
       return;
     }
     setIsTranslating(true);
@@ -87,28 +86,20 @@ function ArticleCard({ article }: { article: YahooNewsItem }) {
   );
 }
 
-export function NewsModal({ open, onClose, symbol, articles, hasEarnings }: NewsModalProps) {
+export function NewsModal({ open, onClose, symbol, articles }: NewsModalProps) {
   return (
-    <Modal open={open} onClose={onClose} title={`Nouvelles — ${symbol}`} size="lg">
+    <Modal open={open} onClose={onClose} title={`Earnings — ${symbol}`} size="lg">
       <div className="space-y-3">
-        {hasEarnings && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-lg">📊</span>
-            <p className="text-sm font-semibold text-amber-800">
-              Des résultats financiers (earnings) ont été publiés récemment pour {symbol}
-            </p>
-          </div>
-        )}
-
-        {articles.length === 0 ? (
-          <p className="text-sm text-text-muted text-center py-6">
-            Aucune nouvelle récente pour {symbol}.
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+          <span className="text-lg">📊</span>
+          <p className="text-sm font-semibold text-amber-800">
+            Des résultats financiers ont été publiés récemment pour {symbol}
           </p>
-        ) : (
-          articles.map((article, i) => (
-            <ArticleCard key={article.link || i} article={article} />
-          ))
-        )}
+        </div>
+
+        {articles.map((article, i) => (
+          <ArticleCard key={article.link || i} article={article} />
+        ))}
 
         <div className="flex justify-end pt-2">
           <Button variant="ghost" size="sm" onClick={onClose}>

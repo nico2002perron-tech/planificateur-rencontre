@@ -969,7 +969,6 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
         onClose={() => setNewsModalSymbol(null)}
         symbol={newsModalSymbol || ''}
         articles={selectedNews?.articles || []}
-        hasEarnings={selectedNews?.hasEarnings || false}
       />
     </div>
   );

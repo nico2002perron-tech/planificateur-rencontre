@@ -228,7 +228,7 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
         onClose={() => setNewsModalSymbol(null)}
         symbol={newsModalSymbol || ''}
         articles={selectedNews?.articles || []}
-        hasEarnings={selectedNews?.hasEarnings || false}
+
       />
     </div>
   );

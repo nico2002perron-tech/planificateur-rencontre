@@ -25,9 +25,8 @@ export async function GET(req: NextRequest) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-    .slice(0, 30); // limit to 30 symbols max
+    .slice(0, 30);
 
-  // Fetch news for all symbols in parallel (batched by 6)
   const BATCH = 6;
   const newsMap: Record<string, SymbolNews> = {};
 
@@ -38,22 +37,23 @@ export async function GET(req: NextRequest) {
         try {
           const articles = await getYahooNews(symbol, 8);
 
-          // Only keep articles from the last 72 hours
+          // Only keep earnings articles from the last 48 hours
           const cutoff = new Date();
-          cutoff.setHours(cutoff.getHours() - 72);
+          cutoff.setHours(cutoff.getHours() - 48);
 
-          const recent = articles.filter((a) => {
+          const earningsArticles = articles.filter((a) => {
             if (!a.publishedAt) return false;
-            return new Date(a.publishedAt) > cutoff;
+            if (new Date(a.publishedAt) < cutoff) return false;
+            return isEarningsNews(a.title);
           });
 
-          const hasEarnings = recent.some((a) => isEarningsNews(a.title));
+          const hasEarnings = earningsArticles.length > 0;
 
           return {
             symbol,
-            articles: recent,
+            articles: hasEarnings ? earningsArticles : [],
             hasEarnings,
-            hasNews: recent.length > 0,
+            hasNews: hasEarnings,
           } satisfies SymbolNews;
         } catch {
           return { symbol, articles: [], hasEarnings: false, hasNews: false } satisfies SymbolNews;
