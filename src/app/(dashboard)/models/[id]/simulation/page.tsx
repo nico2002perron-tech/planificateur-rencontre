@@ -325,11 +325,35 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
     return filtered.length >= 2 ? filtered : allChartPoints;
   }, [allChartPoints, periodCutoff]);
 
+  // Merge holdings with the same symbol (ETFs can appear in multiple sectors)
+  // This combines quantities and values into a single card per symbol
+  const mergedHoldings = useMemo(() => {
+    if (!data?.live?.holdings) return [];
+    const map = new Map<string, LiveHolding>();
+    for (const h of data.live.holdings) {
+      const existing = map.get(h.symbol);
+      if (existing) {
+        const totalQty = existing.quantity + h.quantity;
+        const totalCost = existing.cost_basis + h.cost_basis;
+        const totalMarket = existing.market_value + h.market_value;
+        existing.quantity = totalQty;
+        existing.cost_basis = totalCost;
+        existing.market_value = totalMarket;
+        existing.purchase_price = totalQty > 0 ? totalCost / totalQty : existing.purchase_price;
+        existing.gain_loss = totalMarket - totalCost;
+        existing.gain_loss_pct = totalCost > 0 ? Math.round(((totalMarket - totalCost) / totalCost) * 10000) / 100 : 0;
+        existing.weight = existing.weight + h.weight;
+      } else {
+        map.set(h.symbol, { ...h });
+      }
+    }
+    return Array.from(map.values());
+  }, [data?.live?.holdings]);
+
   // Sorted holdings
   const sortedHoldings = useMemo(() => {
-    if (!data?.live?.holdings) return [];
-    return [...data.live.holdings].sort((a, b) => b.market_value - a.market_value);
-  }, [data?.live?.holdings]);
+    return [...mergedHoldings].sort((a, b) => b.market_value - a.market_value);
+  }, [mergedHoldings]);
 
   // Allocation data (by sector, with target vs actual — ETFs split by underlying sectors)
   const { allocationData, bondTargetPct } = useMemo(() => {
@@ -406,8 +430,8 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
   );
   const displayInvested = actualInvested > 0 ? actualInvested : sim.initial_value;
 
-  const topPerformers = [...live.holdings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct).slice(0, 3);
-  const flopPerformers = [...live.holdings].sort((a, b) => a.gain_loss_pct - b.gain_loss_pct).slice(0, 3);
+  const topPerformers = [...mergedHoldings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct).slice(0, 3);
+  const flopPerformers = [...mergedHoldings].sort((a, b) => a.gain_loss_pct - b.gain_loss_pct).slice(0, 3);
   const displayedHoldings = showAllHoldings ? sortedHoldings : sortedHoldings.slice(0, 8);
 
   return (
@@ -575,7 +599,7 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-extrabold text-text-main">
-            Mes positions <span className="text-text-muted font-bold">({live.holdings.length})</span>
+            Mes positions <span className="text-text-muted font-bold">({mergedHoldings.length})</span>
           </h3>
         </div>
 
@@ -652,7 +676,7 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
           style={{ borderColor: isPositive ? '#58CC02' + '40' : '#FF4B4B' + '40', boxShadow: `0 3px 0 0 ${isPositive ? '#58CC02' : '#FF4B4B'}20` }}>
           <div>
             <span className="text-sm font-extrabold text-text-main">Total portefeuille</span>
-            <p className="text-xs font-bold text-text-muted">{live.holdings.length} positions</p>
+            <p className="text-xs font-bold text-text-muted">{mergedHoldings.length} positions</p>
           </div>
           <div className="text-right">
             <span className="text-xl font-extrabold text-text-main">{fmtMoney(live.total_value, sim.currency)}</span>

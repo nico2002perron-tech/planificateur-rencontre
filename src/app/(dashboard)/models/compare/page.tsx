@@ -221,7 +221,7 @@ export default function ComparePage() {
 
   // SWR for portfolio history (client)
   const clientHistKey = clientWeights.length > 0
-    ? JSON.stringify({ holdings: clientWeights, type: 'client' })
+    ? JSON.stringify({ holdings: clientWeights, type: 'client', months: 12 })
     : null;
   const { data: clientHist, isLoading: clientHistLoading } = useSWR<PortfolioHistoryData>(
     clientHistKey,
@@ -238,7 +238,7 @@ export default function ComparePage() {
 
   // SWR for portfolio history (model)
   const modelHistKey = modelWeights.length > 0
-    ? JSON.stringify({ holdings: modelWeights, type: 'model' })
+    ? JSON.stringify({ holdings: modelWeights, type: 'model', months: 12 })
     : null;
   const { data: modelHist, isLoading: modelHistLoading } = useSWR<PortfolioHistoryData>(
     modelHistKey,
@@ -712,7 +712,7 @@ export default function ComparePage() {
             <div className="px-6 pt-5 pb-2">
               <h3 className="font-extrabold text-text-main flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-[#FF9600]" />
-                Passé 12 mois + Projection 12 mois
+                Passé 1 an + Projection 12 mois
               </h3>
               <p className="text-xs font-semibold text-text-muted mt-1">
                 Valeur en $ — la ligne verticale marque aujourd&apos;hui, à droite les cours cibles analystes
