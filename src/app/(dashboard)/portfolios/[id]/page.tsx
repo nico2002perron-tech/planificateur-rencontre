@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardTitle } from '@/components/ui/Card';
@@ -11,11 +11,14 @@ import { CurrencyToggle } from '@/components/ui/CurrencyToggle';
 import { Spinner } from '@/components/ui/Spinner';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
+import { useSymbolsNews } from '@/lib/hooks/useNews';
 import { formatCurrency, formatPercent } from '@/lib/utils/format';
 import { AdvancedChart } from '@/components/tradingview/AdvancedChart';
 import { TechnicalAnalysis } from '@/components/tradingview/TechnicalAnalysis';
 import { FundamentalData } from '@/components/tradingview/FundamentalData';
 import { SymbolInfo } from '@/components/tradingview/SymbolInfo';
+import { NewsBadge } from '@/components/portfolios/NewsBadge';
+import { NewsModal } from '@/components/portfolios/NewsModal';
 import { GitCompare, FileText, Plus } from 'lucide-react';
 
 const tabs = [
@@ -36,6 +39,12 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
   const { id } = use(params);
   const { portfolio, holdings, isLoading } = usePortfolio(id);
   const [currency, setCurrency] = useState<'CAD' | 'USD'>('CAD');
+
+  // News system
+  const symbols = useMemo(() => (holdings || []).map((h) => h.symbol), [holdings]);
+  const { newsMap } = useSymbolsNews(symbols);
+  const [newsModalSymbol, setNewsModalSymbol] = useState<string | null>(null);
+  const selectedNews = newsModalSymbol ? newsMap[newsModalSymbol] : null;
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
   if (!portfolio) return <p className="text-text-muted p-6">Portefeuille introuvable</p>;
@@ -107,7 +116,15 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                       <TableBody>
                         {holdings.map((h) => (
                           <TableRow key={h.id}>
-                            <TableCell className="font-semibold">{h.symbol}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">{h.symbol}</span>
+                                <NewsBadge
+                                  symbolNews={newsMap[h.symbol]}
+                                  onClick={() => setNewsModalSymbol(h.symbol)}
+                                />
+                              </div>
+                            </TableCell>
                             <TableCell className="text-text-muted">{h.name}</TableCell>
                             <TableCell className="text-right">{h.quantity}</TableCell>
                             <TableCell className="text-right">{formatCurrency(h.average_cost, currency)}</TableCell>
@@ -190,6 +207,15 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
           )}
         </Tabs>
       </Card>
+
+      {/* News Modal */}
+      <NewsModal
+        open={!!newsModalSymbol}
+        onClose={() => setNewsModalSymbol(null)}
+        symbol={newsModalSymbol || ''}
+        articles={selectedNews?.articles || []}
+        hasEarnings={selectedNews?.hasEarnings || false}
+      />
     </div>
   );
 }
