@@ -396,6 +396,49 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     includeCashOther: true,
     fundCodesToInclude: [] as string[],
   });
+  const [fundUploading, setFundUploading] = useState<Record<string, boolean>>({});
+  const [fundDragOver, setFundDragOver] = useState<string | null>(null);
+
+  // Upload a fund report PDF inline from the builder
+  const handleFundUpload = useCallback(async (fundCode: string, file: File) => {
+    if (!file.type.includes('pdf')) {
+      toast('error', 'Seuls les fichiers PDF sont acceptés');
+      return;
+    }
+    setFundUploading(prev => ({ ...prev, [fundCode]: true }));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('fund_code', fundCode);
+
+      const res = await fetch('/api/fund-reports', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur d\'upload');
+      }
+      const result = await res.json();
+      toast('success', `${fundCode} uploadé avec succès`);
+
+      // Update fund check result to 'ok' so it becomes selectable
+      setFundCheckResults(prev =>
+        prev.map(f => f.fund_code === fundCode
+          ? { ...f, status: 'ok' as const, fund_name: result.fund_name || f.fund_name, updated_at: new Date().toISOString(), months_old: 0 }
+          : f
+        )
+      );
+      // Auto-select the newly uploaded fund
+      setPdfOptions(prev => ({
+        ...prev,
+        fundCodesToInclude: prev.fundCodesToInclude.includes(fundCode)
+          ? prev.fundCodesToInclude
+          : [...prev.fundCodesToInclude, fundCode],
+      }));
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Erreur d\'upload');
+    } finally {
+      setFundUploading(prev => ({ ...prev, [fundCode]: false }));
+    }
+  }, [toast]);
 
   // Sort state
   type SortColumn = 'symbol' | 'name' | 'marketValue' | 'weight' | 'gainPct' | 'gainDollar' | 'targetPrice' | 'annualIncome' | 'currentPrice';
@@ -1944,7 +1987,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               })()}
             </div>
 
-            {/* Fund reports section */}
+            {/* Fund reports section with inline upload */}
             {fundCheckResults.length > 0 && (
               <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
                 <div className="flex items-center gap-2 mb-3">
@@ -1958,8 +2001,33 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                   {fundCheckResults.map(f => {
                     const isOk = f.status === 'ok';
                     const isIncluded = pdfOptions.fundCodesToInclude.includes(f.fund_code);
+                    const isUploading = fundUploading[f.fund_code];
+                    const isDragHover = fundDragOver === f.fund_code;
+                    const needsUpload = f.status === 'missing' || f.status === 'outdated';
+
+                    // Fund row with optional drop zone for missing/outdated
                     return (
-                      <div key={f.fund_code} className="flex items-center gap-3">
+                      <div
+                        key={f.fund_code}
+                        className={`flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200 ${
+                          isDragHover ? 'ring-2 scale-[1.01]' : ''
+                        }`}
+                        style={{
+                          backgroundColor: isDragHover ? `${DUO.teal}10` : isUploading ? '#f0fdf4' : 'transparent',
+                          borderColor: isDragHover ? DUO.teal : 'transparent',
+                          ...(isDragHover ? { ringColor: `${DUO.teal}40` } : {}),
+                        }}
+                        onDragOver={needsUpload && !isUploading ? (e) => { e.preventDefault(); e.stopPropagation(); setFundDragOver(f.fund_code); } : undefined}
+                        onDragLeave={needsUpload ? () => setFundDragOver(null) : undefined}
+                        onDrop={needsUpload && !isUploading ? (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setFundDragOver(null);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleFundUpload(f.fund_code, file);
+                        } : undefined}
+                      >
+                        {/* Checkbox / status icon */}
                         {isOk ? (
                           <button
                             onClick={() => setPdfOptions(p => ({
@@ -1977,36 +2045,102 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                           >
                             {isIncluded && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
                           </button>
+                        ) : isUploading ? (
+                          <Spinner size="sm" />
                         ) : (
                           <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 bg-gray-100 border-2 border-gray-200">
-                            <X className="h-3 w-3 text-gray-400" />
+                            <Upload className="h-3 w-3 text-gray-400" />
                           </div>
                         )}
+
+                        {/* Fund code */}
                         <span className="font-mono text-xs font-bold" style={{ color: isOk ? DUO.teal : '#9ca3af' }}>
                           {f.fund_code}
                         </span>
+
+                        {/* Fund name */}
                         {f.fund_name && (
                           <span className="text-xs text-text-muted truncate">{f.fund_name}</span>
                         )}
+
+                        {/* Status badges + actions */}
                         {f.status === 'ok' && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">À jour</span>
                         )}
-                        {f.status === 'outdated' && (
+
+                        {f.status === 'outdated' && !isUploading && (
                           <>
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">Périmé</span>
-                            <a href="/fund-reports" target="_blank" className="text-[10px] text-amber-600 underline">Mettre à jour</a>
+                            {isDragHover ? (
+                              <span className="text-[10px] font-bold animate-pulse" style={{ color: DUO.teal }}>
+                                Déposez le PDF ici
+                              </span>
+                            ) : (
+                              <label className="text-[10px] font-semibold px-2 py-0.5 rounded-lg cursor-pointer transition-all hover:brightness-105 text-white"
+                                style={{ backgroundColor: DUO.teal, boxShadow: `0 2px 0 0 ${DUO.tealDark}` }}
+                              >
+                                <input
+                                  type="file"
+                                  accept=".pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleFundUpload(f.fund_code, file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                                Glisser ou cliquer
+                              </label>
+                            )}
                           </>
                         )}
-                        {f.status === 'missing' && (
+
+                        {f.status === 'missing' && !isUploading && (
                           <>
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">Non uploadé</span>
-                            <a href="/fund-reports" target="_blank" className="text-[10px] text-red-500 underline">Uploader</a>
+                            {isDragHover ? (
+                              <span className="text-[10px] font-bold animate-pulse" style={{ color: DUO.teal }}>
+                                Déposez le PDF ici
+                              </span>
+                            ) : (
+                              <label className="text-[10px] font-semibold px-2 py-0.5 rounded-lg cursor-pointer transition-all hover:brightness-105 text-white"
+                                style={{ backgroundColor: DUO.teal, boxShadow: `0 2px 0 0 ${DUO.tealDark}` }}
+                              >
+                                <input
+                                  type="file"
+                                  accept=".pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleFundUpload(f.fund_code, file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                                Glisser ou cliquer
+                              </label>
+                            )}
                           </>
+                        )}
+
+                        {isUploading && (
+                          <span className="text-[10px] font-semibold" style={{ color: DUO.teal }}>
+                            Upload en cours...
+                          </span>
                         )}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Helper text for drag & drop */}
+                {fundCheckResults.some(f => f.status === 'missing' || f.status === 'outdated') && (
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: `${DUO.teal}08`, border: `1px dashed ${DUO.teal}30` }}>
+                    <Upload className="h-3.5 w-3.5 flex-shrink-0" style={{ color: DUO.teal }} />
+                    <p className="text-[11px]" style={{ color: DUO.tealDark }}>
+                      Glissez un PDF directement sur un fonds pour l&apos;uploader instantanément
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
