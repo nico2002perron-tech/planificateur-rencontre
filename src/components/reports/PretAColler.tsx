@@ -12,7 +12,8 @@ import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
   Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, FileText,
-  BookOpen, CheckCircle2, Clock, AlertCircle, Upload, Globe,
+  BookOpen, CheckCircle2, Clock, AlertCircle, Upload, Globe, Copy,
+  ArrowUpDown, ArrowUp, ArrowDown, Trophy, TrendingDown,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -279,6 +280,23 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+
+  // Sort state
+  type SortColumn = 'symbol' | 'name' | 'marketValue' | 'weight' | 'gainPct' | 'gainDollar' | 'targetPrice' | 'annualIncome' | 'currentPrice';
+  type SortDir = 'asc' | 'desc';
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDir>('desc');
+
+  const toggleSort = useCallback((col: SortColumn) => {
+    if (sortColumn === col) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(col);
+      setSortDirection('desc');
+    }
+  }, [sortColumn]);
+
   const [aiCorrections, setAiCorrections] = useState<AICorrection[]>([]);
   const [aiChecking, setAiChecking] = useState(false);
   const [aiChecked, setAiChecked] = useState(false);
@@ -390,11 +408,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     }));
   }, [result.holdings, symbolOverrides, typeOverrides]);
 
-  // Filtered holdings
-  const filteredHoldings = useMemo(() => {
-    if (activeFilter === 'ALL') return holdings;
-    return holdings.filter(h => h.assetType === activeFilter);
-  }, [holdings, activeFilter]);
+  // Total portfolio value for weight calculation
+  const totalPortfolioValue = useMemo(() => {
+    return holdings.reduce((s, h) => s + Math.abs(h.marketValue), 0);
+  }, [holdings]);
 
   // Get priceable symbols + CDR map
   const { priceableSymbols, cdrMap } = useMemo(() => {
@@ -439,12 +456,6 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         : (yahoo?.price || holding.marketPrice);
       const hasCustom = sym in customTargets;
 
-      // Debug CDR holdings
-      if (isCDR) {
-        console.log(`[CDR client] ${sym}: isCDR=${holding.isCDR}, inCdrMap=${sym in cdrMap}, underlying=${cdrMap[sym]}, currency=${holding.currency}`);
-        console.log(`[CDR client] ${sym}: target=`, target, `currentPrice=${currentPrice}, cdrGainPct=${target?.cdrGainPct}`);
-      }
-
       let targetPrice: number;
       let source: string;
 
@@ -463,10 +474,6 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         source = 'N/D';
       }
 
-      if (isCDR) {
-        console.log(`[CDR client] ${sym}: RESULT → targetPrice=${targetPrice}, source=${source}`);
-      }
-
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
 
       map.set(sym, { currentPrice, targetPrice, gainPct, source });
@@ -474,6 +481,61 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
     return map;
   }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols, cdrMap]);
+
+  // Filtered + sorted holdings (after targetData so sort by gain works)
+  const filteredHoldings = useMemo(() => {
+    let list = activeFilter === 'ALL' ? [...holdings] : holdings.filter(h => h.assetType === activeFilter);
+
+    if (sortColumn) {
+      list = [...list].sort((a, b) => {
+        let va: number | string = 0;
+        let vb: number | string = 0;
+
+        switch (sortColumn) {
+          case 'symbol': va = a.symbol; vb = b.symbol; break;
+          case 'name': va = a.name; vb = b.name; break;
+          case 'marketValue': va = a.marketValue; vb = b.marketValue; break;
+          case 'annualIncome': va = a.annualIncome; vb = b.annualIncome; break;
+          case 'weight': va = Math.abs(a.marketValue); vb = Math.abs(b.marketValue); break;
+          case 'currentPrice': {
+            const tdA = targetData.get(a.symbol);
+            const tdB = targetData.get(b.symbol);
+            va = tdA?.currentPrice || a.marketPrice;
+            vb = tdB?.currentPrice || b.marketPrice;
+            break;
+          }
+          case 'targetPrice': {
+            const tdA = targetData.get(a.symbol);
+            const tdB = targetData.get(b.symbol);
+            va = tdA?.targetPrice || 0;
+            vb = tdB?.targetPrice || 0;
+            break;
+          }
+          case 'gainPct': {
+            const tdA = targetData.get(a.symbol);
+            const tdB = targetData.get(b.symbol);
+            va = tdA?.gainPct || 0;
+            vb = tdB?.gainPct || 0;
+            break;
+          }
+          case 'gainDollar': {
+            const tdA = targetData.get(a.symbol);
+            const tdB = targetData.get(b.symbol);
+            va = tdA && tdA.targetPrice > 0 ? a.quantity * (tdA.targetPrice - tdA.currentPrice) : 0;
+            vb = tdB && tdB.targetPrice > 0 ? b.quantity * (tdB.targetPrice - tdB.currentPrice) : 0;
+            break;
+          }
+        }
+
+        if (typeof va === 'string' && typeof vb === 'string') {
+          return sortDirection === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return sortDirection === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number);
+      });
+    }
+
+    return list;
+  }, [holdings, activeFilter, sortColumn, sortDirection, targetData]);
 
   // Category values
   const categoryValues = useMemo(() => {
@@ -627,6 +689,117 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       setGeneratingPdf(false);
     }
   }, [holdings, targetData, prices, result.summary, toast]);
+
+  // Copy target summary to clipboard
+  const handleCopySummary = useCallback(() => {
+    if (!targetSummary) return;
+    const lines: string[] = [
+      `RÉSUMÉ DES COURS CIBLES — ${new Date().toLocaleDateString('fr-CA')}`,
+      ``,
+      `Positions analysées: ${targetSummary.total}`,
+      `Avec cours cible: ${targetSummary.withTargets} (${targetSummary.analystCount} analystes, ${targetSummary.historicalCount} hist., ${targetSummary.cdrCount} CDR, ${targetSummary.manualCount} manuels)`,
+      `Sans données: ${targetSummary.noTargetCount}`,
+      ``,
+      `ACTIONS (gain en capital):`,
+      `  Valeur actuelle: ${formatCurrency(targetSummary.totalCurrent)}`,
+      `  Valeur cible 12 mois: ${formatCurrency(targetSummary.totalTarget)}`,
+      `  Gain estimé: ${formatCurrency(targetSummary.equityGain)} (${formatPercent(targetSummary.equityGainPct)})`,
+      ``,
+      `REVENUS FIXES (revenu annuel):`,
+      `  Valeur marchande: ${formatCurrency(targetSummary.fixedIncomeMarketValue)}`,
+      `  Revenu annuel: ${formatCurrency(targetSummary.fixedIncomeAnnualIncome)} (${formatPercent(targetSummary.fixedIncomeGainPct)})`,
+      ``,
+      `TOTAL ESTIMÉ: ${formatCurrency(targetSummary.totalEstimated)} (${formatPercent(targetSummary.totalEstimatedPct)})`,
+    ];
+
+    // Add top/worst positions
+    const equityHoldings = holdings
+      .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
+      .map(h => ({ ...h, td: targetData.get(h.symbol) }))
+      .filter(h => h.td && h.td.targetPrice > 0);
+
+    const sorted = [...equityHoldings].sort((a, b) => (b.td?.gainPct || 0) - (a.td?.gainPct || 0));
+    if (sorted.length > 0) {
+      lines.push(``, `TOP 5 MEILLEURS:`);
+      sorted.slice(0, 5).forEach((h, i) => {
+        const gain$ = h.quantity * ((h.td?.targetPrice || 0) - (h.td?.currentPrice || 0));
+        lines.push(`  ${i + 1}. ${h.symbol} — ${formatPercent(h.td?.gainPct || 0)} (${formatCurrency(gain$)})`);
+      });
+      const worst = sorted.slice(-5).reverse();
+      if (worst.length > 0 && (worst[0].td?.gainPct || 0) < 0) {
+        lines.push(``, `TOP 5 PIRES:`);
+        worst.forEach((h, i) => {
+          const gain$ = h.quantity * ((h.td?.targetPrice || 0) - (h.td?.currentPrice || 0));
+          lines.push(`  ${i + 1}. ${h.symbol} — ${formatPercent(h.td?.gainPct || 0)} (${formatCurrency(gain$)})`);
+        });
+      }
+    }
+
+    navigator.clipboard.writeText(lines.join('\n'));
+    setCopiedSummary(true);
+    toast('success', 'Résumé copié dans le presse-papiers');
+    setTimeout(() => setCopiedSummary(false), 2000);
+  }, [targetSummary, holdings, targetData, toast]);
+
+  // Export targets to CSV
+  const handleExportCSV = useCallback(() => {
+    const BOM = '\uFEFF';
+    const headers = ['Symbole', 'Description', 'Type', 'Compte', 'Qté', 'PRU', 'Prix actuel', 'Val. marché', 'Poids %', 'Cours cible', 'Source', 'Gain %', 'Gain $', 'Revenu annuel'];
+    const rows = holdings.map(h => {
+      const td = targetData.get(h.symbol);
+      const weight = totalPortfolioValue > 0 ? (Math.abs(h.marketValue) / totalPortfolioValue * 100) : 0;
+      const currentPrice = td?.currentPrice || h.marketPrice;
+      const gainDollar = td && td.targetPrice > 0 ? h.quantity * (td.targetPrice - currentPrice) : 0;
+      return [
+        h.symbol,
+        `"${h.name.replace(/"/g, '""')}"`,
+        h.assetType,
+        h.accountLabel,
+        h.quantity,
+        h.averageCost.toFixed(2),
+        currentPrice.toFixed(2),
+        h.marketValue.toFixed(2),
+        weight.toFixed(1),
+        td?.targetPrice ? td.targetPrice.toFixed(2) : '',
+        td?.source || '',
+        td?.gainPct ? td.gainPct.toFixed(1) : '',
+        gainDollar ? gainDollar.toFixed(2) : '',
+        h.annualIncome.toFixed(2),
+      ].join(',');
+    });
+
+    const csv = BOM + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('success', 'CSV exporté');
+  }, [holdings, targetData, totalPortfolioValue, toast]);
+
+  // Top/worst movers for quick analysis
+  const movers = useMemo(() => {
+    if (!showTargets || targetData.size === 0) return null;
+    const equityHoldings = holdings
+      .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
+      .map(h => {
+        const td = targetData.get(h.symbol);
+        if (!td || td.targetPrice <= 0) return null;
+        const gainDollar = h.quantity * (td.targetPrice - td.currentPrice);
+        return { symbol: h.symbol, name: h.name, gainPct: td.gainPct, gainDollar, weight: totalPortfolioValue > 0 ? (Math.abs(h.marketValue) / totalPortfolioValue * 100) : 0 };
+      })
+      .filter(Boolean) as { symbol: string; name: string; gainPct: number; gainDollar: number; weight: number }[];
+
+    if (equityHoldings.length === 0) return null;
+    const sorted = [...equityHoldings].sort((a, b) => b.gainPct - a.gainPct);
+    const top = sorted.slice(0, 5);
+    const worst = sorted.slice(-5).reverse().filter(h => h.gainPct < 0);
+    return { top, worst };
+  }, [showTargets, targetData, holdings, totalPortfolioValue]);
 
   return (
     <div className="space-y-6">
@@ -916,6 +1089,63 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         </div>
       )}
 
+      {/* Top/Worst movers */}
+      {showTargets && movers && !isLoadingPrices && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Top movers */}
+          <Card className="bg-emerald-50/30 border-emerald-200/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Trophy className="h-4 w-4 text-emerald-600" />
+              <span className="text-sm font-bold text-emerald-800">Meilleurs potentiels</span>
+            </div>
+            <div className="space-y-1.5">
+              {movers.top.map((h, i) => (
+                <div key={h.symbol} className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-emerald-600 w-4">{i + 1}.</span>
+                  <span className="font-mono text-xs font-semibold text-brand-primary w-16 truncate">{h.symbol}</span>
+                  <div className="flex-1 h-4 bg-emerald-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all"
+                      style={{ width: `${Math.min(Math.max(h.gainPct, 0), 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-emerald-700 w-14 text-right">{formatPercent(h.gainPct)}</span>
+                  <span className="text-[10px] text-emerald-600 w-20 text-right">{formatCurrency(h.gainDollar)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Worst movers */}
+          <Card className={`${movers.worst.length > 0 ? 'bg-red-50/30 border-red-200/50' : 'bg-gray-50/30 border-gray-200/50'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingDown className="h-4 w-4 text-red-500" />
+              <span className="text-sm font-bold text-red-800">Sous pression</span>
+            </div>
+            {movers.worst.length > 0 ? (
+              <div className="space-y-1.5">
+                {movers.worst.map((h, i) => (
+                  <div key={h.symbol} className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-red-500 w-4">{i + 1}.</span>
+                    <span className="font-mono text-xs font-semibold text-brand-primary w-16 truncate">{h.symbol}</span>
+                    <div className="flex-1 h-4 bg-red-100 rounded-full overflow-hidden flex justify-end">
+                      <div
+                        className="h-full bg-red-400 rounded-full transition-all"
+                        style={{ width: `${Math.min(Math.abs(h.gainPct), 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-red-600 w-14 text-right">{formatPercent(h.gainPct)}</span>
+                    <span className="text-[10px] text-red-500 w-20 text-right">{formatCurrency(h.gainDollar)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted italic">Aucun titre avec gain négatif estimé</p>
+            )}
+          </Card>
+        </div>
+      )}
+
       {/* Holdings table */}
       <Card padding="none">
         <div className="overflow-x-auto">
@@ -924,17 +1154,91 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               <tr className="border-b border-gray-200 text-text-muted bg-gray-50/50">
                 <th className="text-left py-3 px-3 font-semibold text-xs">Type</th>
                 <th className="text-center py-3 px-2 font-semibold text-xs">Compte</th>
-                <th className="text-left py-3 px-3 font-semibold text-xs">Symbole</th>
-                <th className="text-left py-3 px-3 font-semibold text-xs">Description</th>
+                <th
+                  className="text-left py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('symbol')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Symbole
+                    {sortColumn === 'symbol' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
+                <th
+                  className="text-left py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('name')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Description
+                    {sortColumn === 'name' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
                 <th className="text-right py-3 px-3 font-semibold text-xs">Qté</th>
                 <th className="text-right py-3 px-3 font-semibold text-xs">PRU</th>
-                <th className="text-right py-3 px-3 font-semibold text-xs">Prix marché</th>
-                <th className="text-right py-3 px-3 font-semibold text-xs">Val. marché</th>
-                <th className="text-right py-3 px-3 font-semibold text-xs">Revenu</th>
+                <th
+                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('currentPrice')}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Prix marché
+                    {sortColumn === 'currentPrice' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
+                <th
+                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('marketValue')}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Val. marché
+                    {sortColumn === 'marketValue' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
+                <th
+                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('weight')}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Poids
+                    {sortColumn === 'weight' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
+                <th
+                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('annualIncome')}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Revenu
+                    {sortColumn === 'annualIncome' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
                 {showTargets && (
                   <>
-                    <th className="text-right py-3 px-3 font-semibold text-xs">Cours cible</th>
-                    <th className="text-right py-3 px-3 font-semibold text-xs">Gain est.</th>
+                    <th
+                      className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                      onClick={() => toggleSort('targetPrice')}
+                    >
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Cours cible
+                        {sortColumn === 'targetPrice' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                      </span>
+                    </th>
+                    <th
+                      className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                      onClick={() => toggleSort('gainPct')}
+                    >
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Gain %
+                        {sortColumn === 'gainPct' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                      </span>
+                    </th>
+                    <th
+                      className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                      onClick={() => toggleSort('gainDollar')}
+                    >
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Gain $
+                        {sortColumn === 'gainDollar' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                      </span>
+                    </th>
                   </>
                 )}
               </tr>
@@ -1066,6 +1370,19 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${h.marketValue < 0 ? 'text-red-500' : ''}`}>
                       {h.marketValue !== 0 ? formatCurrency(h.marketValue) : '—'}
                     </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs">
+                      {(() => {
+                        const w = totalPortfolioValue > 0 ? (Math.abs(h.marketValue) / totalPortfolioValue * 100) : 0;
+                        return (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-brand-primary/40 rounded-full" style={{ width: `${Math.min(w, 100)}%` }} />
+                            </div>
+                            <span className="text-text-muted font-medium">{w.toFixed(1)}%</span>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs text-emerald-600">
                       {h.annualIncome > 0 ? formatCurrency(h.annualIncome) : '—'}
                     </td>
@@ -1133,10 +1450,28 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                             <span className="text-text-muted text-xs">—</span>
                           )}
                         </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {td && td.targetPrice > 0 ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <div className="w-10 h-3 bg-gray-100 rounded-sm overflow-hidden flex items-center">
+                                {td.gainPct >= 0 ? (
+                                  <div className="h-full bg-emerald-400 rounded-sm" style={{ width: `${Math.min(td.gainPct, 50) * 2}%` }} />
+                                ) : (
+                                  <div className="h-full bg-red-400 rounded-sm ml-auto" style={{ width: `${Math.min(Math.abs(td.gainPct), 50) * 2}%` }} />
+                                )}
+                              </div>
+                              <span className={`font-bold tabular-nums text-xs ${td.gainPct > 0 ? 'text-emerald-600' : td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'}`}>
+                                {formatPercent(td.gainPct)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-text-muted text-xs">—</span>
+                          )}
+                        </td>
                         <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${
-                          td && td.gainPct > 0 ? 'text-emerald-600' : td && td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'
+                          td && td.targetPrice > 0 && td.gainPct > 0 ? 'text-emerald-600' : td && td.targetPrice > 0 && td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'
                         }`}>
-                          {td && td.targetPrice > 0 ? formatPercent(td.gainPct) : '—'}
+                          {td && td.targetPrice > 0 ? formatCurrency(h.quantity * (td.targetPrice - td.currentPrice)) : '—'}
                         </td>
                       </>
                     )}
@@ -1213,7 +1548,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       )}
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+      <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
         {!showTargets ? (
           <Button
             onClick={() => setShowTargets(true)}
@@ -1250,14 +1585,34 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             </p>
           </div>
         ) : (
-          <Button
-            onClick={handleDownloadPdf}
-            loading={generatingPdf}
-            icon={<FileText className="h-4 w-4" />}
-            size="lg"
-          >
-            Télécharger le PDF
-          </Button>
+          <>
+            <Button
+              onClick={handleDownloadPdf}
+              loading={generatingPdf}
+              icon={<FileText className="h-4 w-4" />}
+              size="lg"
+            >
+              Télécharger le PDF
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              icon={<Download className="h-4 w-4" />}
+              size="lg"
+            >
+              Exporter CSV
+            </Button>
+            {targetSummary && (
+              <Button
+                variant="outline"
+                onClick={handleCopySummary}
+                icon={copiedSummary ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                size="lg"
+              >
+                {copiedSummary ? 'Copié' : 'Copier le résumé'}
+              </Button>
+            )}
+          </>
         )}
       </div>
 
