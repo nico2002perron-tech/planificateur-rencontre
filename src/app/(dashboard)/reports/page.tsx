@@ -11,7 +11,19 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useReports, type Report } from '@/lib/hooks/useReports';
 import { PretAColler } from '@/components/reports/PretAColler';
-import { FileText, Plus, Download, Trash2, Calendar, ClipboardPaste } from 'lucide-react';
+import {
+  FileText, Plus, Download, Trash2, Calendar, ClipboardPaste,
+  ArrowLeft, TrendingUp, BarChart3, Target, Sparkles, Shield, BookOpen,
+  PieChart, Zap, CheckCircle2,
+} from 'lucide-react';
+
+// Duolingo palette
+const DUO = {
+  green: '#58CC02', greenDark: '#45a300',
+  blue: '#1CB0F6', blueDark: '#1899d6',
+  purple: '#CE82FF', purpleDark: '#b06edb',
+  orange: '#FF9600', orangeDark: '#e08600',
+} as const;
 
 const statusMap: Record<string, { label: string; variant: 'info' | 'success' | 'warning' | 'danger' }> = {
   ready: { label: 'Prêt', variant: 'success' },
@@ -38,7 +50,7 @@ export default function ReportsPage() {
   const { toast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<Report | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('reports');
+  const [activeTab, setActiveTab] = useState<Tab | null>(null);
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -74,44 +86,182 @@ export default function ReportsPage() {
     }
   }
 
+  // Hub view (no tab selected yet)
+  if (!activeTab) {
+    return (
+      <div>
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-extrabold text-text-main mb-2">Rapports</h1>
+          <p className="text-base text-text-muted max-w-lg mx-auto">
+            Choisissez votre outil pour analyser et présenter le portefeuille de votre client.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+          {/* Card: Rapport PDF complet */}
+          <button
+            onClick={() => setActiveTab('reports')}
+            className="text-left rounded-2xl bg-white p-6 transition-all duration-200 hover:scale-[1.02] active:translate-y-[2px] active:shadow-none group"
+            style={{ border: `2px solid ${DUO.purple}30`, borderBottom: `5px solid ${DUO.purpleDark}30` }}
+          >
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110"
+              style={{ backgroundColor: `${DUO.purple}15`, boxShadow: `0 3px 0 0 ${DUO.purpleDark}20` }}
+            >
+              <FileText className="h-7 w-7" style={{ color: DUO.purple }} />
+            </div>
+
+            <h2 className="text-xl font-extrabold text-text-main mb-1">Rapport PDF complet</h2>
+            <p className="text-sm text-text-muted mb-5">
+              Générez un document professionnel de 8-9 pages avec narratif IA, prêt à remettre en rencontre client.
+            </p>
+
+            <div className="space-y-2.5 mb-6">
+              {[
+                { icon: PieChart, text: 'Allocations et répartition sectorielle', color: DUO.purple },
+                { icon: BarChart3, text: 'Métriques de risque et rendement', color: DUO.blue },
+                { icon: Sparkles, text: 'Narratif IA personnalisé (Groq)', color: DUO.orange },
+                { icon: Shield, text: 'Scénarios de stress test', color: DUO.green },
+              ].map((f, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${f.color}15` }}>
+                    <f.icon className="h-3.5 w-3.5" style={{ color: f.color }} />
+                  </div>
+                  <span className="text-xs font-medium text-text-main">{f.text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div
+              className="flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-sm text-white transition-all"
+              style={{ backgroundColor: DUO.purple, boxShadow: `0 3px 0 0 ${DUO.purpleDark}` }}
+            >
+              Mes rapports
+              <span className="text-xs font-bold opacity-70">
+                ({reports?.length || 0})
+              </span>
+            </div>
+          </button>
+
+          {/* Card: Prêt à coller */}
+          <button
+            onClick={() => setActiveTab('paste')}
+            className="text-left rounded-2xl bg-white p-6 transition-all duration-200 hover:scale-[1.02] active:translate-y-[2px] active:shadow-none group"
+            style={{ border: `2px solid ${DUO.blue}30`, borderBottom: `5px solid ${DUO.blueDark}30` }}
+          >
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110"
+              style={{ backgroundColor: `${DUO.blue}15`, boxShadow: `0 3px 0 0 ${DUO.blueDark}20` }}
+            >
+              <ClipboardPaste className="h-7 w-7" style={{ color: DUO.blue }} />
+            </div>
+
+            <h2 className="text-xl font-extrabold text-text-main mb-1">Prêt à coller</h2>
+            <p className="text-sm text-text-muted mb-5">
+              Collez les positions Croesus d&apos;un client et obtenez instantanément les cours cibles et l&apos;analyse complète.
+            </p>
+
+            <div className="space-y-2.5 mb-6">
+              {[
+                { icon: Zap, text: 'Détection automatique des types d\'actifs', color: DUO.orange },
+                { icon: Target, text: 'Cours cibles consensus + estimation 12 mois', color: DUO.blue },
+                { icon: Sparkles, text: 'Vérification IA des classifications', color: DUO.purple },
+                { icon: BookOpen, text: 'Rapports de fonds intégrés au PDF', color: DUO.green },
+              ].map((f, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${f.color}15` }}>
+                    <f.icon className="h-3.5 w-3.5" style={{ color: f.color }} />
+                  </div>
+                  <span className="text-xs font-medium text-text-main">{f.text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div
+              className="flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-sm text-white transition-all"
+              style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}
+            >
+              Analyser un portefeuille
+            </div>
+          </button>
+        </div>
+
+        {/* Quick comparison */}
+        <div className="mt-8 max-w-4xl mx-auto">
+          <div className="grid grid-cols-2 gap-6 text-center">
+            <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-gray-50">
+              <CheckCircle2 className="h-4 w-4" style={{ color: DUO.purple }} />
+              <span className="text-xs text-text-muted">
+                <strong className="text-text-main">Rapport PDF</strong> — À partir d&apos;un portefeuille enregistré
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-gray-50">
+              <CheckCircle2 className="h-4 w-4" style={{ color: DUO.blue }} />
+              <span className="text-xs text-text-muted">
+                <strong className="text-text-main">Prêt à coller</strong> — Directement depuis Croesus, aucun setup
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <PageHeader
-        title="Rapports"
-        description="Rapports PDF et analyse rapide des cours cibles"
-        action={
-          <Link href="/reports/new">
-            <Button icon={<Plus className="h-4 w-4" />}>Nouveau rapport</Button>
-          </Link>
-        }
-      />
+      {/* Back button + section title */}
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => setActiveTab(null)}
+          className="flex items-center justify-center w-9 h-9 rounded-xl bg-white transition-all hover:bg-gray-50 active:translate-y-[1px]"
+          style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
+        >
+          <ArrowLeft className="h-4 w-4 text-text-muted" />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-xl font-extrabold text-text-main">
+            {activeTab === 'reports' ? 'Mes rapports' : 'Prêt à coller'}
+          </h1>
+          <p className="text-xs text-text-muted">
+            {activeTab === 'reports'
+              ? 'Rapports PDF détaillés avec narratif IA'
+              : 'Analyse rapide des cours cibles depuis Croesus'}
+          </p>
+        </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6 bg-gray-100/80 rounded-xl p-1 w-fit">
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`
-            flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
-            ${activeTab === 'reports'
-              ? 'bg-white text-text-main shadow-sm'
-              : 'text-text-muted hover:text-text-main'}
-          `}
-        >
-          <FileText className="h-4 w-4" />
-          Mes rapports
-        </button>
-        <button
-          onClick={() => setActiveTab('paste')}
-          className={`
-            flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
-            ${activeTab === 'paste'
-              ? 'bg-white text-text-main shadow-sm'
-              : 'text-text-muted hover:text-text-main'}
-          `}
-        >
-          <ClipboardPaste className="h-4 w-4" />
-          Prêt à coller
-        </button>
+        {/* Tab switcher (compact) */}
+        <div className="flex items-center gap-1 bg-gray-100/80 rounded-xl p-1">
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'reports' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Rapports
+          </button>
+          <button
+            onClick={() => setActiveTab('paste')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'paste' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+            }`}
+          >
+            <ClipboardPaste className="h-3.5 w-3.5" />
+            Prêt à coller
+          </button>
+        </div>
+
+        {activeTab === 'reports' && (
+          <Link href="/reports/new">
+            <button
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
+              style={{ backgroundColor: DUO.purple, boxShadow: `0 3px 0 0 ${DUO.purpleDark}` }}
+            >
+              <Plus className="h-4 w-4" />
+              Nouveau
+            </button>
+          </Link>
+        )}
       </div>
 
       {/* Tab: Mes rapports */}
@@ -120,17 +270,27 @@ export default function ReportsPage() {
           {isLoading ? (
             <div className="flex justify-center py-16"><Spinner size="lg" /></div>
           ) : !reports || reports.length === 0 ? (
-            <Card className="text-center py-16">
-              <FileText className="h-16 w-16 text-text-light mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-text-main mb-2">Aucun rapport</h3>
+            <div className="text-center py-16">
+              <div
+                className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5"
+                style={{ backgroundColor: `${DUO.purple}12`, boxShadow: `0 4px 0 0 ${DUO.purpleDark}15` }}
+              >
+                <FileText className="h-10 w-10" style={{ color: DUO.purple }} />
+              </div>
+              <h3 className="text-lg font-extrabold text-text-main mb-2">Aucun rapport pour l&apos;instant</h3>
               <p className="text-sm text-text-muted max-w-md mx-auto mb-6">
-                Générez des rapports PDF détaillés de 8 pages avec composition, allocations,
-                métriques de risque, scénarios et stress tests.
+                Créez votre premier rapport PDF de 8 pages : composition, allocations, risque, narratif IA et stress tests.
               </p>
               <Link href="/reports/new">
-                <Button icon={<Plus className="h-4 w-4" />}>Créer un rapport</Button>
+                <button
+                  className="inline-flex items-center gap-2 px-7 py-3 rounded-2xl text-white font-extrabold text-sm transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
+                  style={{ backgroundColor: DUO.purple, boxShadow: `0 4px 0 0 ${DUO.purpleDark}` }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Créer un rapport
+                </button>
               </Link>
-            </Card>
+            </div>
           ) : (
             <Card>
               <div className="overflow-x-auto">
