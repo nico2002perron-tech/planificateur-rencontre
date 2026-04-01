@@ -387,6 +387,16 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
 
+  // PDF builder state
+  const [showPdfBuilder, setShowPdfBuilder] = useState(false);
+  const [pdfOptions, setPdfOptions] = useState({
+    includeCover: true,
+    includeEquities: true,
+    includeFixedIncome: true,
+    includeCashOther: true,
+    fundCodesToInclude: [] as string[],
+  });
+
   // Sort state
   type SortColumn = 'symbol' | 'name' | 'marketValue' | 'weight' | 'gainPct' | 'gainDollar' | 'targetPrice' | 'annualIncome' | 'currentPrice';
   type SortDir = 'asc' | 'desc';
@@ -532,6 +542,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       });
     }
   }, [currentFundSymbols, fundCheckResults]);
+
+  // Auto-populate PDF builder fund selections when fund check completes
+  useEffect(() => {
+    const okFunds = fundCheckResults.filter(f => f.status === 'ok').map(f => f.fund_code);
+    setPdfOptions(prev => ({ ...prev, fundCodesToInclude: okFunds }));
+  }, [fundCheckResults]);
 
   // Total portfolio value for weight calculation
   const totalPortfolioValue = useMemo(() => {
@@ -760,15 +776,16 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         return s + h.quantity * price;
       }, 0);
 
-      // Collect fund codes for automatic PDF merging
-      const fundCodes = holdings
-        .filter(h => h.assetType === 'FUND')
-        .map(h => h.symbol);
-
       const payload = {
         holdings: pdfHoldings,
         generatedAt: new Date().toISOString(),
-        fundCodes,
+        fundCodes: pdfOptions.fundCodesToInclude,
+        options: {
+          includeCover: pdfOptions.includeCover,
+          includeEquities: pdfOptions.includeEquities,
+          includeFixedIncome: pdfOptions.includeFixedIncome,
+          includeCashOther: pdfOptions.includeCashOther,
+        },
         summary: {
           totalMarketValue: result.summary.totalMarketValue,
           totalBookValue: holdings.reduce((s, h) => s + h.bookValue, 0),
@@ -819,7 +836,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -1745,8 +1762,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       )}
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
-        {!showTargets ? (
+      {!showTargets ? (
+        <div className="flex justify-center">
           <button
             onClick={() => setShowTargets(true)}
             className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-white font-extrabold text-base
@@ -1756,7 +1773,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             <TrendingUp className="h-5 w-5" />
             Charger les cours cibles
           </button>
-        ) : isLoadingPrices ? (
+        </div>
+      ) : isLoadingPrices ? (
+        <div className="flex justify-center">
           <div
             className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold"
             style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blue, border: `2px solid ${DUO.blue}30` }}
@@ -1764,40 +1783,277 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             <Spinner size="sm" />
             Chargement des prix et cours cibles...
           </div>
-        ) : fundCheckResults.some(f => f.status === 'missing' || f.status === 'outdated') ? (
-          <div className="flex flex-col items-center gap-2">
-            <Button
-              disabled
-              icon={<FileText className="h-4 w-4" />}
-              size="lg"
-              className="opacity-50 cursor-not-allowed"
-            >
-              Télécharger le PDF
-            </Button>
-            <p className="text-xs text-red-600 font-medium flex items-center gap-1">
-              <AlertCircle className="h-3.5 w-3.5" />
-              {fundCheckResults.filter(f => f.status === 'missing').length > 0
-                ? `${fundCheckResults.filter(f => f.status === 'missing').length} rapport(s) de fonds manquant(s)`
-                : `${fundCheckResults.filter(f => f.status === 'outdated').length} rapport(s) de fonds périmé(s)`
-              }
-              {' — '}
-              <a href="/fund-reports" target="_blank" className="underline hover:text-red-800">
-                Mettre à jour
-              </a>
-            </p>
+        </div>
+      ) : showPdfBuilder ? (
+        <div className="space-y-4">
+          {/* ── PDF Builder Panel ── */}
+          <div
+            className="p-6 rounded-2xl"
+            style={{ backgroundColor: `${DUO.purple}06`, border: `2px solid ${DUO.purple}25`, borderBottom: `4px solid ${DUO.purpleDark}20` }}
+          >
+            {/* Header */}
+            <div className="text-center mb-6">
+              <div
+                className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
+                style={{ backgroundColor: `${DUO.purple}15`, boxShadow: `0 3px 0 0 ${DUO.purpleDark}20` }}
+              >
+                <FileText className="h-7 w-7" style={{ color: DUO.purple }} />
+              </div>
+              <h3 className="text-xl font-extrabold text-text-main">Composez votre rapport</h3>
+              <p className="text-sm text-text-muted mt-1">Cochez les sections à inclure dans le PDF</p>
+            </div>
+
+            {/* Section toggle cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              {/* Cover page */}
+              <button
+                onClick={() => setPdfOptions(p => ({ ...p, includeCover: !p.includeCover }))}
+                className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                style={{
+                  border: `2px solid ${pdfOptions.includeCover ? DUO.orange : '#e5e7eb'}`,
+                  borderBottom: `4px solid ${pdfOptions.includeCover ? DUO.orangeDark : '#d1d5db'}`,
+                  backgroundColor: pdfOptions.includeCover ? `${DUO.orange}08` : '#fafafa',
+                }}
+              >
+                <div
+                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: pdfOptions.includeCover ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeCover ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                >
+                  <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                </div>
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
+                  style={{ backgroundColor: pdfOptions.includeCover ? `${DUO.orange}20` : '#f3f4f6' }}
+                >
+                  <BookOpen className="h-5 w-5" style={{ color: pdfOptions.includeCover ? DUO.orange : '#9ca3af' }} />
+                </div>
+                <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeCover ? '#1f2937' : '#9ca3af' }}>
+                  Page couverture
+                </p>
+                <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeCover ? '#6b7280' : '#d1d5db' }}>
+                  Résumé & KPIs
+                </p>
+              </button>
+
+              {/* Equities / price targets */}
+              {(() => {
+                const count = holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    onClick={() => setPdfOptions(p => ({ ...p, includeEquities: !p.includeEquities }))}
+                    className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                    style={{
+                      border: `2px solid ${pdfOptions.includeEquities ? DUO.blue : '#e5e7eb'}`,
+                      borderBottom: `4px solid ${pdfOptions.includeEquities ? DUO.blueDark : '#d1d5db'}`,
+                      backgroundColor: pdfOptions.includeEquities ? `${DUO.blue}08` : '#fafafa',
+                    }}
+                  >
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: pdfOptions.includeEquities ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeEquities ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
+                      style={{ backgroundColor: pdfOptions.includeEquities ? `${DUO.blue}20` : '#f3f4f6' }}
+                    >
+                      <TrendingUp className="h-5 w-5" style={{ color: pdfOptions.includeEquities ? DUO.blue : '#9ca3af' }} />
+                    </div>
+                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeEquities ? '#1f2937' : '#9ca3af' }}>
+                      Cours cibles
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeEquities ? '#6b7280' : '#d1d5db' }}>
+                      {count} position{count > 1 ? 's' : ''}
+                    </p>
+                  </button>
+                );
+              })()}
+
+              {/* Fixed income */}
+              {(() => {
+                const count = holdings.filter(h => h.assetType === 'FIXED_INCOME').length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    onClick={() => setPdfOptions(p => ({ ...p, includeFixedIncome: !p.includeFixedIncome }))}
+                    className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                    style={{
+                      border: `2px solid ${pdfOptions.includeFixedIncome ? DUO.orange : '#e5e7eb'}`,
+                      borderBottom: `4px solid ${pdfOptions.includeFixedIncome ? DUO.orangeDark : '#d1d5db'}`,
+                      backgroundColor: pdfOptions.includeFixedIncome ? `${DUO.orange}08` : '#fafafa',
+                    }}
+                  >
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: pdfOptions.includeFixedIncome ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeFixedIncome ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
+                      style={{ backgroundColor: pdfOptions.includeFixedIncome ? `${DUO.orange}20` : '#f3f4f6' }}
+                    >
+                      <Landmark className="h-5 w-5" style={{ color: pdfOptions.includeFixedIncome ? DUO.orange : '#9ca3af' }} />
+                    </div>
+                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeFixedIncome ? '#1f2937' : '#9ca3af' }}>
+                      Revenus fixes
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeFixedIncome ? '#6b7280' : '#d1d5db' }}>
+                      {count} position{count > 1 ? 's' : ''}
+                    </p>
+                  </button>
+                );
+              })()}
+
+              {/* Cash & other */}
+              {(() => {
+                const count = holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    onClick={() => setPdfOptions(p => ({ ...p, includeCashOther: !p.includeCashOther }))}
+                    className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                    style={{
+                      border: `2px solid ${pdfOptions.includeCashOther ? DUO.green : '#e5e7eb'}`,
+                      borderBottom: `4px solid ${pdfOptions.includeCashOther ? DUO.greenDark : '#d1d5db'}`,
+                      backgroundColor: pdfOptions.includeCashOther ? `${DUO.green}08` : '#fafafa',
+                    }}
+                  >
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: pdfOptions.includeCashOther ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeCashOther ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
+                      style={{ backgroundColor: pdfOptions.includeCashOther ? `${DUO.green}20` : '#f3f4f6' }}
+                    >
+                      <Wallet className="h-5 w-5" style={{ color: pdfOptions.includeCashOther ? DUO.green : '#9ca3af' }} />
+                    </div>
+                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeCashOther ? '#1f2937' : '#9ca3af' }}>
+                      Liquidités & autres
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeCashOther ? '#6b7280' : '#d1d5db' }}>
+                      {count} position{count > 1 ? 's' : ''}
+                    </p>
+                  </button>
+                );
+              })()}
+            </div>
+
+            {/* Fund reports section */}
+            {fundCheckResults.length > 0 && (
+              <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <BookOpen className="h-4 w-4" style={{ color: DUO.teal }} />
+                  <span className="text-sm font-bold text-text-main">Rapports de fonds</span>
+                  <span className="text-xs text-text-muted">
+                    ({pdfOptions.fundCodesToInclude.length} sélectionné{pdfOptions.fundCodesToInclude.length !== 1 ? 's' : ''})
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {fundCheckResults.map(f => {
+                    const isOk = f.status === 'ok';
+                    const isIncluded = pdfOptions.fundCodesToInclude.includes(f.fund_code);
+                    return (
+                      <div key={f.fund_code} className="flex items-center gap-3">
+                        {isOk ? (
+                          <button
+                            onClick={() => setPdfOptions(p => ({
+                              ...p,
+                              fundCodesToInclude: isIncluded
+                                ? p.fundCodesToInclude.filter(c => c !== f.fund_code)
+                                : [...p.fundCodesToInclude, f.fund_code],
+                            }))}
+                            className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all"
+                            style={{
+                              backgroundColor: isIncluded ? DUO.green : 'white',
+                              border: `2px solid ${isIncluded ? DUO.green : '#d1d5db'}`,
+                              boxShadow: isIncluded ? `0 2px 0 0 ${DUO.greenDark}` : 'none',
+                            }}
+                          >
+                            {isIncluded && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+                          </button>
+                        ) : (
+                          <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 bg-gray-100 border-2 border-gray-200">
+                            <X className="h-3 w-3 text-gray-400" />
+                          </div>
+                        )}
+                        <span className="font-mono text-xs font-bold" style={{ color: isOk ? DUO.teal : '#9ca3af' }}>
+                          {f.fund_code}
+                        </span>
+                        {f.fund_name && (
+                          <span className="text-xs text-text-muted truncate">{f.fund_name}</span>
+                        )}
+                        {f.status === 'ok' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">À jour</span>
+                        )}
+                        {f.status === 'outdated' && (
+                          <>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">Périmé</span>
+                            <a href="/fund-reports" target="_blank" className="text-[10px] text-amber-600 underline">Mettre à jour</a>
+                          </>
+                        )}
+                        {f.status === 'missing' && (
+                          <>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-semibold">Non uploadé</span>
+                            <a href="/fund-reports" target="_blank" className="text-[10px] text-red-500 underline">Uploader</a>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Footer: page estimate + buttons */}
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-text-muted">
+                {(() => {
+                  const eqCount = holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
+                  const fiCount = holdings.filter(h => h.assetType === 'FIXED_INCOME').length;
+                  const coCount = holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
+                  let pages = 0;
+                  if (pdfOptions.includeCover) pages += 1;
+                  if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / 25);
+                  if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
+                  if (pdfOptions.includeCashOther && coCount > 0) pages += 1;
+                  pages += pdfOptions.fundCodesToInclude.length * 2;
+                  return (
+                    <span className="font-semibold">
+                      ~{pages} page{pages > 1 ? 's' : ''} estimée{pages > 1 ? 's' : ''}
+                    </span>
+                  );
+                })()}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowPdfBuilder(false)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-gray-600 bg-white transition-all hover:bg-gray-50 active:translate-y-[1px]"
+                  style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
+                >
+                  Retour
+                </button>
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={generatingPdf || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeCashOther && pdfOptions.fundCodesToInclude.length === 0)}
+                  className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
+                    transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
+                >
+                  {generatingPdf ? <Spinner size="sm" /> : <Download className="h-4 w-4" />}
+                  {generatingPdf ? 'Génération...' : 'Générer le PDF'}
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <>
-            <button
-              onClick={handleDownloadPdf}
-              disabled={generatingPdf}
-              className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
-                transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
-              style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
-            >
-              {generatingPdf ? <Spinner size="sm" /> : <FileText className="h-4.5 w-4.5" />}
-              {generatingPdf ? 'Génération...' : 'Télécharger le PDF'}
-            </button>
+
+          {/* CSV + Copy buttons remain accessible */}
+          <div className="flex justify-center gap-3">
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm
@@ -1818,9 +2074,41 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                 {copiedSummary ? 'Copié' : 'Copier le résumé'}
               </button>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
+          <button
+            onClick={() => setShowPdfBuilder(true)}
+            className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
+              transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+            style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
+          >
+            <FileText className="h-4 w-4" />
+            Préparer le rapport PDF
+          </button>
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm
+              transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+            style={{ backgroundColor: 'white', color: DUO.purple, border: `2px solid ${DUO.purple}40`, borderBottom: `4px solid ${DUO.purpleDark}30` }}
+          >
+            <Download className="h-4 w-4" />
+            Exporter CSV
+          </button>
+          {targetSummary && (
+            <button
+              onClick={handleCopySummary}
+              className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm
+                transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+              style={{ backgroundColor: 'white', color: '#6b7280', border: '2px solid #e5e7eb', borderBottom: '4px solid #d1d5db' }}
+            >
+              {copiedSummary ? <Check className="h-4 w-4" style={{ color: DUO.green }} /> : <Copy className="h-4 w-4" />}
+              {copiedSummary ? 'Copié' : 'Copier le résumé'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Info */}
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-blue-50/50 border border-blue-100">

@@ -51,9 +51,17 @@ export interface PriceTargetHolding {
   accruedInterest?: number;
 }
 
+export interface PdfRenderOptions {
+  includeCover?: boolean;
+  includeEquities?: boolean;
+  includeFixedIncome?: boolean;
+  includeCashOther?: boolean;
+}
+
 export interface PriceTargetReportData {
   holdings: PriceTargetHolding[];
   generatedAt: string;
+  options?: PdfRenderOptions;
   summary: {
     totalMarketValue: number;
     totalBookValue: number;
@@ -540,9 +548,21 @@ function CashTablePage({ holdings, pageNum }: { holdings: PriceTargetHolding[]; 
 // ─── Main Document ───────────────────────────────────────────────────────────
 
 export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) {
-  const equities = data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType));
-  const fixedIncome = data.holdings.filter(h => h.assetType === 'FIXED_INCOME');
-  const cashOther = data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType));
+  const opts = data.options ?? {};
+  const showCover = opts.includeCover !== false;
+  const showEquities = opts.includeEquities !== false;
+  const showFixedIncome = opts.includeFixedIncome !== false;
+  const showCashOther = opts.includeCashOther !== false;
+
+  const equities = showEquities
+    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
+    : [];
+  const fixedIncome = showFixedIncome
+    ? data.holdings.filter(h => h.assetType === 'FIXED_INCOME')
+    : [];
+  const cashOther = showCashOther
+    ? data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))
+    : [];
 
   // Paginate equities (max ~25 rows per page)
   const ROWS_PER_PAGE = 25;
@@ -551,11 +571,11 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
   }
 
-  let pageNum = 1; // cover
+  let pageNum = showCover ? 1 : 0;
 
   return (
     <Document>
-      <CoverPage data={data} />
+      {showCover && <CoverPage data={data} />}
 
       {equityPages.map((pageHoldings, idx) => {
         pageNum++;

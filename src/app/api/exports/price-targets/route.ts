@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
-import { PriceTargetsDocument, type PriceTargetReportData } from '@/lib/pdf/price-targets-template';
+import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fundCodes, ...reportData } = body as PriceTargetReportData & { fundCodes?: string[] };
+    const { fundCodes, options, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
+    const reportData: PriceTargetReportData = { ...rest, options };
 
     if (!reportData.holdings || reportData.holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
