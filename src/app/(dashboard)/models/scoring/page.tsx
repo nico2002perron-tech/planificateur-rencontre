@@ -97,6 +97,48 @@ const DEFAULT_UPSIDE_WEIGHTS: UpsideWeights = { businessGrowth: 20, analystTarge
 const ZERO_SAFETY_ADJ: SafetyWeights = { balanceSheet: 0, beta: 0, profitability: 0, valuation: 0, size: 0, dividend: 0 };
 const ZERO_UPSIDE_ADJ: UpsideWeights = { businessGrowth: 0, analystTarget: 0, valuationDiscount: 0, fcfYield: 0, totalReturn: 0, capitalEfficiency: 0 };
 
+// ── Profils de pondération prédéfinis ──
+
+interface WeightPreset {
+  label: string;
+  description: string;
+  safety: SafetyWeights;
+  upside: UpsideWeights;
+}
+
+const WEIGHT_PRESETS: Record<string, WeightPreset> = {
+  equilibre: {
+    label: 'Équilibré',
+    description: 'Pondération par défaut — balance entre sécurité et potentiel',
+    safety: { balanceSheet: 25, beta: 20, profitability: 20, valuation: 15, size: 10, dividend: 10 },
+    upside: { businessGrowth: 20, analystTarget: 20, valuationDiscount: 20, fcfYield: 15, totalReturn: 15, capitalEfficiency: 10 },
+  },
+  conservateur: {
+    label: 'Conservateur',
+    description: 'Priorité à la sécurité, au dividende et à la stabilité',
+    safety: { balanceSheet: 30, beta: 25, profitability: 15, valuation: 10, size: 10, dividend: 10 },
+    upside: { businessGrowth: 10, analystTarget: 15, valuationDiscount: 15, fcfYield: 20, totalReturn: 25, capitalEfficiency: 15 },
+  },
+  croissance: {
+    label: 'Croissance',
+    description: 'Priorité au potentiel de hausse et à la croissance des revenus',
+    safety: { balanceSheet: 20, beta: 10, profitability: 25, valuation: 20, size: 10, dividend: 15 },
+    upside: { businessGrowth: 30, analystTarget: 20, valuationDiscount: 15, fcfYield: 10, totalReturn: 10, capitalEfficiency: 15 },
+  },
+  revenu: {
+    label: 'Revenu',
+    description: 'Maximiser le rendement en dividendes et la stabilité du flux de trésorerie',
+    safety: { balanceSheet: 25, beta: 20, profitability: 15, valuation: 10, size: 10, dividend: 20 },
+    upside: { businessGrowth: 10, analystTarget: 10, valuationDiscount: 15, fcfYield: 25, totalReturn: 30, capitalEfficiency: 10 },
+  },
+  valeur: {
+    label: 'Valeur',
+    description: 'Chercher les aubaines — titres sous-évalués avec bons fondamentaux',
+    safety: { balanceSheet: 25, beta: 15, profitability: 20, valuation: 20, size: 10, dividend: 10 },
+    upside: { businessGrowth: 15, analystTarget: 15, valuationDiscount: 30, fcfYield: 20, totalReturn: 10, capitalEfficiency: 10 },
+  },
+};
+
 // ── Constantes ──
 
 const BRAND = '#00b4d8';
@@ -463,7 +505,7 @@ function WeightSlider({ label, value, onChange, color }: { label: string; value:
 
 function WeightCustomizer({
   safetyWeights, upsideWeights, safetyAdj, upsideAdj,
-  onSafetyWeight, onUpsideWeight, onSafetyAdj, onUpsideAdj, onReset,
+  onSafetyWeight, onUpsideWeight, onSafetyAdj, onUpsideAdj, onReset, onApplyPreset,
 }: {
   safetyWeights: SafetyWeights; upsideWeights: UpsideWeights;
   safetyAdj: SafetyWeights; upsideAdj: UpsideWeights;
@@ -472,6 +514,7 @@ function WeightCustomizer({
   onSafetyAdj: (key: keyof SafetyWeights, value: number) => void;
   onUpsideAdj: (key: keyof UpsideWeights, value: number) => void;
   onReset: () => void;
+  onApplyPreset: (preset: WeightPreset) => void;
 }) {
   const [open, setOpen] = useState(false);
   const isDefault = isAllDefault(safetyWeights, upsideWeights, safetyAdj, upsideAdj);
@@ -520,6 +563,31 @@ function WeightCustomizer({
 
       {open && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+          {/* Preset buttons */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-text-muted mb-2">Profils prédéfinis</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(WEIGHT_PRESETS).map(([key, preset]) => {
+                const isActive =
+                  JSON.stringify(safetyWeights) === JSON.stringify(preset.safety) &&
+                  JSON.stringify(upsideWeights) === JSON.stringify(preset.upside);
+                return (
+                  <button key={key}
+                    onClick={(e) => { e.stopPropagation(); onApplyPreset(preset); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      isActive
+                        ? 'bg-brand-primary text-white shadow-sm'
+                        : 'bg-gray-100 text-text-muted hover:bg-gray-200 hover:text-text-main'
+                    }`}
+                    title={preset.description}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
             {/* Safety */}
@@ -668,6 +736,13 @@ export default function ScoringPage() {
     setUpsideAdj({ ...ZERO_UPSIDE_ADJ });
   }, []);
 
+  const handleApplyPreset = useCallback((preset: WeightPreset) => {
+    setSafetyWeights({ ...preset.safety });
+    setUpsideWeights({ ...preset.upside });
+    setSafetyAdj({ ...ZERO_SAFETY_ADJ });
+    setUpsideAdj({ ...ZERO_UPSIDE_ADJ });
+  }, []);
+
   const handleRun = useCallback(async () => {
     if (!selectedProfileId) { toast('warning', 'Selectionnez un profil'); return; }
     setLoading(true);
@@ -717,6 +792,7 @@ export default function ScoringPage() {
         onSafetyAdj={handleSafetyAdj}
         onUpsideAdj={handleUpsideAdj}
         onReset={handleReset}
+        onApplyPreset={handleApplyPreset}
       />
 
       <Card className="mb-6">

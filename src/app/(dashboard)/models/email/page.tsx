@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useInvestmentProfiles } from '@/lib/hooks/useInvestmentProfiles';
-import { ArrowLeft, Mail, Copy, Check, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Mail, Copy, Check, RefreshCw, ShieldCheck, Pencil } from 'lucide-react';
 
 // ── Types ──
 
@@ -64,6 +64,11 @@ export default function EmailPage() {
   const [scoringData, setScoringData] = useState<ScoringResult | null>(null);
   const [emailData, setEmailData] = useState<EmailResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [addDisclaimer, setAddDisclaimer] = useState(true);
+  const [editingBody, setEditingBody] = useState(false);
+  const [editedBody, setEditedBody] = useState('');
+
+  const DISCLAIMER = '\n\n---\nCe courriel est fourni à titre informatif seulement et ne constitue pas un conseil en placement. Les rendements passés ne garantissent pas les rendements futurs. Veuillez consulter votre conseiller financier avant de prendre toute décision d\'investissement. Groupe Financier Ste-Foy.';
 
   const handleGenerate = useCallback(async () => {
     if (!selectedProfileId) {
@@ -146,12 +151,13 @@ export default function EmailPage() {
 
   const handleCopy = useCallback(() => {
     if (!emailData) return;
-    const text = `Objet: ${emailData.subject}\n\n${emailData.body}`;
+    const body = editedBody || emailData.body;
+    const text = `Objet: ${emailData.subject}\n\n${body}${addDisclaimer ? DISCLAIMER : ''}`;
     navigator.clipboard.writeText(text);
     setCopied(true);
-    toast('success', 'Email copie dans le presse-papiers');
+    toast('success', 'Email copié dans le presse-papiers');
     setTimeout(() => setCopied(false), 2000);
-  }, [emailData, toast]);
+  }, [emailData, editedBody, addDisclaimer, toast]);
 
   if (profilesLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
@@ -290,11 +296,22 @@ export default function EmailPage() {
                   Regenerer
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!editingBody) setEditedBody(emailData.body);
+                    setEditingBody(!editingBody);
+                  }}
+                  icon={<Pencil className="h-3.5 w-3.5" />}
+                >
+                  {editingBody ? 'Aperçu' : 'Modifier'}
+                </Button>
+                <Button
                   size="sm"
                   onClick={handleCopy}
                   icon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 >
-                  {copied ? 'Copie' : 'Copier'}
+                  {copied ? 'Copié' : 'Copier'}
                 </Button>
               </div>
             </div>
@@ -309,10 +326,37 @@ export default function EmailPage() {
 
             {/* Body */}
             <div className="bg-white border border-gray-100 rounded-lg p-6">
-              <div className="prose prose-sm max-w-none text-text-main whitespace-pre-line leading-relaxed">
-                {emailData.body}
-              </div>
+              {editingBody ? (
+                <textarea
+                  value={editedBody}
+                  onChange={(e) => setEditedBody(e.target.value)}
+                  className="w-full min-h-[300px] text-sm text-text-main leading-relaxed border border-gray-200 rounded-lg p-4 focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary resize-y"
+                />
+              ) : (
+                <div className="prose prose-sm max-w-none text-text-main whitespace-pre-line leading-relaxed">
+                  {editedBody || emailData.body}
+                </div>
+              )}
             </div>
+
+            {/* Compliance disclaimer toggle */}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={() => setAddDisclaimer(!addDisclaimer)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${addDisclaimer ? 'bg-brand-primary' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${addDisclaimer ? 'translate-x-4' : 'translate-x-1'}`} />
+              </button>
+              <ShieldCheck className={`h-3.5 w-3.5 ${addDisclaimer ? 'text-brand-primary' : 'text-text-muted'}`} />
+              <span className="text-xs text-text-muted">Ajouter l&apos;avis de conformité</span>
+            </div>
+            {addDisclaimer && (
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <p className="text-[11px] text-text-muted leading-relaxed italic">
+                  Ce courriel est fourni à titre informatif seulement et ne constitue pas un conseil en placement. Les rendements passés ne garantissent pas les rendements futurs. Veuillez consulter votre conseiller financier avant de prendre toute décision d&apos;investissement. Groupe Financier Ste-Foy.
+                </p>
+              </div>
+            )}
           </Card>
 
           {/* Tone selector for regeneration */}

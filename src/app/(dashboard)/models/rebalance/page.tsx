@@ -834,31 +834,49 @@ function DriftView({ model, holdings, totalValue, threshold }: {
         ) : (
           <>
             {/* Resume achats/ventes */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <Card padding="sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
-                  <span className="text-xs text-text-muted">Achats ({buys.length})</span>
+            {(() => {
+              const totalTurnover = totalBuys + totalSells;
+              const estCommission = transactions.length * 9.95;
+              const estSpread = totalTurnover * 0.001;
+              const estTotal = estCommission + estSpread;
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Card padding="sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
+                      <span className="text-xs text-text-muted">Achats ({buys.length})</span>
+                    </div>
+                    <p className="text-lg font-semibold text-emerald-600">{fmt(totalBuys)}</p>
+                  </Card>
+                  <Card padding="sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ArrowDownCircle className="h-4 w-4 text-red-500" />
+                      <span className="text-xs text-text-muted">Ventes ({sells.length})</span>
+                    </div>
+                    <p className="text-lg font-semibold text-red-500">{fmt(totalSells)}</p>
+                  </Card>
+                  <Card padding="sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Scale className="h-4 w-4 text-text-muted" />
+                      <span className="text-xs text-text-muted">Flux net</span>
+                    </div>
+                    <p className={`text-lg font-semibold ${(totalSells - totalBuys) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {(totalSells - totalBuys) >= 0 ? '+' : ''}{fmt(totalSells - totalBuys)}
+                    </p>
+                  </Card>
+                  <Card padding="sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      <span className="text-xs text-text-muted">Frais est.</span>
+                    </div>
+                    <p className="text-lg font-semibold text-amber-600">~{fmt(estTotal)}</p>
+                    <p className="text-[10px] text-text-muted mt-0.5">
+                      {transactions.length} x 9,95$ + ~{fmtDec(estSpread, 0)}$ ecart
+                    </p>
+                  </Card>
                 </div>
-                <p className="text-lg font-semibold text-emerald-600">{fmt(totalBuys)}</p>
-              </Card>
-              <Card padding="sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <ArrowDownCircle className="h-4 w-4 text-red-500" />
-                  <span className="text-xs text-text-muted">Ventes ({sells.length})</span>
-                </div>
-                <p className="text-lg font-semibold text-red-500">{fmt(totalSells)}</p>
-              </Card>
-              <Card padding="sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <Scale className="h-4 w-4 text-text-muted" />
-                  <span className="text-xs text-text-muted">Flux net</span>
-                </div>
-                <p className={`text-lg font-semibold ${(totalSells - totalBuys) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {(totalSells - totalBuys) >= 0 ? '+' : ''}{fmt(totalSells - totalBuys)}
-                </p>
-              </Card>
-            </div>
+              );
+            })()}
 
             {/* Tableau transactions */}
             <Card padding="none">

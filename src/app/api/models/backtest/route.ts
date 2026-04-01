@@ -26,11 +26,14 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { profile_id, portfolio_value = 100000, years = 5 } = body;
+  const { profile_id, portfolio_value: rawValue = 100000, years: rawYears = 5 } = body;
 
   if (!profile_id) {
     return NextResponse.json({ error: 'profile_id requis' }, { status: 400 });
   }
+
+  const portfolio_value = Math.min(Math.max(Number(rawValue) || 100000, 1000), 100_000_000);
+  const years = Math.min(Math.max(Math.round(Number(rawYears) || 5), 1), 20);
 
   const supabase = createClient();
 

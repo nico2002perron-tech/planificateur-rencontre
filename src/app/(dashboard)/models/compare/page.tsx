@@ -347,7 +347,17 @@ export default function ComparePage() {
     // FUTURE: linear interpolation from today to target (13 monthly points including today)
     if (clientStats.totalValue > 0) {
       const months = 12;
-      const benchReturns: Record<string, number> = { '^GSPTSE': 8, '^GSPC': 10, '^IXIC': 12 };
+      // Derive annual return from actual history instead of hardcoded values
+      const benchReturns: Record<string, number> = {};
+      for (const [sym, vals] of Object.entries(clientHist?.benchmarks || {})) {
+        if (vals.length >= 2) {
+          const first = vals[0] || 100;
+          const last = vals[vals.length - 1] || 100;
+          benchReturns[sym] = ((last / first) - 1) * 100; // 1-year return as %
+        } else {
+          benchReturns[sym] = sym === '^GSPTSE' ? 8 : sym === '^GSPC' ? 10 : 12; // fallback
+        }
+      }
 
       for (let m = 1; m <= months; m++) {
         const date = new Date();
@@ -389,6 +399,48 @@ export default function ComparePage() {
   const removeHolding = useCallback((symbol: string) => {
     setClientHoldings(prev => prev.filter(h => h.symbol !== symbol));
   }, []);
+
+  // ── Diff analysis between client and model ──
+  const diffAnalysis = useMemo(() => {
+    if (!selectedModel || clientHoldings.length === 0) return null;
+
+    const clientSymSet = new Set(clientSymbols);
+    const modelSymSet = new Set(modelSymbols);
+
+    const onlyInClient = clientSymbols.filter(s => !modelSymSet.has(s));
+    const onlyInModel = modelSymbols.filter(s => !clientSymSet.has(s));
+    const inBoth = clientSymbols.filter(s => modelSymSet.has(s));
+
+    // Weight diff for common holdings
+    const weightDiffs = inBoth.map(sym => {
+      const clientWeight = clientWeights.find(w => w.symbol === sym)?.weight ?? 0;
+      const modelWeight = selectedModel.holdings.find(h => h.symbol === sym)?.weight ?? 0;
+      const diff = modelWeight - clientWeight;
+      return { symbol: sym, clientWeight, modelWeight, diff };
+    }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+    // Rebalancing suggestions
+    const suggestions: { symbol: string; action: 'acheter' | 'vendre' | 'augmenter' | 'reduire'; detail: string }[] = [];
+
+    for (const sym of onlyInModel) {
+      const weight = selectedModel.holdings.find(h => h.symbol === sym)?.weight ?? 0;
+      suggestions.push({ symbol: sym, action: 'acheter', detail: `Ajouter au portefeuille (cible ${weight.toFixed(1)}%)` });
+    }
+    for (const sym of onlyInClient) {
+      suggestions.push({ symbol: sym, action: 'vendre', detail: 'Absent du modèle — considérer la vente' });
+    }
+    for (const wd of weightDiffs) {
+      if (Math.abs(wd.diff) >= 2) {
+        if (wd.diff > 0) {
+          suggestions.push({ symbol: wd.symbol, action: 'augmenter', detail: `Sous-pondéré de ${wd.diff.toFixed(1)}% vs modèle` });
+        } else {
+          suggestions.push({ symbol: wd.symbol, action: 'reduire', detail: `Surpondéré de ${Math.abs(wd.diff).toFixed(1)}% vs modèle` });
+        }
+      }
+    }
+
+    return { onlyInClient, onlyInModel, inBoth, weightDiffs, suggestions };
+  }, [selectedModel, clientHoldings, clientSymbols, modelSymbols, clientWeights]);
 
   // ── Compare ready? ──
   const hasClient = clientHoldings.length > 0 && clientStats.totalValue > 0;
@@ -706,6 +758,52 @@ export default function ComparePage() {
             </div>
           </div>
 
+          {/* ── Diff & Rebalancing Suggestions ── */}
+          {diffAnalysis && diffAnalysis.suggestions.length > 0 && (
+            <div className="rounded-3xl border-[3px] border-[#FF9600]/30 bg-white overflow-hidden"
+              style={{ boxShadow: '0 4px 0 0 #FF960020' }}>
+              <div className="px-6 py-4 bg-gradient-to-r from-[#FF9600]/5 to-transparent border-b-[3px] border-[#FF9600]/10">
+                <h3 className="font-extrabold text-text-main flex items-center gap-2">
+                  <Target className="h-5 w-5 text-[#FF9600]" />
+                  Écarts et suggestions de rééquilibrage
+                </h3>
+                <p className="text-xs font-semibold text-text-muted mt-1">
+                  {diffAnalysis.onlyInClient.length > 0 && (
+                    <span className="mr-3"><span className="inline-block w-2 h-2 rounded-full bg-[#1CB0F6] mr-1" />{diffAnalysis.onlyInClient.length} titre{diffAnalysis.onlyInClient.length > 1 ? 's' : ''} uniquement chez le client</span>
+                  )}
+                  {diffAnalysis.onlyInModel.length > 0 && (
+                    <span className="mr-3"><span className="inline-block w-2 h-2 rounded-full bg-[#58CC02] mr-1" />{diffAnalysis.onlyInModel.length} titre{diffAnalysis.onlyInModel.length > 1 ? 's' : ''} uniquement dans le modèle</span>
+                  )}
+                  {diffAnalysis.inBoth.length > 0 && (
+                    <span><span className="inline-block w-2 h-2 rounded-full bg-[#CE82FF] mr-1" />{diffAnalysis.inBoth.length} en commun</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="px-6 py-4 space-y-2">
+                {diffAnalysis.suggestions.map((s, i) => {
+                  const actionStyles = {
+                    acheter: { bg: 'bg-[#58CC02]/8', border: 'border-[#58CC02]/25', text: 'text-[#58CC02]', label: 'ACHETER' },
+                    vendre: { bg: 'bg-[#FF4B4B]/8', border: 'border-[#FF4B4B]/25', text: 'text-[#FF4B4B]', label: 'VENDRE' },
+                    augmenter: { bg: 'bg-[#1CB0F6]/8', border: 'border-[#1CB0F6]/25', text: 'text-[#1CB0F6]', label: 'AUGMENTER' },
+                    reduire: { bg: 'bg-[#FF9600]/8', border: 'border-[#FF9600]/25', text: 'text-[#FF9600]', label: 'RÉDUIRE' },
+                  }[s.action];
+
+                  return (
+                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border-[2px] ${actionStyles.border} ${actionStyles.bg}`}>
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg ${actionStyles.text} bg-white/80`}>
+                        {actionStyles.label}
+                      </span>
+                      <StockAvatar symbol={s.symbol} size={28} />
+                      <span className="font-extrabold text-xs text-text-main">{s.symbol}</span>
+                      <span className="text-xs font-semibold text-text-muted flex-1">{s.detail}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── UNIFIED CHART: Past + Future ── */}
           <div className="rounded-3xl border-[3px] border-gray-200 bg-white overflow-hidden"
             style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
@@ -822,15 +920,26 @@ export default function ComparePage() {
                     const gain = price > 0 && target > 0 ? ((target - price) / price) * 100 : 0;
                     const inClient = clientHoldings.some(h => h.symbol === sym);
                     const inModel = selectedModel?.holdings.some(h => h.symbol === sym);
+                    const onlyClient = inClient && !inModel;
+                    const onlyModel = !inClient && inModel;
 
                     return (
-                      <tr key={sym} className="border-t border-gray-50 hover:bg-gray-50/50">
+                      <tr key={sym} className={`border-t border-gray-50 ${
+                        onlyClient ? 'bg-[#1CB0F6]/[0.04]' : onlyModel ? 'bg-[#58CC02]/[0.04]' : 'hover:bg-gray-50/50'
+                      }`}>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
                             <StockAvatar symbol={sym} size={28} />
                             <span className="font-extrabold text-text-main text-xs">{sym}</span>
-                            {inClient && <span className="w-2 h-2 rounded-full bg-[#1CB0F6]" title="Client" />}
-                            {inModel && <span className="w-2 h-2 rounded-full bg-[#58CC02]" title="Modèle" />}
+                            {inClient && inModel && (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#CE82FF]/10 text-[#CE82FF]">C+M</span>
+                            )}
+                            {onlyClient && (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#1CB0F6]/10 text-[#1CB0F6]">Client seul</span>
+                            )}
+                            {onlyModel && (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#58CC02]/10 text-[#58CC02]">Modèle seul</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-xs">{price > 0 ? `$${fmtDec(price)}` : '—'}</td>

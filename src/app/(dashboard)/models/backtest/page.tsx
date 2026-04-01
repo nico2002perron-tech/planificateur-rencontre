@@ -44,10 +44,18 @@ interface BacktestStats {
   nbSymbolsWithData: number;
 }
 
+interface StockContribution {
+  symbol: string;
+  weight: number;
+  totalReturn: number;
+  contribution: number;
+}
+
 interface BacktestResult {
   series: BacktestSeries[];
   drawdown: BacktestDrawdown[];
   stats: BacktestStats;
+  stockContributions: StockContribution[];
   benchmarkStats?: { totalReturn: number; cagr: number; volatility: number; maxDrawdown: number };
   period: { start: string; end: string };
 }
@@ -292,6 +300,59 @@ function BacktestView({ data }: { data: BacktestResponse }) {
             })}
           </div>
         </Card>
+      )}
+
+      {/* Top / Worst contributors */}
+      {bt.stockContributions && bt.stockContributions.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <h3 className="text-sm font-semibold text-emerald-600 mb-3 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" /> Meilleurs contributeurs
+            </h3>
+            <div className="space-y-2">
+              {bt.stockContributions.slice(0, 5).map((s) => {
+                const maxContrib = Math.max(...bt.stockContributions.slice(0, 5).map(c => Math.abs(c.contribution)));
+                const barW = maxContrib > 0 ? (Math.abs(s.contribution) / maxContrib) * 100 : 0;
+                return (
+                  <div key={s.symbol} className="flex items-center gap-3">
+                    <span className="font-mono font-semibold text-sm text-brand-primary w-20 shrink-0">{s.symbol}</span>
+                    <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${barW}%` }} />
+                    </div>
+                    <div className="text-right shrink-0 w-28">
+                      <span className="text-sm font-semibold text-emerald-600">+{fmtDec(s.contribution)}%</span>
+                      <span className="text-[10px] text-text-muted ml-1">({fmtDec(s.totalReturn)}%)</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          <Card>
+            <h3 className="text-sm font-semibold text-red-500 mb-3 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4" /> Pires contributeurs
+            </h3>
+            <div className="space-y-2">
+              {[...bt.stockContributions].reverse().slice(0, 5).map((s) => {
+                const worst5 = [...bt.stockContributions].reverse().slice(0, 5);
+                const maxContrib = Math.max(...worst5.map(c => Math.abs(c.contribution)));
+                const barW = maxContrib > 0 ? (Math.abs(s.contribution) / maxContrib) * 100 : 0;
+                return (
+                  <div key={s.symbol} className="flex items-center gap-3">
+                    <span className="font-mono font-semibold text-sm text-brand-primary w-20 shrink-0">{s.symbol}</span>
+                    <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400 rounded-full transition-all" style={{ width: `${barW}%` }} />
+                    </div>
+                    <div className="text-right shrink-0 w-28">
+                      <span className="text-sm font-semibold text-red-500">{fmtDec(s.contribution)}%</span>
+                      <span className="text-[10px] text-text-muted ml-1">({fmtDec(s.totalReturn)}%)</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Performance chart */}

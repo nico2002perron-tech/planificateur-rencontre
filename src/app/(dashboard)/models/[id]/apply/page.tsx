@@ -78,6 +78,17 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
   }
 
   const yahooCount = symbols.filter(s => yahooPrices.has(s)).length;
+  const missingPriceSymbols = useMemo(() => {
+    if (!model?.holdings) return [];
+    return model.holdings
+      .filter(h => {
+        if (manualPrices[h.symbol] !== undefined && manualPrices[h.symbol] > 0) return false;
+        const yp = yahooPrices.get(h.symbol);
+        return !yp || yp.price <= 0;
+      })
+      .map(h => h.symbol);
+  }, [model, yahooPrices, manualPrices]);
+  const allPricesReady = missingPriceSymbols.length === 0 && symbols.length > 0;
 
   const preview = useMemo(() => {
     if (!model?.holdings) return [];
@@ -173,10 +184,15 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
             <div className="flex items-center gap-2 text-xs">
               {pricesLoading ? (
                 <span className="flex items-center gap-1 text-text-muted"><Spinner size="sm" /> Chargement des prix...</span>
-              ) : yahooCount > 0 ? (
+              ) : allPricesReady ? (
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">
                   <Wifi className="h-3 w-3" />
-                  {yahooCount}/{symbols.length} prix temps réel
+                  {symbols.length}/{symbols.length} prix prêts
+                </span>
+              ) : yahooCount > 0 ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
+                  <AlertCircle className="h-3 w-3" />
+                  {yahooCount}/{symbols.length} prix — manquants: {missingPriceSymbols.join(', ')}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
@@ -217,12 +233,17 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
                         <div className="relative inline-block">
                           <span className="absolute left-1 top-1/2 -translate-y-1/2 text-xs text-text-muted">$</span>
                           <input type="number" min={0} step="any"
-                            className={`w-24 pl-5 pr-2 py-1 rounded border text-sm text-right focus:border-brand-primary focus:outline-none ${row.price > 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-300'}`}
+                            className={`w-28 pl-5 pr-2 py-1 rounded border text-sm text-right focus:border-brand-primary focus:outline-none ${row.price > 0 ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-300'}`}
                             placeholder="0.00"
-                            defaultValue={manualPrices[row.symbol] || ''}
-                            onBlur={e => {
-                              const val = parseFloat(e.target.value);
-                              setManualPrices(prev => ({ ...prev, [row.symbol]: isNaN(val) || val <= 0 ? 0 : val }));
+                            value={manualPrices[row.symbol] ?? ''}
+                            onChange={e => {
+                              const raw = e.target.value;
+                              if (raw === '') {
+                                setManualPrices(prev => { const next = { ...prev }; delete next[row.symbol]; return next; });
+                              } else {
+                                const val = parseFloat(raw);
+                                setManualPrices(prev => ({ ...prev, [row.symbol]: isNaN(val) || val < 0 ? 0 : val }));
+                              }
                             }}
                             onKeyDown={e => {
                               if (e.key === 'Enter') {
@@ -251,9 +272,20 @@ export default function ApplyModelPage({ params }: { params: Promise<{ id: strin
           </div>
         </Card>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex items-center justify-end gap-3">
+          {!allPricesReady && !pricesLoading && symbols.length > 0 && (
+            <span className="text-xs text-amber-600 mr-auto flex items-center gap-1">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Entrez les prix manquants pour {missingPriceSymbols.join(', ')}
+            </span>
+          )}
           <Button variant="ghost" onClick={() => router.back()}>Annuler</Button>
-          <Button loading={submitting} onClick={handleSubmit} icon={<Rocket className="h-4 w-4" />}>
+          <Button
+            loading={submitting}
+            onClick={handleSubmit}
+            disabled={!allPricesReady || pricesLoading}
+            icon={<Rocket className="h-4 w-4" />}
+          >
             Appliquer le modèle
           </Button>
         </div>

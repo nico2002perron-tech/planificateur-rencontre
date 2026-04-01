@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -13,7 +13,7 @@ import {
   PieChart, Trash2, Star, Rocket, Clock, Edit3, Copy,
   SlidersHorizontal, Globe, Zap, ArrowRightLeft, Activity,
   Target, Mail, Scale, ChevronRight, CheckCircle2, Lock,
-  Sparkles, BarChart3, TrendingUp,
+  Sparkles, BarChart3, TrendingUp, Search, ArrowUpDown, Eye, X,
 } from 'lucide-react';
 
 // ── Constantes ──
@@ -28,11 +28,22 @@ const riskColors: Record<string, 'info' | 'success' | 'warning' | 'danger'> = {
 
 const riskLabels: Record<string, string> = {
   CONSERVATEUR: 'Conservateur',
-  MODERE: 'Modere',
-  EQUILIBRE: 'Equilibre',
+  MODERE: 'Modéré',
+  EQUILIBRE: 'Équilibré',
   CROISSANCE: 'Croissance',
   DYNAMIQUE: 'Dynamique',
 };
+
+type SortKey = 'name' | 'date' | 'risk' | 'holdings';
+const RISK_ORDER: Record<string, number> = { CONSERVATEUR: 0, MODERE: 1, EQUILIBRE: 2, CROISSANCE: 3, DYNAMIQUE: 4 };
+const RISK_FILTER_OPTIONS = [
+  { value: '', label: 'Tous les profils' },
+  { value: 'CONSERVATEUR', label: 'Conservateur' },
+  { value: 'MODERE', label: 'Modéré' },
+  { value: 'EQUILIBRE', label: 'Équilibré' },
+  { value: 'CROISSANCE', label: 'Croissance' },
+  { value: 'DYNAMIQUE', label: 'Dynamique' },
+];
 
 // ── Types du parcours guide ──
 
@@ -177,6 +188,43 @@ export default function ModelsPage() {
   const { toast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<ModelPortfolio | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [riskFilter, setRiskFilter] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [previewModel, setPreviewModel] = useState<ModelPortfolio | null>(null);
+
+  const filteredModels = useMemo(() => {
+    if (!models) return [];
+    let list = [...models];
+
+    // Search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(m =>
+        m.name.toLowerCase().includes(q) ||
+        m.description?.toLowerCase().includes(q) ||
+        m.holdings.some(h => h.symbol.toLowerCase().includes(q))
+      );
+    }
+
+    // Risk filter
+    if (riskFilter) {
+      list = list.filter(m => m.risk_level === riskFilter);
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      switch (sortKey) {
+        case 'name': return a.name.localeCompare(b.name, 'fr-CA');
+        case 'date': return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        case 'risk': return (RISK_ORDER[a.risk_level] ?? 9) - (RISK_ORDER[b.risk_level] ?? 9);
+        case 'holdings': return b.holdings.length - a.holdings.length;
+        default: return 0;
+      }
+    });
+
+    return list;
+  }, [models, searchQuery, riskFilter, sortKey]);
 
   const hasModels = models && models.length > 0;
 
@@ -315,6 +363,51 @@ export default function ModelsPage() {
           </Link>
         </div>
 
+        {/* ── Barre de recherche, filtre et tri ── */}
+        {hasModels && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-light" />
+              <input
+                type="text"
+                placeholder="Rechercher un modele ou symbole..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-brand-primary focus:outline-none bg-white"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-light hover:text-text-main">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <select
+              value={riskFilter}
+              onChange={e => setRiskFilter(e.target.value)}
+              className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-brand-primary focus:outline-none bg-white"
+            >
+              {RISK_FILTER_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <div className="flex items-center gap-1 text-xs text-text-muted">
+              <ArrowUpDown className="h-3 w-3" />
+              {(['date', 'name', 'risk', 'holdings'] as const).map(key => (
+                <button
+                  key={key}
+                  onClick={() => setSortKey(key)}
+                  className={`px-2 py-1 rounded-md transition-colors ${sortKey === key ? 'bg-brand-primary/10 text-brand-primary font-semibold' : 'hover:bg-gray-100'}`}
+                >
+                  {{ date: 'Date', name: 'Nom', risk: 'Risque', holdings: 'Positions' }[key]}
+                </button>
+              ))}
+            </div>
+            {(searchQuery || riskFilter) && (
+              <span className="text-xs text-text-muted ml-auto">{filteredModels.length} / {models.length} modeles</span>
+            )}
+          </div>
+        )}
+
         {!hasModels ? (
           <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
             <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
@@ -329,8 +422,16 @@ export default function ModelsPage() {
             </Link>
           </div>
         ) : (
+          filteredModels.length === 0 ? (
+            <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-8 text-center">
+              <p className="text-sm text-text-muted">Aucun modele ne correspond a votre recherche.</p>
+              <button onClick={() => { setSearchQuery(''); setRiskFilter(''); }} className="text-sm text-brand-primary hover:underline mt-2">
+                Effacer les filtres
+              </button>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {models.map((model) => (
+            {filteredModels.map((model) => (
               <Card key={model.id} className="flex flex-col group hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -386,6 +487,13 @@ export default function ModelsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => setPreviewModel(model)}
+                    title="Apercu rapide"
+                    icon={<Eye className="h-3.5 w-3.5" />}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleDuplicate(model)}
                     title="Dupliquer"
                     icon={<Copy className="h-3.5 w-3.5" />}
@@ -405,6 +513,7 @@ export default function ModelsPage() {
               </Card>
             ))}
           </div>
+          )
         )}
       </div>
 
@@ -418,6 +527,82 @@ export default function ModelsPage() {
           <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Annuler</Button>
           <Button variant="danger" loading={deleting} onClick={handleDelete}>Supprimer</Button>
         </div>
+      </Modal>
+
+      {/* ── Modal apercu rapide ── */}
+      <Modal open={!!previewModel} onClose={() => setPreviewModel(null)} title={previewModel?.name || ''} size="md">
+        {previewModel && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Badge variant={riskColors[previewModel.risk_level] || 'info'}>
+                {riskLabels[previewModel.risk_level] || previewModel.risk_level}
+              </Badge>
+              <span className="text-xs text-text-muted">{previewModel.holdings.length} positions</span>
+              <span className="text-xs text-text-light ml-auto">Mis a jour {timeAgo(previewModel.updated_at)}</span>
+            </div>
+
+            {previewModel.description && (
+              <p className="text-sm text-text-muted">{previewModel.description}</p>
+            )}
+
+            {/* Holdings table */}
+            {previewModel.holdings.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-text-muted">
+                      <th className="text-left py-1.5 font-semibold">Symbole</th>
+                      <th className="text-left py-1.5 font-semibold">Nom</th>
+                      <th className="text-right py-1.5 font-semibold">Poids</th>
+                      <th className="text-left py-1.5 font-semibold pl-3">Classe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewModel.holdings.map((h, i) => (
+                      <tr key={i} className="border-b border-gray-50">
+                        <td className="py-1.5 font-mono font-semibold text-brand-primary text-xs">{h.symbol}</td>
+                        <td className="py-1.5 text-text-main text-xs truncate max-w-[160px]">{h.name}</td>
+                        <td className="py-1.5 text-right">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-1.5 rounded-full bg-brand-primary" style={{ width: `${Math.max(h.weight * 0.6, 4)}px` }} />
+                            <span className="text-xs font-medium">{h.weight}%</span>
+                          </span>
+                        </td>
+                        <td className="py-1.5 text-xs text-text-muted pl-3">{h.asset_class || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-200">
+                      <td colSpan={2} className="py-1.5 text-xs font-semibold">Total</td>
+                      <td className="py-1.5 text-right text-xs font-bold">{previewModel.holdings.reduce((s, h) => s + h.weight, 0).toFixed(1)}%</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Weight bar */}
+            {previewModel.holdings.length > 0 && (
+              <div className="flex gap-0.5 h-3 rounded-full overflow-hidden bg-gray-100">
+                {previewModel.holdings.map((h, i) => {
+                  const colors = ['bg-brand-primary', 'bg-brand-accent', 'bg-brand-dark', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500'];
+                  return (
+                    <div key={i} className={colors[i % colors.length]} style={{ width: `${h.weight}%` }} title={`${h.symbol} — ${h.weight}%`} />
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setPreviewModel(null)}>Fermer</Button>
+              <Link href={`/models/${previewModel.id}`}>
+                <Button size="sm" icon={<Edit3 className="h-3.5 w-3.5" />}>Ouvrir le modele</Button>
+              </Link>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

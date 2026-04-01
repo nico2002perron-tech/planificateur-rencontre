@@ -19,6 +19,13 @@ export interface MonthlyPoint {
   adjClose: number;
 }
 
+export interface StockContribution {
+  symbol: string;
+  weight: number;           // original portfolio weight (0-1)
+  totalReturn: number;      // % total return for this stock
+  contribution: number;     // weighted contribution to portfolio return (%)
+}
+
 export interface BacktestResult {
   // Séries temporelles
   series: {
@@ -48,6 +55,9 @@ export interface BacktestResult {
     years: number;                // durée en années
     nbSymbolsWithData: number;    // symboles avec données historiques
   };
+
+  // Per-stock contributions
+  stockContributions: StockContribution[];
 
   benchmarkStats?: {
     totalReturn: number;
@@ -156,6 +166,7 @@ export function runBacktest(
       series: [],
       drawdown: [],
       stats: { totalReturn: 0, cagr: 0, volatility: 0, maxDrawdown: 0, sharpeRatio: 0, bestMonth: 0, worstMonth: 0, positiveMonths: 0, years: 0, nbSymbolsWithData: 0 },
+      stockContributions: [],
       period: { start: '', end: '' },
     };
   }
@@ -269,10 +280,32 @@ export function runBacktest(
       }
     : undefined;
 
+  // 7. Per-stock contributions
+  const stockContributions: StockContribution[] = [];
+  for (const w of weights) {
+    const retMap = symbolReturns.get(w.symbol);
+    if (!retMap) continue;
+    // Compute individual stock cumulative return
+    let cumVal = 1;
+    for (const date of sortedDates) {
+      const ret = retMap.get(date);
+      if (ret !== undefined) cumVal *= (1 + ret);
+    }
+    const stockReturn = (cumVal - 1) * 100;
+    stockContributions.push({
+      symbol: w.symbol,
+      weight: Math.round(w.weight * 10000) / 100,
+      totalReturn: Math.round(stockReturn * 100) / 100,
+      contribution: Math.round(w.weight * stockReturn * 100) / 100,
+    });
+  }
+  stockContributions.sort((a, b) => b.contribution - a.contribution);
+
   return {
     series,
     drawdown,
     stats,
+    stockContributions,
     benchmarkStats,
     period: { start: sortedDates[0], end: sortedDates[sortedDates.length - 1] },
   };

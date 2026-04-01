@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
 } from 'recharts';
@@ -151,6 +152,7 @@ function fmtDec(n: number, dec = 2) {
 // ══════════════════════════════════════════
 
 export default function GeneratePage() {
+  const router = useRouter();
   const { profiles, isLoading: profilesLoading } = useInvestmentProfiles();
   const { stocks: universeStocks, bySector, sectors: universeSectors, isLoading: universeLoading } = useStockUniverse();
   const { toast } = useToast();
@@ -334,7 +336,7 @@ export default function GeneratePage() {
       toast('success', 'Modele sauvegarde!');
       setSaveModalOpen(false);
       setModelName('');
-      window.location.href = `/models/${saved.id}`;
+      router.push(`/models/${saved.id}`);
     } catch {
       toast('error', 'Erreur de sauvegarde');
     } finally {

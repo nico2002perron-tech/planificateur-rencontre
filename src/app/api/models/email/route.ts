@@ -126,7 +126,12 @@ Reponds en JSON valide avec ce schema:
       return NextResponse.json({ error: 'Reponse vide de Groq' }, { status: 500 });
     }
 
-    const parsed = JSON.parse(content) as { subject: string; body: string };
+    let parsed: { subject: string; body: string };
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return NextResponse.json({ error: 'Reponse Groq invalide (JSON malformé)' }, { status: 500 });
+    }
 
     if (!parsed.subject || !parsed.body) {
       return NextResponse.json({ error: 'Reponse Groq incomplete' }, { status: 500 });

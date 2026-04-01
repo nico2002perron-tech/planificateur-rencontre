@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useModel, type ModelHolding } from '@/lib/hooks/useModels';
 import { RISK_PROFILES, ASSET_CLASSES, REGIONS } from '@/lib/utils/constants';
 import Link from 'next/link';
-import { Save, Trash2, Search, X, ArrowLeft, Rocket, Activity } from 'lucide-react';
+import { Save, Trash2, Search, X, ArrowLeft, Rocket, Activity, Download, Upload } from 'lucide-react';
 
 // ── Types & helpers ──────────────────────────────────────────────
 
@@ -198,6 +198,57 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
     } finally {
       setSaving(false);
     }
+  }
+
+  function exportCSV() {
+    if (!model) return;
+    const rows = [['Symbole', 'Nom', 'Pondération', 'Classe', 'Région']];
+    for (const h of model.holdings) {
+      rows.push([h.symbol, h.name, String(h.weight), h.asset_class, h.region || '']);
+    }
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${model.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('success', 'CSV exporté');
+  }
+
+  function importCSV(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (!text) return;
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      const imported: ModelHolding[] = [];
+      // Skip header if it looks like one
+      const start = /^["']?(Symbole|Symbol)/i.test(lines[0]) ? 1 : 0;
+      for (let i = start; i < lines.length; i++) {
+        const cols = lines[i].match(/("(?:[^"]|"")*"|[^,]*)/g)?.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim()) || [];
+        if (cols.length < 2) continue;
+        const symbol = cols[0].toUpperCase();
+        const name = cols[1] || symbol;
+        const weight = parseFloat(cols[2]) || 0;
+        const asset_class = cols[3] || 'EQUITY';
+        const region = cols[4] || detectRegion(symbol);
+        if (symbol && !imported.some(h => h.symbol === symbol)) {
+          imported.push({ symbol, name, weight, asset_class, region });
+        }
+      }
+      if (imported.length === 0) {
+        toast('warning', 'Aucun titre trouvé dans le CSV');
+        return;
+      }
+      setHoldings(imported);
+      toast('success', `${imported.length} titres importés`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   }
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
@@ -389,14 +440,34 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-text-main">Composition</h3>
-              {holdings.length > 0 && (
-                <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                  Math.abs(totalWeight - 100) < 0.5 ? 'bg-emerald-50 text-emerald-700'
-                    : totalWeight > 100 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'
-                }`}>{totalWeight.toFixed(1)}%</span>
-              )}
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-text-muted hover:border-brand-primary hover:text-brand-primary transition-colors cursor-pointer">
+                  <Upload className="h-3.5 w-3.5" /> Importer CSV
+                  <input type="file" accept=".csv" onChange={importCSV} className="hidden" />
+                </label>
+                {holdings.length > 0 && (
+                  <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
+                    Math.abs(totalWeight - 100) < 0.5 ? 'bg-emerald-50 text-emerald-700'
+                      : totalWeight > 100 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'
+                  }`}>{totalWeight.toFixed(1)}%</span>
+                )}
+              </div>
             </div>
             {searchBar}
+            {holdings.length >= 2 && (
+              <div className="flex items-center gap-2 mb-3">
+                <button type="button"
+                  onClick={() => {
+                    const eq = Math.round((100 / holdings.length) * 100) / 100;
+                    const last = Math.round((100 - eq * (holdings.length - 1)) * 100) / 100;
+                    setHoldings(prev => prev.map((h, i) => ({ ...h, weight: i === prev.length - 1 ? last : eq })));
+                  }}
+                  className="text-xs font-medium text-text-muted hover:text-brand-primary transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5"
+                >
+                  Equipondérer
+                </button>
+              </div>
+            )}
             {holdingsList}
           </Card>
         </div>
@@ -414,7 +485,15 @@ export default function ModelDetailPage({ params }: { params: Promise<{ id: stri
           </Card>
 
           <Card>
-            <h3 className="font-semibold text-text-main mb-4">Composition ({model.holdings.length} positions)</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-text-main">Composition ({model.holdings.length} positions)</h3>
+              {model.holdings.length > 0 && (
+                <button onClick={exportCSV}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-text-muted hover:border-brand-primary hover:text-brand-primary transition-colors">
+                  <Download className="h-3.5 w-3.5" /> CSV
+                </button>
+              )}
+            </div>
 
             {model.holdings.length > 0 && (
               <div className="flex gap-1 mb-6 h-4 rounded-full overflow-hidden bg-gray-100">

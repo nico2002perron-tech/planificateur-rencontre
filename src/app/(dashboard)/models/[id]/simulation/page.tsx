@@ -8,223 +8,21 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useModel } from '@/lib/hooks/useModels';
 import { useSimulation, type LiveHolding, type SimulationSnapshot } from '@/lib/hooks/useSimulation';
+import { StockAvatar, DuoStat, StartSimulation, duoColor, fmtMoney, fmtMoneyFull, fmtPct, fmtDate, fmtDateShort, BENCHMARK_LABELS, BENCHMARK_COLORS, SECTOR_COLORS, SECTOR_LABELS, REGION_LABELS, CHART_PERIODS, type ChartPeriod } from '@/components/models/simulation';
 import { useSymbolsNews } from '@/lib/hooks/useNews';
 import { NewsBadge } from '@/components/portfolios/NewsBadge';
 import { NewsModal } from '@/components/portfolios/NewsModal';
 import Link from 'next/link';
 import {
   ArrowLeft, TrendingUp, TrendingDown,
-  DollarSign, Activity, Target,
+  Activity, Target,
   ChevronUp, ChevronDown, RefreshCw, Zap, Trophy,
-  Shield, Calendar, BarChart3, X,
+  Shield, Calendar, BarChart3, X, FileDown,
 } from 'lucide-react';
 import {
   XAxis, YAxis, Tooltip,
   ResponsiveContainer, Area, AreaChart, Line, PieChart, Pie, Cell,
 } from 'recharts';
-
-// ── Duolingo palette ──────────────────────────────────────────────────────
-
-const DUO_COLORS = ['#58CC02', '#CE82FF', '#1CB0F6', '#FF9600', '#FF4B4B', '#FFC800', '#00CD9C'];
-
-function duoColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return DUO_COLORS[Math.abs(hash) % DUO_COLORS.length];
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────
-
-const BENCHMARK_LABELS: Record<string, string> = { '^GSPTSE': 'S&P/TSX', '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ' };
-const BENCHMARK_COLORS: Record<string, string> = { '^GSPTSE': '#64748b', '^GSPC': '#03045e', '^IXIC': '#7c3aed' };
-const SECTOR_COLORS: Record<string, string> = {
-  TECHNOLOGY: '#1CB0F6', HEALTHCARE: '#CE82FF', FINANCIALS: '#FF9600',
-  ENERGY: '#FF4B4B', MATERIALS: '#FFC800', INDUSTRIALS: '#58CC02',
-  CONSUMER_DISC: '#00CD9C', CONSUMER_STAPLES: '#7c3aed', UTILITIES: '#64748b',
-  REAL_ESTATE: '#f472b6', TELECOM: '#0ea5e9', MILITARY: '#475569',
-  EQUITY: '#94a3b8', FIXED_INCOME: '#a78bfa', CASH: '#d1d5db',
-};
-const SECTOR_LABELS: Record<string, string> = {
-  TECHNOLOGY: 'Technologie', HEALTHCARE: 'Santé', FINANCIALS: 'Finance',
-  ENERGY: 'Énergie', MATERIALS: 'Matériaux', INDUSTRIALS: 'Industriels',
-  CONSUMER_DISC: 'Cons. discrétionnaire', CONSUMER_STAPLES: 'Cons. de base',
-  UTILITIES: 'Services publics', REAL_ESTATE: 'Immobilier',
-  TELECOM: 'Télécommunications', MILITARY: 'Militaire',
-  EQUITY: 'Actions', FIXED_INCOME: 'Obligations', CASH: 'Encaisse',
-};
-const REGION_LABELS: Record<string, string> = {
-  CA: 'Canada', US: 'États-Unis', INTL: 'International', EM: 'Marchés émergents',
-};
-
-function fmtMoney(v: number, currency = 'CAD'): string {
-  return v.toLocaleString('fr-CA', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-function fmtMoneyFull(v: number, currency = 'CAD'): string {
-  return v.toLocaleString('fr-CA', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function fmtPct(v: number): string { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`; }
-function fmtDate(d: string): string { return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }); }
-function fmtDateShort(d: string): string { return new Date(d).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }); }
-
-// ── Stock Avatar (Duolingo style) ─────────────────────────────────────────
-
-function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: number }) {
-  const [imgError, setImgError] = useState(false);
-  const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '');
-  const color = duoColor(ticker);
-
-  // Try loading a real logo, fallback to colorful initials
-  if (!imgError) {
-    return (
-      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`}
-          alt={ticker}
-          width={size}
-          height={size}
-          className="rounded-2xl border-[3px] object-contain bg-white"
-          style={{ borderColor: color + '40' }}
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="rounded-2xl border-[3px] flex items-center justify-center flex-shrink-0"
-      style={{
-        width: size, height: size,
-        backgroundColor: color + '18',
-        borderColor: color + '50',
-        boxShadow: `0 3px 0 0 ${color}30`,
-      }}
-    >
-      <span className="font-extrabold" style={{ color, fontSize: size * 0.32 }}>
-        {ticker.slice(0, 3)}
-      </span>
-    </div>
-  );
-}
-
-// ── Start Simulation Form ─────────────────────────────────────────────────
-
-function StartSimulation({ modelId, modelName, onStarted }: { modelId: string; modelName: string; onStarted: () => void }) {
-  const { toast } = useToast();
-  const [amount, setAmount] = useState(100000);
-  const [currency, setCurrency] = useState('CAD');
-  const [starting, setStarting] = useState(false);
-
-  async function handleStart() {
-    if (amount < 1000) { toast('warning', 'Le montant minimum est de 1 000$'); return; }
-    setStarting(true);
-    try {
-      const res = await fetch(`/api/models/${modelId}/simulation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initial_value: amount, currency }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast('error', data.error || 'Erreur'); return; }
-      toast('success', `Simulation démarrée avec ${data.holdings_count} positions`);
-      onStarted();
-    } catch { toast('error', 'Erreur lors du démarrage'); }
-    finally { setStarting(false); }
-  }
-
-  const presets = [25000, 50000, 100000, 250000, 500000, 1000000];
-
-  return (
-    <div className="max-w-2xl mx-auto mt-8">
-      <div className="text-center mb-8">
-        <div className="text-6xl mb-4">🎯</div>
-        <h2 className="text-2xl font-extrabold text-text-main mb-2">Prêt à simuler?</h2>
-        <p className="text-text-muted max-w-md mx-auto">
-          Suivez <strong>{modelName}</strong> comme un vrai portefeuille avec des prix réels du marché.
-        </p>
-      </div>
-
-      <div className="rounded-3xl border-[3px] border-gray-200 bg-white p-8" style={{ boxShadow: '0 4px 0 0 #e5e7eb' }}>
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-text-main mb-2">Montant initial</label>
-            <div className="relative">
-              <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
-              <input
-                type="number" min={1000} step={1000} value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full pl-12 pr-16 py-4 rounded-2xl border-[3px] border-gray-200 text-2xl font-extrabold text-text-main focus:border-[#58CC02] focus:ring-4 focus:ring-[#58CC02]/10 focus:outline-none transition-all"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-text-muted">{currency}</span>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {presets.map((p) => (
-                <button key={p} type="button" onClick={() => setAmount(p)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    amount === p
-                      ? 'bg-[#58CC02] text-white shadow-md'
-                      : 'bg-gray-100 text-text-muted hover:bg-gray-200'
-                  }`}
-                  style={amount === p ? { boxShadow: '0 3px 0 0 #46a302' } : {}}
-                >{fmtMoney(p)}</button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-text-main mb-2">Devise</label>
-            <div className="flex gap-3">
-              {['CAD', 'USD'].map((c) => (
-                <button key={c} type="button" onClick={() => setCurrency(c)}
-                  className={`flex-1 py-3 rounded-2xl border-[3px] text-sm font-bold transition-all ${
-                    currency === c
-                      ? 'border-[#1CB0F6] bg-[#1CB0F6]/5 text-[#1CB0F6]'
-                      : 'border-gray-200 text-text-muted hover:border-gray-300'
-                  }`}
-                >{c === 'CAD' ? '🇨🇦 Dollar canadien' : '🇺🇸 Dollar américain'}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[#1CB0F6]/10 border-2 border-[#1CB0F6]/20 rounded-2xl p-4">
-            <p className="text-xs text-[#0a7fad] leading-relaxed font-medium">
-              <strong>💡 Comment ça marche :</strong> Les prix du marché sont gelés comme prix d&apos;achat.
-              Ensuite, les prix se mettent à jour en temps réel pour suivre la vraie performance.
-            </p>
-          </div>
-
-          <button onClick={handleStart} disabled={starting}
-            className="w-full py-4 rounded-2xl border-[3px] border-b-[5px] border-[#58CC02] bg-[#58CC02] text-white text-base font-extrabold uppercase tracking-wide hover:bg-[#4db802] active:border-b-[3px] active:mt-[2px] transition-all disabled:opacity-60"
-            style={{ boxShadow: 'none' }}
-          >
-            {starting ? 'Démarrage...' : `🚀 C'est parti! — ${fmtMoney(amount, currency)}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Duo Stat Badge ────────────────────────────────────────────────────────
-
-function DuoStat({ label, value, sub, icon, color = '#1CB0F6' }: {
-  label: string; value: string; sub?: string; icon: React.ReactNode; color?: string;
-}) {
-  return (
-    <div className="rounded-2xl border-[3px] bg-white p-4 transition-all hover:scale-[1.02]"
-      style={{ borderColor: color + '30', boxShadow: `0 3px 0 0 ${color}20` }}>
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="p-1.5 rounded-xl" style={{ backgroundColor: color + '15' }}>
-          <span style={{ color }}>{icon}</span>
-        </div>
-        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
-      </div>
-      <p className="text-xl font-extrabold" style={{ color }}>{value}</p>
-      {sub && <p className="text-xs font-semibold text-text-muted mt-0.5">{sub}</p>}
-    </div>
-  );
-}
 
 // ── Main Dashboard ────────────────────────────────────────────────────────
 
@@ -232,8 +30,9 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
   const { toast } = useToast();
   const { data, isLoading, mutate } = useSimulation(modelId);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [showAllHoldings, setShowAllHoldings] = useState(false);
-  const [chartPeriod, setChartPeriod] = useState<'1J' | '1S' | '1M' | '3M' | '1A' | '5A' | 'Max'>('Max');
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('Max');
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [visibleBenchmarks, setVisibleBenchmarks] = useState<Set<string>>(new Set());
 
@@ -423,6 +222,88 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
     toast('success', 'Prix mis à jour');
   }
 
+  async function handleExportPDF() {
+    if (!data?.simulation || !data?.live || !data?.stats) return;
+    setExporting(true);
+    try {
+      const sim = data.simulation;
+      const stats = data.stats;
+      const sorted = [...mergedHoldings].sort((a, b) => b.gain_loss_pct - a.gain_loss_pct);
+
+      // Build sector allocation from allocationData
+      const sectorAlloc = allocationData.map((s) => ({ sector: s.name, pct: s.actualPct }));
+
+      // Build region allocation from regionData
+      const totalRegionValue = regionData.reduce((s, r) => s + r.value, 0);
+      const regionAlloc = regionData.map((r) => ({ region: r.name, pct: totalRegionValue > 0 ? Math.round((r.value / totalRegionValue) * 1000) / 10 : 0 }));
+
+      // Benchmark labels
+      const benchLabels: Record<string, string> = { '^GSPTSE': 'S&P/TSX', '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ' };
+      const benchmarks = Object.entries(data.live.benchmarks || {}).map(([sym, perf]) => ({
+        name: benchLabels[sym] || sym,
+        returnPct: perf.return_pct,
+      }));
+
+      const pdfData = {
+        modelName,
+        profileName: sim.name || '',
+        currency: sim.currency || 'CAD',
+        startDate: new Date(sim.start_date).toLocaleDateString('fr-CA'),
+        currentDate: new Date().toLocaleDateString('fr-CA'),
+        initialValue: sim.initial_value,
+        currentValue: data.live.total_value,
+        totalReturnPct: stats.total_return_pct,
+        totalReturn: stats.total_return,
+        annualizedReturn: stats.annualized_return,
+        volatility: stats.volatility,
+        sharpe: stats.sharpe,
+        maxDrawdown: stats.max_drawdown,
+        dividendIncome: stats.dividend_income + stats.fixed_income,
+        holdings: mergedHoldings.map((h) => ({
+          symbol: h.symbol,
+          name: h.name,
+          weight: h.weight,
+          market_value: h.market_value,
+          cost_basis: h.cost_basis,
+          gain_pct: h.gain_loss_pct,
+          dividend_yield: h.dividend_yield || 0,
+          sector: h.sector || h.asset_class || '',
+          region: h.region || 'US',
+        })),
+        sectorAllocation: sectorAlloc,
+        regionAllocation: regionAlloc,
+        benchmarks,
+        topPerformers: sorted.slice(0, 5).map((h) => ({ symbol: h.symbol, gainPct: h.gain_loss_pct })),
+        worstPerformers: sorted.slice(-5).reverse().map((h) => ({ symbol: h.symbol, gainPct: h.gain_loss_pct })),
+      };
+
+      const res = await fetch(`/api/models/${modelId}/simulation/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pdfData),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erreur' }));
+        toast('error', err.error || 'Erreur lors de la génération du PDF');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `simulation-${modelName.replace(/[^a-zA-Z0-9-_]/g, '_')}-${new Date().toISOString().split('T')[0]}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('success', 'PDF téléchargé');
+    } catch {
+      toast('error', 'Erreur lors de l\'export');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
   if (!data?.simulation || !data?.live || !data?.stats) return <StartSimulation modelId={modelId} modelName="" onStarted={() => mutate()} />;
 
@@ -451,13 +332,22 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
             Jour {stats.days_active} · Depuis le {fmtDate(sim.start_date)}
           </p>
         </div>
-        <button onClick={handleRefresh}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted hover:border-[#1CB0F6] hover:text-[#1CB0F6] transition-all"
-          style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Rafraîchir
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportPDF} disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted hover:border-[#CE82FF] hover:text-[#CE82FF] transition-all disabled:opacity-50"
+            style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+          >
+            <FileDown className={`h-4 w-4 ${exporting ? 'animate-pulse' : ''}`} />
+            {exporting ? 'Export...' : 'PDF'}
+          </button>
+          <button onClick={handleRefresh}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-[3px] border-gray-200 bg-white text-sm font-bold text-text-muted hover:border-[#1CB0F6] hover:text-[#1CB0F6] transition-all"
+            style={{ boxShadow: '0 3px 0 0 #e5e7eb' }}
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Rafraîchir
+          </button>
+        </div>
       </div>
 
       {/* ── Chart (Wealthsimple style + period selector) ── */}
@@ -752,28 +642,22 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
                           {SECTOR_LABELS[d.name] || d.name}
                         </p>
                         <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
+                          <div className="flex justify-between text-xs gap-4">
                             <span className="font-bold text-text-muted">Actuel</span>
-                            <span className="font-extrabold text-text-main">{d.actualPct.toFixed(1)}%</span>
+                            <span className="font-extrabold text-text-main">{d.actualPct.toFixed(1)}% <span className="text-text-muted font-bold">({fmtMoney(d.value, sim.currency)})</span></span>
                           </div>
-                          <div className="flex justify-between text-xs">
+                          <div className="flex justify-between text-xs gap-4">
                             <span className="font-bold text-text-muted">Cible</span>
                             <span className="font-extrabold text-text-main">{d.targetPct.toFixed(1)}%</span>
                           </div>
-                          <div className="flex justify-between text-xs pt-1 border-t border-gray-100">
+                          <div className="flex justify-between text-xs pt-1 border-t border-gray-100 gap-4">
                             <span className="font-bold text-text-muted">Écart</span>
                             <span className={`font-extrabold ${Math.abs(diff) < 1 ? 'text-[#58CC02]' : diff > 0 ? 'text-[#FF9600]' : 'text-[#FF4B4B]'}`}>
                               {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
                             </span>
                           </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="font-bold text-text-muted">Rendement</span>
-                            <span className={`font-extrabold ${d.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                              {d.gainPct >= 0 ? '+' : ''}{d.gainPct.toFixed(1)}%
-                            </span>
-                          </div>
                         </div>
-                        <p className="text-[10px] font-bold text-text-light mt-2">{fmtMoney(d.value, sim.currency)} · Cliquer pour détails</p>
+                        <p className="text-[10px] font-bold text-text-light mt-2">Cliquer pour détails</p>
                       </div>
                     );
                   }}
@@ -782,17 +666,31 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
             </ResponsiveContainer>
           </div>
           <div className="flex flex-wrap justify-center gap-2 mt-2">
-            {allocationData.map((entry) => (
-              <button key={entry.name} onClick={() => setSelectedSector(entry.name)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
-                <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
-                <span className="text-[11px] font-extrabold text-text-main">{entry.actualPct.toFixed(1)}%</span>
-                <span className={`text-[10px] font-extrabold ${entry.gainPct >= 0 ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                  {entry.gainPct >= 0 ? '+' : ''}{entry.gainPct.toFixed(1)}%
-                </span>
-              </button>
-            ))}
+            {allocationData.map((entry) => {
+              const drift = entry.actualPct - entry.targetPct;
+              const driftColor = Math.abs(drift) < 1 ? 'text-[#58CC02]' : drift > 0 ? 'text-[#FF9600]' : 'text-[#FF4B4B]';
+              return (
+                <button key={entry.name} onClick={() => setSelectedSector(entry.name)}
+                  className="group relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: SECTOR_COLORS[entry.name] || '#94a3b8' }} />
+                  <span className="text-[11px] font-bold text-text-muted">{SECTOR_LABELS[entry.name] || entry.name}</span>
+                  <span className="text-[11px] font-extrabold text-text-main">{entry.actualPct.toFixed(1)}%</span>
+                  <span className={`text-[10px] font-extrabold ${driftColor}`}>
+                    {drift >= 0 ? '+' : ''}{drift.toFixed(1)}%
+                  </span>
+                  {/* Tooltip au hover : $ + cible */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
+                    <div className="rounded-xl bg-white px-3 py-2 border-[2px] border-gray-200 whitespace-nowrap" style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                      <p className="text-[11px] font-extrabold text-text-main">{fmtMoney(entry.value, sim.currency)}</p>
+                      <p className="text-[10px] font-bold text-text-muted">
+                        Cible: {entry.targetPct.toFixed(1)}% · Écart: <span className={driftColor}>{drift >= 0 ? '+' : ''}{drift.toFixed(1)}%</span>
+                      </p>
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-gray-200" />
+                  </div>
+                </button>
+              );
+            })}
           </div>
           {bondTargetPct > 0 && (
             <p className="text-[10px] font-bold text-text-light text-center mt-3">
@@ -981,7 +879,7 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
           <div className="flex flex-wrap gap-4">
             {stats.dividend_income > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-lg">📊</span>
+                <BarChart3 className="h-5 w-5 text-[#58CC02]" />
                 <div>
                   <p className="text-xs font-bold text-text-muted">Dividendes</p>
                   <p className="text-lg font-extrabold text-[#58CC02]">+{fmtMoney(stats.dividend_income, sim.currency)}</p>
@@ -990,7 +888,7 @@ function SimulationDashboard({ modelId, modelName }: { modelId: string; modelNam
             )}
             {stats.fixed_income > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-lg">🏛️</span>
+                <Shield className="h-5 w-5 text-[#1CB0F6]" />
                 <div>
                   <p className="text-xs font-bold text-text-muted">Revenu fixe</p>
                   <p className="text-lg font-extrabold text-[#1CB0F6]">+{fmtMoney(stats.fixed_income, sim.currency)}</p>
