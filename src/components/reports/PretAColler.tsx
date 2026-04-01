@@ -8,12 +8,13 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult, type ParsedHolding, type AssetType } from '@/lib/parsers/croesus-parser';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
+import { useSymbolLogos } from '@/lib/hooks/useLogos';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
   Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, FileText,
   BookOpen, CheckCircle2, Clock, AlertCircle, Upload, Globe, Copy,
-  ArrowUpDown, ArrowUp, ArrowDown, Trophy, TrendingDown,
+  ArrowUpDown, ArrowUp, ArrowDown, Trophy, TrendingDown, Rocket,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -28,6 +29,64 @@ function formatCurrencyFull(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+}
+
+// ─── Duolingo-style colors ───────────────────────────────────────────────────
+
+const DUO = {
+  green: '#58CC02', greenDark: '#45a300',
+  blue: '#1CB0F6', blueDark: '#1899d6',
+  purple: '#CE82FF', purpleDark: '#b06edb',
+  orange: '#FF9600', orangeDark: '#e08600',
+  red: '#FF4B4B', redDark: '#ea2b2b',
+  yellow: '#FFC800', yellowDark: '#e0b200',
+  teal: '#00CD9C', tealDark: '#00b386',
+} as const;
+
+const DUO_COLORS = [DUO.green, DUO.purple, DUO.blue, DUO.orange, DUO.red, DUO.yellow, DUO.teal];
+
+function duoColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return DUO_COLORS[Math.abs(hash) % DUO_COLORS.length];
+}
+
+// ─── Symbol Logo (inline, small) ────────────────────────────────────────────
+
+function SymbolLogo({ symbol, logos }: { symbol: string; logos: Record<string, string | null> }) {
+  const [fmpError, setFmpError] = useState(false);
+  const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '').replace('.NE', '');
+  const tvLogo = logos[symbol];
+  const color = duoColor(ticker);
+
+  if (tvLogo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={tvLogo} alt={ticker} className="w-7 h-7 rounded-lg object-contain bg-white border border-gray-100" />
+    );
+  }
+
+  if (!fmpError) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`}
+        alt={ticker}
+        className="w-7 h-7 rounded-lg object-contain bg-white border border-gray-100"
+        onError={() => setFmpError(true)}
+      />
+    );
+  }
+
+  // Letter fallback with Duolingo-style color
+  return (
+    <div
+      className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+      style={{ backgroundColor: color + '18', border: `2px solid ${color}40` }}
+    >
+      <span className="text-[10px] font-extrabold" style={{ color }}>{ticker.slice(0, 2)}</span>
+    </div>
+  );
 }
 
 const ASSET_ICONS: Record<AssetType, typeof TrendingUp> = {
@@ -147,33 +206,70 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
     }
   }, [onPaste]);
 
+  const steps = [
+    { num: 1, title: 'Sélectionnez', desc: 'Vos positions dans Croesus', color: DUO.blue, dark: DUO.blueDark },
+    { num: 2, title: 'Copiez', desc: 'Ctrl+C les données', color: DUO.purple, dark: DUO.purpleDark },
+    { num: 3, title: 'Collez ici', desc: 'Ctrl+V et on s\'occupe du reste', color: DUO.green, dark: DUO.greenDark },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Step cards — Duolingo 3D style */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {steps.map((s) => (
+          <div
+            key={s.num}
+            className="relative flex gap-3 items-center p-4 rounded-2xl bg-white transition-transform hover:scale-[1.02]"
+            style={{ border: `2px solid ${s.color}30`, borderBottom: `4px solid ${s.dark}40` }}
+          >
+            <div
+              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-extrabold"
+              style={{ backgroundColor: s.color, boxShadow: `0 3px 0 0 ${s.dark}` }}
+            >
+              {s.num}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-text-main">{s.title}</p>
+              <p className="text-xs text-text-muted">{s.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Drop zone */}
       <div
         className={`
-          relative rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer
+          relative rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden
           ${isDragOver
-            ? 'border-brand-primary bg-brand-primary/5 scale-[1.01]'
-            : 'border-gray-300 hover:border-brand-primary/50 hover:bg-gray-50/50'}
+            ? 'scale-[1.01] ring-4 ring-[#58CC02]/30'
+            : 'hover:ring-2 hover:ring-[#1CB0F6]/20'}
         `}
+        style={{
+          border: `3px dashed ${isDragOver ? DUO.green : '#d1d5db'}`,
+          background: isDragOver ? `${DUO.green}08` : 'white',
+        }}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
         onClick={() => textareaRef.current?.focus()}
       >
         <div className="px-6 pt-8 pb-4 text-center">
-          <div className={`
-            inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 transition-all duration-300
-            ${isDragOver ? 'bg-brand-primary text-white scale-110' : 'bg-brand-primary/10 text-brand-primary'}
-          `}>
+          <div
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 transition-all duration-300"
+            style={{
+              backgroundColor: isDragOver ? DUO.green : `${DUO.blue}15`,
+              color: isDragOver ? 'white' : DUO.blue,
+              boxShadow: isDragOver ? `0 4px 0 0 ${DUO.greenDark}` : `0 4px 0 0 ${DUO.blueDark}20`,
+              transform: isDragOver ? 'scale(1.1)' : 'scale(1)',
+            }}
+          >
             <ClipboardPaste className="h-8 w-8" />
           </div>
-          <h3 className="text-lg font-bold text-text-main mb-1">
-            Collez vos positions Croesus ici
+          <h3 className="text-xl font-extrabold text-text-main mb-1">
+            Collez vos positions ici
           </h3>
-          <p className="text-sm text-text-muted max-w-lg mx-auto">
-            Sélectionnez vos positions dans Croesus, copiez-les (Ctrl+C), puis collez-les ci-dessous (Ctrl+V).
-            Actions, revenus fixes, FNB, fonds — tout sera détecté automatiquement.
+          <p className="text-sm text-text-muted max-w-md mx-auto">
+            Actions, obligations, FNB, fonds — tout sera détecté automatiquement
           </p>
         </div>
 
@@ -183,49 +279,47 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
             value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
             onPaste={handlePaste}
-            placeholder={"Ctrl+V pour coller les données de Croesus...\n\nFormat détecté automatiquement:\nQté | Description | Compte | Symbole | PRU | Prix marché | Val. compt. | Val. marché | Dur. Mod. | Int. courus | Revenu"}
-            className="w-full h-40 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-mono
-              text-text-main placeholder-text-muted/50 resize-none
-              focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary
+            placeholder={"Ctrl+V pour coller les données de Croesus..."}
+            className="w-full h-32 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm font-mono
+              text-text-main placeholder-text-muted/40 resize-none
+              focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/30 focus:border-[#1CB0F6]
               transition-all duration-200"
           />
         </div>
       </div>
 
+      {/* Analyse button — Duolingo 3D green */}
       {textValue.trim() && (
         <div className="flex justify-center">
-          <Button
+          <button
             onClick={() => onPaste(textValue)}
-            icon={<Sparkles className="h-4 w-4" />}
-            size="lg"
+            className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-white font-extrabold text-base
+              transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+            style={{
+              backgroundColor: DUO.green,
+              boxShadow: `0 4px 0 0 ${DUO.greenDark}`,
+            }}
           >
+            <Rocket className="h-5 w-5" />
             Analyser les positions
-          </Button>
+          </button>
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[
-          { icon: '1', title: 'Sélectionnez', desc: 'Dans Croesus, sélectionnez toutes les lignes de positions du client' },
-          { icon: '2', title: 'Copiez', desc: 'Ctrl+C pour copier les données dans le presse-papiers' },
-          { icon: '3', title: 'Collez', desc: 'Ctrl+V ici — le système détecte automatiquement le format' },
-        ].map((tip) => (
-          <div key={tip.icon} className="flex gap-3 items-start p-3 rounded-xl bg-gray-50/80">
-            <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-brand-primary text-white text-sm font-bold flex items-center justify-center">
-              {tip.icon}
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-text-main">{tip.title}</p>
-              <p className="text-xs text-text-muted">{tip.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 // ─── Category summary card ───────────────────────────────────────────────────
+
+const CATEGORY_DUO: Record<AssetType, { color: string; dark: string }> = {
+  EQUITY: { color: DUO.blue, dark: DUO.blueDark },
+  FIXED_INCOME: { color: DUO.orange, dark: DUO.orangeDark },
+  ETF: { color: DUO.purple, dark: DUO.purpleDark },
+  FUND: { color: DUO.teal, dark: DUO.tealDark },
+  PREFERRED: { color: '#6366f1', dark: '#4f46e5' },
+  CASH: { color: DUO.green, dark: DUO.greenDark },
+  OTHER: { color: '#94a3b8', dark: '#64748b' },
+};
 
 function CategoryCard({ type, count, value, active, onClick }: {
   type: AssetType;
@@ -235,6 +329,7 @@ function CategoryCard({ type, count, value, active, onClick }: {
   onClick: () => void;
 }) {
   const config = ASSET_TYPE_CONFIG[type];
+  const duo = CATEGORY_DUO[type];
   const Icon = ASSET_ICONS[type];
 
   if (count === 0) return null;
@@ -242,21 +337,31 @@ function CategoryCard({ type, count, value, active, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`
-        flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all duration-200 text-left w-full
-        ${active
-          ? 'border-brand-primary bg-brand-primary/5 shadow-sm'
-          : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'}
-      `}
+      className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left w-full transition-all duration-150 active:translate-y-[2px] active:shadow-none"
+      style={{
+        border: `2px solid ${active ? duo.color : '#e5e7eb'}`,
+        borderBottom: `4px solid ${active ? duo.dark : '#d1d5db'}`,
+        backgroundColor: active ? `${duo.color}08` : 'white',
+      }}
     >
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${config.bg}`}>
-        <Icon className={`h-4.5 w-4.5 ${config.color}`} />
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{
+          backgroundColor: active ? duo.color : `${duo.color}15`,
+          boxShadow: active ? `0 2px 0 0 ${duo.dark}` : 'none',
+        }}
+      >
+        <Icon className="h-4 w-4" style={{ color: active ? 'white' : duo.color }} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-xs text-text-muted">{config.label}{count > 1 ? 's' : ''}</p>
-        <p className="text-sm font-bold text-text-main">{count} position{count > 1 ? 's' : ''}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: active ? duo.color : '#9ca3af' }}>
+          {config.label}
+        </p>
+        <p className="text-sm font-extrabold text-text-main">{count}</p>
       </div>
-      <p className="text-xs font-semibold text-text-muted whitespace-nowrap">{formatCurrency(value)}</p>
+      <p className="text-[11px] font-bold whitespace-nowrap" style={{ color: active ? duo.color : '#6b7280' }}>
+        {formatCurrency(value)}
+      </p>
     </button>
   );
 }
@@ -447,6 +552,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     });
     return { priceableSymbols: Array.from(symbols), cdrMap: cdrs };
   }, [holdings]);
+
+  // Fetch logos for all symbols (not just equities — logos available for ETFs, funds too)
+  const allSymbols = useMemo(() => {
+    return [...new Set(holdings.filter(h => h.assetType !== 'CASH').map(h => h.symbol))];
+  }, [holdings]);
+  const { logos } = useSymbolLogos(allSymbols);
 
   // Fetch prices & targets (CDR map passed to target hook)
   const { prices, isLoading: pricesLoading } = useYahooPrices(showTargets ? priceableSymbols : []);
@@ -1015,29 +1126,38 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         </div>
       )}
 
-      {/* Top bar: summary + actions */}
-      <div className="flex items-center justify-between">
+      {/* Top bar: success banner — Duolingo style */}
+      <div
+        className="flex items-center justify-between p-4 rounded-2xl"
+        style={{ backgroundColor: `${DUO.green}10`, border: `2px solid ${DUO.green}30`, borderBottom: `4px solid ${DUO.greenDark}25` }}
+      >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-            <Check className="h-5 w-5 text-emerald-700" />
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-white"
+            style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}
+          >
+            <Check className="h-6 w-6" strokeWidth={3} />
           </div>
           <div>
-            <p className="text-sm font-bold text-text-main">
+            <p className="text-base font-extrabold text-text-main">
               {result.holdings.length} position{result.holdings.length > 1 ? 's' : ''} détectée{result.holdings.length > 1 ? 's' : ''}
             </p>
             <p className="text-xs text-text-muted">
-              Valeur marchande: {formatCurrency(result.summary.totalMarketValue)}
+              Valeur marchande: <span className="font-bold">{formatCurrency(result.summary.totalMarketValue)}</span>
               {result.summary.totalAnnualIncome > 0 && (
-                <> — Revenu annuel: <span className="font-semibold text-emerald-600">{formatCurrency(result.summary.totalAnnualIncome)}</span></>
+                <> — Revenu: <span className="font-bold" style={{ color: DUO.green }}>{formatCurrency(result.summary.totalAnnualIncome)}</span></>
               )}
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={onReset} icon={<RotateCcw className="h-3.5 w-3.5" />}>
-            Recommencer
-          </Button>
-        </div>
+        <button
+          onClick={onReset}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-gray-600 bg-white transition-all hover:bg-gray-50 active:translate-y-[1px]"
+          style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Recommencer
+        </button>
       </div>
 
       {/* Account type badges */}
@@ -1060,15 +1180,17 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <button
           onClick={() => setActiveFilter('ALL')}
-          className={`
-            flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-200
-            ${activeFilter === 'ALL'
-              ? 'border-brand-primary bg-brand-primary/5'
-              : 'border-gray-100 hover:border-gray-200'}
-          `}
+          className="flex items-center gap-2 px-4 py-3 rounded-2xl transition-all duration-150 active:translate-y-[2px] active:shadow-none"
+          style={{
+            border: `2px solid ${activeFilter === 'ALL' ? DUO.blue : '#e5e7eb'}`,
+            borderBottom: `4px solid ${activeFilter === 'ALL' ? DUO.blueDark : '#d1d5db'}`,
+            backgroundColor: activeFilter === 'ALL' ? `${DUO.blue}08` : 'white',
+          }}
         >
-          <Eye className="h-4 w-4 text-brand-primary" />
-          <span className="text-sm font-semibold">Tout ({holdings.length})</span>
+          <Eye className="h-4 w-4" style={{ color: DUO.blue }} />
+          <span className="text-sm font-extrabold" style={{ color: activeFilter === 'ALL' ? DUO.blue : '#374151' }}>
+            Tout ({holdings.length})
+          </span>
         </button>
         {(Object.keys(ASSET_TYPE_CONFIG) as AssetType[]).map(type => (
           <CategoryCard
@@ -1336,45 +1458,52 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                         {h.accountLabel}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3">
-                      {editingSymbol === h._originalKey ? (
-                        <input
-                          type="text"
-                          autoFocus
-                          defaultValue={h.symbol}
-                          className="w-24 px-1.5 py-0.5 text-sm font-mono border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
-                              if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
-                              setEditingSymbol(null);
-                            } else if (e.key === 'Escape') {
-                              setEditingSymbol(null);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const val = e.target.value.trim().toUpperCase();
-                            if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
-                            setEditingSymbol(null);
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center gap-1 group">
-                          <span className="font-mono font-semibold text-brand-primary text-xs">{h.symbol}</span>
-                          {h.isCDR && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium" title={`CDR → sous-jacent: ${h.underlyingSymbol || '?'}, devise: ${h.currency}`}>
-                              CDR→{h.underlyingSymbol || '?'}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => setEditingSymbol(h._originalKey)}
+                    <td className="py-2.5 px-2">
+                      <div className="flex items-center gap-2">
+                        {h.assetType !== 'CASH' && (
+                          <SymbolLogo symbol={h.symbol} logos={logos} />
+                        )}
+                        <div>
+                          {editingSymbol === h._originalKey ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              defaultValue={h.symbol}
+                              className="w-24 px-1.5 py-0.5 text-sm font-mono border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
+                                  if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
+                                  setEditingSymbol(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingSymbol(null);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim().toUpperCase();
+                                if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
+                                setEditingSymbol(null);
+                              }}
+                            />
+                          ) : (
+                            <div className="flex items-center gap-1 group">
+                              <span className="font-mono font-bold text-xs" style={{ color: duoColor(h.symbol.replace('.TO', '')) }}>{h.symbol}</span>
+                              {h.isCDR && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium" title={`CDR → sous-jacent: ${h.underlyingSymbol || '?'}, devise: ${h.currency}`}>
+                                  CDR→{h.underlyingSymbol || '?'}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => setEditingSymbol(h._originalKey)}
                             className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
                             title="Modifier le symbole"
                           >
                             <Pencil className="h-3 w-3" />
                           </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3">
                       <button
@@ -1618,15 +1747,20 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
         {!showTargets ? (
-          <Button
+          <button
             onClick={() => setShowTargets(true)}
-            icon={<TrendingUp className="h-4 w-4" />}
-            size="lg"
+            className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-white font-extrabold text-base
+              transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+            style={{ backgroundColor: DUO.blue, boxShadow: `0 4px 0 0 ${DUO.blueDark}` }}
           >
+            <TrendingUp className="h-5 w-5" />
             Charger les cours cibles
-          </Button>
+          </button>
         ) : isLoadingPrices ? (
-          <div className="flex items-center gap-2 px-6 py-3 rounded-full bg-blue-50 text-blue-700 text-sm font-semibold">
+          <div
+            className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-sm font-bold"
+            style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blue, border: `2px solid ${DUO.blue}30` }}
+          >
             <Spinner size="sm" />
             Chargement des prix et cours cibles...
           </div>
@@ -1654,31 +1788,35 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           </div>
         ) : (
           <>
-            <Button
+            <button
               onClick={handleDownloadPdf}
-              loading={generatingPdf}
-              icon={<FileText className="h-4 w-4" />}
-              size="lg"
+              disabled={generatingPdf}
+              className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
+                transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
+              style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
             >
-              Télécharger le PDF
-            </Button>
-            <Button
-              variant="outline"
+              {generatingPdf ? <Spinner size="sm" /> : <FileText className="h-4.5 w-4.5" />}
+              {generatingPdf ? 'Génération...' : 'Télécharger le PDF'}
+            </button>
+            <button
               onClick={handleExportCSV}
-              icon={<Download className="h-4 w-4" />}
-              size="lg"
+              className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm
+                transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+              style={{ backgroundColor: 'white', color: DUO.purple, border: `2px solid ${DUO.purple}40`, borderBottom: `4px solid ${DUO.purpleDark}30` }}
             >
+              <Download className="h-4 w-4" />
               Exporter CSV
-            </Button>
+            </button>
             {targetSummary && (
-              <Button
-                variant="outline"
+              <button
                 onClick={handleCopySummary}
-                icon={copiedSummary ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                size="lg"
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm
+                  transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+                style={{ backgroundColor: 'white', color: '#6b7280', border: '2px solid #e5e7eb', borderBottom: '4px solid #d1d5db' }}
               >
+                {copiedSummary ? <Check className="h-4 w-4" style={{ color: DUO.green }} /> : <Copy className="h-4 w-4" />}
                 {copiedSummary ? 'Copié' : 'Copier le résumé'}
-              </Button>
+              </button>
             )}
           </>
         )}
