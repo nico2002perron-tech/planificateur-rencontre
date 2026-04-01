@@ -353,49 +353,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     runAiCheck();
   }, [result.holdings]);
 
-  // Fund document status check — runs once AFTER AI check completes
-  const fundCheckRan = useRef(false);
-  useEffect(() => {
-    if (!aiChecked || fundCheckRan.current) return;
-    fundCheckRan.current = true;
-
-    // Build a set of symbols that the AI reclassified away from FUND
-    const correctedAwayFromFund = new Set(
-      aiCorrections
-        .filter(c => c.assetType !== 'FUND')
-        .map(c => c.symbol)
-    );
-
-    // Only check holdings that are FUND and NOT reclassified by AI
-    const fundHoldings = result.holdings.filter(
-      h => h.assetType === 'FUND' && !correctedAwayFromFund.has(h.symbol)
-    );
-    if (fundHoldings.length === 0) {
-      setFundCheckDone(true);
-      return;
-    }
-
-    const checkFunds = async () => {
-      try {
-        const fundCodes = fundHoldings.map(h => h.symbol);
-        const res = await fetch('/api/fund-reports/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fund_codes: fundCodes }),
-        });
-        if (res.ok) {
-          const { results } = await res.json();
-          setFundCheckResults(results || []);
-        }
-      } catch {
-        // Silently fail
-      } finally {
-        setFundCheckDone(true);
-      }
-    };
-
-    checkFunds();
-  }, [aiChecked, aiCorrections, result.holdings]);
+  // Fund document status check — reactive to computed holdings (with type overrides)
+  // Tracks which symbols we've already checked to avoid redundant API calls
+  const checkedFundSymbols = useRef(new Set<string>());
 
   // Apply symbol & type overrides
   const holdings = useMemo(() => {
@@ -407,6 +367,66 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       _originalKey: `${idx}_${h.symbol}`,
     }));
   }, [result.holdings, symbolOverrides, typeOverrides]);
+
+  // Effective FUND symbols (from current holdings after overrides)
+  const currentFundSymbols = useMemo(() => {
+    return [...new Set(holdings.filter(h => h.assetType === 'FUND').map(h => h.symbol))];
+  }, [holdings]);
+
+  // Fund check — reactive: re-runs when new FUND symbols appear (via AI corrections or manual override)
+  useEffect(() => {
+    if (!aiChecked) return; // Wait for AI classification first
+
+    const newSymbols = currentFundSymbols.filter(s => !checkedFundSymbols.current.has(s));
+    if (newSymbols.length === 0) {
+      if (currentFundSymbols.length === 0) setFundCheckDone(true);
+      return;
+    }
+
+    // Mark as checked immediately to prevent duplicate calls
+    newSymbols.forEach(s => checkedFundSymbols.current.add(s));
+
+    const checkFunds = async () => {
+      try {
+        const res = await fetch('/api/fund-reports/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fund_codes: newSymbols }),
+        });
+        if (res.ok) {
+          const { results } = await res.json();
+          if (results && results.length > 0) {
+            setFundCheckResults(prev => {
+              // Merge new results, replacing any duplicates
+              const existing = new Map(prev.map(r => [r.fund_code, r]));
+              for (const r of results) existing.set(r.fund_code, r);
+              return Array.from(existing.values());
+            });
+          }
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setFundCheckDone(true);
+      }
+    };
+
+    checkFunds();
+  }, [aiChecked, currentFundSymbols]);
+
+  // Also remove fund check results for symbols no longer classified as FUND
+  useEffect(() => {
+    if (fundCheckResults.length === 0) return;
+    const fundSet = new Set(currentFundSymbols);
+    const filtered = fundCheckResults.filter(r => fundSet.has(r.fund_code));
+    if (filtered.length !== fundCheckResults.length) {
+      setFundCheckResults(filtered);
+      // Clean up tracked symbols for removed funds so they can be re-checked if re-added
+      fundCheckResults.forEach(r => {
+        if (!fundSet.has(r.fund_code)) checkedFundSymbols.current.delete(r.fund_code);
+      });
+    }
+  }, [currentFundSymbols, fundCheckResults]);
 
   // Total portfolio value for weight calculation
   const totalPortfolioValue = useMemo(() => {
@@ -821,56 +841,104 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         </div>
       )}
 
-      {aiChecked && aiCorrections.length > 0 && (
-        <div className="px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-indigo-600 flex-shrink-0" />
-            <span className="text-sm font-bold text-indigo-900">
-              IA — {aiCorrections.length} correction{aiCorrections.length > 1 ? 's' : ''} suggérée{aiCorrections.length > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            {aiCorrections.map((c) => {
-              const newConfig = ASSET_TYPE_CONFIG[c.assetType as AssetType];
-              const applied = typeOverrides[c.symbol] === c.assetType;
-              return (
-                <div key={c.symbol} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono font-semibold text-brand-primary">{c.symbol}</span>
-                  <span className="text-text-muted">→</span>
-                  <span className={`px-1.5 py-0.5 rounded font-semibold ${newConfig?.bg || ''} ${newConfig?.color || ''}`}>
-                    {newConfig?.label || c.assetType}
-                  </span>
-                  {c.reason && <span className="text-text-muted italic">({c.reason})</span>}
-                  {applied ? (
-                    <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
-                      <Check className="h-3 w-3" /> Appliqué
+      {aiChecked && aiCorrections.length > 0 && (() => {
+        // Group corrections: show original type → new type for clarity
+        const correctionsWithOriginal = aiCorrections.map(c => {
+          const original = result.holdings.find(h => h.symbol === c.symbol);
+          const origType = original?.assetType || 'OTHER';
+          const origConfig = ASSET_TYPE_CONFIG[origType as AssetType];
+          return { ...c, origType, origConfig };
+        });
+
+        return (
+          <div className="px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+              <span className="text-sm font-bold text-indigo-900">
+                IA — {aiCorrections.length} correction{aiCorrections.length > 1 ? 's' : ''} suggérée{aiCorrections.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {correctionsWithOriginal.map((c) => {
+                const newConfig = ASSET_TYPE_CONFIG[c.assetType as AssetType];
+                const applied = typeOverrides[c.symbol] === c.assetType;
+                return (
+                  <div key={c.symbol} className="flex items-center gap-2 text-xs flex-wrap">
+                    <span className="font-mono font-semibold text-brand-primary">{c.symbol}</span>
+                    <span className={`px-1.5 py-0.5 rounded font-semibold ${c.origConfig?.bg || 'bg-gray-100'} ${c.origConfig?.color || 'text-gray-700'}`}>
+                      {c.origConfig?.label || c.origType}
                     </span>
-                  ) : (
+                    <span className="text-text-muted">→</span>
+                    <span className={`px-1.5 py-0.5 rounded font-semibold ${newConfig?.bg || ''} ${newConfig?.color || ''}`}>
+                      {newConfig?.label || c.assetType}
+                    </span>
+                    {c.reason && <span className="text-text-muted italic">({c.reason})</span>}
+                    {applied ? (
+                      <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
+                        <Check className="h-3 w-3" /> Appliqué
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setTypeOverrides(prev => ({ ...prev, [c.symbol]: c.assetType as AssetType }))}
+                        className="px-2 py-0.5 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+                      >
+                        Appliquer
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Grouped apply buttons — separate "to FUND" from other corrections */}
+            {(() => {
+              const unapplied = aiCorrections.filter(c => typeOverrides[c.symbol] !== c.assetType);
+              const toFund = unapplied.filter(c => c.assetType === 'FUND');
+              const others = unapplied.filter(c => c.assetType !== 'FUND');
+              if (unapplied.length === 0) return null;
+              return (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {toFund.length > 0 && (
                     <button
-                      onClick={() => setTypeOverrides(prev => ({ ...prev, [c.symbol]: c.assetType as AssetType }))}
-                      className="px-2 py-0.5 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+                      onClick={() => {
+                        const overrides: Record<string, AssetType> = { ...typeOverrides };
+                        toFund.forEach(c => { overrides[c.symbol] = c.assetType as AssetType; });
+                        setTypeOverrides(overrides);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700 transition-colors"
                     >
-                      Appliquer
+                      Appliquer {toFund.length} → Fonds
+                    </button>
+                  )}
+                  {others.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const overrides: Record<string, AssetType> = { ...typeOverrides };
+                        others.forEach(c => { overrides[c.symbol] = c.assetType as AssetType; });
+                        setTypeOverrides(overrides);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
+                    >
+                      Appliquer {others.length} autre{others.length > 1 ? 's' : ''}
+                    </button>
+                  )}
+                  {toFund.length > 0 && others.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const overrides: Record<string, AssetType> = { ...typeOverrides };
+                        unapplied.forEach(c => { overrides[c.symbol] = c.assetType as AssetType; });
+                        setTypeOverrides(overrides);
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-semibold hover:bg-indigo-100 transition-colors"
+                    >
+                      Appliquer toutes ({unapplied.length})
                     </button>
                   )}
                 </div>
               );
-            })}
+            })()}
           </div>
-          {aiCorrections.length > 0 && !aiCorrections.every(c => typeOverrides[c.symbol] === c.assetType) && (
-            <button
-              onClick={() => {
-                const overrides: Record<string, AssetType> = { ...typeOverrides };
-                aiCorrections.forEach(c => { overrides[c.symbol] = c.assetType as AssetType; });
-                setTypeOverrides(overrides);
-              }}
-              className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
-            >
-              Appliquer toutes les corrections
-            </button>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {aiChecked && aiCorrections.length === 0 && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
