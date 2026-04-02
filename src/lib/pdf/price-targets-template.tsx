@@ -304,20 +304,6 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
   );
 }
 
-// ─── Progress Bar ────────────────────────────────────────────────────────────
-
-function TargetBar({ current, target }: { current: number; target: number }) {
-  if (!target || !current || current <= 0) return null;
-  const pct = Math.max(0.08, Math.min(0.95, current / target));
-  const color = target >= current ? '#10b981' : '#ef4444';
-
-  return (
-    <View style={{ height: 3, backgroundColor: '#e2e8f0', borderRadius: 1.5, overflow: 'hidden' as const }}>
-      <View style={{ height: '100%', width: `${Math.round(pct * 100)}%`, backgroundColor: color, borderRadius: 1.5 }} />
-    </View>
-  );
-}
-
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
 function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
@@ -350,15 +336,14 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
       <View style={styles.table}>
         <View style={styles.th}>
           <Text style={[styles.thCell, { width: '5%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '8%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '19%' }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '9%' }]}>Symbole</Text>
+          <Text style={[styles.thCell, { width: '22%' }]}>Description</Text>
           <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Qté</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Prix</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Cible 1 an</Text>
-          <Text style={[styles.thCell, { width: '13%', textAlign: 'center' }]}>Potentiel</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Gain %</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Gain $</Text>
+          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Prix actuel</Text>
+          <Text style={[styles.thCell, { width: '12%', textAlign: 'right' }]}>Val. marché</Text>
+          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Cible 1 an</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Gain %</Text>
+          <Text style={[styles.thCell, { width: '13%', textAlign: 'right' }]}>Gain $</Text>
         </View>
 
         {holdings.map((h, i) => {
@@ -374,24 +359,18 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
               alignItems: 'center',
             }} wrap={false}>
               <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '8%', fontSize: 7.5, color: C.navy }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '19%', fontSize: 7.5 }]}>{h.name}</Text>
+              <Text style={[styles.tdBold, { width: '9%', fontSize: 7.5, color: C.navy }]}>{h.symbol}</Text>
+              <Text style={[styles.td, { width: '22%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', color: h.targetPrice ? C.navy : '#cbd5e1' }]}>
+              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
+              <Text style={[styles.tdBold, { width: '12%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
+              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right', color: h.targetPrice ? C.navy : '#cbd5e1' }]}>
                 {h.targetPrice ? fmtFull(h.targetPrice) : '—'}
               </Text>
-              <View style={{ width: '13%', paddingHorizontal: 6, justifyContent: 'center' }}>
-                {h.targetPrice && cp > 0
-                  ? <TargetBar current={cp} target={h.targetPrice} />
-                  : <View style={{ height: 3, backgroundColor: '#f1f5f9', borderRadius: 1.5 }} />
-                }
-              </View>
-              <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: gc(gp) }]}>
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', color: gc(gp) }]}>
                 {h.targetPrice ? fmtPct(gp) : '—'}
               </Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', color: gc(gd) }]}>
+              <Text style={[styles.tdBold, { width: '13%', textAlign: 'right', color: gc(gd) }]}>
                 {h.targetPrice ? fmt(gd) : '—'}
               </Text>
             </View>
@@ -405,17 +384,21 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
           alignItems: 'center',
         }}>
           <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '8%' }}>{''}</Text>
-          <Text style={{ width: '19%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
+          <Text style={{ width: '9%' }}>{''}</Text>
+          <Text style={{ width: '22%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
-          <Text style={{ width: '10%' }}>{''}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
-          <Text style={{ width: '13%' }}>{''}</Text>
-          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
+          <Text style={{ width: '11%' }}>{''}</Text>
+          <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
+          <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
+          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
+          <Text style={{ width: '13%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
         </View>
       </View>
+
+      {/* Source */}
+      <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 4 }}>
+        Source : Consensus des analystes via Yahoo Finance. Les prix sont en temps réel ou différés selon la disponibilité.
+      </Text>
 
       <PageFooter pageNum={pageNum} totalPages={totalPages} />
     </Page>
@@ -600,8 +583,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
       {equityPages.map((pageHoldings, idx) => {
         pageNum++;
         const subtitle = equityPages.length > 1
-          ? `Actions, FNB et privilégiées (${idx + 1}/${equityPages.length})`
-          : 'Actions, FNB et privilégiées';
+          ? `Cours cibles des analystes (${idx + 1}/${equityPages.length})`
+          : 'Cours cibles des analystes';
         return (
           <EquityTablePage
             key={`eq-${idx}`}
