@@ -140,7 +140,7 @@ function countTotalPages(data: PriceTargetReportData): number {
   let count = 0;
   if (opts.includeCover !== false) count += 1;
   const eqCount = (opts.includeEquities !== false)
-    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length
+    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice).length
     : 0;
   if (eqCount > 0) count += Math.ceil(eqCount / 24);
   if ((opts.includeFixedIncome !== false) && data.holdings.some(h => h.assetType === 'FIXED_INCOME')) count += 1;
@@ -364,14 +364,14 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.tdBold, { width: '11%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
               <Text style={[styles.tdBold, { width: '12%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right', color: h.targetPrice ? C.navy : '#cbd5e1' }]}>
-                {h.targetPrice ? fmtFull(h.targetPrice) : '—'}
+              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right', color: C.navy }]}>
+                {fmtFull(h.targetPrice!)}
               </Text>
               <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', color: gc(gp) }]}>
-                {h.targetPrice ? fmtPct(gp) : '—'}
+                {fmtPct(gp)}
               </Text>
               <Text style={[styles.tdBold, { width: '13%', textAlign: 'right', color: gc(gd) }]}>
-                {h.targetPrice ? fmt(gd) : '—'}
+                {fmt(gd)}
               </Text>
             </View>
           );
@@ -559,7 +559,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const totalPages = countTotalPages(data);
 
   const equities = showEquities
-    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
+    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice)
     : [];
   const fixedIncome = showFixedIncome
     ? data.holdings.filter(h => h.assetType === 'FIXED_INCOME')
