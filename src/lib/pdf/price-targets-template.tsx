@@ -2,7 +2,6 @@ import React from 'react';
 import path from 'path';
 import {
   Document, Page, Text, View, Image, Font,
-  Svg, Circle, Rect, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 
@@ -39,12 +38,10 @@ export interface PriceTargetHolding {
   accountType: string;
   accountLabel: string;
   annualIncome: number;
-  // Target data (for equities/ETFs)
   currentPrice?: number;
   targetPrice?: number;
   gainPct?: number;
   targetSource?: string;
-  // Fixed income
   couponRate?: number;
   maturityDate?: string;
   modifiedDuration?: number;
@@ -103,11 +100,11 @@ function fmtPct(value: number): string {
 // ─── Maturity color scale ────────────────────────────────────────────────────
 
 const MATURITY_BANDS = [
-  { maxYears: 1,  label: '< 1 an',   color: '#dc2626', bg: '#fef2f2' },  // red
-  { maxYears: 2,  label: '1–2 ans',  color: '#ea580c', bg: '#fff7ed' },  // orange
-  { maxYears: 3,  label: '2–3 ans',  color: '#d97706', bg: '#fffbeb' },  // amber
-  { maxYears: 5,  label: '3–5 ans',  color: '#16a34a', bg: '#f0fdf4' },  // green
-  { maxYears: Infinity, label: '5+ ans', color: '#2563eb', bg: '#eff6ff' }, // blue
+  { maxYears: 1,  label: '< 1 an',  color: C.duoRed,    bg: '#fff0f0' },
+  { maxYears: 2,  label: '1–2 ans', color: C.duoOrange,  bg: C.duoOrangePale },
+  { maxYears: 3,  label: '2–3 ans', color: C.duoYellow,  bg: '#fff8e1' },
+  { maxYears: 5,  label: '3–5 ans', color: C.duoGreen,   bg: C.duoGreenBg },
+  { maxYears: Infinity, label: '5+ ans', color: C.duoBlue, bg: C.duoBlueBg },
 ] as const;
 
 const MONTH_PARSE: Record<string, number> = {
@@ -117,22 +114,15 @@ const MONTH_PARSE: Record<string, number> = {
 
 function parseMaturityDate(dateStr?: string): Date | null {
   if (!dateStr) return null;
-
-  // ISO: "2028-06-01"
   const iso = dateStr.match(/^(20\d{2})-(\d{2})-(\d{2})$/);
   if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
-
-  // French: "16 sep 2026"
   const fr = dateStr.match(/^(\d{1,2})\s+(\S+)\s+(\d{4})$/);
   if (fr) {
     const month = MONTH_PARSE[fr[2].toLowerCase()];
     if (month !== undefined) return new Date(+fr[3], month, +fr[1]);
   }
-
-  // Year only: "2034"
   const yr = dateStr.match(/^(20\d{2})$/);
-  if (yr) return new Date(+yr[1], 6, 1); // mid-year estimate
-
+  if (yr) return new Date(+yr[1], 6, 1);
   return null;
 }
 
@@ -143,32 +133,48 @@ function getMaturityBand(dateStr?: string) {
   return MATURITY_BANDS.find(b => yearsToMat < b.maxYears) || MATURITY_BANDS[MATURITY_BANDS.length - 1];
 }
 
-const ASSET_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  EQUITY: { label: 'Action', color: C.blue },
-  FIXED_INCOME: { label: 'Rev. fixe', color: C.gold },
-  ETF: { label: 'FNB', color: '#7c3aed' },
-  FUND: { label: 'Fonds', color: '#0d9488' },
-  PREFERRED: { label: 'Priv.', color: '#4f46e5' },
-  CASH: { label: 'Liquid.', color: C.up },
-  OTHER: { label: 'Autre', color: C.textTer },
+const ASSET_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  EQUITY:       { label: 'Action',  color: C.duoBlue,   bg: C.duoBlueBg },
+  FIXED_INCOME: { label: 'Rev. fixe', color: C.duoOrange, bg: C.duoOrangePale },
+  ETF:          { label: 'FNB',     color: C.duoPurple, bg: C.duoPurplePale },
+  FUND:         { label: 'Fonds',   color: '#0d9488',   bg: '#f0fdfa' },
+  PREFERRED:    { label: 'Priv.',   color: C.duoPurple, bg: C.duoPurplePale },
+  CASH:         { label: 'Liquid.', color: C.duoGreen,  bg: C.duoGreenBg },
+  OTHER:        { label: 'Autre',   color: C.textSec,   bg: '#f8fafc' },
 };
 
-// ─── Cover decorations ───────────────────────────────────────────────────────
+// ─── Page count helper ───────────────────────────────────────────────────────
 
-function CoverDecorations() {
+function countTotalPages(data: PriceTargetReportData): number {
+  const opts = data.options ?? {};
+  let count = 0;
+  if (opts.includeCover !== false) count += 1;
+  const eqCount = (opts.includeEquities !== false)
+    ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length
+    : 0;
+  if (eqCount > 0) count += Math.ceil(eqCount / 22);
+  if ((opts.includeFixedIncome !== false) && data.holdings.some(h => h.assetType === 'FIXED_INCOME')) count += 1;
+  if ((opts.includeCashOther !== false) && data.holdings.some(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))) count += 1;
+  return Math.max(count, 1);
+}
+
+// ─── Duolingo Pill Badge ─────────────────────────────────────────────────────
+
+function Pill({ label, color, bg }: { label: string; color: string; bg: string }) {
   return (
-    <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
-      <Defs>
-        <LinearGradient id="grad1" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor={C.cyan} stopOpacity="0.08" />
-          <Stop offset="100%" stopColor={C.blue} stopOpacity="0.04" />
-        </LinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="595" height="842" fill="url(#grad1)" />
-      <Circle cx="520" cy="80" r="120" fill={C.cyan} opacity="0.06" />
-      <Circle cx="75" cy="760" r="90" fill={C.blue} opacity="0.05" />
-      <Circle cx="400" cy="700" r="60" fill={C.navy} opacity="0.03" />
-    </Svg>
+    <View style={{
+      backgroundColor: bg,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 20,
+      borderWidth: 1.5,
+      borderColor: color + '30',
+      borderStyle: 'solid' as const,
+    }}>
+      <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color }}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -177,9 +183,131 @@ function CoverDecorations() {
 function PageFooter({ pageNum, totalPages }: { pageNum: number; totalPages: number }) {
   return (
     <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>Cours cibles — Analyse rapide</Text>
-      <Text style={styles.footerText}>
-        Page {pageNum} / {totalPages}
+      <Text style={styles.footerText}>Groupe Financier Ste-Foy — Analyse des cours cibles</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{
+          backgroundColor: C.duoGreenBg,
+          paddingHorizontal: 8,
+          paddingVertical: 2,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: C.duoGreenPale,
+          borderStyle: 'solid' as const,
+        }}>
+          <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.duoGreenDark }}>
+            {pageNum} / {totalPages}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Duolingo KPI Card ──────────────────────────────────────────────────────
+
+function KpiCard({ label, value, accent, icon }: { label: string; value: string; accent: string; icon?: string }) {
+  const bgColor = accent + '14';
+  return (
+    <View style={{
+      flex: 1,
+      backgroundColor: bgColor,
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: accent + '30',
+      borderStyle: 'solid' as const,
+      borderBottomWidth: 4,
+      borderBottomColor: accent + '40',
+      borderBottomStyle: 'solid' as const,
+      padding: 14,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        {icon && (
+          <Text style={{ fontSize: 11, marginRight: 4 }}>{icon}</Text>
+        )}
+        <Text style={{
+          fontSize: 6.5,
+          fontFamily: 'Montserrat',
+          fontWeight: 700,
+          color: accent,
+          textTransform: 'uppercase' as const,
+          letterSpacing: 1.2,
+        }}>
+          {label}
+        </Text>
+      </View>
+      <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: accent, lineHeight: 1.1 }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Section Title Banner ────────────────────────────────────────────────────
+
+function SectionBanner({ title, color, bg, stats }: {
+  title: string;
+  color: string;
+  bg: string;
+  stats?: { label: string; value: string }[];
+}) {
+  return (
+    <View style={{
+      backgroundColor: bg,
+      borderRadius: 14,
+      borderWidth: 2,
+      borderColor: color + '30',
+      borderStyle: 'solid' as const,
+      borderBottomWidth: 4,
+      borderBottomColor: color + '40',
+      borderBottomStyle: 'solid' as const,
+      padding: 12,
+      marginBottom: 12,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    }}>
+      <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color }}>
+        {title}
+      </Text>
+      {stats && (
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          {stats.map((s, i) => (
+            <View key={i} style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: color + '99', textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+                {s.label}
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color }}>
+                {s.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Gain Badge ──────────────────────────────────────────────────────────────
+
+function GainBadge({ value, large }: { value: number; large?: boolean }) {
+  const isUp = value >= 0;
+  return (
+    <View style={{
+      backgroundColor: isUp ? C.duoGreen : C.duoRed,
+      paddingHorizontal: large ? 16 : 8,
+      paddingVertical: large ? 8 : 3,
+      borderRadius: large ? 14 : 10,
+      borderBottomWidth: large ? 3 : 2,
+      borderBottomColor: isUp ? C.duoGreenDark : '#cc0000',
+      borderBottomStyle: 'solid' as const,
+    }}>
+      <Text style={{
+        fontSize: large ? 16 : 8,
+        fontFamily: 'Montserrat',
+        fontWeight: 800,
+        color: '#ffffff',
+      }}>
+        {fmtPct(value)}
       </Text>
     </View>
   );
@@ -187,360 +315,665 @@ function PageFooter({ pageNum, totalPages }: { pageNum: number; totalPages: numb
 
 // ─── Cover Page ──────────────────────────────────────────────────────────────
 
-function CoverPage({ data }: { data: PriceTargetReportData }) {
+function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPages: number }) {
   const s = data.summary;
   const date = new Date(data.generatedAt);
   const dateStr = new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
 
+  const hasTargets = s.totalTargetValue > 0;
+  const eqGain = s.equityGain ?? s.totalGain;
+  const eqGainPct = s.equityGainPct ?? s.totalGainPct;
+  const totalEst = s.totalEstimated ?? s.totalGain;
+  const totalEstPct = s.totalEstimatedPct ?? s.totalGainPct;
+
   return (
-    <Page size="A4" style={[styles.page, { padding: 0 }]}>
-      <CoverDecorations />
-
-      <View style={{ padding: 50, paddingTop: 60, flex: 1 }}>
-        {/* Logo */}
-        <View style={{ marginBottom: 50 }}>
-          <Image src={LOGO_PATH} style={{ width: 140, height: 40, objectFit: 'contain' }} />
-        </View>
-
-        {/* Title */}
-        <View style={{ marginBottom: 40 }}>
-          <Text style={{ fontSize: 32, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 8 }}>
-            Cours cibles
+    <Page size="A4" style={styles.page}>
+      {/* Header bar */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Image src={LOGO_PATH} style={{ width: 110, height: 32, objectFit: 'contain' }} />
+        <View style={{
+          backgroundColor: C.duoBlueBg,
+          paddingHorizontal: 12,
+          paddingVertical: 5,
+          borderRadius: 20,
+          borderWidth: 1.5,
+          borderColor: C.duoBluePale,
+          borderStyle: 'solid' as const,
+        }}>
+          <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.duoBlue }}>
+            {dateStr}
           </Text>
-          <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 700, color: C.cyan }}>
-            Analyse rapide du portefeuille
-          </Text>
-          <View style={{ width: 60, height: 3, backgroundColor: C.cyan, borderRadius: 2, marginTop: 16 }} />
-        </View>
-
-        {/* Date */}
-        <Text style={{ fontSize: 11, color: C.textSec, marginBottom: 40 }}>
-          {dateStr}
-        </Text>
-
-        {/* Summary KPIs */}
-        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 30 }}>
-          <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const }]}>
-            <Text style={styles.kpiLabel}>Valeur marchande</Text>
-            <Text style={[styles.kpiValue, { fontSize: 20 }]}>{fmt(s.totalMarketValue)}</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const }]}>
-            <Text style={styles.kpiLabel}>Revenu annuel</Text>
-            <Text style={[styles.kpiValue, { fontSize: 20, color: C.up }]}>{fmt(s.totalAnnualIncome)}</Text>
-          </View>
-        </View>
-
-        {s.totalTargetValue > 0 && (
-          <>
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-              <View style={[styles.statCard, { borderLeftWidth: 3, borderLeftColor: C.blue, borderLeftStyle: 'solid' as const }]}>
-                <Text style={styles.kpiLabel}>Valeur cible 12 mois</Text>
-                <Text style={[styles.kpiValue, { fontSize: 20, color: C.blue }]}>{fmt(s.totalTargetValue)}</Text>
-              </View>
-            </View>
-
-            {/* Gains breakdown heading */}
-            <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
-              Gains estimés par catégorie
-            </Text>
-
-            {/* Actions + Revenus fixes side by side */}
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-              {/* Actions */}
-              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const }]}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={[styles.kpiLabel, { fontSize: 7.5, marginBottom: 0 }]}>Actions (gain en capital)</Text>
-                  <View style={{ backgroundColor: (s.equityGainPct ?? s.totalGainPct) >= 0 ? '#dcfce7' : '#fef2f2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
-                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: (s.equityGainPct ?? s.totalGainPct) >= 0 ? C.up : C.down }}>
-                      {fmtPct(s.equityGainPct ?? s.totalGainPct)}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.kpiValue, { fontSize: 18, color: (s.equityGain ?? s.totalGain) >= 0 ? C.up : C.down }]}>
-                  {fmt(s.equityGain ?? s.totalGain)}
-                </Text>
-              </View>
-              {/* Revenus fixes */}
-              <View style={[styles.statCard, { flex: 1, borderLeftWidth: 3, borderLeftColor: C.up, borderLeftStyle: 'solid' as const }]}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={[styles.kpiLabel, { fontSize: 7.5, marginBottom: 0 }]}>Revenus fixes (revenu annuel)</Text>
-                  <View style={{ backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
-                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.up }}>
-                      {fmtPct(s.fixedIncomeGainPct ?? 0)}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.kpiValue, { fontSize: 18, color: C.up }]}>
-                  {fmt(s.fixedIncomeAnnualIncome ?? 0)}
-                </Text>
-              </View>
-            </View>
-
-            {/* Total estimé — prominent */}
-            <View style={[styles.statCard, { borderLeftWidth: 4, borderLeftColor: C.up, borderLeftStyle: 'solid' as const, backgroundColor: '#f0fdf4', borderWidth: 1.5, borderColor: '#86efac', borderStyle: 'solid' as const, marginBottom: 30 }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Total estimé</Text>
-                <View style={{ backgroundColor: (s.totalEstimatedPct ?? s.totalGainPct) >= 0 ? '#bbf7d0' : '#fecaca', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
-                  <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: (s.totalEstimatedPct ?? s.totalGainPct) >= 0 ? '#15803d' : C.down }}>
-                    {fmtPct(s.totalEstimatedPct ?? s.totalGainPct)}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.kpiValue, { fontSize: 22, color: (s.totalEstimated ?? s.totalGain) >= 0 ? C.up : C.down }]}>
-                {fmt(s.totalEstimated ?? s.totalGain)}
-              </Text>
-            </View>
-          </>
-        )}
-
-        {/* Position counts */}
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          {s.equityCount > 0 && (
-            <View style={{ backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-              <Text style={{ fontSize: 8, color: C.blue, fontFamily: 'Open Sans', fontWeight: 600 }}>
-                {s.equityCount} action{s.equityCount > 1 ? 's' : ''}
-              </Text>
-            </View>
-          )}
-          {s.fixedIncomeCount > 0 && (
-            <View style={{ backgroundColor: C.goldPale, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-              <Text style={{ fontSize: 8, color: '#92400e', fontFamily: 'Open Sans', fontWeight: 600 }}>
-                {s.fixedIncomeCount} revenu{s.fixedIncomeCount > 1 ? 's' : ''} fixe{s.fixedIncomeCount > 1 ? 's' : ''}
-              </Text>
-            </View>
-          )}
-          {s.cashCount > 0 && (
-            <View style={{ backgroundColor: C.upBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-              <Text style={{ fontSize: 8, color: '#065f46', fontFamily: 'Open Sans', fontWeight: 600 }}>
-                {s.cashCount} liquidité{s.cashCount > 1 ? 's' : ''}
-              </Text>
-            </View>
-          )}
-          {s.otherCount > 0 && (
-            <View style={{ backgroundColor: C.panel, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-              <Text style={{ fontSize: 8, color: C.textSec, fontFamily: 'Open Sans', fontWeight: 600 }}>
-                {s.otherCount} autre{s.otherCount > 1 ? 's' : ''}
-              </Text>
-            </View>
-          )}
-          {s.pricesFound > 0 && (
-            <View style={{ backgroundColor: C.cyanPale, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
-              <Text style={{ fontSize: 8, color: '#155e75', fontFamily: 'Open Sans', fontWeight: 600 }}>
-                {s.pricesFound} prix temps réel — {s.targetsFound} cours cibles
-              </Text>
-            </View>
-          )}
         </View>
       </View>
 
-      <PageFooter pageNum={1} totalPages={0} />
+      {/* Title */}
+      <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 4 }}>
+        Analyse des cours cibles
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 4, marginBottom: 24 }}>
+        <View style={{ width: 30, height: 4, backgroundColor: C.duoGreen, borderRadius: 2 }} />
+        <View style={{ width: 15, height: 4, backgroundColor: C.duoBlue, borderRadius: 2 }} />
+        <View style={{ width: 8, height: 4, backgroundColor: C.duoPurple, borderRadius: 2 }} />
+      </View>
+
+      {/* Main KPIs */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 18 }}>
+        <KpiCard label="Valeur marchande" value={fmt(s.totalMarketValue)} accent={C.duoBlue} />
+        <KpiCard label="Revenu annuel" value={fmt(s.totalAnnualIncome)} accent={C.duoGreen} />
+        {hasTargets && (
+          <KpiCard label="Cible 12 mois" value={fmt(s.totalTargetValue)} accent={C.duoPurple} />
+        )}
+      </View>
+
+      {/* Gains breakdown */}
+      {hasTargets && (
+        <>
+          {/* Category gains row */}
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            {/* Equity card */}
+            <View style={{
+              flex: 1,
+              backgroundColor: eqGain >= 0 ? C.duoGreenBg : C.downBg,
+              borderRadius: 14,
+              borderWidth: 2,
+              borderColor: eqGain >= 0 ? C.duoGreenPale : C.downBorder,
+              borderStyle: 'solid' as const,
+              borderBottomWidth: 4,
+              borderBottomColor: eqGain >= 0 ? C.duoGreenDark + '30' : C.duoRed + '30',
+              borderBottomStyle: 'solid' as const,
+              padding: 12,
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 700, color: eqGain >= 0 ? C.duoGreenDark : C.duoRed }}>
+                  Actions — gain en capital
+                </Text>
+                <GainBadge value={eqGainPct} />
+              </View>
+              <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: eqGain >= 0 ? C.duoGreen : C.duoRed }}>
+                {fmt(eqGain)}
+              </Text>
+            </View>
+
+            {/* Fixed income card */}
+            <View style={{
+              flex: 1,
+              backgroundColor: C.duoOrangePale,
+              borderRadius: 14,
+              borderWidth: 2,
+              borderColor: C.duoOrange + '30',
+              borderStyle: 'solid' as const,
+              borderBottomWidth: 4,
+              borderBottomColor: C.duoOrange + '40',
+              borderBottomStyle: 'solid' as const,
+              padding: 12,
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 700, color: '#c47600' }}>
+                  Revenus fixes — revenu annuel
+                </Text>
+                <GainBadge value={s.fixedIncomeGainPct ?? 0} />
+              </View>
+              <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: C.duoOrange }}>
+                {fmt(s.fixedIncomeAnnualIncome ?? 0)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Total banner — Duolingo style big button */}
+          <View style={{
+            backgroundColor: C.duoGreen,
+            borderRadius: 16,
+            borderBottomWidth: 5,
+            borderBottomColor: C.duoGreenDark,
+            borderBottomStyle: 'solid' as const,
+            padding: 18,
+            marginBottom: 20,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <View>
+              <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: '#ffffff99', textTransform: 'uppercase' as const, letterSpacing: 1.2, marginBottom: 4 }}>
+                Total estimé sur 12 mois
+              </Text>
+              <Text style={{ fontSize: 26, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                {fmt(totalEst)}
+              </Text>
+            </View>
+            <View style={{
+              backgroundColor: '#ffffff',
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 14,
+              borderBottomWidth: 3,
+              borderBottomColor: '#e0e0e0',
+              borderBottomStyle: 'solid' as const,
+            }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: totalEstPct >= 0 ? C.duoGreen : C.duoRed }}>
+                {fmtPct(totalEstPct)}
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Position count pills */}
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+        {s.equityCount > 0 && (
+          <Pill label={`${s.equityCount} action${s.equityCount > 1 ? 's' : ''} / FNB`} color={C.duoBlue} bg={C.duoBlueBg} />
+        )}
+        {s.fixedIncomeCount > 0 && (
+          <Pill label={`${s.fixedIncomeCount} revenu${s.fixedIncomeCount > 1 ? 's' : ''} fixe${s.fixedIncomeCount > 1 ? 's' : ''}`} color={C.duoOrange} bg={C.duoOrangePale} />
+        )}
+        {s.cashCount > 0 && (
+          <Pill label={`${s.cashCount} liquidité${s.cashCount > 1 ? 's' : ''}`} color={C.duoGreen} bg={C.duoGreenBg} />
+        )}
+        {s.pricesFound > 0 && (
+          <Pill label={`${s.pricesFound} prix — ${s.targetsFound} cibles`} color={C.duoPurple} bg={C.duoPurplePale} />
+        )}
+      </View>
+
+      {/* Disclaimer */}
+      <View style={{ marginTop: 'auto' as const, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0', borderTopStyle: 'solid' as const }}>
+        <Text style={{ fontSize: 7, color: C.textTer, lineHeight: 1.5 }}>
+          Les cours cibles proviennent du consensus des analystes (Yahoo Finance). Pour les titres sans couverture,
+          une estimation basée sur le rendement historique 12 mois est utilisée. Ce document est fourni à titre
+          informatif et ne constitue pas un conseil en placement.
+        </Text>
+      </View>
+
+      <PageFooter pageNum={1} totalPages={totalPages} />
     </Page>
+  );
+}
+
+// ─── Progress Bar (prix actuel → cible) ─────────────────────────────────────
+
+function TargetProgressBar({ current, target }: { current: number; target: number }) {
+  if (!target || !current || current <= 0) return null;
+  const isUp = target >= current;
+  // Clamp progress between 5% and 95% for visual clarity
+  const raw = current / target;
+  const pct = Math.max(0.08, Math.min(0.95, raw));
+  const barColor = isUp ? C.duoGreen : C.duoRed;
+  const trackColor = isUp ? C.duoGreenBg : C.downBg;
+
+  return (
+    <View style={{ width: '100%', marginTop: 2 }}>
+      <View style={{
+        height: 4,
+        backgroundColor: trackColor,
+        borderRadius: 2,
+        overflow: 'hidden' as const,
+      }}>
+        <View style={{
+          height: '100%',
+          width: `${Math.round(pct * 100)}%`,
+          backgroundColor: barColor,
+          borderRadius: 2,
+        }} />
+      </View>
+    </View>
   );
 }
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, subtitle }: { holdings: PriceTargetHolding[]; pageNum: number; subtitle: string }) {
+function EquityTablePage({ holdings, pageNum, totalPages, subtitle }: {
+  holdings: PriceTargetHolding[];
+  pageNum: number;
+  totalPages: number;
+  subtitle: string;
+}) {
+  const totalMarketValue = holdings.reduce((s, h) => s + h.marketValue, 0);
+  const totalGainDollar = holdings.reduce((s, h) => {
+    if (h.targetPrice && (h.currentPrice || h.marketPrice) > 0) {
+      return s + h.quantity * (h.targetPrice - (h.currentPrice || h.marketPrice));
+    }
+    return s;
+  }, 0);
+  const totalTargetValue = holdings.reduce((s, h) => {
+    if (h.targetPrice) return s + h.quantity * h.targetPrice;
+    return s + h.marketValue;
+  }, 0);
+
+  const thColor = '#1a7ad4';
+
   return (
     <Page size="A4" style={styles.page}>
-      <Text style={styles.sectionTitle}>{subtitle}</Text>
+      <SectionBanner
+        title={subtitle}
+        color={C.duoBlue}
+        bg={C.duoBlueBg}
+        stats={[
+          { label: 'Val. marché', value: fmt(totalMarketValue) },
+          { label: 'Val. cible', value: fmt(totalTargetValue) },
+          ...(totalGainDollar !== 0 ? [{ label: 'Gain cible', value: fmt(totalGainDollar) }] : []),
+        ]}
+      />
 
       {/* Table */}
-      <View style={styles.table}>
+      <View style={[styles.table, { borderColor: C.duoBlue + '25' }]}>
         {/* Header */}
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '6%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '9%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '22%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Qté</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>PRU</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Prix</Text>
-          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Cible</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Gain %</Text>
-          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Gain $</Text>
+        <View style={[styles.th, { backgroundColor: C.duoBlueBg, borderBottomColor: C.duoBluePale }]}>
+          <Text style={[styles.thCell, { width: '5%', color: thColor }]}>Cpte</Text>
+          <Text style={[styles.thCell, { width: '8%', color: thColor }]}>Symbole</Text>
+          <Text style={[styles.thCell, { width: '18%', color: thColor }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '7%', textAlign: 'right', color: thColor }]}>Qté</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right', color: thColor }]}>Prix actuel</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right', color: thColor }]}>Val. marché</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right', color: thColor }]}>Cible 1Y</Text>
+          <Text style={[styles.thCell, { width: '14%', textAlign: 'center', color: thColor }]}>Progression</Text>
+          <Text style={[styles.thCell, { width: '8%', textAlign: 'right', color: thColor }]}>Gain %</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right', color: thColor }]}>Gain $</Text>
         </View>
 
         {/* Rows */}
         {holdings.map((h, i) => {
-          const rowStyle = i % 2 === 1 ? styles.trAlt : styles.tr;
-          const gainColor = (h.gainPct ?? 0) > 0 ? C.up : (h.gainPct ?? 0) < 0 ? C.down : C.textTer;
-          const gainDollar = h.targetPrice && (h.currentPrice || h.marketPrice) > 0
-            ? h.quantity * (h.targetPrice - (h.currentPrice || h.marketPrice))
+          const rowBg = i % 2 === 1 ? '#f8fbff' : '#ffffff';
+          const gainPct = h.gainPct ?? 0;
+          const gainColor = gainPct > 0 ? C.duoGreen : gainPct < 0 ? C.duoRed : C.textTer;
+          const currentP = h.currentPrice || h.marketPrice;
+          const gainDollar = h.targetPrice && currentP > 0
+            ? h.quantity * (h.targetPrice - currentP)
             : 0;
+          const typeInfo = ASSET_TYPE_LABELS[h.assetType] || ASSET_TYPE_LABELS.EQUITY;
 
           return (
-            <View key={`${h.symbol}-${h.accountType}-${i}`} style={rowStyle} wrap={false}>
-              <Text style={[styles.td, { width: '6%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '9%', color: C.cyan, fontSize: 7.5 }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '22%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
-              <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
-              <Text style={[styles.td, { width: '9%', textAlign: 'right', color: C.textSec }]}>
-                {h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}
+            <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
+              flexDirection: 'row',
+              paddingVertical: 5,
+              paddingHorizontal: 8,
+              backgroundColor: rowBg,
+              borderBottomWidth: 1,
+              borderBottomColor: '#eef2f7',
+              borderBottomStyle: 'solid' as const,
+              alignItems: 'center',
+            }} wrap={false}>
+              {/* Account */}
+              <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: C.textTer }]}>{h.accountLabel}</Text>
+
+              {/* Symbol badge */}
+              <View style={{ width: '8%', paddingHorizontal: 2 }}>
+                <View style={{
+                  backgroundColor: typeInfo.bg,
+                  paddingHorizontal: 4,
+                  paddingVertical: 2,
+                  borderRadius: 6,
+                  borderWidth: 1,
+                  borderColor: typeInfo.color + '25',
+                  borderStyle: 'solid' as const,
+                  alignSelf: 'flex-start',
+                }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: typeInfo.color }}>
+                    {h.symbol.replace('.TO', '').replace('.V', '')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Name */}
+              <Text style={[styles.td, { width: '18%', fontSize: 7.5 }]}>
+                {h.name}
               </Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right' }]}>
-                {(h.currentPrice || h.marketPrice) > 0 ? fmtFull(h.currentPrice || h.marketPrice) : '—'}
+
+              {/* Qty */}
+              <Text style={[styles.td, { width: '7%', textAlign: 'right', fontSize: 8 }]}>
+                {h.quantity.toLocaleString('fr-CA')}
               </Text>
-              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: h.targetPrice ? C.blue : C.textTer }]}>
-                {h.targetPrice ? fmtFull(h.targetPrice) : '—'}
+
+              {/* Current price */}
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', fontSize: 8 }]}>
+                {currentP > 0 ? fmtFull(currentP) : '—'}
               </Text>
-              <Text style={[styles.tdBold, { width: '7%', textAlign: 'right', color: gainColor }]}>
-                {h.targetPrice ? fmtPct(h.gainPct ?? 0) : '—'}
+
+              {/* Market value */}
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', fontSize: 8 }]}>
+                {fmt(h.marketValue)}
               </Text>
-              <Text style={[styles.tdBold, { width: '11%', textAlign: 'right', color: gainColor }]}>
+
+              {/* Target 1Y — prominent purple */}
+              <View style={{ width: '10%', flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 4 }}>
+                {h.targetPrice ? (
+                  <View style={{
+                    backgroundColor: C.duoPurplePale,
+                    paddingHorizontal: 5,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: C.duoPurple + '30',
+                    borderStyle: 'solid' as const,
+                  }}>
+                    <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.duoPurple }}>
+                      {fmtFull(h.targetPrice)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 8, color: C.textTer }}>—</Text>
+                )}
+              </View>
+
+              {/* Progress bar */}
+              <View style={{ width: '14%', paddingHorizontal: 4, justifyContent: 'center' }}>
+                {h.targetPrice && currentP > 0 ? (
+                  <TargetProgressBar current={currentP} target={h.targetPrice} />
+                ) : (
+                  <View style={{ height: 4, backgroundColor: '#f1f5f9', borderRadius: 2 }} />
+                )}
+              </View>
+
+              {/* Gain % pill */}
+              <View style={{ width: '8%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 2 }}>
+                {h.targetPrice ? (
+                  <View style={{
+                    backgroundColor: gainPct >= 0 ? C.duoGreenBg : C.downBg,
+                    paddingHorizontal: 5,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                  }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 700, color: gainColor }}>
+                      {fmtPct(gainPct)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 8, color: C.textTer }}>—</Text>
+                )}
+              </View>
+
+              {/* Gain $ */}
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right', fontSize: 8, color: gainColor }]}>
                 {h.targetPrice ? fmt(gainDollar) : '—'}
               </Text>
             </View>
           );
         })}
+
+        {/* ── Total footer row ── */}
+        <View style={{
+          flexDirection: 'row',
+          paddingVertical: 8,
+          paddingHorizontal: 8,
+          backgroundColor: C.duoBlueBg,
+          borderTopWidth: 2,
+          borderTopColor: C.duoBluePale,
+          borderTopStyle: 'solid' as const,
+          alignItems: 'center',
+        }}>
+          <Text style={{ width: '5%' }}>{''}</Text>
+          <Text style={{ width: '8%' }}>{''}</Text>
+          <Text style={{ width: '18%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.duoBlue, paddingHorizontal: 4 }}>
+            Total
+          </Text>
+          <Text style={{ width: '7%' }}>{''}</Text>
+          <Text style={{ width: '10%' }}>{''}</Text>
+          <Text style={{ width: '10%', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>
+            {fmt(totalMarketValue)}
+          </Text>
+          <Text style={{ width: '10%', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.duoPurple, textAlign: 'right', paddingHorizontal: 4 }}>
+            {fmt(totalTargetValue)}
+          </Text>
+          <Text style={{ width: '14%' }}>{''}</Text>
+          <View style={{ width: '8%', flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 2 }}>
+            {totalMarketValue > 0 && (
+              <View style={{
+                backgroundColor: totalGainDollar >= 0 ? C.duoGreen : C.duoRed,
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 8,
+                borderBottomWidth: 2,
+                borderBottomColor: totalGainDollar >= 0 ? C.duoGreenDark : '#cc0000',
+                borderBottomStyle: 'solid' as const,
+              }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                  {fmtPct(totalMarketValue > 0 ? (totalGainDollar / totalMarketValue) * 100 : 0)}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={{ width: '10%', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: totalGainDollar >= 0 ? C.duoGreen : C.duoRed, textAlign: 'right', paddingHorizontal: 4 }}>
+            {fmt(totalGainDollar)}
+          </Text>
+        </View>
       </View>
 
-      <PageFooter pageNum={pageNum} totalPages={0} />
+      <PageFooter pageNum={pageNum} totalPages={totalPages} />
     </Page>
   );
 }
 
 // ─── Fixed Income Table Page ─────────────────────────────────────────────────
 
-function FixedIncomeTablePage({ holdings, pageNum }: { holdings: PriceTargetHolding[]; pageNum: number }) {
+function FixedIncomeTablePage({ holdings, pageNum, totalPages }: {
+  holdings: PriceTargetHolding[];
+  pageNum: number;
+  totalPages: number;
+}) {
+  const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
+  const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
+  const totalValDur = holdings.reduce((s, h) => s + (h.modifiedDuration ? h.marketValue : 0), 0);
+  const weightedDur = holdings.reduce((s, h) => s + (h.modifiedDuration || 0) * h.marketValue, 0);
+  const avgDur = totalValDur > 0 ? (weightedDur / totalValDur).toFixed(2) : '—';
+
   return (
     <Page size="A4" style={styles.page}>
-      <Text style={styles.sectionTitle}>Revenus fixes</Text>
+      <SectionBanner
+        title="Revenus fixes"
+        color="#c47600"
+        bg={C.duoOrangePale}
+        stats={[
+          { label: 'Valeur', value: fmt(totalMv) },
+          { label: 'Revenu', value: fmt(totalIncome) },
+          { label: 'Durée moy.', value: String(avgDur) },
+        ]}
+      />
 
-      {/* Maturity color legend */}
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10, alignItems: 'center' }}>
-        <Text style={{ fontSize: 7.5, color: C.textSec, fontFamily: 'Open Sans', fontWeight: 600, marginRight: 4 }}>
+      {/* Maturity legend pills */}
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+        <Text style={{ fontSize: 7, color: C.textSec, fontFamily: 'Montserrat', fontWeight: 700, marginRight: 2 }}>
           Échéance :
         </Text>
         {MATURITY_BANDS.map((band) => (
-          <View key={band.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: band.color }} />
-            <Text style={{ fontSize: 7, color: C.textSec }}>{band.label}</Text>
+          <View key={band.label} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 3,
+            backgroundColor: band.bg,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: 8,
+          }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: band.color }} />
+            <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: band.color }}>{band.label}</Text>
           </View>
         ))}
       </View>
 
-      <View style={styles.table}>
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '6%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '8%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '22%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Qté / VN</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Coupon</Text>
-          <Text style={[styles.thCell, { width: '12%', textAlign: 'right' }]}>Échéance</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Dur. mod.</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Int. cour.</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Rev. ann.</Text>
+      <View style={[styles.table, { borderColor: C.duoOrange + '25' }]}>
+        <View style={[styles.th, { backgroundColor: C.duoOrangePale, borderBottomColor: C.duoOrange + '30' }]}>
+          <Text style={[styles.thCell, { width: '6%', color: '#c47600' }]}>Cpte</Text>
+          <Text style={[styles.thCell, { width: '8%', color: '#c47600' }]}>Symbole</Text>
+          <Text style={[styles.thCell, { width: '22%', color: '#c47600' }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '9%', textAlign: 'right', color: '#c47600' }]}>Qté / VN</Text>
+          <Text style={[styles.thCell, { width: '8%', textAlign: 'right', color: '#c47600' }]}>Coupon</Text>
+          <Text style={[styles.thCell, { width: '12%', textAlign: 'right', color: '#c47600' }]}>Échéance</Text>
+          <Text style={[styles.thCell, { width: '7%', textAlign: 'right', color: '#c47600' }]}>Dur. mod.</Text>
+          <Text style={[styles.thCell, { width: '10%', textAlign: 'right', color: '#c47600' }]}>Val. marché</Text>
+          <Text style={[styles.thCell, { width: '9%', textAlign: 'right', color: '#c47600' }]}>Int. cour.</Text>
+          <Text style={[styles.thCell, { width: '9%', textAlign: 'right', color: '#c47600' }]}>Rev. ann.</Text>
         </View>
 
         {holdings.map((h, i) => {
-          const rowStyle = i % 2 === 1 ? styles.trAlt : styles.tr;
+          const rowBg = i % 2 === 1 ? '#fffcf5' : '#ffffff';
           const band = getMaturityBand(h.maturityDate);
           return (
-            <View key={`${h.symbol}-${h.accountType}-${i}`} style={rowStyle} wrap={false}>
-              <Text style={[styles.td, { width: '6%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
-              <Text style={[styles.td, { width: '8%', fontSize: 7, color: C.gold, fontFamily: 'Open Sans', fontWeight: 600 }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '22%', fontSize: 7.5, overflow: 'hidden', textOverflow: 'ellipsis' }]}>{h.name}</Text>
+            <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
+              flexDirection: 'row',
+              paddingVertical: 5,
+              paddingHorizontal: 8,
+              backgroundColor: rowBg,
+              borderBottomWidth: 1,
+              borderBottomColor: '#f5f0e8',
+              borderBottomStyle: 'solid' as const,
+            }} wrap={false}>
+              <Text style={[styles.td, { width: '6%', fontSize: 7, color: C.textTer }]}>{h.accountLabel}</Text>
+              <View style={{ width: '8%', paddingHorizontal: 4 }}>
+                <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.duoOrange }}>{h.symbol}</Text>
+              </View>
+              <Text style={[styles.td, { width: '22%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '9%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
-              <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: C.gold }]}>
-                {h.couponRate ? `${h.couponRate.toFixed(2)}%` : '—'}
-              </Text>
+              <View style={{ width: '8%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 4 }}>
+                {h.couponRate ? (
+                  <View style={{
+                    backgroundColor: C.duoOrangePale,
+                    paddingHorizontal: 4,
+                    paddingVertical: 1,
+                    borderRadius: 6,
+                  }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.duoOrange }}>
+                      {h.couponRate.toFixed(2)}%
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 8, color: C.textTer }}>—</Text>
+                )}
+              </View>
               <View style={{ width: '12%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 4 }}>
                 {band && (
-                  <View style={{ width: 4, height: 12, borderRadius: 1, backgroundColor: band.color, marginRight: 4 }} />
+                  <View style={{
+                    backgroundColor: band.bg,
+                    paddingHorizontal: 5,
+                    paddingVertical: 1,
+                    borderRadius: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 3,
+                  }}>
+                    <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: band.color }} />
+                    <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: band.color }}>
+                      {h.maturityDate || '—'}
+                    </Text>
+                  </View>
                 )}
-                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: band ? band.color : C.textTer }}>
-                  {h.maturityDate || '—'}
-                </Text>
+                {!band && (
+                  <Text style={{ fontSize: 7.5, color: C.textTer }}>
+                    {h.maturityDate || '—'}
+                  </Text>
+                )}
               </View>
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>
                 {h.modifiedDuration ? h.modifiedDuration.toFixed(2) : '—'}
               </Text>
               <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.td, { width: '9%', textAlign: 'right', color: C.textSec }]}>
+              <Text style={[styles.td, { width: '9%', textAlign: 'right', color: C.textTer }]}>
                 {h.accruedInterest ? fmtFull(h.accruedInterest) : '—'}
               </Text>
-              <Text style={[styles.td, { width: '9%', textAlign: 'right', color: h.annualIncome > 0 ? C.up : C.textTer }]}>
-                {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
-              </Text>
+              <View style={{ width: '9%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 2 }}>
+                {h.annualIncome > 0 ? (
+                  <View style={{
+                    backgroundColor: C.duoGreenBg,
+                    paddingHorizontal: 4,
+                    paddingVertical: 1,
+                    borderRadius: 6,
+                  }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.duoGreen }}>
+                      {fmt(h.annualIncome)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 8, color: C.textTer }}>—</Text>
+                )}
+              </View>
             </View>
           );
         })}
       </View>
 
-      {/* Fixed income summary */}
-      <View style={[styles.card, { marginTop: 8 }]}>
-        <View style={{ flexDirection: 'row', gap: 20 }}>
-          <View>
-            <Text style={styles.label}>Valeur marchande totale</Text>
-            <Text style={[styles.tdBold, { fontSize: 12, color: C.navy }]}>
-              {fmt(holdings.reduce((s, h) => s + h.marketValue, 0))}
-            </Text>
-          </View>
-          <View>
-            <Text style={styles.label}>Revenu annuel (coupons)</Text>
-            <Text style={[styles.tdBold, { fontSize: 12, color: C.up }]}>
-              {fmt(holdings.reduce((s, h) => s + h.annualIncome, 0))}
-            </Text>
-          </View>
-          <View>
-            <Text style={styles.label}>Durée mod. moyenne pondérée</Text>
-            <Text style={[styles.tdBold, { fontSize: 12, color: C.navy }]}>
-              {(() => {
-                const totalVal = holdings.reduce((s, h) => s + (h.modifiedDuration ? h.marketValue : 0), 0);
-                const weighted = holdings.reduce((s, h) => s + (h.modifiedDuration || 0) * h.marketValue, 0);
-                return totalVal > 0 ? (weighted / totalVal).toFixed(2) : '—';
-              })()}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <PageFooter pageNum={pageNum} totalPages={0} />
+      <PageFooter pageNum={pageNum} totalPages={totalPages} />
     </Page>
   );
 }
 
 // ─── Cash / Other Table Page ─────────────────────────────────────────────────
 
-function CashTablePage({ holdings, pageNum }: { holdings: PriceTargetHolding[]; pageNum: number }) {
+function CashTablePage({ holdings, pageNum, totalPages }: {
+  holdings: PriceTargetHolding[];
+  pageNum: number;
+  totalPages: number;
+}) {
+  const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
+
   return (
     <Page size="A4" style={styles.page}>
-      <Text style={styles.sectionTitle}>Liquidités et autres positions</Text>
+      <SectionBanner
+        title="Liquidités et autres"
+        color={C.duoGreenDark}
+        bg={C.duoGreenBg}
+        stats={[{ label: 'Total', value: fmt(totalMv) }]}
+      />
 
-      <View style={styles.table}>
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '8%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '12%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '35%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '10%' }]}>Type</Text>
-          <Text style={[styles.thCell, { width: '17%', textAlign: 'right' }]}>Valeur</Text>
-          <Text style={[styles.thCell, { width: '18%', textAlign: 'right' }]}>Revenu annuel</Text>
+      <View style={[styles.table, { borderColor: C.duoGreen + '25' }]}>
+        <View style={[styles.th, { backgroundColor: C.duoGreenBg, borderBottomColor: C.duoGreenPale }]}>
+          <Text style={[styles.thCell, { width: '8%', color: C.duoGreenDark }]}>Cpte</Text>
+          <Text style={[styles.thCell, { width: '12%', color: C.duoGreenDark }]}>Symbole</Text>
+          <Text style={[styles.thCell, { width: '33%', color: C.duoGreenDark }]}>Description</Text>
+          <Text style={[styles.thCell, { width: '12%', color: C.duoGreenDark }]}>Type</Text>
+          <Text style={[styles.thCell, { width: '17%', textAlign: 'right', color: C.duoGreenDark }]}>Valeur</Text>
+          <Text style={[styles.thCell, { width: '18%', textAlign: 'right', color: C.duoGreenDark }]}>Revenu annuel</Text>
         </View>
 
         {holdings.map((h, i) => {
-          const rowStyle = i % 2 === 1 ? styles.trAlt : styles.tr;
+          const rowBg = i % 2 === 1 ? '#f8fcf5' : '#ffffff';
           const typeInfo = ASSET_TYPE_LABELS[h.assetType] || ASSET_TYPE_LABELS.OTHER;
           return (
-            <View key={`${h.symbol}-${h.accountType}-${i}`} style={rowStyle} wrap={false}>
-              <Text style={[styles.td, { width: '8%', fontSize: 7, color: C.textSec }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '12%', color: typeInfo.color }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '35%' }]}>{h.name}</Text>
-              <Text style={[styles.td, { width: '10%', color: C.textSec, fontSize: 7.5 }]}>{typeInfo.label}</Text>
-              <Text style={[styles.tdBold, { width: '17%', textAlign: 'right', color: h.marketValue < 0 ? C.down : C.text }]}>
+            <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
+              flexDirection: 'row',
+              paddingVertical: 5,
+              paddingHorizontal: 8,
+              backgroundColor: rowBg,
+              borderBottomWidth: 1,
+              borderBottomColor: '#f0f5ea',
+              borderBottomStyle: 'solid' as const,
+            }} wrap={false}>
+              <Text style={[styles.td, { width: '8%', fontSize: 7, color: C.textTer }]}>{h.accountLabel}</Text>
+              <View style={{ width: '12%', paddingHorizontal: 4 }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 700, color: typeInfo.color }}>{h.symbol}</Text>
+              </View>
+              <Text style={[styles.td, { width: '33%' }]}>{h.name}</Text>
+              <View style={{ width: '12%', paddingHorizontal: 4 }}>
+                <View style={{
+                  backgroundColor: typeInfo.bg,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 8,
+                  alignSelf: 'flex-start',
+                }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: typeInfo.color }}>
+                    {typeInfo.label}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.tdBold, { width: '17%', textAlign: 'right', color: h.marketValue < 0 ? C.duoRed : C.text }]}>
                 {fmt(h.marketValue)}
               </Text>
-              <Text style={[styles.td, { width: '18%', textAlign: 'right', color: h.annualIncome > 0 ? C.up : C.textTer }]}>
-                {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
-              </Text>
+              <View style={{ width: '18%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 2 }}>
+                {h.annualIncome > 0 ? (
+                  <View style={{
+                    backgroundColor: C.duoGreenBg,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                  }}>
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.duoGreen }}>
+                      {fmt(h.annualIncome)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 8, color: C.textTer }}>—</Text>
+                )}
+              </View>
             </View>
           );
         })}
       </View>
 
-      <PageFooter pageNum={pageNum} totalPages={0} />
+      <PageFooter pageNum={pageNum} totalPages={totalPages} />
     </Page>
   );
 }
@@ -554,6 +987,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const showFixedIncome = opts.includeFixedIncome !== false;
   const showCashOther = opts.includeCashOther !== false;
 
+  const totalPages = countTotalPages(data);
+
   const equities = showEquities
     ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
     : [];
@@ -564,8 +999,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     ? data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))
     : [];
 
-  // Paginate equities (max ~25 rows per page)
-  const ROWS_PER_PAGE = 25;
+  const ROWS_PER_PAGE = 22;
   const equityPages: PriceTargetHolding[][] = [];
   for (let i = 0; i < equities.length; i += ROWS_PER_PAGE) {
     equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
@@ -575,7 +1009,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
 
   return (
     <Document>
-      {showCover && <CoverPage data={data} />}
+      {showCover && <CoverPage data={data} totalPages={totalPages} />}
 
       {equityPages.map((pageHoldings, idx) => {
         pageNum++;
@@ -587,17 +1021,18 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
             key={`eq-${idx}`}
             holdings={pageHoldings}
             pageNum={pageNum}
+            totalPages={totalPages}
             subtitle={subtitle}
           />
         );
       })}
 
       {fixedIncome.length > 0 && (
-        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} />
+        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} />
       )}
 
       {cashOther.length > 0 && (
-        <CashTablePage holdings={cashOther} pageNum={++pageNum} />
+        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} />
       )}
     </Document>
   );
