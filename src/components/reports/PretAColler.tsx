@@ -1658,13 +1658,14 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     {showTargets && (
                       <>
                         <td className="py-2.5 px-3 text-right">
-                          {editingTarget === h.symbol ? (
+                          {editingTarget === h._key ? (
                             <input
                               type="number"
                               step="0.01"
                               autoFocus
                               defaultValue={td?.targetPrice || ''}
                               className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                              onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   const val = parseFloat((e.target as HTMLInputElement).value);
@@ -1692,7 +1693,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                                 {td.source}
                               </span>
                               <button
-                                onClick={() => setEditingTarget(h.symbol)}
+                                onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
                                 className="p-1 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
                                 title="Modifier le cours cible"
                               >
@@ -1700,7 +1701,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                               </button>
                               {h.symbol in customTargets && (
                                 <button
-                                  onClick={() => setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; })}
+                                  onClick={(e) => { e.stopPropagation(); setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; }); }}
                                   className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
                                   title="Réinitialiser"
                                 >
@@ -1710,7 +1711,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                             </div>
                           ) : (
                             <button
-                              onClick={() => setEditingTarget(h.symbol)}
+                              onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
                               className="px-2 py-1 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 cursor-pointer"
                             >
                               Saisir
