@@ -669,6 +669,18 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       map.set(sym, { currentPrice, targetPrice, gainPct, source });
     });
 
+    // Include custom targets for symbols not yet in the map (e.g. API returned nothing)
+    for (const sym of Object.keys(customTargets)) {
+      if (!map.has(sym)) {
+        const holding = holdings.find(h => h.symbol === sym);
+        if (!holding) continue;
+        const currentPrice = prices.get(sym)?.price || holding.marketPrice;
+        const targetPrice = customTargets[sym];
+        const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
+        map.set(sym, { currentPrice, targetPrice, gainPct, source: 'Manuel' });
+      }
+    }
+
     return map;
   }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols, cdrMap]);
 
@@ -1646,65 +1658,63 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     {showTargets && (
                       <>
                         <td className="py-2.5 px-3 text-right">
-                          {td ? (
-                            editingTarget === h.symbol ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                autoFocus
-                                defaultValue={td.targetPrice || ''}
-                                className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    const val = parseFloat((e.target as HTMLInputElement).value);
-                                    if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
-                                    setEditingTarget(null);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingTarget(null);
-                                  }
-                                }}
-                                onBlur={(e) => {
-                                  const val = parseFloat(e.target.value);
+                          {editingTarget === h.symbol ? (
+                            <input
+                              type="number"
+                              step="0.01"
+                              autoFocus
+                              defaultValue={td?.targetPrice || ''}
+                              className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const val = parseFloat((e.target as HTMLInputElement).value);
                                   if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
                                   setEditingTarget(null);
-                                }}
-                              />
-                            ) : td.targetPrice > 0 ? (
-                              <div className="flex items-center justify-end gap-1">
-                                <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
-                                <span className={`text-[10px] px-1 py-0.5 rounded ${
-                                  td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
-                                    : td.source === 'CDR' ? 'bg-emerald-100 text-emerald-700'
-                                    : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
-                                    : 'bg-purple-100 text-purple-700'
-                                }`}>
-                                  {td.source}
-                                </span>
-                                <button
-                                  onClick={() => setEditingTarget(h.symbol)}
-                                  className="p-0.5 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                                {h.symbol in customTargets && (
-                                  <button
-                                    onClick={() => setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; })}
-                                    className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </div>
-                            ) : (
+                                } else if (e.key === 'Escape') {
+                                  setEditingTarget(null);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
+                                setEditingTarget(null);
+                              }}
+                            />
+                          ) : td && td.targetPrice > 0 ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
+                              <span className={`text-[10px] px-1 py-0.5 rounded ${
+                                td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
+                                  : td.source === 'CDR' ? 'bg-emerald-100 text-emerald-700'
+                                  : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
+                                  : 'bg-purple-100 text-purple-700'
+                              }`}>
+                                {td.source}
+                              </span>
                               <button
                                 onClick={() => setEditingTarget(h.symbol)}
-                                className="px-2 py-0.5 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100"
+                                className="p-1 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
+                                title="Modifier le cours cible"
                               >
-                                Saisir
+                                <Pencil className="h-3 w-3" />
                               </button>
-                            )
+                              {h.symbol in customTargets && (
+                                <button
+                                  onClick={() => setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; })}
+                                  className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                  title="Réinitialiser"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           ) : (
-                            <span className="text-text-muted text-xs">—</span>
+                            <button
+                              onClick={() => setEditingTarget(h.symbol)}
+                              className="px-2 py-1 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 cursor-pointer"
+                            >
+                              Saisir
+                            </button>
                           )}
                         </td>
                         <td className="py-2.5 px-3 text-right">

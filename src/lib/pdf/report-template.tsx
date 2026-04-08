@@ -1324,28 +1324,30 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         <View style={styles.table}>
           <View style={styles.th}>
             <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
-            <Text style={{ ...styles.thCell, width: '15%' }}>Nom</Text>
+            <Text style={{ ...styles.thCell, width: '13%' }}>Nom</Text>
             <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Qte</Text>
-            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Prix</Text>
-            <Text style={{ ...styles.thCell, width: '11%', textAlign: 'right' }}>Valeur</Text>
+            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>PBR</Text>
+            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>Prix</Text>
+            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Valeur</Text>
             <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Poids</Text>
             <Text style={{ ...styles.thCell, width: '7%' }}>Classe</Text>
-            <Text style={{ ...styles.thCell, width: '22%' }}>Secteur</Text>
-            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Div. $</Text>
+            <Text style={{ ...styles.thCell, width: '19%' }}>Secteur</Text>
+            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>Div. $</Text>
             <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Div. %</Text>
           </View>
           {data.portfolio.holdings.map((h: ReportHolding, i: number) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
               <Text style={{ ...styles.tdBold, width: '7%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '15%' }}>{h.name.substring(0, 20)}</Text>
+              <Text style={{ ...styles.td, width: '13%' }}>{h.name.substring(0, 18)}</Text>
               <Text style={{ ...styles.td, width: '5%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
-              <Text style={{ ...styles.td, width: '9%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
-              <Text style={{ ...styles.tdBold, width: '11%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
+              <Text style={{ ...styles.td, width: '8%', textAlign: 'right', color: C.textSec }}>{h.avgCost > 0 ? fmtFull(h.avgCost, ccy) : '—'}</Text>
+              <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
+              <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
               <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
                 {ASSET_LABELS[h.assetClass]?.substring(0, 8) || h.assetClass}
               </Text>
-              <View style={{ width: '22%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+              <View style={{ width: '19%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 {(() => {
                   if (!h.sectorDisplay) return <Text style={{ fontSize: 7.5, color: C.textTer }}>—</Text>;
                   const sectors = h.sectorDisplay.split(', ');
@@ -1365,7 +1367,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                   );
                 })()}
               </View>
-              <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
+              <Text style={{ ...styles.td, width: '8%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
                 {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
               </Text>
               <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
@@ -1375,19 +1377,20 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           ))}
           {/* Total row */}
           <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const }}>
-            <Text style={{ ...styles.tdBold, width: '22%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
+            <Text style={{ ...styles.tdBold, width: '20%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
             <Text style={{ ...styles.td, width: '5%' }}></Text>
-            <Text style={{ ...styles.td, width: '9%' }}></Text>
-            <Text style={{ ...styles.tdBold, width: '11%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
+            <Text style={{ ...styles.td, width: '8%' }}></Text>
+            <Text style={{ ...styles.td, width: '8%' }}></Text>
+            <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
             <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>100%</Text>
             <Text style={{ ...styles.td, width: '7%' }}></Text>
-            <Text style={{ ...styles.td, width: '22%' }}></Text>
+            <Text style={{ ...styles.td, width: '19%' }}></Text>
             {(() => {
               const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
               const totalYield = data.portfolio.totalValue > 0 ? (totalDiv / data.portfolio.totalValue) * 100 : 0;
               return (
                 <>
-                  <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: C.up }}>
+                  <Text style={{ ...styles.tdBold, width: '8%', textAlign: 'right', color: C.up }}>
                     {totalDiv > 0 ? fmt(totalDiv, ccy) : '—'}
                   </Text>
                   <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: C.up }}>
