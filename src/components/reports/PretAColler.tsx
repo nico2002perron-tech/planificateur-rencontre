@@ -384,6 +384,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
+  const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
 
@@ -798,8 +799,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const handleDownloadPdf = useCallback(async () => {
     setGeneratingPdf(true);
     try {
-      // Build PDF data payload
-      const pdfHoldings = holdings.map(h => {
+      // Build PDF data payload (exclude removed rows)
+      const pdfHoldings = holdings.filter(h => !excludedRows.has(h._key)).map(h => {
         const td = targetData.get(h.symbol);
         return {
           symbol: h.symbol,
@@ -841,28 +842,36 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           includeFixedIncome: pdfOptions.includeFixedIncome,
           includeCashOther: pdfOptions.includeCashOther,
         },
-        summary: {
-          totalMarketValue: result.summary.totalMarketValue,
-          totalBookValue: holdings.reduce((s, h) => s + h.bookValue, 0),
-          totalAnnualIncome: result.summary.totalAnnualIncome,
-          totalCurrentValue,
-          totalTargetValue,
-          totalGain: totalTargetValue - totalCurrentValue,
-          totalGainPct: totalCurrentValue > 0 ? ((totalTargetValue - totalCurrentValue) / totalCurrentValue) * 100 : 0,
-          equityCount: result.summary.equities + result.summary.etfs + (result.summary.preferred || 0),
-          fixedIncomeCount: result.summary.fixedIncome,
-          cashCount: result.summary.cash,
-          otherCount: result.summary.funds + result.summary.other,
-          pricesFound: prices.size,
-          targetsFound: Array.from(targetData.values()).filter(t => t.targetPrice > 0).length,
-          equityGain: totalTargetValue - totalCurrentValue,
-          equityGainPct: totalCurrentValue > 0 ? ((totalTargetValue - totalCurrentValue) / totalCurrentValue) * 100 : 0,
-          fixedIncomeAnnualIncome: holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0),
-          fixedIncomeMarketValue: holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0),
-          fixedIncomeGainPct: (() => { const mv = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0); const ai = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0); return mv > 0 ? (ai / mv) * 100 : 0; })(),
-          totalEstimated: (totalTargetValue - totalCurrentValue) + holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0),
-          totalEstimatedPct: (() => { const fiMv = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.marketValue, 0); const fiAi = holdings.filter(h => h.assetType === 'FIXED_INCOME').reduce((s, h) => s + h.annualIncome, 0); const eqGain = totalTargetValue - totalCurrentValue; const totalPv = totalCurrentValue + fiMv; return totalPv > 0 ? ((eqGain + fiAi) / totalPv) * 100 : 0; })(),
-        },
+        summary: (() => {
+          const incl = holdings.filter(h => !excludedRows.has(h._key));
+          const fiIncl = incl.filter(h => h.assetType === 'FIXED_INCOME');
+          const fiMv = fiIncl.reduce((s, h) => s + h.marketValue, 0);
+          const fiAi = fiIncl.reduce((s, h) => s + h.annualIncome, 0);
+          const eqGain = totalTargetValue - totalCurrentValue;
+          const totalPv = totalCurrentValue + fiMv;
+          return {
+            totalMarketValue: incl.reduce((s, h) => s + h.marketValue, 0),
+            totalBookValue: incl.reduce((s, h) => s + h.bookValue, 0),
+            totalAnnualIncome: incl.reduce((s, h) => s + h.annualIncome, 0),
+            totalCurrentValue,
+            totalTargetValue,
+            totalGain: totalTargetValue - totalCurrentValue,
+            totalGainPct: totalCurrentValue > 0 ? ((totalTargetValue - totalCurrentValue) / totalCurrentValue) * 100 : 0,
+            equityCount: incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length,
+            fixedIncomeCount: fiIncl.length,
+            cashCount: incl.filter(h => h.assetType === 'CASH').length,
+            otherCount: incl.filter(h => ['FUND', 'OTHER'].includes(h.assetType)).length,
+            pricesFound: prices.size,
+            targetsFound: Array.from(targetData.values()).filter(t => t.targetPrice > 0).length,
+            equityGain: eqGain,
+            equityGainPct: totalCurrentValue > 0 ? (eqGain / totalCurrentValue) * 100 : 0,
+            fixedIncomeAnnualIncome: fiAi,
+            fixedIncomeMarketValue: fiMv,
+            fixedIncomeGainPct: fiMv > 0 ? (fiAi / fiMv) * 100 : 0,
+            totalEstimated: eqGain + fiAi,
+            totalEstimatedPct: totalPv > 0 ? ((eqGain + fiAi) / totalPv) * 100 : 0,
+          };
+        })(),
       };
 
       const res = await fetch('/api/exports/price-targets', {
@@ -891,7 +900,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -1414,6 +1423,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-text-muted bg-gray-50/50">
+                <th className="w-8 py-3 px-1"></th>
                 <th className="text-left py-3 px-3 font-semibold text-xs">Type</th>
                 <th className="text-center py-3 px-2 font-semibold text-xs">Compte</th>
                 <th
@@ -1511,14 +1521,34 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                 const Icon = ASSET_ICONS[h.assetType];
                 const rowKey = h._key;
                 const isExpanded = expandedRow === rowKey;
+                const isExcluded = excludedRows.has(rowKey);
                 const td = targetData.get(h.symbol);
                 const acctColor = ACCOUNT_COLORS[h.accountType] || 'bg-gray-100 text-gray-700';
 
                 return (
                   <tr
                     key={rowKey}
-                    className={`border-b border-gray-50 transition-colors ${isExpanded ? 'bg-gray-50/80' : 'hover:bg-gray-50/50'}`}
+                    className={`border-b border-gray-50 transition-colors ${isExcluded ? 'opacity-40' : ''} ${isExpanded ? 'bg-gray-50/80' : 'hover:bg-gray-50/50'}`}
                   >
+                    <td className="py-2.5 px-1 text-center">
+                      {isExcluded ? (
+                        <button
+                          onClick={() => setExcludedRows(prev => { const next = new Set(prev); next.delete(rowKey); return next; })}
+                          className="p-1 rounded-full hover:bg-green-50 text-green-400 hover:text-green-600 transition-colors"
+                          title="Réinclure"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setExcludedRows(prev => new Set(prev).add(rowKey))}
+                          className="p-1 rounded-full hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+                          title="Exclure du rapport"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.bg} ${config.color}`}>
                         <Icon className="h-3 w-3" />
@@ -2155,13 +2185,29 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               </div>
             )}
 
+            {/* Excluded rows indicator */}
+            {excludedRows.size > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 mb-4">
+                <span className="text-xs text-amber-700 font-medium">
+                  {excludedRows.size} position{excludedRows.size > 1 ? 's' : ''} exclue{excludedRows.size > 1 ? 's' : ''} du rapport
+                </span>
+                <button
+                  onClick={() => setExcludedRows(new Set())}
+                  className="text-xs font-bold text-amber-700 hover:text-amber-900 underline"
+                >
+                  Tout réinclure
+                </button>
+              </div>
+            )}
+
             {/* Footer: page estimate + buttons */}
             <div className="flex items-center justify-between">
               <div className="text-xs text-text-muted">
                 {(() => {
-                  const eqCount = holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
-                  const fiCount = holdings.filter(h => h.assetType === 'FIXED_INCOME').length;
-                  const coCount = holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
+                  const incl = holdings.filter(h => !excludedRows.has(h._key));
+                  const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
+                  const fiCount = incl.filter(h => h.assetType === 'FIXED_INCOME').length;
+                  const coCount = incl.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / 25);
