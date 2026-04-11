@@ -960,6 +960,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       // Build PDF data payload (exclude removed rows)
       const pdfHoldings = holdings.filter(h => !excludedRows.has(h._key)).map(h => {
         const td = targetData.get(h.symbol);
+        const inc = incomeData.get(h._key);
+        const isEquityLike = ['EQUITY', 'ETF', 'FUND', 'PREFERRED'].includes(h.assetType);
+        // Forward dividend only for equity-like holdings (not FIXED_INCOME, CASH, OTHER)
+        const forwardDividend = isEquityLike && inc ? inc.annualIncome : 0;
         return {
           symbol: h.symbol,
           name: h.name,
@@ -972,6 +976,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           accountType: h.accountType,
           accountLabel: h.accountLabel,
           annualIncome: h.annualIncome,
+          forwardDividend,
           currentPrice: td?.currentPrice || h.marketPrice,
           targetPrice: td?.targetPrice || 0,
           gainPct: td?.gainPct || 0,
@@ -1066,7 +1071,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
