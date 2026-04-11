@@ -1007,6 +1007,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           const fiAi = fiIncl.reduce((s, h) => s + h.annualIncome, 0);
           const eqGain = totalTargetValue - totalCurrentValue;
           const totalPv = totalCurrentValue + fiMv;
+          // Forward dividends from incomeTotals (already excludes removed rows and uses Yahoo forward when available)
+          const eqDiv = incomeTotals.equityDividends;
+          const eqDivYieldPct = totalCurrentValue > 0 ? (eqDiv / totalCurrentValue) * 100 : 0;
+          // Grand total projected = dividendes forward + coupons obligations + gain capital 1y
+          const grandTotal = eqDiv + fiAi + eqGain;
+          const grandTotalPct = totalPv > 0 ? (grandTotal / totalPv) * 100 : 0;
           return {
             totalMarketValue: incl.reduce((s, h) => s + h.marketValue, 0),
             totalBookValue: incl.reduce((s, h) => s + h.bookValue, 0),
@@ -1023,11 +1029,13 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             targetsFound: Array.from(targetData.values()).filter(t => t.targetPrice > 0).length,
             equityGain: eqGain,
             equityGainPct: totalCurrentValue > 0 ? (eqGain / totalCurrentValue) * 100 : 0,
+            equityDividends: eqDiv,
+            equityDividendYieldPct: eqDivYieldPct,
             fixedIncomeAnnualIncome: fiAi,
             fixedIncomeMarketValue: fiMv,
             fixedIncomeGainPct: fiMv > 0 ? (fiAi / fiMv) * 100 : 0,
-            totalEstimated: eqGain + fiAi,
-            totalEstimatedPct: totalPv > 0 ? ((eqGain + fiAi) / totalPv) * 100 : 0,
+            totalEstimated: grandTotal,
+            totalEstimatedPct: grandTotalPct,
           };
         })(),
       };
@@ -1058,7 +1066,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {

@@ -75,6 +75,8 @@ export interface PriceTargetReportData {
     targetsFound: number;
     equityGain?: number;
     equityGainPct?: number;
+    equityDividends?: number;
+    equityDividendYieldPct?: number;
     fixedIncomeAnnualIncome?: number;
     fixedIncomeMarketValue?: number;
     fixedIncomeGainPct?: number;
@@ -192,10 +194,23 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
   const hasTargets = s.totalTargetValue > 0;
   const eqGain = s.equityGain ?? s.totalGain;
   const eqGainPct = s.equityGainPct ?? s.totalGainPct;
+  const eqDiv = s.equityDividends ?? 0;
+  const eqDivYieldPct = s.equityDividendYieldPct ?? 0;
+  const fiIncome = s.fixedIncomeAnnualIncome ?? 0;
+  const fiYieldPct = s.fixedIncomeGainPct ?? 0;
   const totalEst = s.totalEstimated ?? s.totalGain;
   const totalEstPct = s.totalEstimatedPct ?? s.totalGainPct;
   const upColor = '#10b981';
   const downColor = '#ef4444';
+
+  // Breakdown bar widths (clamped ≥ 0 so a negative capital gain doesn't break layout)
+  const divPart = Math.max(eqDiv, 0);
+  const fiPart = Math.max(fiIncome, 0);
+  const capPart = Math.max(eqGain, 0);
+  const partsSum = divPart + fiPart + capPart;
+  const pctDiv = partsSum > 0 ? (divPart / partsSum) * 100 : 0;
+  const pctFi = partsSum > 0 ? (fiPart / partsSum) * 100 : 0;
+  const pctCap = partsSum > 0 ? (capPart / partsSum) * 100 : 0;
 
   return (
     <Page size="A4" style={[styles.page, { backgroundColor: '#f8fafc' }]}>
@@ -232,60 +247,144 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
         {hasTargets && <StatCard label="Valeur cible 12 mois" value={fmt(s.totalTargetValue)} />}
       </View>
 
-      {/* Gains */}
+      {/* Projections 12 mois — section title */}
       {hasTargets && (
         <>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+          <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 3, height: 14, backgroundColor: C.cyan, borderRadius: 1.5 }} />
+            <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
+              Projections 12 mois
+            </Text>
+          </View>
+
+          {/* 3 breakdown cards */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            {/* Dividendes projetés */}
             <View style={{
               flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
-              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const, padding: 14,
+              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
+              borderLeftWidth: 3, borderLeftColor: C.duoGreen, borderLeftStyle: 'solid' as const,
+              padding: 12,
             }}>
-              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 8 }}>
-                Actions — gain en capital
+              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
+                Dividendes projetés
               </Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 17, fontFamily: 'Montserrat', fontWeight: 800, color: eqGain >= 0 ? upColor : downColor }}>
-                  {fmt(eqGain)}
-                </Text>
-                <Text style={{ fontSize: 10, fontFamily: 'Open Sans', fontWeight: 600, color: eqGainPct >= 0 ? upColor : downColor }}>
-                  {fmtPct(eqGainPct)}
-                </Text>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+                Actions (forward)
+              </Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 3 }}>
+                {fmt(eqDiv)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#065f46' }}>
+                    {fmtPct(eqDivYieldPct)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>yield</Text>
               </View>
             </View>
+
+            {/* Revenus fixes */}
             <View style={{
               flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
-              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const, padding: 14,
+              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
+              borderLeftWidth: 3, borderLeftColor: C.duoBlue, borderLeftStyle: 'solid' as const,
+              padding: 12,
             }}>
-              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 8 }}>
-                Revenus fixes — revenu annuel
+              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
+                Revenus fixes
               </Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: 17, fontFamily: 'Montserrat', fontWeight: 800, color: upColor }}>
-                  {fmt(s.fixedIncomeAnnualIncome ?? 0)}
-                </Text>
-                <Text style={{ fontSize: 10, fontFamily: 'Open Sans', fontWeight: 600, color: upColor }}>
-                  {fmtPct(s.fixedIncomeGainPct ?? 0)}
-                </Text>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+                Coupons obligations
+              </Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 3 }}>
+                {fmt(fiIncome)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#065f46' }}>
+                    {fmtPct(fiYieldPct)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>rendement</Text>
+              </View>
+            </View>
+
+            {/* Gains en capital */}
+            <View style={{
+              flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
+              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
+              borderLeftWidth: 3, borderLeftColor: C.duoPurple, borderLeftStyle: 'solid' as const,
+              padding: 12,
+            }}>
+              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
+                Gain en capital
+              </Text>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+                Actions (cible 1 an)
+              </Text>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: eqGain >= 0 ? upColor : downColor, marginBottom: 3 }}>
+                {fmt(eqGain)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ backgroundColor: eqGainPct >= 0 ? C.upBg : C.downBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: eqGainPct >= 0 ? '#065f46' : '#991b1b' }}>
+                    {fmtPct(eqGainPct)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>vs prix actuel</Text>
               </View>
             </View>
           </View>
 
-          {/* Total */}
+          {/* Total + breakdown bar */}
           <View style={{
-            backgroundColor: C.navy, borderRadius: 12, padding: 18, marginBottom: 16,
-            flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+            backgroundColor: C.navy, borderRadius: 12, padding: 16, marginBottom: 14,
           }}>
-            <View>
-              <Text style={{ fontSize: 6.5, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 5 }}>
-                Total estimé sur 12 mois
-              </Text>
-              <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-                {fmt(totalEst)}
-              </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <View>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
+                  Total revenus + gains projetés 12 mois
+                </Text>
+                <Text style={{ fontSize: 24, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                  {fmt(totalEst)}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' as const }}>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
+                  Rendement total
+                </Text>
+                <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: totalEstPct >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                  {fmtPct(totalEstPct)}
+                </Text>
+              </View>
             </View>
-            <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: totalEstPct >= 0 ? '#6ee7b7' : '#fca5a5' }}>
-              {fmtPct(totalEstPct)}
-            </Text>
+
+            {/* Breakdown bar */}
+            {partsSum > 0 && (
+              <>
+                <View style={{ flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' as const, marginBottom: 8 }}>
+                  {pctDiv > 0 && <View style={{ width: `${pctDiv}%`, backgroundColor: C.duoGreen }} />}
+                  {pctFi > 0 && <View style={{ width: `${pctFi}%`, backgroundColor: C.duoBlue }} />}
+                  {pctCap > 0 && <View style={{ width: `${pctCap}%`, backgroundColor: C.duoPurple }} />}
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoGreen }} />
+                    <Text style={{ fontSize: 6.5, color: '#cbd5e1' }}>Dividendes {pctDiv.toFixed(0)} %</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoBlue }} />
+                    <Text style={{ fontSize: 6.5, color: '#cbd5e1' }}>Revenus fixes {pctFi.toFixed(0)} %</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoPurple }} />
+                    <Text style={{ fontSize: 6.5, color: '#cbd5e1' }}>Gain capital {pctCap.toFixed(0)} %</Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
         </>
       )}
