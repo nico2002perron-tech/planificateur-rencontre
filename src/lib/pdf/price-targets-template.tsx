@@ -165,29 +165,6 @@ function PageFooter({ pageNum, totalPages }: { pageNum: number; totalPages: numb
   );
 }
 
-// ─── Stat Card (cover) ──────────────────────────────────────────────────────
-
-function StatCard({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
-  return (
-    <View style={{
-      flex: 1,
-      backgroundColor: '#ffffff',
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: '#e2e8f0',
-      borderStyle: 'solid' as const,
-      padding: 14,
-    }}>
-      <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 6 }}>
-        {label}
-      </Text>
-      <Text style={{ fontSize: 17, fontFamily: 'Montserrat', fontWeight: 800, color: valueColor || C.navy }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 // ─── Pale sky→emerald gradient box ──────────────────────────────────────────
 // Matches the UI's `from-brand-primary/5 to-emerald-50` summary style.
 
@@ -299,13 +276,6 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
           {s.cashCount > 0 ? `  |  ${s.cashCount} liquidités` : ''}
           {s.pricesFound > 0 ? `  |  ${s.pricesFound} prix temps réel — ${s.targetsFound} cours cibles` : ''}
         </Text>
-      </View>
-
-      {/* KPI row */}
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-        <StatCard label="Valeur marchande" value={fmt(s.totalMarketValue)} />
-        <StatCard label="Revenu annuel" value={fmt(s.totalAnnualIncome)} />
-        {hasTargets && <StatCard label="Valeur cible 12 mois" value={fmt(s.totalTargetValue)} />}
       </View>
 
       {/* Projections 12 mois — section title */}
