@@ -311,6 +311,44 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
   );
 }
 
+// ─── Inline price editor ─────────────────────────────────────────────────────
+// Isolated component with LOCAL state so typing in the input is immune to
+// parent re-renders (fixes: "can only type 1 digit" bug).
+function InlinePriceEditor({
+  initialValue,
+  onSave,
+  onCancel,
+}: {
+  initialValue: number | '';
+  onSave: (value: number) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState<string>(initialValue === '' ? '' : String(initialValue));
+
+  const commit = () => {
+    const val = parseFloat(value);
+    if (!isNaN(val) && val > 0) onSave(val);
+    else onCancel();
+  };
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      className="w-24 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') onCancel();
+      }}
+      onBlur={commit}
+    />
+  );
+}
+
 // ─── Category summary card ───────────────────────────────────────────────────
 
 const CATEGORY_DUO: Record<AssetType, { color: string; dark: string }> = {
@@ -1777,27 +1815,13 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs">
                       {editingCurrentPrice === h._key ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          autoFocus
-                          defaultValue={(showTargets && td ? td.currentPrice : h.marketPrice) || ''}
-                          className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const val = parseFloat((e.target as HTMLInputElement).value);
-                              if (!isNaN(val) && val > 0) setCustomCurrentPrices(prev => ({ ...prev, [h.symbol]: val }));
-                              setEditingCurrentPrice(null);
-                            } else if (e.key === 'Escape') {
-                              setEditingCurrentPrice(null);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (!isNaN(val) && val > 0) setCustomCurrentPrices(prev => ({ ...prev, [h.symbol]: val }));
+                        <InlinePriceEditor
+                          initialValue={(showTargets && td ? td.currentPrice : h.marketPrice) || ''}
+                          onSave={(val) => {
+                            setCustomCurrentPrices(prev => ({ ...prev, [h.symbol]: val }));
                             setEditingCurrentPrice(null);
                           }}
+                          onCancel={() => setEditingCurrentPrice(null)}
                         />
                       ) : (() => {
                         const displayPrice = customCurrentPrices[h.symbol]
@@ -1838,27 +1862,13 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     {showTargets && (
                       <td className="py-2.5 px-3 text-right">
                         {editingTarget === h._key ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            autoFocus
-                            defaultValue={td?.targetPrice || ''}
-                            className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                const val = parseFloat((e.target as HTMLInputElement).value);
-                                if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
-                                setEditingTarget(null);
-                              } else if (e.key === 'Escape') {
-                                setEditingTarget(null);
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value);
-                              if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
+                          <InlinePriceEditor
+                            initialValue={td?.targetPrice || ''}
+                            onSave={(val) => {
+                              setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
                               setEditingTarget(null);
                             }}
+                            onCancel={() => setEditingTarget(null)}
                           />
                         ) : td && td.targetPrice > 0 ? (
                           <div className="flex items-center justify-end gap-1">
