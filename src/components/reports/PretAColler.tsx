@@ -438,6 +438,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     includeFixedIncome: true,
     includeCashOther: true,
     fundCodesToInclude: [] as string[],
+    orientation: 'portrait' as 'portrait' | 'landscape',
   });
   const [fundUploading, setFundUploading] = useState<Record<string, boolean>>({});
   const [fundDragOver, setFundDragOver] = useState<string | null>(null);
@@ -1004,6 +1005,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           includeEquities: pdfOptions.includeEquities,
           includeFixedIncome: pdfOptions.includeFixedIncome,
           includeCashOther: pdfOptions.includeCashOther,
+          orientation: pdfOptions.orientation,
         },
         summary: (() => {
           const incl = holdings.filter(h => !excludedRows.has(h._key));
@@ -2379,6 +2381,103 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               })()}
             </div>
 
+            {/* Orientation selector */}
+            <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
+              <div className="flex items-center gap-2 mb-3">
+                <FileText className="h-4 w-4" style={{ color: DUO.blue }} />
+                <span className="text-sm font-bold text-text-main">Orientation du PDF</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setPdfOptions(p => ({ ...p, orientation: 'portrait' }))}
+                  className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                  style={{
+                    border: `2px solid ${pdfOptions.orientation === 'portrait' ? DUO.blue : '#e5e7eb'}`,
+                    borderBottom: `4px solid ${pdfOptions.orientation === 'portrait' ? DUO.blueDark : '#d1d5db'}`,
+                    backgroundColor: pdfOptions.orientation === 'portrait' ? `${DUO.blue}08` : '#fafafa',
+                  }}
+                >
+                  {pdfOptions.orientation === 'portrait' && (
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    {/* Portrait icon: tall rectangle */}
+                    <div
+                      className="flex items-center justify-center flex-shrink-0"
+                      style={{ width: 28, height: 36 }}
+                    >
+                      <div
+                        className="rounded"
+                        style={{
+                          width: 22,
+                          height: 30,
+                          border: `2px solid ${pdfOptions.orientation === 'portrait' ? DUO.blue : '#cbd5e1'}`,
+                          backgroundColor: pdfOptions.orientation === 'portrait' ? `${DUO.blue}15` : '#ffffff',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold" style={{ color: pdfOptions.orientation === 'portrait' ? '#1f2937' : '#9ca3af' }}>
+                        Portrait
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.orientation === 'portrait' ? '#6b7280' : '#d1d5db' }}>
+                        Standard (A4 vertical)
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setPdfOptions(p => ({ ...p, orientation: 'landscape' }))}
+                  className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                  style={{
+                    border: `2px solid ${pdfOptions.orientation === 'landscape' ? DUO.blue : '#e5e7eb'}`,
+                    borderBottom: `4px solid ${pdfOptions.orientation === 'landscape' ? DUO.blueDark : '#d1d5db'}`,
+                    backgroundColor: pdfOptions.orientation === 'landscape' ? `${DUO.blue}08` : '#fafafa',
+                  }}
+                >
+                  {pdfOptions.orientation === 'landscape' && (
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    {/* Landscape icon: wide rectangle */}
+                    <div
+                      className="flex items-center justify-center flex-shrink-0"
+                      style={{ width: 36, height: 36 }}
+                    >
+                      <div
+                        className="rounded"
+                        style={{
+                          width: 32,
+                          height: 22,
+                          border: `2px solid ${pdfOptions.orientation === 'landscape' ? DUO.blue : '#cbd5e1'}`,
+                          backgroundColor: pdfOptions.orientation === 'landscape' ? `${DUO.blue}15` : '#ffffff',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold" style={{ color: pdfOptions.orientation === 'landscape' ? '#1f2937' : '#9ca3af' }}>
+                        Paysage
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.orientation === 'landscape' ? '#6b7280' : '#d1d5db' }}>
+                        Plus large, tableaux aérés
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             {/* Fund reports section with inline upload */}
             {fundCheckResults.length > 0 && (
               <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
@@ -2559,9 +2658,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                   const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
                   const fiCount = incl.filter(h => h.assetType === 'FIXED_INCOME').length;
                   const coCount = incl.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
+                  const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 18 : 24;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
-                  if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / 25);
+                  if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
                   if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
                   if (pdfOptions.includeCashOther && coCount > 0) pages += 1;
                   pages += pdfOptions.fundCodesToInclude.length * 2;

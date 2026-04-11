@@ -57,6 +57,8 @@ export interface PdfRenderOptions {
   includeEquities?: boolean;
   includeFixedIncome?: boolean;
   includeCashOther?: boolean;
+  /** Page orientation — defaults to 'portrait'. */
+  orientation?: 'portrait' | 'landscape';
 }
 
 export interface PriceTargetReportData {
@@ -141,14 +143,14 @@ function getMaturityBand(dateStr?: string) {
 
 // ─── Page count ──────────────────────────────────────────────────────────────
 
-function countTotalPages(data: PriceTargetReportData): number {
+function countTotalPages(data: PriceTargetReportData, rowsPerEquityPage: number): number {
   const opts = data.options ?? {};
   let count = 0;
   if (opts.includeCover !== false) count += 1;
   const eqCount = (opts.includeEquities !== false)
     ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice).length
     : 0;
-  if (eqCount > 0) count += Math.ceil(eqCount / 24);
+  if (eqCount > 0) count += Math.ceil(eqCount / rowsPerEquityPage);
   if ((opts.includeFixedIncome !== false) && data.holdings.some(h => h.assetType === 'FIXED_INCOME')) count += 1;
   if ((opts.includeCashOther !== false) && data.holdings.some(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))) count += 1;
   return Math.max(count, 1);
@@ -224,7 +226,7 @@ function PaleGradientBox({
 
 // ─── Cover Page ──────────────────────────────────────────────────────────────
 
-function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPages: number }) {
+function CoverPage({ data, totalPages, orientation }: { data: PriceTargetReportData; totalPages: number; orientation: 'portrait' | 'landscape' }) {
   const s = data.summary;
   const date = new Date(data.generatedAt);
   const dateStr = new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
@@ -251,7 +253,7 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
   const pctCap = partsSum > 0 ? (capPart / partsSum) * 100 : 0;
 
   return (
-    <Page size="A4" style={[styles.page, { backgroundColor: '#f8fafc' }]}>
+    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#f8fafc' }]}>
       {/* White header card */}
       <View style={{
         backgroundColor: '#ffffff',
@@ -438,12 +440,13 @@ function CoverPage({ data, totalPages }: { data: PriceTargetReportData; totalPag
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage }: {
+function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   subtitle: string;
   isLastEquityPage: boolean;
+  orientation: 'portrait' | 'landscape';
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalGain = holdings.reduce((s, h) => {
@@ -460,7 +463,7 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
   const gc = (v: number) => v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8';
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" orientation={orientation} style={styles.page}>
       {/* Section header */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
         <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{subtitle}</Text>
@@ -681,10 +684,11 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
 
 // ─── Fixed Income Table Page ─────────────────────────────────────────────────
 
-function FixedIncomeTablePage({ holdings, pageNum, totalPages }: {
+function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
+  orientation: 'portrait' | 'landscape';
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
@@ -694,7 +698,7 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages }: {
   const avgYieldPct = totalMv > 0 ? (totalIncome / totalMv) * 100 : 0;
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" orientation={orientation} style={styles.page}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.gold, borderBottomStyle: 'solid' as const }}>
         <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Revenus fixes</Text>
         <View style={{ flexDirection: 'row', gap: 16 }}>
@@ -885,15 +889,16 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages }: {
 
 // ─── Cash / Other Table Page ─────────────────────────────────────────────────
 
-function CashTablePage({ holdings, pageNum, totalPages }: {
+function CashTablePage({ holdings, pageNum, totalPages, orientation }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
+  orientation: 'portrait' | 'landscape';
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" orientation={orientation} style={styles.page}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.cyan, borderBottomStyle: 'solid' as const }}>
         <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Liquidités et autres</Text>
         <Text style={{ fontSize: 7.5, color: '#64748b' }}>Total: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
@@ -943,8 +948,11 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const showEquities = opts.includeEquities !== false;
   const showFixedIncome = opts.includeFixedIncome !== false;
   const showCashOther = opts.includeCashOther !== false;
+  const orientation: 'portrait' | 'landscape' = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
 
-  const totalPages = countTotalPages(data);
+  // Landscape fits more rows per equity page thanks to the wider viewport.
+  const ROWS_PER_PAGE = orientation === 'landscape' ? 18 : 24;
+  const totalPages = countTotalPages(data, ROWS_PER_PAGE);
 
   const equities = showEquities
     ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice)
@@ -956,7 +964,6 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     ? data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))
     : [];
 
-  const ROWS_PER_PAGE = 24;
   const equityPages: PriceTargetHolding[][] = [];
   for (let i = 0; i < equities.length; i += ROWS_PER_PAGE) {
     equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
@@ -966,7 +973,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
 
   return (
     <Document>
-      {showCover && <CoverPage data={data} totalPages={totalPages} />}
+      {showCover && <CoverPage data={data} totalPages={totalPages} orientation={orientation} />}
 
       {equityPages.map((pageHoldings, idx) => {
         pageNum++;
@@ -981,16 +988,17 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
             totalPages={totalPages}
             subtitle={subtitle}
             isLastEquityPage={idx === equityPages.length - 1}
+            orientation={orientation}
           />
         );
       })}
 
       {fixedIncome.length > 0 && (
-        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} />
+        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
       )}
 
       {cashOther.length > 0 && (
-        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} />
+        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
       )}
     </Document>
   );
