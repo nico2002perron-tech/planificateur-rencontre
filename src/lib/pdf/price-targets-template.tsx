@@ -65,6 +65,8 @@ export interface PriceTargetReportData {
   holdings: PriceTargetHolding[];
   generatedAt: string;
   options?: PdfRenderOptions;
+  /** Optional map of symbol → base64 PNG data URI for company logos. */
+  logos?: Record<string, string>;
   summary: {
     totalMarketValue: number;
     totalBookValue: number;
@@ -103,6 +105,31 @@ function fmtFull(value: number): string {
 
 function fmtPct(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
+}
+
+// ─── Asset category colors (for row pastilles) ──────────────────────────────
+
+function getAssetColor(assetType: string): string {
+  switch (assetType) {
+    case 'EQUITY':       return '#00b4d8'; // cyan — actions
+    case 'ETF':          return '#8b5cf6'; // violet — FNB
+    case 'FUND':         return '#14b8a6'; // teal — fonds communs
+    case 'FIXED_INCOME': return '#c5a365'; // gold — revenus fixes
+    case 'PREFERRED':    return '#ec4899'; // rose — actions privilégiées
+    case 'CASH':         return '#64748b'; // slate — liquidités
+    default:             return '#94a3b8'; // gris pâle — autre
+  }
+}
+
+// Pale cyan row stripe + thicker segment divider every 5 rows.
+function getRowStyle(i: number, rowCount: number) {
+  const isEven = i % 2 === 1;
+  const isSegmentBoundary = (i + 1) % 5 === 0 && i < rowCount - 1;
+  return {
+    bg: isEven ? '#f0f9ff' : '#ffffff', // pale cyan vs white
+    borderBottomWidth: isSegmentBoundary ? 1.2 : 0.5,
+    borderBottomColor: isSegmentBoundary ? '#bae6fd' : '#f1f5f9',
+  };
 }
 
 // ─── Maturity ────────────────────────────────────────────────────────────────
@@ -440,13 +467,15 @@ function CoverPage({ data, totalPages, orientation }: { data: PriceTargetReportD
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation }: {
+function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, portfolioTotal, logos }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   subtitle: string;
   isLastEquityPage: boolean;
   orientation: 'portrait' | 'landscape';
+  portfolioTotal: number;
+  logos: Record<string, string>;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalGain = holdings.reduce((s, h) => {
@@ -473,41 +502,67 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
         </View>
       </View>
 
-      <View style={styles.table}>
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '5%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '8%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '16%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '5%', textAlign: 'right' }]}>Qté</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>PBR</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Prix actuel</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '9%', textAlign: 'right' }]}>Cible 1 an</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Gain %</Text>
-          <Text style={[styles.thCell, { width: '12%', textAlign: 'right' }]}>Gain $</Text>
-          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Dividende</Text>
+      <View style={styles.tablePremium}>
+        <View style={styles.thPremium}>
+          <Text style={[styles.thCellPremium, { width: '5%' }]}>Cpte</Text>
+          <Text style={[styles.thCellPremium, { width: '10%' }]}>Symbole</Text>
+          <Text style={[styles.thCellPremium, { width: '14%' }]}>Description</Text>
+          <Text style={[styles.thCellPremium, { width: '5%', textAlign: 'right' }]}>Qté</Text>
+          <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right' }]}>PBR</Text>
+          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Prix actuel</Text>
+          <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
+          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Cible 1 an</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Gain %</Text>
+          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>Gain $</Text>
+          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Dividende</Text>
         </View>
 
         {holdings.map((h, i) => {
-          const bg = i % 2 === 1 ? '#fafbfc' : '#ffffff';
+          const row = getRowStyle(i, holdings.length);
           const gp = h.gainPct ?? 0;
           const cp = h.currentPrice || h.marketPrice;
           const gd = h.targetPrice && cp > 0 ? h.quantity * (h.targetPrice - cp) : 0;
           const div = h.forwardDividend || 0;
+          const weightPct = portfolioTotal > 0
+            ? Math.min(100, Math.max(0, (h.marketValue / portfolioTotal) * 100))
+            : 0;
+          const dotColor = getAssetColor(h.assetType);
+          const logoSrc = logos[h.symbol];
 
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
               flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
-              backgroundColor: bg, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' as const,
+              backgroundColor: row.bg,
+              borderBottomWidth: row.borderBottomWidth,
+              borderBottomColor: row.borderBottomColor,
+              borderBottomStyle: 'solid' as const,
               alignItems: 'center',
             }} wrap={false}>
               <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '8%', fontSize: 7.5, color: C.navy }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '16%', fontSize: 7.5 }]}>{h.name}</Text>
+              {/* Symbol with company logo (falls back to category dot) */}
+              <View style={{ width: '10%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                {logoSrc ? (
+                  // eslint-disable-next-line jsx-a11y/alt-text
+                  <Image
+                    src={logoSrc}
+                    style={{ width: 11, height: 11, borderRadius: 2, marginRight: 5, objectFit: 'contain' as const }}
+                  />
+                ) : (
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 5 }} />
+                )}
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
+              </View>
+              <Text style={[styles.td, { width: '14%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '5%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.td, { width: '7%', textAlign: 'right', color: '#64748b' }]}>{h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}</Text>
               <Text style={[styles.tdBold, { width: '9%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
+              {/* Val. marché with portfolio-weight bar */}
+              <View style={{ width: '10%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
+                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{fmt(h.marketValue)}</Text>
+                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
+                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
+                </View>
+              </View>
               <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: C.navy }]}>
                 {fmtFull(h.targetPrice!)}
               </Text>
@@ -526,21 +581,21 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
 
         {/* Total */}
         <View style={{
-          flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8,
-          backgroundColor: '#f8fafc', borderTopWidth: 1, borderTopColor: '#e2e8f0', borderTopStyle: 'solid' as const,
+          flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
+          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
           <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '8%' }}>{''}</Text>
-          <Text style={{ width: '16%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
+          <Text style={{ width: '10%' }}>{''}</Text>
+          <Text style={{ width: '14%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
           <Text style={{ width: '5%' }}>{''}</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
           <Text style={{ width: '9%' }}>{''}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
-          <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
-          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
-          <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
-          <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: totalDiv > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
+          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
+          <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
+          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
+          <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
+          <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalDiv > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
         </View>
       </View>
 
@@ -684,11 +739,12 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
 
 // ─── Fixed Income Table Page ─────────────────────────────────────────────────
 
-function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
+function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation, portfolioTotal }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   orientation: 'portrait' | 'landscape';
+  portfolioTotal: number;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
@@ -719,33 +775,44 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
         ))}
       </View>
 
-      <View style={styles.table}>
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '5%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '7%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '19%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Qté / VN</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Coupon</Text>
-          <Text style={[styles.thCell, { width: '11%', textAlign: 'right' }]}>Échéance</Text>
-          <Text style={[styles.thCell, { width: '7%', textAlign: 'right' }]}>Dur. mod.</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Int. cour.</Text>
-          <Text style={[styles.thCell, { width: '10%', textAlign: 'right' }]}>Rev. ann.</Text>
-          <Text style={[styles.thCell, { width: '8%', textAlign: 'right' }]}>Rend. %</Text>
+      <View style={styles.tablePremium}>
+        <View style={styles.thPremium}>
+          <Text style={[styles.thCellPremium, { width: '5%' }]}>Cpte</Text>
+          <Text style={[styles.thCellPremium, { width: '8%' }]}>Symbole</Text>
+          <Text style={[styles.thCellPremium, { width: '18%' }]}>Description</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Qté / VN</Text>
+          <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right' }]}>Coupon</Text>
+          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Échéance</Text>
+          <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right' }]}>Dur. mod.</Text>
+          <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Int. cour.</Text>
+          <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Rev. ann.</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Rend. %</Text>
         </View>
 
         {holdings.map((h, i) => {
-          const bg = i % 2 === 1 ? '#fafbfc' : '#ffffff';
+          const row = getRowStyle(i, holdings.length);
           const band = getMaturityBand(h.maturityDate);
           const yieldPct = h.marketValue > 0 ? (h.annualIncome / h.marketValue) * 100 : 0;
+          const weightPct = portfolioTotal > 0
+            ? Math.min(100, Math.max(0, (h.marketValue / portfolioTotal) * 100))
+            : 0;
+          const dotColor = getAssetColor(h.assetType);
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
               flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
-              backgroundColor: bg, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' as const,
+              backgroundColor: row.bg,
+              borderBottomWidth: row.borderBottomWidth,
+              borderBottomColor: row.borderBottomColor,
+              borderBottomStyle: 'solid' as const,
+              alignItems: 'center',
             }} wrap={false}>
               <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '7%', fontSize: 7.5, color: C.navy }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '19%', fontSize: 7.5 }]}>{h.name}</Text>
+              <View style={{ width: '8%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
+              </View>
+              <Text style={[styles.td, { width: '18%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '8%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.tdBold, { width: '7%', textAlign: 'right', color: C.navy }]}>
                 {h.couponRate ? `${h.couponRate.toFixed(2)}%` : '—'}
@@ -759,7 +826,12 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>
                 {h.modifiedDuration ? h.modifiedDuration.toFixed(2) : '—'}
               </Text>
-              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
+              <View style={{ width: '10%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
+                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{fmt(h.marketValue)}</Text>
+                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
+                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
+                </View>
+              </View>
               <Text style={[styles.td, { width: '8%', textAlign: 'right', color: '#94a3b8' }]}>
                 {h.accruedInterest ? fmtFull(h.accruedInterest) : '—'}
               </Text>
@@ -773,20 +845,20 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
           );
         })}
 
-        {/* Total row */}
+        {/* Total row — premium navy-topped */}
         <View style={{
-          flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8,
-          backgroundColor: '#f8fafc', borderTopWidth: 1, borderTopColor: '#e2e8f0', borderTopStyle: 'solid' as const,
+          flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
+          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
           <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '7%' }}>{''}</Text>
-          <Text style={{ width: '19%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
+          <Text style={{ width: '8%' }}>{''}</Text>
+          <Text style={{ width: '18%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
           <Text style={{ width: '8%' }}>{''}</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
           <Text style={{ width: '11%' }}>{''}</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
+          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
           <Text style={{ width: '8%' }}>{''}</Text>
           <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: totalIncome > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalIncome)}</Text>
           <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 700, color: avgYieldPct > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{avgYieldPct > 0 ? `${avgYieldPct.toFixed(2)} %` : '—'}</Text>
@@ -889,13 +961,15 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
 
 // ─── Cash / Other Table Page ─────────────────────────────────────────────────
 
-function CashTablePage({ holdings, pageNum, totalPages, orientation }: {
+function CashTablePage({ holdings, pageNum, totalPages, orientation, portfolioTotal }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   orientation: 'portrait' | 'landscape';
+  portfolioTotal: number;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
+  const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
 
   return (
     <Page size="A4" orientation={orientation} style={styles.page}>
@@ -904,35 +978,65 @@ function CashTablePage({ holdings, pageNum, totalPages, orientation }: {
         <Text style={{ fontSize: 7.5, color: '#64748b' }}>Total: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
       </View>
 
-      <View style={styles.table}>
-        <View style={styles.th}>
-          <Text style={[styles.thCell, { width: '8%' }]}>Cpte</Text>
-          <Text style={[styles.thCell, { width: '12%' }]}>Symbole</Text>
-          <Text style={[styles.thCell, { width: '35%' }]}>Description</Text>
-          <Text style={[styles.thCell, { width: '10%' }]}>Type</Text>
-          <Text style={[styles.thCell, { width: '17%', textAlign: 'right' }]}>Valeur</Text>
-          <Text style={[styles.thCell, { width: '18%', textAlign: 'right' }]}>Revenu annuel</Text>
+      <View style={styles.tablePremium}>
+        <View style={styles.thPremium}>
+          <Text style={[styles.thCellPremium, { width: '8%' }]}>Cpte</Text>
+          <Text style={[styles.thCellPremium, { width: '14%' }]}>Symbole</Text>
+          <Text style={[styles.thCellPremium, { width: '33%' }]}>Description</Text>
+          <Text style={[styles.thCellPremium, { width: '10%' }]}>Type</Text>
+          <Text style={[styles.thCellPremium, { width: '17%', textAlign: 'right' }]}>Valeur</Text>
+          <Text style={[styles.thCellPremium, { width: '18%', textAlign: 'right' }]}>Revenu annuel</Text>
         </View>
 
         {holdings.map((h, i) => {
-          const bg = i % 2 === 1 ? '#fafbfc' : '#ffffff';
+          const row = getRowStyle(i, holdings.length);
           const typeLabel = h.assetType === 'CASH' ? 'Liquidité' : h.assetType === 'FUND' ? 'Fonds' : 'Autre';
+          const dotColor = getAssetColor(h.assetType);
+          const weightPct = portfolioTotal > 0
+            ? Math.min(100, Math.max(0, (Math.abs(h.marketValue) / portfolioTotal) * 100))
+            : 0;
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
               flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
-              backgroundColor: bg, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' as const,
+              backgroundColor: row.bg,
+              borderBottomWidth: row.borderBottomWidth,
+              borderBottomColor: row.borderBottomColor,
+              borderBottomStyle: 'solid' as const,
+              alignItems: 'center',
             }} wrap={false}>
               <Text style={[styles.td, { width: '8%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
-              <Text style={[styles.tdBold, { width: '12%', color: C.navy }]}>{h.symbol}</Text>
-              <Text style={[styles.td, { width: '35%' }]}>{h.name}</Text>
+              <View style={{ width: '14%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
+                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
+              </View>
+              <Text style={[styles.td, { width: '33%' }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '10%', color: '#64748b', fontSize: 7.5 }]}>{typeLabel}</Text>
-              <Text style={[styles.tdBold, { width: '17%', textAlign: 'right', color: h.marketValue < 0 ? '#ef4444' : C.text }]}>{fmt(h.marketValue)}</Text>
+              <View style={{ width: '17%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
+                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: h.marketValue < 0 ? '#ef4444' : C.text }}>{fmt(h.marketValue)}</Text>
+                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
+                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
+                </View>
+              </View>
               <Text style={[styles.td, { width: '18%', textAlign: 'right', color: h.annualIncome > 0 ? '#10b981' : '#94a3b8' }]}>
                 {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
               </Text>
             </View>
           );
         })}
+
+        {/* Total row — premium navy-topped */}
+        <View style={{
+          flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
+          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+          alignItems: 'center',
+        }}>
+          <Text style={{ width: '8%' }}>{''}</Text>
+          <Text style={{ width: '14%' }}>{''}</Text>
+          <Text style={{ width: '33%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
+          <Text style={{ width: '10%' }}>{''}</Text>
+          <Text style={{ width: '17%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
+          <Text style={{ width: '18%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalIncome > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{totalIncome > 0 ? fmt(totalIncome) : '—'}</Text>
+        </View>
       </View>
 
       <PageFooter pageNum={pageNum} totalPages={totalPages} />
@@ -969,6 +1073,10 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
   }
 
+  // Portfolio total used for category weight bars under every "Val. marché" cell.
+  const portfolioTotal = data.summary.totalMarketValue || data.holdings.reduce((s, h) => s + h.marketValue, 0);
+  const logos: Record<string, string> = data.logos ?? {};
+
   let pageNum = showCover ? 1 : 0;
 
   return (
@@ -989,16 +1097,18 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
             subtitle={subtitle}
             isLastEquityPage={idx === equityPages.length - 1}
             orientation={orientation}
+            portfolioTotal={portfolioTotal}
+            logos={logos}
           />
         );
       })}
 
       {fixedIncome.length > 0 && (
-        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
+        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} portfolioTotal={portfolioTotal} />
       )}
 
       {cashOther.length > 0 && (
-        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
+        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} portfolioTotal={portfolioTotal} />
       )}
     </Document>
   );

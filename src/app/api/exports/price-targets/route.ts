@@ -3,6 +3,7 @@ import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
+import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,6 +14,16 @@ export async function POST(req: NextRequest) {
     if (!reportData.holdings || reportData.holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
     }
+
+    // Pre-fetch company logos as base64 PNG data URIs for all equity-like holdings
+    // that have a price target. Failures are silent: missing logos fall back to
+    // category dots in the template.
+    const logoSymbols = Array.from(new Set(
+      reportData.holdings
+        .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice)
+        .map(h => h.symbol)
+    ));
+    reportData.logos = await fetchLogoDataUris(logoSymbols);
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

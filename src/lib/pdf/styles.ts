@@ -183,6 +183,35 @@ export const styles = StyleSheet.create({
     fontWeight: 600,
   },
 
+  /* ── Premium Tables (navy header + cyan accent) ─────── */
+  tablePremium: {
+    width: '100%',
+    marginBottom: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+    borderStyle: 'solid' as const,
+    overflow: 'hidden' as const,
+  },
+  thPremium: {
+    flexDirection: 'row' as const,
+    backgroundColor: C.navy,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+    borderBottomWidth: 2.5,
+    borderBottomColor: C.cyan,
+    borderBottomStyle: 'solid' as const,
+  },
+  thCellPremium: {
+    fontSize: 6.5,
+    fontFamily: 'Montserrat',
+    fontWeight: 700,
+    color: '#ffffff',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.9,
+    paddingHorizontal: 4,
+  },
+
   /* ── Stats Row ────────────────────────────────────────── */
   statsRow: {
     flexDirection: 'row' as const,
