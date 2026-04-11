@@ -597,10 +597,21 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     setPdfOptions(prev => ({ ...prev, fundCodesToInclude: okFunds }));
   }, [fundCheckResults]);
 
-  // Total portfolio value for weight calculation
+  // Effective market value helper — returns the market value using the
+  // custom override price if the user edited "Prix au marché" manually.
+  // Falls back to the imported h.marketValue when no override is set.
+  const getEffectiveMarketValue = useCallback((h: typeof holdings[number]) => {
+    const override = customCurrentPrices[h.symbol];
+    if (override !== undefined && override > 0 && h.quantity !== 0) {
+      return h.quantity * override;
+    }
+    return h.marketValue;
+  }, [customCurrentPrices]);
+
+  // Total portfolio value for weight calculation (respects manual price overrides)
   const totalPortfolioValue = useMemo(() => {
-    return holdings.reduce((s, h) => s + Math.abs(h.marketValue), 0);
-  }, [holdings]);
+    return holdings.reduce((s, h) => s + Math.abs(getEffectiveMarketValue(h)), 0);
+  }, [holdings, getEffectiveMarketValue]);
 
   // Get priceable symbols + CDR map
   const { priceableSymbols, cdrMap } = useMemo(() => {
@@ -854,7 +865,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     return map;
   }, [holdings]);
 
-  // Summary stats when targets are loaded
+  // Summary stats when targets are loaded.
+  // IMPORTANT: respects excludedRows so numbers stay consistent with incomeTotals
+  // and the table footer (single source of truth = lignes incluses uniquement).
   const targetSummary = useMemo(() => {
     if (!showTargets || targetData.size === 0) return null;
     let totalCurrent = 0;
@@ -865,7 +878,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     let cdrCount = 0;
     let noTargetCount = 0;
 
-    holdings.forEach(h => {
+    const included = holdings.filter(h => !excludedRows.has(h._key));
+
+    included.forEach(h => {
       const data = targetData.get(h.symbol);
       if (data && !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)) {
         totalCurrent += h.quantity * data.currentPrice;
@@ -886,8 +901,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     const gainPct = totalCurrent > 0 ? (gain / totalCurrent) * 100 : 0;
     const withTargets = analystCount + historicalCount + manualCount + cdrCount;
 
-    // Gains breakdown by category
-    const fixedIncomeHoldings = holdings.filter(h => h.assetType === 'FIXED_INCOME');
+    // Fixed income breakdown (included rows only)
+    const fixedIncomeHoldings = included.filter(h => h.assetType === 'FIXED_INCOME');
     const fixedIncomeAnnualIncome = fixedIncomeHoldings.reduce((s, h) => s + h.annualIncome, 0);
     const fixedIncomeMarketValue = fixedIncomeHoldings.reduce((s, h) => s + h.marketValue, 0);
     const fixedIncomeGainPct = fixedIncomeMarketValue > 0 ? (fixedIncomeAnnualIncome / fixedIncomeMarketValue) * 100 : 0;
@@ -899,7 +914,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     const totalEstimatedPct = totalPortfolioValue > 0 ? (totalEstimated / totalPortfolioValue) * 100 : 0;
 
     return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, cdrCount, noTargetCount, equityGain, equityGainPct, fixedIncomeAnnualIncome, fixedIncomeMarketValue, fixedIncomeGainPct, totalEstimated, totalEstimatedPct };
-  }, [showTargets, targetData, holdings, priceableSymbols.length]);
+  }, [showTargets, targetData, holdings, excludedRows, priceableSymbols.length]);
 
   const handleDownloadPdf = useCallback(async () => {
     setGeneratingPdf(true);
@@ -1789,15 +1804,20 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                           ?? (showTargets && td ? td.currentPrice : h.marketPrice);
                         const hasOverride = h.symbol in customCurrentPrices;
                         return (
-                          <div className="flex items-center justify-end gap-1 group">
+                          <div className="flex items-center justify-end gap-1">
                             {displayPrice > 0 ? (
                               <span className={`font-semibold ${hasOverride ? 'text-amber-700' : ''}`}>{formatCurrencyFull(displayPrice)}</span>
                             ) : (
                               <span className="text-text-muted">—</span>
                             )}
+                            {hasOverride && (
+                              <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700" title="Prix modifié manuellement">
+                                Manuel
+                              </span>
+                            )}
                             <button
                               onClick={(e) => { e.stopPropagation(); setEditingCurrentPrice(h._key); }}
-                              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
+                              className="p-1 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
                               title="Modifier le prix marché"
                             >
                               <Pencil className="h-3 w-3" />
@@ -1805,8 +1825,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                             {hasOverride && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); setCustomCurrentPrices(prev => { const next = { ...prev }; delete next[h.symbol]; return next; }); }}
-                                className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                                title="Réinitialiser"
+                                className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                title="Réinitialiser au prix original"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -1881,9 +1901,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs text-text-muted">
                       {h.averageCost > 0 && h.quantity !== 0 ? formatCurrency(h.quantity * h.averageCost) : '—'}
                     </td>
-                    <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${h.marketValue < 0 ? 'text-red-500' : ''}`}>
-                      {h.marketValue !== 0 ? formatCurrency(h.marketValue) : '—'}
-                    </td>
+                    {(() => {
+                      const effMv = getEffectiveMarketValue(h);
+                      const hasOverride = h.symbol in customCurrentPrices;
+                      return (
+                        <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${effMv < 0 ? 'text-red-500' : ''} ${hasOverride ? 'text-amber-700' : ''}`}>
+                          {effMv !== 0 ? formatCurrency(effMv) : '—'}
+                        </td>
+                      );
+                    })()}
                     {showTargets && (
                       <>
                         <td className="py-2.5 px-3 text-right font-semibold tabular-nums text-xs">
@@ -1961,28 +1987,53 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                 );
               })}
             </tbody>
-            {(incomeTotals.total > 0) && (
+            {(incomeTotals.total > 0) && (() => {
+              // Consistent with the summary box below: dividendes + revenus fixes + gain en capital (1y target)
+              const divYieldPct = showTargets && targetSummary && targetSummary.totalCurrent > 0
+                ? (incomeTotals.equityDividends / targetSummary.totalCurrent) * 100
+                : 0;
+              const fiPct = showTargets && targetSummary ? targetSummary.fixedIncomeGainPct : 0;
+              const capGain = showTargets && targetSummary ? targetSummary.equityGain : 0;
+              const capGainPct = showTargets && targetSummary ? targetSummary.equityGainPct : 0;
+              const footerTotal = showTargets && targetSummary
+                ? incomeTotals.equityDividends + incomeTotals.fixedIncomeCoupons + capGain
+                : incomeTotals.total;
+              return (
               <tfoot>
                 <tr className="border-t-2 border-brand-primary/20 bg-gradient-to-r from-emerald-50/50 to-sky-50/50">
                   <td colSpan={showTargets ? 14 : 10} className="py-3 px-3 text-right">
-                    <div className="flex items-center justify-end gap-4 text-xs">
-                      <span className="text-text-muted">Revenus projetés 12 mois:</span>
+                    <div className="flex items-center justify-end gap-4 text-xs flex-wrap">
+                      <span className="text-text-muted font-semibold">Projeté 12 mois:</span>
                       <span className="flex items-center gap-1">
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
                         <span className="text-text-muted">Dividendes</span>
                         <span className="font-bold text-emerald-700">{formatCurrency(incomeTotals.equityDividends)}</span>
+                        {showTargets && divYieldPct > 0 && (
+                          <span className="text-[10px] text-emerald-600">({formatPercent(divYieldPct)})</span>
+                        )}
                       </span>
                       <span className="flex items-center gap-1">
                         <span className="inline-block w-2 h-2 rounded-full bg-sky-500" />
                         <span className="text-text-muted">Revenus fixes</span>
                         <span className="font-bold text-sky-700">{formatCurrency(incomeTotals.fixedIncomeCoupons)}</span>
+                        {showTargets && fiPct > 0 && (
+                          <span className="text-[10px] text-sky-600">({formatPercent(fiPct)})</span>
+                        )}
                       </span>
+                      {showTargets && targetSummary && (
+                        <span className="flex items-center gap-1">
+                          <span className="inline-block w-2 h-2 rounded-full bg-purple-500" />
+                          <span className="text-text-muted">Gain en capital (1y target)</span>
+                          <span className={`font-bold ${capGain >= 0 ? 'text-purple-700' : 'text-red-600'}`}>{formatCurrency(capGain)}</span>
+                          <span className={`text-[10px] ${capGain >= 0 ? 'text-purple-600' : 'text-red-500'}`}>({formatPercent(capGainPct)})</span>
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-3 px-3 text-right">
                     <div className="flex flex-col items-end leading-tight">
                       <span className="text-[10px] text-text-muted uppercase tracking-wide">Total</span>
-                      <span className="font-bold text-brand-primary text-sm">{formatCurrency(incomeTotals.total)}</span>
+                      <span className={`font-bold text-sm ${footerTotal >= 0 ? 'text-brand-primary' : 'text-red-600'}`}>{formatCurrency(footerTotal)}</span>
                     </div>
                   </td>
                 </tr>
@@ -2028,7 +2079,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                   </tr>
                 )}
               </tfoot>
-            )}
+              );
+            })()}
           </table>
         </div>
       </Card>
@@ -2052,47 +2104,71 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             </div>
           </div>
 
-          {/* Gains breakdown */}
+          {/* Revenus et gains projetés 12 mois */}
           <div className="border-t border-brand-primary/10 pt-4">
-            <p className="text-xs font-bold text-text-main mb-3 uppercase tracking-wide">Gains estimés par catégorie</p>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Actions */}
-              <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-semibold text-text-main">Actions (gain en capital)</p>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${targetSummary.equityGainPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                    {formatPercent(targetSummary.equityGainPct)}
-                  </span>
-                </div>
-                <p className={`text-xl font-bold ${targetSummary.equityGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {formatCurrency(targetSummary.equityGain)}
-                </p>
-              </div>
-              {/* Revenus fixes */}
-              <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-semibold text-text-main">Revenus fixes (revenu annuel)</p>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                    {formatPercent(targetSummary.fixedIncomeGainPct)}
-                  </span>
-                </div>
-                <p className="text-xl font-bold text-emerald-600">
-                  {formatCurrency(targetSummary.fixedIncomeAnnualIncome)}
-                </p>
-              </div>
-            </div>
-            {/* Total */}
-            <div className="mt-3 p-3 rounded-lg bg-emerald-50 border-2 border-emerald-300">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-text-main">Total estimé</p>
-                <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${targetSummary.totalEstimatedPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                  {formatPercent(targetSummary.totalEstimatedPct)}
-                </span>
-              </div>
-              <p className={`text-2xl font-bold ${targetSummary.totalEstimated >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {formatCurrency(targetSummary.totalEstimated)}
-              </p>
-            </div>
+            <p className="text-xs font-bold text-text-main mb-3 uppercase tracking-wide">Revenus et gains projetés 12 mois</p>
+            {(() => {
+              const dividendYieldPct = targetSummary.totalCurrent > 0
+                ? (incomeTotals.equityDividends / targetSummary.totalCurrent) * 100
+                : 0;
+              const grandTotal = incomeTotals.equityDividends + incomeTotals.fixedIncomeCoupons + targetSummary.equityGain;
+              const totalBase = targetSummary.totalCurrent + targetSummary.fixedIncomeMarketValue;
+              const grandTotalPct = totalBase > 0 ? (grandTotal / totalBase) * 100 : 0;
+              return (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Dividendes projetés (actions) */}
+                    <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-text-main">Dividendes projetés (actions)</p>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          {formatPercent(dividendYieldPct)}
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-emerald-600">
+                        {formatCurrency(incomeTotals.equityDividends)}
+                      </p>
+                    </div>
+                    {/* Revenus fixes projetés */}
+                    <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-text-main">Revenus fixes projetés</p>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          {formatPercent(targetSummary.fixedIncomeGainPct)}
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold text-emerald-600">
+                        {formatCurrency(incomeTotals.fixedIncomeCoupons)}
+                      </p>
+                    </div>
+                    {/* Gains en capital (actions, 1y target) */}
+                    <div className="p-3 rounded-lg bg-white/80 border border-emerald-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-text-main">Gains en capital (actions, 1y target)</p>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${targetSummary.equityGainPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                          {formatPercent(targetSummary.equityGainPct)}
+                        </span>
+                      </div>
+                      <p className={`text-xl font-bold ${targetSummary.equityGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {formatCurrency(targetSummary.equityGain)}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Total */}
+                  <div className="mt-3 p-3 rounded-lg bg-emerald-50 border-2 border-emerald-300">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold text-text-main">Total revenus + gains 12 mois</p>
+                      <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${grandTotalPct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                        {formatPercent(grandTotalPct)}
+                      </span>
+                    </div>
+                    <p className={`text-2xl font-bold ${grandTotal >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {formatCurrency(grandTotal)}
+                    </p>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
