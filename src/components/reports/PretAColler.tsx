@@ -160,6 +160,8 @@ interface YahooPrice {
   price: number;
   currency: string;
   name: string;
+  dividendRate?: number;   // Forward annual dividend per share
+  dividendYield?: number;  // Forward dividend yield (decimal, e.g. 0.025 = 2.5%)
 }
 
 const priceFetcher = (url: string) => fetch(url).then(r => r.json());
@@ -689,6 +691,104 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
     return map;
   }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap]);
+
+  // Forward annual income per holding (extremely reliable — uses best source available).
+  //
+  // Source priority:
+  //   - EQUITY/ETF/FUND/PREFERRED: Yahoo forward dividendRate × quantity (most accurate, forward-looking)
+  //                                Falls back to Croesus annualIncome (trailing actual) if Yahoo missing.
+  //   - FIXED_INCOME:               Croesus annualIncome (actual coupon paid by broker).
+  //                                Falls back to quantity × (couponRate/100) if Croesus missing.
+  //   - CASH/OTHER:                 0
+  //
+  // Source codes: 'forward' | 'croesus' | 'coupon' | 'none'
+  const incomeData = useMemo(() => {
+    const map = new Map<string, { annualIncome: number; yieldPct: number; source: 'forward' | 'croesus' | 'coupon' | 'none' }>();
+
+    holdings.forEach(h => {
+      const isEquityLike = ['EQUITY', 'ETF', 'FUND', 'PREFERRED'].includes(h.assetType);
+      const isFixed = h.assetType === 'FIXED_INCOME';
+      let annualIncome = 0;
+      let source: 'forward' | 'croesus' | 'coupon' | 'none' = 'none';
+
+      if (isEquityLike) {
+        // Prefer Yahoo forward dividend rate (most reliable forward estimate)
+        const yahoo = prices.get(h.symbol);
+        if (yahoo?.dividendRate && yahoo.dividendRate > 0 && h.quantity > 0) {
+          annualIncome = h.quantity * yahoo.dividendRate;
+          source = 'forward';
+        } else if (h.annualIncome > 0) {
+          // Fallback: Croesus trailing actual
+          annualIncome = h.annualIncome;
+          source = 'croesus';
+        }
+      } else if (isFixed) {
+        if (h.annualIncome > 0) {
+          // Croesus reports the actual annual coupon income — most reliable for bonds
+          annualIncome = h.annualIncome;
+          source = 'croesus';
+        } else if (h.couponRate && h.couponRate > 0 && h.quantity > 0) {
+          // Fallback: compute coupon from rate (assumes face value ≈ quantity, which is
+          // true for Croesus exports where quantity is the bond face value in $).
+          annualIncome = h.quantity * (h.couponRate / 100);
+          source = 'coupon';
+        }
+      }
+
+      const yieldPct = h.marketValue > 0 && annualIncome > 0
+        ? (annualIncome / h.marketValue) * 100
+        : 0;
+
+      map.set(h._key, { annualIncome, yieldPct, source });
+    });
+
+    return map;
+  }, [holdings, prices]);
+
+  // Totals by category (forward-looking when possible)
+  const incomeTotals = useMemo(() => {
+    let equityDividends = 0;
+    let fixedIncomeCoupons = 0;
+    let equityWithForward = 0;
+    let equityWithCroesus = 0;
+    let equityNoData = 0;
+    let fixedWithCroesus = 0;
+    let fixedWithCoupon = 0;
+    let fixedNoData = 0;
+
+    holdings.forEach(h => {
+      if (excludedRows.has(h._key)) return;
+      const entry = incomeData.get(h._key);
+      if (!entry) return;
+      const isEquityLike = ['EQUITY', 'ETF', 'FUND', 'PREFERRED'].includes(h.assetType);
+      const isFixed = h.assetType === 'FIXED_INCOME';
+
+      if (isEquityLike) {
+        equityDividends += entry.annualIncome;
+        if (entry.source === 'forward') equityWithForward++;
+        else if (entry.source === 'croesus') equityWithCroesus++;
+        else equityNoData++;
+      } else if (isFixed) {
+        fixedIncomeCoupons += entry.annualIncome;
+        if (entry.source === 'croesus') fixedWithCroesus++;
+        else if (entry.source === 'coupon') fixedWithCoupon++;
+        else fixedNoData++;
+      }
+    });
+
+    const total = equityDividends + fixedIncomeCoupons;
+    return {
+      equityDividends,
+      fixedIncomeCoupons,
+      total,
+      equityWithForward,
+      equityWithCroesus,
+      equityNoData,
+      fixedWithCroesus,
+      fixedWithCoupon,
+      fixedNoData,
+    };
+  }, [holdings, excludedRows, incomeData]);
 
   // Filtered + sorted holdings (after targetData so sort by gain works)
   const filteredHoldings = useMemo(() => {
@@ -1504,6 +1604,16 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     </th>
                   </>
                 )}
+                <th
+                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('annualIncome')}
+                  title="Dividendes (actions) ou coupons / intérêts (revenus fixes) attendus sur 12 mois"
+                >
+                  <span className="inline-flex items-center gap-1 justify-end">
+                    Dividende / Intérêt
+                    {sortColumn === 'annualIncome' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1804,10 +1914,121 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                         </td>
                       </>
                     )}
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs">
+                      {(() => {
+                        const entry = incomeData.get(h._key);
+                        if (!entry || entry.annualIncome <= 0) {
+                          return <span className="text-text-muted">—</span>;
+                        }
+                        const isFixed = h.assetType === 'FIXED_INCOME';
+                        const sourceLabel =
+                          entry.source === 'forward' ? 'Forward'
+                            : entry.source === 'croesus' ? 'Croesus'
+                              : entry.source === 'coupon' ? 'Coupon'
+                                : '';
+                        const sourceBadge =
+                          entry.source === 'forward' ? 'bg-emerald-100 text-emerald-700'
+                            : entry.source === 'croesus' ? 'bg-sky-100 text-sky-700'
+                              : 'bg-amber-100 text-amber-700';
+                        return (
+                          <div className="flex flex-col items-end leading-tight gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`font-semibold ${isFixed ? 'text-sky-700' : 'text-emerald-600'}`}>
+                                {formatCurrency(entry.annualIncome)}
+                              </span>
+                              <span
+                                className={`text-[9px] px-1 py-0.5 rounded ${sourceBadge}`}
+                                title={
+                                  entry.source === 'forward' ? 'Dividende forward Yahoo Finance (estimation 12 mois)'
+                                    : entry.source === 'croesus' ? 'Revenu annuel rapporté par Croesus'
+                                      : entry.source === 'coupon' ? 'Calculé à partir du taux de coupon × quantité'
+                                        : ''
+                                }
+                              >
+                                {sourceLabel}
+                              </span>
+                            </div>
+                            {entry.yieldPct > 0 && (
+                              <span className="text-[10px] text-text-muted">
+                                {isFixed ? 'Coupon' : 'Div.'} {entry.yieldPct.toFixed(2)}%
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
+            {(incomeTotals.total > 0) && (
+              <tfoot>
+                <tr className="border-t-2 border-brand-primary/20 bg-gradient-to-r from-emerald-50/50 to-sky-50/50">
+                  <td colSpan={showTargets ? 14 : 10} className="py-3 px-3 text-right">
+                    <div className="flex items-center justify-end gap-4 text-xs">
+                      <span className="text-text-muted">Revenus projetés 12 mois:</span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                        <span className="text-text-muted">Dividendes</span>
+                        <span className="font-bold text-emerald-700">{formatCurrency(incomeTotals.equityDividends)}</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-sky-500" />
+                        <span className="text-text-muted">Revenus fixes</span>
+                        <span className="font-bold text-sky-700">{formatCurrency(incomeTotals.fixedIncomeCoupons)}</span>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-3 text-right">
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-[10px] text-text-muted uppercase tracking-wide">Total</span>
+                      <span className="font-bold text-brand-primary text-sm">{formatCurrency(incomeTotals.total)}</span>
+                    </div>
+                  </td>
+                </tr>
+                {(incomeTotals.equityNoData > 0 || incomeTotals.fixedNoData > 0 || incomeTotals.equityWithCroesus > 0 || incomeTotals.fixedWithCoupon > 0) && (
+                  <tr className="border-t border-gray-100 bg-gray-50/30">
+                    <td colSpan={showTargets ? 15 : 11} className="py-2 px-3 text-right">
+                      <div className="flex items-center justify-end gap-3 text-[10px] text-text-muted flex-wrap">
+                        <span>Sources:</span>
+                        {incomeTotals.equityWithForward > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">Forward</span>
+                            <span>{incomeTotals.equityWithForward} action{incomeTotals.equityWithForward > 1 ? 's' : ''}</span>
+                          </span>
+                        )}
+                        {incomeTotals.equityWithCroesus > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block px-1 py-0.5 rounded bg-sky-100 text-sky-700 font-medium">Croesus</span>
+                            <span>{incomeTotals.equityWithCroesus} action{incomeTotals.equityWithCroesus > 1 ? 's' : ''} (trailing)</span>
+                          </span>
+                        )}
+                        {incomeTotals.fixedWithCroesus > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block px-1 py-0.5 rounded bg-sky-100 text-sky-700 font-medium">Croesus</span>
+                            <span>{incomeTotals.fixedWithCroesus} revenu{incomeTotals.fixedWithCroesus > 1 ? 's' : ''} fixe{incomeTotals.fixedWithCroesus > 1 ? 's' : ''}</span>
+                          </span>
+                        )}
+                        {incomeTotals.fixedWithCoupon > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Coupon</span>
+                            <span>{incomeTotals.fixedWithCoupon} calculé{incomeTotals.fixedWithCoupon > 1 ? 's' : ''}</span>
+                          </span>
+                        )}
+                        {(incomeTotals.equityNoData > 0 || incomeTotals.fixedNoData > 0) && (
+                          <span className="text-red-500">
+                            {incomeTotals.equityNoData + incomeTotals.fixedNoData} sans donnée
+                          </span>
+                        )}
+                        {!showTargets && (
+                          <span className="italic">Active &laquo; Cours cibles &raquo; pour les dividendes forward Yahoo</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tfoot>
+            )}
           </table>
         </div>
       </Card>
