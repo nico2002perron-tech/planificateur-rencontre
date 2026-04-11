@@ -383,6 +383,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [typeOverrides, setTypeOverrides] = useState<Record<string, AssetType>>({});
   const [customTargets, setCustomTargets] = useState<Record<string, number>>({});
   const [editingTarget, setEditingTarget] = useState<string | null>(null);
+  const [customCurrentPrices, setCustomCurrentPrices] = useState<Record<string, number>>({});
+  const [editingCurrentPrice, setEditingCurrentPrice] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -642,9 +644,11 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       const yahoo = prices.get(sym);
       const target = targets[sym];
       // CDR holdings: always use Croesus market price (CAD), never Yahoo US price
-      const currentPrice = isCDR
+      const currentPriceRaw = isCDR
         ? (cdrHolding?.marketPrice || holding.marketPrice)
         : (yahoo?.price || holding.marketPrice);
+      // User override for current market price (to fix errors)
+      const currentPrice = customCurrentPrices[sym] ?? currentPriceRaw;
       const hasCustom = sym in customTargets;
 
       let targetPrice: number;
@@ -675,7 +679,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       if (!map.has(sym)) {
         const holding = holdings.find(h => h.symbol === sym);
         if (!holding) continue;
-        const currentPrice = prices.get(sym)?.price || holding.marketPrice;
+        const currentPriceBase = prices.get(sym)?.price || holding.marketPrice;
+        const currentPrice = customCurrentPrices[sym] ?? currentPriceBase;
         const targetPrice = customTargets[sym];
         const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
         map.set(sym, { currentPrice, targetPrice, gainPct, source: 'Manuel' });
@@ -683,7 +688,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     }
 
     return map;
-  }, [showTargets, holdings, prices, targets, customTargets, priceableSymbols, cdrMap]);
+  }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap]);
 
   // Filtered + sorted holdings (after targetData so sort by gain works)
   const filteredHoldings = useMemo(() => {
@@ -1426,15 +1431,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                 <th className="w-8 py-3 px-1"></th>
                 <th className="text-left py-3 px-3 font-semibold text-xs">Type</th>
                 <th className="text-center py-3 px-2 font-semibold text-xs">Compte</th>
-                <th
-                  className="text-left py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
-                  onClick={() => toggleSort('symbol')}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Symbole
-                    {sortColumn === 'symbol' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-                  </span>
-                </th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Quantité</th>
                 <th
                   className="text-left py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
                   onClick={() => toggleSort('name')}
@@ -1444,53 +1441,56 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                     {sortColumn === 'name' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                   </span>
                 </th>
-                <th className="text-right py-3 px-3 font-semibold text-xs">Qté</th>
-                <th className="text-right py-3 px-3 font-semibold text-xs">PRU</th>
+                <th
+                  className="text-left py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                  onClick={() => toggleSort('symbol')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Symbole
+                    {sortColumn === 'symbol' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                  </span>
+                </th>
+                <th className="text-right py-3 px-3 font-semibold text-xs">Coût</th>
                 <th
                   className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
                   onClick={() => toggleSort('currentPrice')}
                 >
                   <span className="inline-flex items-center gap-1 justify-end">
-                    Prix marché
+                    Prix au marché
                     {sortColumn === 'currentPrice' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                   </span>
                 </th>
+                {showTargets && (
+                  <th
+                    className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
+                    onClick={() => toggleSort('targetPrice')}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end">
+                      Cours cible
+                      {sortColumn === 'targetPrice' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                    </span>
+                  </th>
+                )}
+                <th className="text-right py-3 px-3 font-semibold text-xs">Coût total</th>
                 <th
                   className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
                   onClick={() => toggleSort('marketValue')}
                 >
                   <span className="inline-flex items-center gap-1 justify-end">
-                    Val. marché
+                    Valeur au marché totale
                     {sortColumn === 'marketValue' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-                  </span>
-                </th>
-                <th
-                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
-                  onClick={() => toggleSort('weight')}
-                >
-                  <span className="inline-flex items-center gap-1 justify-end">
-                    Poids
-                    {sortColumn === 'weight' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-                  </span>
-                </th>
-                <th
-                  className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
-                  onClick={() => toggleSort('annualIncome')}
-                >
-                  <span className="inline-flex items-center gap-1 justify-end">
-                    Revenu
-                    {sortColumn === 'annualIncome' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                   </span>
                 </th>
                 {showTargets && (
                   <>
+                    <th className="text-right py-3 px-3 font-semibold text-xs">Cours cible total 12 mois</th>
                     <th
                       className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
-                      onClick={() => toggleSort('targetPrice')}
+                      onClick={() => toggleSort('gainDollar')}
                     >
                       <span className="inline-flex items-center gap-1 justify-end">
-                        Cours cible
-                        {sortColumn === 'targetPrice' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                        Gain espéré en $
+                        {sortColumn === 'gainDollar' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                       </span>
                     </th>
                     <th
@@ -1498,17 +1498,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                       onClick={() => toggleSort('gainPct')}
                     >
                       <span className="inline-flex items-center gap-1 justify-end">
-                        Gain %
+                        Estimation variation 12 mois
                         {sortColumn === 'gainPct' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-                      </span>
-                    </th>
-                    <th
-                      className="text-right py-3 px-3 font-semibold text-xs cursor-pointer hover:text-brand-primary select-none"
-                      onClick={() => toggleSort('gainDollar')}
-                    >
-                      <span className="inline-flex items-center gap-1 justify-end">
-                        Gain $
-                        {sortColumn === 'gainDollar' ? (sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                       </span>
                     </th>
                   </>
@@ -1560,52 +1551,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                         {h.accountLabel}
                       </span>
                     </td>
-                    <td className="py-2.5 px-2">
-                      <div className="flex items-center gap-2">
-                        {h.assetType !== 'CASH' && (
-                          <SymbolLogo symbol={h.symbol} logos={logos} />
-                        )}
-                        <div>
-                          {editingSymbol === h._originalKey ? (
-                            <input
-                              type="text"
-                              autoFocus
-                              defaultValue={h.symbol}
-                              className="w-24 px-1.5 py-0.5 text-sm font-mono border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
-                                  if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
-                                  setEditingSymbol(null);
-                                } else if (e.key === 'Escape') {
-                                  setEditingSymbol(null);
-                                }
-                              }}
-                              onBlur={(e) => {
-                                const val = e.target.value.trim().toUpperCase();
-                                if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
-                                setEditingSymbol(null);
-                              }}
-                            />
-                          ) : (
-                            <div className="flex items-center gap-1 group">
-                              <span className="font-mono font-bold text-xs" style={{ color: duoColor(h.symbol.replace('.TO', '')) }}>{h.symbol}</span>
-                              {h.isCDR && (
-                                <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium" title={`CDR → sous-jacent: ${h.underlyingSymbol || '?'}, devise: ${h.currency}`}>
-                                  CDR→{h.underlyingSymbol || '?'}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => setEditingSymbol(h._originalKey)}
-                            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
-                            title="Modifier le symbole"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                    <td className="py-2.5 px-3 text-right font-medium tabular-nums text-xs">
+                      {h.quantity !== 0 ? h.quantity.toLocaleString('fr-CA') : '—'}
                     </td>
                     <td className="py-2.5 px-3">
                       <button
@@ -1653,100 +1600,189 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                         </div>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-medium tabular-nums text-xs">
-                      {h.quantity !== 0 ? h.quantity.toLocaleString('fr-CA') : '—'}
+                    <td className="py-2.5 px-2">
+                      <div className="flex items-center gap-2">
+                        {h.assetType !== 'CASH' && (
+                          <SymbolLogo symbol={h.symbol} logos={logos} />
+                        )}
+                        <div>
+                          {editingSymbol === h._originalKey ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              defaultValue={h.symbol}
+                              className="w-24 px-1.5 py-0.5 text-sm font-mono border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
+                                  if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
+                                  setEditingSymbol(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingSymbol(null);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim().toUpperCase();
+                                if (val) setSymbolOverrides(prev => ({ ...prev, [h._originalKey]: val }));
+                                setEditingSymbol(null);
+                              }}
+                            />
+                          ) : (
+                            <div className="flex items-center gap-1 group">
+                              <span className="font-mono font-bold text-xs" style={{ color: duoColor(h.symbol.replace('.TO', '')) }}>{h.symbol}</span>
+                              {h.isCDR && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium" title={`CDR → sous-jacent: ${h.underlyingSymbol || '?'}, devise: ${h.currency}`}>
+                                  CDR→{h.underlyingSymbol || '?'}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => setEditingSymbol(h._originalKey)}
+                            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
+                            title="Modifier le symbole"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs text-text-muted">
                       {h.averageCost > 0 ? formatCurrencyFull(h.averageCost) : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs">
-                      {showTargets && td ? (
-                        <span className="font-semibold">{formatCurrencyFull(td.currentPrice)}</span>
-                      ) : (
-                        h.marketPrice > 0 ? formatCurrencyFull(h.marketPrice) : '—'
-                      )}
-                    </td>
-                    <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${h.marketValue < 0 ? 'text-red-500' : ''}`}>
-                      {h.marketValue !== 0 ? formatCurrency(h.marketValue) : '—'}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-xs">
-                      {(() => {
-                        const w = totalPortfolioValue > 0 ? (Math.abs(h.marketValue) / totalPortfolioValue * 100) : 0;
+                      {editingCurrentPrice === h._key ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          autoFocus
+                          defaultValue={(showTargets && td ? td.currentPrice : h.marketPrice) || ''}
+                          className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const val = parseFloat((e.target as HTMLInputElement).value);
+                              if (!isNaN(val) && val > 0) setCustomCurrentPrices(prev => ({ ...prev, [h.symbol]: val }));
+                              setEditingCurrentPrice(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingCurrentPrice(null);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val) && val > 0) setCustomCurrentPrices(prev => ({ ...prev, [h.symbol]: val }));
+                            setEditingCurrentPrice(null);
+                          }}
+                        />
+                      ) : (() => {
+                        const displayPrice = customCurrentPrices[h.symbol]
+                          ?? (showTargets && td ? td.currentPrice : h.marketPrice);
+                        const hasOverride = h.symbol in customCurrentPrices;
                         return (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-brand-primary/40 rounded-full" style={{ width: `${Math.min(w, 100)}%` }} />
-                            </div>
-                            <span className="text-text-muted font-medium">{w.toFixed(1)}%</span>
+                          <div className="flex items-center justify-end gap-1 group">
+                            {displayPrice > 0 ? (
+                              <span className={`font-semibold ${hasOverride ? 'text-amber-700' : ''}`}>{formatCurrencyFull(displayPrice)}</span>
+                            ) : (
+                              <span className="text-text-muted">—</span>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditingCurrentPrice(h._key); }}
+                              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 text-text-muted hover:text-brand-primary transition-opacity"
+                              title="Modifier le prix marché"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            {hasOverride && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setCustomCurrentPrices(prev => { const next = { ...prev }; delete next[h.symbol]; return next; }); }}
+                                className="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                title="Réinitialiser"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         );
                       })()}
                     </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-xs text-emerald-600">
-                      {h.annualIncome > 0 ? formatCurrency(h.annualIncome) : '—'}
+                    {showTargets && (
+                      <td className="py-2.5 px-3 text-right">
+                        {editingTarget === h._key ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            autoFocus
+                            defaultValue={td?.targetPrice || ''}
+                            className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const val = parseFloat((e.target as HTMLInputElement).value);
+                                if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
+                                setEditingTarget(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingTarget(null);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
+                              setEditingTarget(null);
+                            }}
+                          />
+                        ) : td && td.targetPrice > 0 ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
+                            <span className={`text-[10px] px-1 py-0.5 rounded ${
+                              td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
+                                : td.source === 'CDR' ? 'bg-emerald-100 text-emerald-700'
+                                : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {td.source}
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
+                              className="p-1 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
+                              title="Modifier le cours cible"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            {h.symbol in customTargets && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; }); }}
+                                className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                title="Réinitialiser"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
+                            className="px-2 py-1 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 cursor-pointer"
+                          >
+                            Saisir
+                          </button>
+                        )}
+                      </td>
+                    )}
+                    <td className="py-2.5 px-3 text-right tabular-nums text-xs text-text-muted">
+                      {h.averageCost > 0 && h.quantity !== 0 ? formatCurrency(h.quantity * h.averageCost) : '—'}
+                    </td>
+                    <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${h.marketValue < 0 ? 'text-red-500' : ''}`}>
+                      {h.marketValue !== 0 ? formatCurrency(h.marketValue) : '—'}
                     </td>
                     {showTargets && (
                       <>
-                        <td className="py-2.5 px-3 text-right">
-                          {editingTarget === h._key ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              autoFocus
-                              defaultValue={td?.targetPrice || ''}
-                              className="w-20 px-1.5 py-0.5 text-right text-sm border border-brand-primary rounded focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  const val = parseFloat((e.target as HTMLInputElement).value);
-                                  if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
-                                  setEditingTarget(null);
-                                } else if (e.key === 'Escape') {
-                                  setEditingTarget(null);
-                                }
-                              }}
-                              onBlur={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val > 0) setCustomTargets(prev => ({ ...prev, [h.symbol]: val }));
-                                setEditingTarget(null);
-                              }}
-                            />
-                          ) : td && td.targetPrice > 0 ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="font-semibold text-xs">{formatCurrencyFull(td.targetPrice)}</span>
-                              <span className={`text-[10px] px-1 py-0.5 rounded ${
-                                td.source === 'Manuel' ? 'bg-amber-100 text-amber-700'
-                                  : td.source === 'CDR' ? 'bg-emerald-100 text-emerald-700'
-                                  : td.source === 'Est. hist.' ? 'bg-sky-100 text-sky-700'
-                                  : 'bg-purple-100 text-purple-700'
-                              }`}>
-                                {td.source}
-                              </span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
-                                className="p-1 rounded hover:bg-gray-100 text-text-muted hover:text-brand-primary"
-                                title="Modifier le cours cible"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              {h.symbol in customTargets && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setCustomTargets(prev => { const next = { ...prev }; delete next[h.symbol]; return next; }); }}
-                                  className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
-                                  title="Réinitialiser"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setEditingTarget(h._key); }}
-                              className="px-2 py-1 text-xs border border-amber-300 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 cursor-pointer"
-                            >
-                              Saisir
-                            </button>
-                          )}
+                        <td className="py-2.5 px-3 text-right font-semibold tabular-nums text-xs">
+                          {td && td.targetPrice > 0 ? formatCurrency(h.quantity * td.targetPrice) : '—'}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${
+                          td && td.targetPrice > 0 && td.gainPct > 0 ? 'text-emerald-600' : td && td.targetPrice > 0 && td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'
+                        }`}>
+                          {td && td.targetPrice > 0 ? formatCurrency(h.quantity * (td.targetPrice - td.currentPrice)) : '—'}
                         </td>
                         <td className="py-2.5 px-3 text-right">
                           {td && td.targetPrice > 0 ? (
@@ -1765,11 +1801,6 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                           ) : (
                             <span className="text-text-muted text-xs">—</span>
                           )}
-                        </td>
-                        <td className={`py-2.5 px-3 text-right font-semibold tabular-nums text-xs ${
-                          td && td.targetPrice > 0 && td.gainPct > 0 ? 'text-emerald-600' : td && td.targetPrice > 0 && td.gainPct < 0 ? 'text-red-500' : 'text-text-muted'
-                        }`}>
-                          {td && td.targetPrice > 0 ? formatCurrency(h.quantity * (td.targetPrice - td.currentPrice)) : '—'}
                         </td>
                       </>
                     )}
