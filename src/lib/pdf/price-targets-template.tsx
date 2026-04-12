@@ -609,7 +609,7 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
                 paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
               }}>
                 <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-                  {fmtPct(projectionPct)} rendement total
+                  {fmtPct(projectionPct)} rendement espéré
                 </Text>
               </View>
             </View>
@@ -847,44 +847,44 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
       </View>
 
       {/* Projection 12 mois — Revenus fixes */}
-      <PaleGradientBox gradientId="fiProjGrad" style={{ marginTop: 12, marginBottom: 6 }}>
-        <View style={{ padding: 16, paddingTop: 18 }}>
+      <PaleGradientBox gradientId="fiProjGrad" style={{ marginTop: 8, marginBottom: 4 }}>
+        <View style={{ padding: 10, paddingTop: 12 }}>
           {/* Header row */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 3, height: 13, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
-              <Text style={{ fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1.2 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 2.5, height: 11, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
+              <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
                 Projection 12 mois — Revenus fixes
               </Text>
             </View>
             <View style={{
               backgroundColor: '#059669',
-              paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
+              paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
             }}>
-              <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-                {avgYieldPct.toFixed(2)} % rendement courant
+              <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                {avgYieldPct.toFixed(2)} % rendement espéré
               </Text>
             </View>
           </View>
 
           {/* Three cards row */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
             {/* Valeur marchande */}
             <View style={{
               flex: 1,
               backgroundColor: '#ffffff',
-              borderRadius: 8,
+              borderRadius: 6,
               borderWidth: 1, borderColor: '#e0f2fe', borderStyle: 'solid' as const,
-              borderLeftWidth: 3, borderLeftColor: '#0891b2', borderLeftStyle: 'solid' as const,
-              padding: 10,
+              borderLeftWidth: 2.5, borderLeftColor: '#0891b2', borderLeftStyle: 'solid' as const,
+              padding: 7,
             }}>
-              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+              <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                 Valeur marchande
               </Text>
-              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 4 }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 3 }}>
                 {fmt(totalMv)}
               </Text>
-              <Text style={{ fontSize: 6, color: '#94a3b8' }}>
+              <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>
                 Capital total investi
               </Text>
             </View>
@@ -893,24 +893,24 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
             <View style={{
               flex: 1,
               backgroundColor: '#ffffff',
-              borderRadius: 8,
+              borderRadius: 6,
               borderWidth: 1, borderColor: '#d1fae5', borderStyle: 'solid' as const,
-              borderLeftWidth: 3, borderLeftColor: '#10b981', borderLeftStyle: 'solid' as const,
-              padding: 10,
+              borderLeftWidth: 2.5, borderLeftColor: '#10b981', borderLeftStyle: 'solid' as const,
+              padding: 7,
             }}>
-              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+              <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                 Coupons espérés
               </Text>
-              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: '#059669', marginBottom: 4 }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#059669', marginBottom: 3 }}>
                 {fmt(totalIncome)}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ backgroundColor: '#ecfdf5', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
-                  <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 700, color: '#047857' }}>
+                <View style={{ backgroundColor: '#ecfdf5', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 }}>
+                  <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 700, color: '#047857' }}>
                     {avgYieldPct.toFixed(2)} %
                   </Text>
                 </View>
-                <Text style={{ fontSize: 6, color: '#94a3b8' }}>yield</Text>
+                <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>yield</Text>
               </View>
             </View>
 
@@ -918,17 +918,17 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
             <View style={{
               flex: 1.35,
               backgroundColor: C.navy,
-              borderRadius: 8,
-              padding: 10,
+              borderRadius: 6,
+              padding: 7,
             }}>
-              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+              <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                 Total espéré 12 mois
               </Text>
-              <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', marginBottom: 3 }}>
+              <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>
                 {fmt(totalMv + totalIncome)}
               </Text>
-              <Text style={{ fontSize: 6, color: '#cbd5e1' }}>
-                Capital + coupons (rendement courant)
+              <Text style={{ fontSize: 5.5, color: '#cbd5e1' }}>
+                Capital + coupons (rendement espéré)
               </Text>
             </View>
           </View>
