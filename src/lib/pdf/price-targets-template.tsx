@@ -501,19 +501,19 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
         </View>
       </View>
 
-      <View style={styles.tablePremium}>
+      <View style={[styles.tablePremium, { width: '96%', marginHorizontal: 'auto' }]}>
         <View style={styles.thPremium}>
           <Text style={[styles.thCellPremium, { width: '5%' }]}>Cpte</Text>
-          <Text style={[styles.thCellPremium, { width: '10%' }]}>Symbole</Text>
-          <Text style={[styles.thCellPremium, { width: '14%' }]}>Description</Text>
+          <Text style={[styles.thCellPremium, { width: '9%' }]}>Symbole</Text>
+          <Text style={[styles.thCellPremium, { width: '16%' }]}>Description</Text>
           <Text style={[styles.thCellPremium, { width: '5%', textAlign: 'right' }]}>Qté</Text>
           <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right' }]}>PBR</Text>
-          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Prix actuel</Text>
-          <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
-          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Cible 1 an</Text>
-          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Gain (%) espéré</Text>
-          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>Gain ($) espéré</Text>
-          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Dividende</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Prix</Text>
+          <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Marché</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Cible</Text>
+          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>% espéré</Text>
+          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>$ espéré</Text>
+          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Div.</Text>
         </View>
 
         {holdings.map((h, i) => {
@@ -536,7 +536,7 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
             }} wrap={false}>
               <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
               {/* Symbol with company logo (falls back to category dot) */}
-              <View style={{ width: '10%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+              <View style={{ width: '9%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 {logoSrc ? (
                   // eslint-disable-next-line jsx-a11y/alt-text
                   <Image
@@ -548,15 +548,15 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
                 )}
                 <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
               </View>
-              <Text style={[styles.td, { width: '14%', fontSize: 7.5 }]}>{h.name}</Text>
+              <Text style={[styles.td, { width: '16%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '5%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.td, { width: '7%', textAlign: 'right', color: '#64748b' }]}>{h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}</Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
+              <Text style={[styles.tdBold, { width: '8%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
               <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: C.navy }]}>
+              <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: C.navy }]}>
                 {fmtFull(h.targetPrice!)}
               </Text>
-              <Text style={[styles.tdBold, { width: '8%', textAlign: 'right', color: gc(gp) }]}>
+              <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: gc(gp) }]}>
                 {fmtPct(gp)}
               </Text>
               <Text style={[styles.tdBold, { width: '12%', textAlign: 'right', color: gc(gd) }]}>
@@ -576,14 +576,14 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
           alignItems: 'center',
         }}>
           <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '10%' }}>{''}</Text>
-          <Text style={{ width: '14%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
+          <Text style={{ width: '9%' }}>{''}</Text>
+          <Text style={{ width: '16%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
           <Text style={{ width: '5%' }}>{''}</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
-          <Text style={{ width: '9%' }}>{''}</Text>
+          <Text style={{ width: '8%' }}>{''}</Text>
           <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
-          <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
-          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
+          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
+          <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
           <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
           <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalDiv > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
         </View>
