@@ -467,14 +467,13 @@ function CoverPage({ data, totalPages, orientation }: { data: PriceTargetReportD
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, portfolioTotal, logos }: {
+function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, logos }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   subtitle: string;
   isLastEquityPage: boolean;
   orientation: 'portrait' | 'landscape';
-  portfolioTotal: number;
   logos: Record<string, string>;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
@@ -523,15 +522,12 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
           const cp = h.currentPrice || h.marketPrice;
           const gd = h.targetPrice && cp > 0 ? h.quantity * (h.targetPrice - cp) : 0;
           const div = h.forwardDividend || 0;
-          const weightPct = portfolioTotal > 0
-            ? Math.min(100, Math.max(0, (h.marketValue / portfolioTotal) * 100))
-            : 0;
           const dotColor = getAssetColor(h.assetType);
           const logoSrc = logos[h.symbol];
 
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
-              flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
+              flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 8,
               backgroundColor: row.bg,
               borderBottomWidth: row.borderBottomWidth,
               borderBottomColor: row.borderBottomColor,
@@ -545,10 +541,10 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
                   // eslint-disable-next-line jsx-a11y/alt-text
                   <Image
                     src={logoSrc}
-                    style={{ width: 11, height: 11, borderRadius: 2, marginRight: 5, objectFit: 'contain' as const }}
+                    style={{ width: 10, height: 10, borderRadius: 2, marginRight: 4, objectFit: 'contain' as const }}
                   />
                 ) : (
-                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 5 }} />
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
                 )}
                 <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
               </View>
@@ -556,13 +552,7 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
               <Text style={[styles.td, { width: '5%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.td, { width: '7%', textAlign: 'right', color: '#64748b' }]}>{h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}</Text>
               <Text style={[styles.tdBold, { width: '9%', textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
-              {/* Val. marché with portfolio-weight bar */}
-              <View style={{ width: '10%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
-                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{fmt(h.marketValue)}</Text>
-                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
-                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
-                </View>
-              </View>
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
               <Text style={[styles.tdBold, { width: '9%', textAlign: 'right', color: C.navy }]}>
                 {fmtFull(h.targetPrice!)}
               </Text>
@@ -581,7 +571,7 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
 
         {/* Total */}
         <View style={{
-          flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
+          flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8,
           backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
@@ -604,102 +594,102 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
         const divPct = projection12m > 0 ? (Math.max(totalDiv, 0) / projection12m) * 100 : 0;
         const gainPct = projection12m > 0 ? (Math.max(totalGain, 0) / projection12m) * 100 : 0;
         return (
-        <PaleGradientBox gradientId="equityProjGrad" style={{ marginTop: 12, marginBottom: 6 }}>
-          <View style={{ padding: 16, paddingTop: 18 }}>
+        <PaleGradientBox gradientId="equityProjGrad" style={{ marginTop: 8, marginBottom: 4 }}>
+          <View style={{ padding: 10, paddingTop: 12 }}>
             {/* Header row: title + total pill */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={{ width: 3, height: 13, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
-                <Text style={{ fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1.2 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 2.5, height: 11, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
+                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
                   Projection 12 mois — Actions
                 </Text>
               </View>
               <View style={{
                 backgroundColor: projectionPct >= 0 ? '#059669' : '#dc2626',
-                paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
+                paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
               }}>
-                <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
                   {fmtPct(projectionPct)} rendement total
                 </Text>
               </View>
             </View>
 
             {/* Three cards row */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
               {/* Dividendes card */}
               <View style={{
                 flex: 1,
                 backgroundColor: '#ffffff',
-                borderRadius: 8,
+                borderRadius: 6,
                 borderWidth: 1, borderColor: '#e0f2fe', borderStyle: 'solid' as const,
-                borderLeftWidth: 3, borderLeftColor: '#0891b2', borderLeftStyle: 'solid' as const,
-                padding: 10,
+                borderLeftWidth: 2.5, borderLeftColor: '#0891b2', borderLeftStyle: 'solid' as const,
+                padding: 7,
               }}>
-                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                   Dividendes projetés
                 </Text>
-                <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2', marginBottom: 4 }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2', marginBottom: 3 }}>
                   {fmt(totalDiv)}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <View style={{ backgroundColor: '#ecfeff', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
-                    <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 700, color: '#0e7490' }}>
+                  <View style={{ backgroundColor: '#ecfeff', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 }}>
+                    <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 700, color: '#0e7490' }}>
                       {divYieldPct.toFixed(2)} %
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 6, color: '#94a3b8' }}>yield</Text>
+                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>yield</Text>
                 </View>
               </View>
 
               {/* Plus sign */}
-              <View style={{ justifyContent: 'center', alignItems: 'center', width: 14 }}>
-                <Text style={{ fontSize: 16, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>+</Text>
+              <View style={{ justifyContent: 'center', alignItems: 'center', width: 10 }}>
+                <Text style={{ fontSize: 13, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>+</Text>
               </View>
 
               {/* Gain en capital card */}
               <View style={{
                 flex: 1,
                 backgroundColor: '#ffffff',
-                borderRadius: 8,
+                borderRadius: 6,
                 borderWidth: 1, borderColor: '#d1fae5', borderStyle: 'solid' as const,
-                borderLeftWidth: 3, borderLeftColor: totalGain >= 0 ? '#10b981' : '#ef4444', borderLeftStyle: 'solid' as const,
-                padding: 10,
+                borderLeftWidth: 2.5, borderLeftColor: totalGain >= 0 ? '#10b981' : '#ef4444', borderLeftStyle: 'solid' as const,
+                padding: 7,
               }}>
-                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                   Gain en capital
                 </Text>
-                <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#059669' : '#dc2626', marginBottom: 4 }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#059669' : '#dc2626', marginBottom: 3 }}>
                   {fmt(totalGain)}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <View style={{ backgroundColor: totalPct >= 0 ? '#ecfdf5' : '#fef2f2', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
-                    <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 700, color: totalPct >= 0 ? '#047857' : '#b91c1c' }}>
+                  <View style={{ backgroundColor: totalPct >= 0 ? '#ecfdf5' : '#fef2f2', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 }}>
+                    <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 700, color: totalPct >= 0 ? '#047857' : '#b91c1c' }}>
                       {fmtPct(totalPct)}
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 6, color: '#94a3b8' }}>vs prix actuel</Text>
+                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>vs prix actuel</Text>
                 </View>
               </View>
 
               {/* Equals sign */}
-              <View style={{ justifyContent: 'center', alignItems: 'center', width: 14 }}>
-                <Text style={{ fontSize: 16, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>=</Text>
+              <View style={{ justifyContent: 'center', alignItems: 'center', width: 10 }}>
+                <Text style={{ fontSize: 13, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>=</Text>
               </View>
 
               {/* Total hero card */}
               <View style={{
                 flex: 1.35,
                 backgroundColor: C.navy,
-                borderRadius: 8,
-                padding: 10,
+                borderRadius: 6,
+                padding: 7,
               }}>
-                <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.9, marginBottom: 4 }}>
+                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
                   Total espéré 12 mois
                 </Text>
-                <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', marginBottom: 3 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>
                   {fmt(projection12m)}
                 </Text>
-                <Text style={{ fontSize: 6, color: '#cbd5e1' }}>
+                <Text style={{ fontSize: 5.5, color: '#cbd5e1' }}>
                   Dividendes + gain en capital (cible 1 an)
                 </Text>
               </View>
@@ -708,15 +698,15 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
             {/* Proportion breakdown bar */}
             {projection12m > 0 && (
               <View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 6, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text style={{ fontSize: 5.5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.7 }}>
                     Répartition de la projection
                   </Text>
-                  <Text style={{ fontSize: 6, color: '#94a3b8' }}>
+                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>
                     Div. {divPct.toFixed(0)} %  ·  Gain cap. {gainPct.toFixed(0)} %
                   </Text>
                 </View>
-                <View style={{ flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
+                <View style={{ flexDirection: 'row', height: 5, borderRadius: 2.5, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
                   {divPct > 0 && <View style={{ width: `${divPct}%`, backgroundColor: '#0891b2' }} />}
                   {gainPct > 0 && <View style={{ width: `${gainPct}%`, backgroundColor: '#10b981' }} />}
                 </View>
@@ -739,12 +729,11 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
 
 // ─── Fixed Income Table Page ─────────────────────────────────────────────────
 
-function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation, portfolioTotal }: {
+function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   orientation: 'portrait' | 'landscape';
-  portfolioTotal: number;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
@@ -794,13 +783,10 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation, port
           const row = getRowStyle(i, holdings.length);
           const band = getMaturityBand(h.maturityDate);
           const yieldPct = h.marketValue > 0 ? (h.annualIncome / h.marketValue) * 100 : 0;
-          const weightPct = portfolioTotal > 0
-            ? Math.min(100, Math.max(0, (h.marketValue / portfolioTotal) * 100))
-            : 0;
           const dotColor = getAssetColor(h.assetType);
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
-              flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
+              flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 8,
               backgroundColor: row.bg,
               borderBottomWidth: row.borderBottomWidth,
               borderBottomColor: row.borderBottomColor,
@@ -826,12 +812,7 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation, port
               <Text style={[styles.td, { width: '7%', textAlign: 'right' }]}>
                 {h.modifiedDuration ? h.modifiedDuration.toFixed(2) : '—'}
               </Text>
-              <View style={{ width: '10%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
-                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{fmt(h.marketValue)}</Text>
-                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
-                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
-                </View>
-              </View>
+              <Text style={[styles.tdBold, { width: '10%', textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
               <Text style={[styles.td, { width: '8%', textAlign: 'right', color: '#94a3b8' }]}>
                 {h.accruedInterest ? fmtFull(h.accruedInterest) : '—'}
               </Text>
@@ -961,12 +942,11 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation, port
 
 // ─── Cash / Other Table Page ─────────────────────────────────────────────────
 
-function CashTablePage({ holdings, pageNum, totalPages, orientation, portfolioTotal }: {
+function CashTablePage({ holdings, pageNum, totalPages, orientation }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   orientation: 'portrait' | 'landscape';
-  portfolioTotal: number;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
@@ -992,12 +972,9 @@ function CashTablePage({ holdings, pageNum, totalPages, orientation, portfolioTo
           const row = getRowStyle(i, holdings.length);
           const typeLabel = h.assetType === 'CASH' ? 'Liquidité' : h.assetType === 'FUND' ? 'Fonds' : 'Autre';
           const dotColor = getAssetColor(h.assetType);
-          const weightPct = portfolioTotal > 0
-            ? Math.min(100, Math.max(0, (Math.abs(h.marketValue) / portfolioTotal) * 100))
-            : 0;
           return (
             <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
-              flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8,
+              flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 8,
               backgroundColor: row.bg,
               borderBottomWidth: row.borderBottomWidth,
               borderBottomColor: row.borderBottomColor,
@@ -1011,12 +988,7 @@ function CashTablePage({ holdings, pageNum, totalPages, orientation, portfolioTo
               </View>
               <Text style={[styles.td, { width: '33%' }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '10%', color: '#64748b', fontSize: 7.5 }]}>{typeLabel}</Text>
-              <View style={{ width: '17%', paddingHorizontal: 4, alignItems: 'flex-end' as const }}>
-                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: h.marketValue < 0 ? '#ef4444' : C.text }}>{fmt(h.marketValue)}</Text>
-                <View style={{ width: '85%', height: 2, backgroundColor: '#e2e8f0', borderRadius: 1, marginTop: 2 }}>
-                  <View style={{ width: `${weightPct}%`, height: '100%', backgroundColor: dotColor, borderRadius: 1 }} />
-                </View>
-              </View>
+              <Text style={[styles.tdBold, { width: '17%', textAlign: 'right', color: h.marketValue < 0 ? '#ef4444' : C.text }]}>{fmt(h.marketValue)}</Text>
               <Text style={[styles.td, { width: '18%', textAlign: 'right', color: h.annualIncome > 0 ? '#10b981' : '#94a3b8' }]}>
                 {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
               </Text>
@@ -1055,7 +1027,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const orientation: 'portrait' | 'landscape' = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
 
   // Landscape fits more rows per equity page thanks to the wider viewport.
-  const ROWS_PER_PAGE = orientation === 'landscape' ? 18 : 24;
+  // Compact rows (paddingVertical 3) + shrunken projection box fit more per page.
+  const ROWS_PER_PAGE = orientation === 'landscape' ? 22 : 28;
   const totalPages = countTotalPages(data, ROWS_PER_PAGE);
 
   const equities = showEquities
@@ -1073,8 +1046,6 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
   }
 
-  // Portfolio total used for category weight bars under every "Val. marché" cell.
-  const portfolioTotal = data.summary.totalMarketValue || data.holdings.reduce((s, h) => s + h.marketValue, 0);
   const logos: Record<string, string> = data.logos ?? {};
 
   let pageNum = showCover ? 1 : 0;
@@ -1097,18 +1068,17 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
             subtitle={subtitle}
             isLastEquityPage={idx === equityPages.length - 1}
             orientation={orientation}
-            portfolioTotal={portfolioTotal}
             logos={logos}
           />
         );
       })}
 
       {fixedIncome.length > 0 && (
-        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} portfolioTotal={portfolioTotal} />
+        <FixedIncomeTablePage holdings={fixedIncome} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
       )}
 
       {cashOther.length > 0 && (
-        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} portfolioTotal={portfolioTotal} />
+        <CashTablePage holdings={cashOther} pageNum={++pageNum} totalPages={totalPages} orientation={orientation} />
       )}
     </Document>
   );

@@ -2658,7 +2658,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
                   const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
                   const fiCount = incl.filter(h => h.assetType === 'FIXED_INCOME').length;
                   const coCount = incl.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
-                  const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 18 : 24;
+                  const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 22 : 28;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
