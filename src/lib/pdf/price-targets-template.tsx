@@ -511,8 +511,8 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
           <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Prix actuel</Text>
           <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Val. marché</Text>
           <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Cible 1 an</Text>
-          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Gain %</Text>
-          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>Gain $</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Gain (%) espéré</Text>
+          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>Gain ($) espéré</Text>
           <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Dividende</Text>
         </View>
 
