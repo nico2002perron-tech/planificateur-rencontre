@@ -332,15 +332,15 @@ function classifyAssetType(symbol: string, name: string, typeField: string, modi
     // Manager name without fund term → likely the stock (MFC, DSG, IAG, etc.)
   }
 
-  // Type field analysis
+  // Type field analysis (includes Croesus "Type de titre" column values)
   const typeLower = typeField.toLowerCase();
-  if (typeLower.includes('action') || typeLower.includes('equity') || typeLower.includes('stock')) return 'EQUITY';
+  if (typeLower.includes('action') || typeLower.includes('equity') || typeLower.includes('stock') || typeLower.includes('croissance')) return 'EQUITY';
   if (typeLower.includes('oblig') || typeLower.includes('bond') || typeLower.includes('fixed') || typeLower.includes('revenu')) return 'FIXED_INCOME';
   if (typeLower.includes('fond') || typeLower.includes('fund')) return 'FUND';
   if (typeLower.includes('etf') || typeLower.includes('fnb')) return 'ETF';
 
-  // Default: if symbol looks like a ticker (1-5 uppercase letters, optional .XX suffix), probably equity
-  if (/^[A-Z]{1,5}(\.[A-Z]{1,3})?$/.test(symbol.trim())) return 'EQUITY';
+  // Default: if symbol looks like a ticker (1-5 uppercase letters, optional .XX suffix, or with dash like GIB-A), probably equity
+  if (/^[A-Z]{1,5}(-[A-Z]{1,2})?(\.[A-Z]{1,3})?$/.test(symbol.trim())) return 'EQUITY';
 
   return 'OTHER';
 }
@@ -499,12 +499,33 @@ export function parseCroesusData(rawText: string): ParseResult {
       }
     }
   } else {
-    // No headers detected — check if first column is a currency code (new 12-column format)
+    // No headers detected — sniff format from first data row
     const firstVal = firstFields[0]?.trim();
-    const hasCurrencyCol = /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstVal);
+    const hasCurrencyCol0 = /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstVal);
+    // 13-column format: Type de titre + Devise at col 6 (e.g. "Liquidités\t1 497,24\t...\tCAD\t...")
+    const hasAssetTypeCol = !hasCurrencyCol0
+      && firstFields.length >= 13
+      && /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstFields[6]?.trim());
 
-    if (hasCurrencyCol && firstFields.length >= 9) {
-      // New format with Devise column at position 0 (12 columns)
+    if (hasAssetTypeCol) {
+      // New 13-column format: Type de titre | Qté | Desc | Compte | Symbole | PRU | Devise | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
+      columnMapping = {
+        assetType: 0,
+        quantity: 1,
+        name: 2,
+        accountType: 3,
+        symbol: 4,
+        averageCost: 5,
+        currency: 6,
+        marketPrice: 7,
+        bookValue: 8,
+        marketValue: 9,
+      };
+      if (firstFields.length >= 11) columnMapping.modifiedDuration = 10;
+      if (firstFields.length >= 12) columnMapping.accruedInterest = 11;
+      if (firstFields.length >= 13) columnMapping.annualIncome = 12;
+    } else if (hasCurrencyCol0 && firstFields.length >= 9) {
+      // 12-column format with Devise column at position 0
       columnMapping = {
         currency: 0,
         quantity: 1,
