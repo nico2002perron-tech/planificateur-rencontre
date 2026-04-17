@@ -166,6 +166,15 @@ interface YahooPrice {
 
 const priceFetcher = (url: string) => fetch(url).then(r => r.json());
 
+function useExchangeRate(from: string, to: string) {
+  const { data, isLoading } = useSWR<{ rate: number }>(
+    `/api/exchange-rate?from=${from}&to=${to}`,
+    priceFetcher,
+    { dedupingInterval: 300_000, revalidateOnFocus: false }
+  );
+  return { rate: data?.rate ?? null, isLoading };
+}
+
 function useYahooPrices(symbols: string[]) {
   const key = symbols.length > 0
     ? `/api/prices?symbols=${symbols.join(',')}`
@@ -676,13 +685,16 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   // Fetch prices & targets (CDR map passed to target hook)
   const { prices, isLoading: pricesLoading } = useYahooPrices(showTargets ? priceableSymbols : []);
   const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(showTargets ? priceableSymbols : [], cdrMap);
+  // USD→CAD exchange rate — used to convert USD targets/prices to CAD
+  const { rate: usdCadRate, isLoading: rateLoading } = useExchangeRate('USD', 'CAD');
 
-  const isLoadingPrices = pricesLoading || targetsLoading;
+  const isLoadingPrices = pricesLoading || targetsLoading || rateLoading;
 
   // Compute target data
   const targetData = useMemo(() => {
     if (!showTargets) return new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
     const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
+    const fx = usdCadRate ?? 1; // Fallback to 1 if rate not loaded yet
 
     priceableSymbols.forEach(sym => {
       // For CDR detection: check if ANY holding with this symbol is a CDR
@@ -692,6 +704,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
       const isCDR = holding.isCDR || sym in cdrMap;
       const cdrHolding = isCDR ? holdings.find(h => h.symbol === sym && h.isCDR) : null;
+      // USD titles (non-CDR): Yahoo returns prices in USD, convert to CAD
+      const isUSD = !isCDR && holding.currency === 'USD';
 
       const yahoo = prices.get(sym);
       const target = targets[sym];
@@ -699,8 +713,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       const currentPriceRaw = isCDR
         ? (cdrHolding?.marketPrice || holding.marketPrice)
         : (yahoo?.price || holding.marketPrice);
+      // For USD titles, convert Yahoo price from USD to CAD
+      const currentPriceConverted = isUSD && yahoo?.price ? currentPriceRaw * fx : currentPriceRaw;
       // User override for current market price (to fix errors)
-      const currentPrice = customCurrentPrices[sym] ?? currentPriceRaw;
+      const currentPrice = customCurrentPrices[sym] ?? currentPriceConverted;
       const hasCustom = sym in customTargets;
 
       let targetPrice: number;
@@ -714,7 +730,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         targetPrice = Math.round(currentPrice * (1 + target.cdrGainPct) * 100) / 100;
         source = 'CDR';
       } else if (target?.targetConsensus && target.targetConsensus > 0) {
-        targetPrice = target.targetConsensus;
+        // For USD titles, convert the target from USD to CAD
+        targetPrice = isUSD ? Math.round(target.targetConsensus * fx * 100) / 100 : target.targetConsensus;
         source = target.source === 'historical' ? 'Est. hist.' : 'Analyste';
       } else {
         targetPrice = 0;
@@ -731,7 +748,9 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       if (!map.has(sym)) {
         const holding = holdings.find(h => h.symbol === sym);
         if (!holding) continue;
-        const currentPriceBase = prices.get(sym)?.price || holding.marketPrice;
+        const isUSD = holding.currency === 'USD' && !holding.isCDR;
+        const yahooPrice = prices.get(sym)?.price || 0;
+        const currentPriceBase = isUSD && yahooPrice > 0 ? yahooPrice * fx : (yahooPrice || holding.marketPrice);
         const currentPrice = customCurrentPrices[sym] ?? currentPriceBase;
         const targetPrice = customTargets[sym];
         const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
@@ -740,7 +759,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     }
 
     return map;
-  }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap]);
+  }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap, usdCadRate]);
 
   // Forward annual income per holding (extremely reliable — uses best source available).
   //
