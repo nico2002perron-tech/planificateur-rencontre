@@ -366,30 +366,67 @@ function extractBondDetails(description: string): { coupon?: number; maturity?: 
     result.coupon = parseFloat(couponMatch[1].replace(',', '.'));
   }
 
+  const MONTH_MAP: Record<string, string> = {
+    JA: 'jan', FE: 'fév', MR: 'mar', AL: 'avr', MA: 'mai', JN: 'jun',
+    JL: 'jul', AU: 'aoû', SP: 'sep', OC: 'oct', NO: 'nov', DE: 'déc',
+  };
+
   // Maturity — Croesus compact format: "16SP26" (DDmmYY), "15JA30", "23AU34", "8SP35"
   const croesusDate = description.match(/\b(\d{1,2})(JA|FE|MR|AL|MA|JN|JL|AU|SP|OC|NO|DE)(\d{2})\b/i);
   if (croesusDate) {
-    const monthMap: Record<string, string> = {
-      JA: 'jan', FE: 'fév', MR: 'mar', AL: 'avr', MA: 'mai', JN: 'jun',
-      JL: 'jul', AU: 'aoû', SP: 'sep', OC: 'oct', NO: 'nov', DE: 'déc',
-    };
     const day = croesusDate[1];
     const monthCode = croesusDate[2].toUpperCase();
     const year = parseInt(croesusDate[3]) + 2000;
-    result.maturity = `${day} ${monthMap[monthCode] || monthCode} ${year}`;
-  } else {
-    // ISO date: 2028-06-01
+    result.maturity = `${day} ${monthMap(monthCode)} ${year}`;
+  }
+
+  // ISO date: 2028-06-01
+  if (!result.maturity) {
     const isoDate = description.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-    if (isoDate) {
-      result.maturity = isoDate[1];
-    } else {
-      // Just a year
-      const yearOnly = description.match(/\b(20[2-9]\d)\b/);
-      if (yearOnly) result.maturity = yearOnly[1];
+    if (isoDate) result.maturity = isoDate[1];
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  if (!result.maturity) {
+    const dmyDate = description.match(/\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\b/);
+    if (dmyDate) {
+      const d = parseInt(dmyDate[1]);
+      const m = parseInt(dmyDate[2]);
+      const y = parseInt(dmyDate[3]);
+      if (y >= 2020 && m >= 1 && m <= 12) {
+        result.maturity = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
     }
   }
 
+  // English month abbreviation: "15-Sep-2026", "15 Sep 2026", "Sep 15 2026"
+  if (!result.maturity) {
+    const ENG_MONTHS: Record<string, string> = {
+      jan: 'jan', feb: 'fév', mar: 'mar', apr: 'avr', may: 'mai', jun: 'jun',
+      jul: 'jul', aug: 'aoû', sep: 'sep', oct: 'oct', nov: 'nov', dec: 'déc',
+    };
+    const engDate = description.match(/\b(\d{1,2})[\s\-.]?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-.]?(\d{4})\b/i);
+    if (engDate) {
+      result.maturity = `${engDate[1]} ${ENG_MONTHS[engDate[2].toLowerCase().slice(0, 3)] || engDate[2]} ${engDate[3]}`;
+    } else {
+      const engDate2 = description.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-.]?(\d{1,2})[,\s\-.]?\s*(\d{4})\b/i);
+      if (engDate2) {
+        result.maturity = `${engDate2[2]} ${ENG_MONTHS[engDate2[1].toLowerCase().slice(0, 3)] || engDate2[1]} ${engDate2[3]}`;
+      }
+    }
+  }
+
+  // Just a year: "2034"
+  if (!result.maturity) {
+    const yearOnly = description.match(/\b(20[2-9]\d)\b/);
+    if (yearOnly) result.maturity = yearOnly[1];
+  }
+
   return result;
+
+  function monthMap(code: string): string {
+    return MONTH_MAP[code] || code;
+  }
 }
 
 // ─── Symbol normalization ────────────────────────────────────────────────────

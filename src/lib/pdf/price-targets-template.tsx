@@ -163,6 +163,12 @@ function parseMaturityDate(dateStr?: string): Date | null {
   return null;
 }
 
+const MONTH_NAMES_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+
+function formatDateFR(d: Date): string {
+  return `${d.getDate()} ${MONTH_NAMES_FR[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function getMaturityBand(dateStr?: string) {
   const matDate = parseMaturityDate(dateStr);
   if (!matDate) return null;
@@ -973,6 +979,71 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
           </View>
         </View>
       </PaleGradientBox>
+
+      {/* Maturity alerts — bonds maturing within 18 months */}
+      {(() => {
+        const now = new Date();
+        const horizon = new Date(now.getFullYear(), now.getMonth() + 18, now.getDate());
+        const upcoming = holdings
+          .map(h => ({ ...h, matDate: parseMaturityDate(h.maturityDate) }))
+          .filter(h => h.matDate && h.matDate >= now && h.matDate <= horizon)
+          .sort((a, b) => a.matDate!.getTime() - b.matDate!.getTime());
+
+        if (upcoming.length === 0) return null;
+
+        const totalMaturingValue = upcoming.reduce((s, h) => s + (h.quantity > 0 ? h.quantity : h.marketValue), 0);
+
+        return (
+          <View style={{
+            marginTop: 8, borderRadius: 8, padding: 10,
+            backgroundColor: '#fffbeb',
+            borderWidth: 1, borderColor: '#fde68a', borderStyle: 'solid' as const,
+            borderLeftWidth: 3, borderLeftColor: '#f59e0b', borderLeftStyle: 'solid' as const,
+          }} wrap={false}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: '#f59e0b', justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ fontSize: 9, color: '#ffffff', fontFamily: 'Montserrat', fontWeight: 800 }}>!</Text>
+              </View>
+              <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+                Échéances prochaines (18 mois)
+              </Text>
+              <View style={{ marginLeft: 'auto' as const, backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: '#92400e' }}>
+                  {fmt(totalMaturingValue)} à recevoir
+                </Text>
+              </View>
+            </View>
+            {upcoming.map((h, i) => {
+              const nominalValue = h.quantity > 0 ? h.quantity : h.marketValue;
+              return (
+                <View key={`mat-${i}`} style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  paddingVertical: 4, paddingHorizontal: 6,
+                  backgroundColor: i % 2 === 0 ? '#fef9ee' : '#ffffff',
+                  borderRadius: 4,
+                }}>
+                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#f59e0b' }} />
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#78350f', width: '22%' }}>
+                    {h.name.substring(0, 22)}
+                  </Text>
+                  <Text style={{ fontSize: 7, color: '#92400e', width: '12%' }}>
+                    {h.symbol}
+                  </Text>
+                  <Text style={{ fontSize: 7, color: '#92400e', width: '8%' }}>
+                    {h.couponRate ? `${h.couponRate.toFixed(2)}%` : '—'}
+                  </Text>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 700, color: '#b45309', width: '18%' }}>
+                    Échéance: {formatDateFR(h.matDate!)}
+                  </Text>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 700, color: '#059669', textAlign: 'right', width: '18%' as const }}>
+                    {fmt(nominalValue)} disponible
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })()}
 
       <PageFooter pageNum={pageNum} totalPages={totalPages} />
     </Page>
