@@ -152,7 +152,7 @@ const ETF_KEYWORDS = [
 
 // Keywords that ALONE indicate a fund (generic fund terms)
 const FUND_KEYWORDS = [
-  /fonds/i, /\bfund\b/i, /mutual/i, /commun/i, /s[eé]rie\s/i, /series\s/i,
+  /fonds/i, /\bfund\b/i, /mutual/i, /\bcommuns?\b/i, /s[eé]rie\s/i, /series\s/i,
   /cat[eé]gorie\s/i, /mandat/i,
 ];
 
