@@ -67,6 +67,8 @@ export interface PriceTargetReportData {
   options?: PdfRenderOptions;
   /** Optional map of symbol → base64 PNG data URI for company logos. */
   logos?: Record<string, string>;
+  /** USD/CAD exchange rate applied (if any). Displayed on the PDF. */
+  usdCadRate?: number | null;
   summary: {
     totalMarketValue: number;
     totalBookValue: number;
@@ -172,12 +174,25 @@ function getMaturityBand(dateStr?: string) {
 
 function countTotalPages(data: PriceTargetReportData, rowsPerEquityPage: number): number {
   const opts = data.options ?? {};
+  const orientation = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
+  const reserve = orientation === 'landscape' ? 5 : 6;
   let count = 0;
   if (opts.includeCover !== false) count += 1;
   const eqCount = (opts.includeEquities !== false)
     ? data.holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice).length
     : 0;
-  if (eqCount > 0) count += Math.ceil(eqCount / rowsPerEquityPage);
+  if (eqCount > 0) {
+    // Mirror the pagination logic: last page has fewer rows to fit the projection box
+    const lastPageMax = rowsPerEquityPage - reserve;
+    let rem = eqCount;
+    let pages = 0;
+    while (rem > 0) {
+      if (rem <= lastPageMax) { pages += 1; rem = 0; }
+      else if (rem <= rowsPerEquityPage) { pages += 2; rem = 0; }
+      else { pages += 1; rem -= rowsPerEquityPage; }
+    }
+    count += pages;
+  }
   if ((opts.includeFixedIncome !== false) && data.holdings.some(h => h.assetType === 'FIXED_INCOME')) count += 1;
   if ((opts.includeCashOther !== false) && data.holdings.some(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))) count += 1;
   return Math.max(count, 1);
@@ -467,7 +482,7 @@ function CoverPage({ data, totalPages, orientation }: { data: PriceTargetReportD
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, logos }: {
+function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, logos, usdCadRate, isFirstEquityPage }: {
   holdings: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
@@ -475,6 +490,8 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
   isLastEquityPage: boolean;
   orientation: 'portrait' | 'landscape';
   logos: Record<string, string>;
+  usdCadRate?: number | null;
+  isFirstEquityPage?: boolean;
 }) {
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
   const totalGain = holdings.reduce((s, h) => {
@@ -500,6 +517,28 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
           <Text style={{ fontSize: 7.5, color: '#64748b' }}>Cible: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalTarget)}</Text></Text>
         </View>
       </View>
+
+      {/* USD/CAD exchange rate indicator — shown on first equity page */}
+      {isFirstEquityPage && usdCadRate && usdCadRate > 0 && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
+          marginBottom: 6, gap: 6,
+        }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 5,
+            backgroundColor: '#f0fdfa', borderRadius: 6,
+            paddingHorizontal: 8, paddingVertical: 4,
+            borderWidth: 1, borderColor: '#99f6e4', borderStyle: 'solid' as const,
+          }}>
+            <Text style={{ fontSize: 6.5, color: '#0d9488', fontFamily: 'Open Sans', fontWeight: 600 }}>
+              Taux USD/CAD appliqué :
+            </Text>
+            <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#0f766e' }}>
+              {usdCadRate.toFixed(4)}
+            </Text>
+          </View>
+        </View>
+      )}
 
       <View style={[styles.tablePremium, { width: '96%', marginHorizontal: 'auto' }]}>
         <View style={styles.thPremium}>
@@ -1029,6 +1068,9 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   // Landscape fits more rows per equity page thanks to the wider viewport.
   // Compact rows (paddingVertical 3) + shrunken projection box fit more per page.
   const ROWS_PER_PAGE = orientation === 'landscape' ? 22 : 28;
+  // Reserve fewer rows on the last equity page so the projection summary box
+  // doesn't overflow onto a separate page.
+  const LAST_PAGE_RESERVE = orientation === 'landscape' ? 5 : 6;
   const totalPages = countTotalPages(data, ROWS_PER_PAGE);
 
   const equities = showEquities
@@ -1041,9 +1083,27 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     ? data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))
     : [];
 
+  // Split equities into pages, leaving room on the last page for the projection box.
+  // The last page has at most `lastPageMax` rows so the summary box always fits.
   const equityPages: PriceTargetHolding[][] = [];
-  for (let i = 0; i < equities.length; i += ROWS_PER_PAGE) {
-    equityPages.push(equities.slice(i, i + ROWS_PER_PAGE));
+  const lastPageMax = ROWS_PER_PAGE - LAST_PAGE_RESERVE;
+  let remaining = [...equities];
+  while (remaining.length > 0) {
+    if (remaining.length <= lastPageMax) {
+      // Fits on last page with projection box
+      equityPages.push(remaining);
+      remaining = [];
+    } else if (remaining.length <= ROWS_PER_PAGE) {
+      // Fits a full page but not a reduced last page — split evenly across two pages
+      const half = Math.ceil(remaining.length / 2);
+      equityPages.push(remaining.slice(0, half));
+      equityPages.push(remaining.slice(half));
+      remaining = [];
+    } else {
+      // More than a full page — take a full page and continue
+      equityPages.push(remaining.slice(0, ROWS_PER_PAGE));
+      remaining = remaining.slice(ROWS_PER_PAGE);
+    }
   }
 
   const logos: Record<string, string> = data.logos ?? {};
@@ -1067,8 +1127,10 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
             totalPages={totalPages}
             subtitle={subtitle}
             isLastEquityPage={idx === equityPages.length - 1}
+            isFirstEquityPage={idx === 0}
             orientation={orientation}
             logos={logos}
+            usdCadRate={data.usdCadRate}
           />
         );
       })}

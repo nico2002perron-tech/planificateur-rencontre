@@ -1031,6 +1031,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       const payload = {
         holdings: pdfHoldings,
         generatedAt: new Date().toISOString(),
+        usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : null,
         fundCodes: pdfOptions.fundCodesToInclude,
         options: {
           includeCover: pdfOptions.includeCover,
