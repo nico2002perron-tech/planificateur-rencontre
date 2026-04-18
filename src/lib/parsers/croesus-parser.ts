@@ -502,21 +502,22 @@ export function parseCroesusData(rawText: string): ParseResult {
     // No headers detected — sniff format from first data row
     const firstVal = firstFields[0]?.trim();
     const hasCurrencyCol0 = /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstVal);
-    // 13-column format: Type de titre + Devise at col 6 (e.g. "Liquidités\t1 497,24\t...\tCAD\t...")
-    const hasAssetTypeCol = !hasCurrencyCol0
+    // Detect if col 1 is a text asset type (e.g. "Liquidités", "Titres de croissance")
+    // vs a number (quantity in the old 12-column format)
+    const col1IsText = hasCurrencyCol0
       && firstFields.length >= 13
-      && /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstFields[6]?.trim());
+      && /[a-zA-ZÀ-ÿ]{2,}/.test(firstFields[1]?.trim() || '');
 
-    if (hasAssetTypeCol) {
-      // New 13-column format: Type de titre | Qté | Desc | Compte | Symbole | PRU | Devise | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
+    if (hasCurrencyCol0 && col1IsText) {
+      // 13-column format: Devise | Type de titre | Qté | Desc | Compte | Symbole | PRU | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
       columnMapping = {
-        assetType: 0,
-        quantity: 1,
-        name: 2,
-        accountType: 3,
-        symbol: 4,
-        averageCost: 5,
-        currency: 6,
+        currency: 0,
+        assetType: 1,
+        quantity: 2,
+        name: 3,
+        accountType: 4,
+        symbol: 5,
+        averageCost: 6,
         marketPrice: 7,
         bookValue: 8,
         marketValue: 9,
@@ -525,7 +526,7 @@ export function parseCroesusData(rawText: string): ParseResult {
       if (firstFields.length >= 12) columnMapping.accruedInterest = 11;
       if (firstFields.length >= 13) columnMapping.annualIncome = 12;
     } else if (hasCurrencyCol0 && firstFields.length >= 9) {
-      // 12-column format with Devise column at position 0
+      // 12-column format with Devise column at position 0 (no asset type column)
       columnMapping = {
         currency: 0,
         quantity: 1,
