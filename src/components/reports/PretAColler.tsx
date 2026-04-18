@@ -166,6 +166,15 @@ interface YahooPrice {
 
 const priceFetcher = (url: string) => fetch(url).then(r => r.json());
 
+function useExchangeRate(from: string, to: string) {
+  const { data, isLoading } = useSWR<{ rate: number }>(
+    `/api/exchange-rate?from=${from}&to=${to}`,
+    priceFetcher,
+    { dedupingInterval: 300_000, revalidateOnFocus: false }
+  );
+  return { rate: data?.rate ?? null, isLoading };
+}
+
 function useYahooPrices(symbols: string[]) {
   const key = symbols.length > 0
     ? `/api/prices?symbols=${symbols.join(',')}`
@@ -426,6 +435,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [customCurrentPrices, setCustomCurrentPrices] = useState<Record<string, number>>({});
   const [editingCurrentPrice, setEditingCurrentPrice] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
+  const [convertUsdToCad, setConvertUsdToCad] = useState(false);
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -676,13 +686,20 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   // Fetch prices & targets (CDR map passed to target hook)
   const { prices, isLoading: pricesLoading } = useYahooPrices(showTargets ? priceableSymbols : []);
   const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(showTargets ? priceableSymbols : [], cdrMap);
+  const { rate: usdCadRate } = useExchangeRate('USD', 'CAD');
 
   const isLoadingPrices = pricesLoading || targetsLoading;
+
+  // Count USD equity symbols (non-CDR) for the toggle label
+  const usdEquityCount = useMemo(() => {
+    return holdings.filter(h => h.currency === 'USD' && !h.isCDR && !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
+  }, [holdings]);
 
   // Compute target data
   const targetData = useMemo(() => {
     if (!showTargets) return new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
     const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
+    const fx = convertUsdToCad && usdCadRate ? usdCadRate : 1;
 
     priceableSymbols.forEach(sym => {
       // For CDR detection: check if ANY holding with this symbol is a CDR
@@ -692,14 +709,17 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
 
       const isCDR = holding.isCDR || sym in cdrMap;
       const cdrHolding = isCDR ? holdings.find(h => h.symbol === sym && h.isCDR) : null;
+      // USD titles (non-CDR): Yahoo returns prices in USD, optionally convert to CAD
+      const isUSD = !isCDR && holding.currency === 'USD';
+      const symFx = isUSD ? fx : 1;
 
       const yahoo = prices.get(sym);
       const target = targets[sym];
       // CDR holdings: always use Croesus market price (CAD), never Yahoo US price
       const currentPriceRaw = isCDR
         ? (cdrHolding?.marketPrice || holding.marketPrice)
-        : (yahoo?.price || holding.marketPrice);
-      // User override for current market price (to fix errors)
+        : (yahoo?.price ? Math.round(yahoo.price * symFx * 100) / 100 : holding.marketPrice);
+      // User override for current market price (to fix errors — already in target currency)
       const currentPrice = customCurrentPrices[sym] ?? currentPriceRaw;
       const hasCustom = sym in customTargets;
 
@@ -714,7 +734,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         targetPrice = Math.round(currentPrice * (1 + target.cdrGainPct) * 100) / 100;
         source = 'CDR';
       } else if (target?.targetConsensus && target.targetConsensus > 0) {
-        targetPrice = target.targetConsensus;
+        // For USD titles with conversion, convert target from USD to CAD
+        targetPrice = Math.round(target.targetConsensus * symFx * 100) / 100;
         source = target.source === 'historical' ? 'Est. hist.' : 'Analyste';
       } else {
         targetPrice = 0;
@@ -731,7 +752,10 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       if (!map.has(sym)) {
         const holding = holdings.find(h => h.symbol === sym);
         if (!holding) continue;
-        const currentPriceBase = prices.get(sym)?.price || holding.marketPrice;
+        const isUSD = holding.currency === 'USD' && !holding.isCDR;
+        const symFx = isUSD ? fx : 1;
+        const yahooPrice = prices.get(sym)?.price || 0;
+        const currentPriceBase = yahooPrice > 0 ? Math.round(yahooPrice * symFx * 100) / 100 : holding.marketPrice;
         const currentPrice = customCurrentPrices[sym] ?? currentPriceBase;
         const targetPrice = customTargets[sym];
         const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
@@ -740,7 +764,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     }
 
     return map;
-  }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap]);
+  }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap, convertUsdToCad, usdCadRate]);
 
   // Forward annual income per holding (extremely reliable — uses best source available).
   //
@@ -2222,7 +2246,31 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             Chargement des prix et cours cibles...
           </div>
         </div>
-      ) : showPdfBuilder ? (
+      ) : (
+        <>
+          {/* USD→CAD toggle — only shown when there are USD equities with targets loaded */}
+          {!isLoadingPrices && showTargets && usdEquityCount > 0 && (
+            <div className="flex justify-center mb-4">
+              <button
+                onClick={() => setConvertUsdToCad(prev => !prev)}
+                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl font-bold text-sm
+                  transition-all duration-150 active:translate-y-[2px] active:shadow-none"
+                style={{
+                  backgroundColor: convertUsdToCad ? `${DUO.teal}10` : 'white',
+                  color: convertUsdToCad ? DUO.teal : '#6b7280',
+                  border: `2px solid ${convertUsdToCad ? DUO.teal : '#e5e7eb'}`,
+                  borderBottom: `4px solid ${convertUsdToCad ? DUO.tealDark : '#d1d5db'}`,
+                }}
+              >
+                <Globe className="h-4 w-4" />
+                {convertUsdToCad
+                  ? `USD → CAD appliqué (${usdCadRate ? usdCadRate.toFixed(4) : '...'}) — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`
+                  : `Convertir ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''} USD → CAD`}
+                {convertUsdToCad && <Check className="h-4 w-4" />}
+              </button>
+            </div>
+          )}
+          {showPdfBuilder ? (
         <div className="space-y-4">
           {/* ── PDF Builder Panel ── */}
           <div
@@ -2751,6 +2799,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             </button>
           )}
         </div>
+          )}
+        </>
       )}
 
       {/* Info */}
