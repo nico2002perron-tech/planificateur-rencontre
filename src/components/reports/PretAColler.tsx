@@ -435,7 +435,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [customCurrentPrices, setCustomCurrentPrices] = useState<Record<string, number>>({});
   const [editingCurrentPrice, setEditingCurrentPrice] = useState<string | null>(null);
   const [showTargets, setShowTargets] = useState(false);
-  const [convertUsdToCad, setConvertUsdToCad] = useState(false);
+  const [convertUsdToCad, setConvertUsdToCad] = useState(true);
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -2264,8 +2264,8 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               >
                 <Globe className="h-4 w-4" />
                 {convertUsdToCad
-                  ? `USD → CAD appliqué (${usdCadRate ? usdCadRate.toFixed(4) : '...'}) — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`
-                  : `Convertir ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''} USD → CAD`}
+                  ? `USD → CAD (${usdCadRate ? usdCadRate.toFixed(4) : '...'}) — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`
+                  : `USD original — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`}
                 {convertUsdToCad && <Check className="h-4 w-4" />}
               </button>
             </div>
