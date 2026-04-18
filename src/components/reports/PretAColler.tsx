@@ -895,7 +895,15 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     return list;
   }, [holdings, activeFilter, sortColumn, sortDirection, targetData]);
 
-  // Category values
+  // Category counts & values — computed from live holdings (with type overrides applied)
+  const categoryCounts = useMemo(() => {
+    const map: Record<AssetType, number> = {
+      EQUITY: 0, FIXED_INCOME: 0, ETF: 0, FUND: 0, PREFERRED: 0, CASH: 0, OTHER: 0,
+    };
+    holdings.forEach(h => { map[h.assetType]++; });
+    return map;
+  }, [holdings]);
+
   const categoryValues = useMemo(() => {
     const map: Record<AssetType, number> = {
       EQUITY: 0, FIXED_INCOME: 0, ETF: 0, FUND: 0, PREFERRED: 0, CASH: 0, OTHER: 0,
@@ -1450,14 +1458,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
           <CategoryCard
             key={type}
             type={type}
-            count={result.summary[
-              type === 'EQUITY' ? 'equities' :
-              type === 'FIXED_INCOME' ? 'fixedIncome' :
-              type === 'ETF' ? 'etfs' :
-              type === 'FUND' ? 'funds' :
-              type === 'PREFERRED' ? 'preferred' :
-              type === 'CASH' ? 'cash' : 'other'
-            ]}
+            count={categoryCounts[type]}
             value={categoryValues[type]}
             active={activeFilter === type}
             onClick={() => setActiveFilter(type)}
@@ -1466,7 +1467,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       </div>
 
       {/* Maturity legend (shown when fixed income visible) */}
-      {(activeFilter === 'ALL' || activeFilter === 'FIXED_INCOME') && result.summary.fixedIncome > 0 && (
+      {(activeFilter === 'ALL' || activeFilter === 'FIXED_INCOME') && categoryCounts.FIXED_INCOME > 0 && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
           <span className="text-xs font-semibold text-text-muted">Échéance :</span>
           {MATURITY_BANDS.map((band) => (
