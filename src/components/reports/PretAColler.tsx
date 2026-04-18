@@ -166,11 +166,11 @@ interface YahooPrice {
 
 const priceFetcher = (url: string) => fetch(url).then(r => r.json());
 
-function useExchangeRate(from: string, to: string) {
+function useUsdCadRate() {
   const { data, isLoading } = useSWR<{ rate: number }>(
-    `/api/exchange-rate?from=${from}&to=${to}`,
+    '/api/yahoo-rate',
     priceFetcher,
-    { dedupingInterval: 300_000, revalidateOnFocus: false }
+    { refreshInterval: 300_000, dedupingInterval: 60_000, revalidateOnFocus: true }
   );
   return { rate: data?.rate ?? null, isLoading };
 }
@@ -686,7 +686,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   // Fetch prices & targets (CDR map passed to target hook)
   const { prices, isLoading: pricesLoading } = useYahooPrices(showTargets ? priceableSymbols : []);
   const { targets, isLoading: targetsLoading } = usePriceTargetConsensus(showTargets ? priceableSymbols : [], cdrMap);
-  const { rate: usdCadRate } = useExchangeRate('USD', 'CAD');
+  const { rate: usdCadRate } = useUsdCadRate();
 
   const isLoadingPrices = pricesLoading || targetsLoading;
 
@@ -1459,6 +1459,48 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
               </span>
             );
           })}
+        </div>
+      )}
+
+      {/* USD/CAD exchange rate card */}
+      {usdEquityCount > 0 && (
+        <div
+          className="flex items-center justify-between px-4 py-3 rounded-2xl"
+          style={{
+            backgroundColor: convertUsdToCad ? `${DUO.teal}06` : '#fafafa',
+            border: `2px solid ${convertUsdToCad ? `${DUO.teal}30` : '#e5e7eb'}`,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: `${DUO.teal}15` }}
+            >
+              <Globe className="h-5 w-5" style={{ color: DUO.teal }} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-text-muted">Taux USD/CAD <span className="font-normal">(Yahoo Finance)</span></p>
+              <p className="text-lg font-extrabold" style={{ color: DUO.teal }}>
+                {usdCadRate ? usdCadRate.toFixed(4) : '...'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setConvertUsdToCad(prev => !prev)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs
+              transition-all duration-150 active:translate-y-[1px]"
+            style={{
+              backgroundColor: convertUsdToCad ? DUO.teal : 'white',
+              color: convertUsdToCad ? 'white' : '#6b7280',
+              border: `2px solid ${convertUsdToCad ? DUO.teal : '#e5e7eb'}`,
+              borderBottom: `3px solid ${convertUsdToCad ? DUO.tealDark : '#d1d5db'}`,
+            }}
+          >
+            {convertUsdToCad ? <Check className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5" />}
+            {convertUsdToCad
+              ? `CAD appliqué (${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''})`
+              : `Afficher en USD`}
+          </button>
         </div>
       )}
 
@@ -2246,31 +2288,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             Chargement des prix et cours cibles...
           </div>
         </div>
-      ) : (
-        <>
-          {/* USD→CAD toggle — only shown when there are USD equities with targets loaded */}
-          {!isLoadingPrices && showTargets && usdEquityCount > 0 && (
-            <div className="flex justify-center mb-4">
-              <button
-                onClick={() => setConvertUsdToCad(prev => !prev)}
-                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl font-bold text-sm
-                  transition-all duration-150 active:translate-y-[2px] active:shadow-none"
-                style={{
-                  backgroundColor: convertUsdToCad ? `${DUO.teal}10` : 'white',
-                  color: convertUsdToCad ? DUO.teal : '#6b7280',
-                  border: `2px solid ${convertUsdToCad ? DUO.teal : '#e5e7eb'}`,
-                  borderBottom: `4px solid ${convertUsdToCad ? DUO.tealDark : '#d1d5db'}`,
-                }}
-              >
-                <Globe className="h-4 w-4" />
-                {convertUsdToCad
-                  ? `USD → CAD (${usdCadRate ? usdCadRate.toFixed(4) : '...'}) — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`
-                  : `USD original — ${usdEquityCount} titre${usdEquityCount > 1 ? 's' : ''}`}
-                {convertUsdToCad && <Check className="h-4 w-4" />}
-              </button>
-            </div>
-          )}
-          {showPdfBuilder ? (
+      ) : showPdfBuilder ? (
         <div className="space-y-4">
           {/* ── PDF Builder Panel ── */}
           <div
@@ -2799,8 +2817,6 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
             </button>
           )}
         </div>
-          )}
-        </>
       )}
 
       {/* Info */}
