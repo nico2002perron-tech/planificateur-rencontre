@@ -488,8 +488,10 @@ function CoverPage({ data, totalPages, orientation }: { data: PriceTargetReportD
 
 // ─── Equity Table Page ───────────────────────────────────────────────────────
 
-function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquityPage, orientation, logos, usdCadRate, isFirstEquityPage }: {
+function EquityTablePage({ holdings, allEquities, pageNum, totalPages, subtitle, isLastEquityPage, orientation, logos, usdCadRate, isFirstEquityPage }: {
   holdings: PriceTargetHolding[];
+  /** All equities across every page — used for computing the grand total on the last page. */
+  allEquities: PriceTargetHolding[];
   pageNum: number;
   totalPages: number;
   subtitle: string;
@@ -499,14 +501,16 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
   usdCadRate?: number | null;
   isFirstEquityPage?: boolean;
 }) {
-  const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
-  const totalGain = holdings.reduce((s, h) => {
+  // Grand totals are computed from ALL equities, not just this page's holdings
+  const src = isLastEquityPage ? allEquities : holdings;
+  const totalMv = src.reduce((s, h) => s + h.marketValue, 0);
+  const totalGain = src.reduce((s, h) => {
     if (h.targetPrice && (h.currentPrice || h.marketPrice) > 0)
       return s + h.quantity * (h.targetPrice - (h.currentPrice || h.marketPrice));
     return s;
   }, 0);
-  const totalDiv = holdings.reduce((s, h) => s + (h.forwardDividend || 0), 0);
-  const totalTarget = holdings.reduce((s, h) => h.targetPrice ? s + h.quantity * h.targetPrice : s + h.marketValue, 0);
+  const totalDiv = src.reduce((s, h) => s + (h.forwardDividend || 0), 0);
+  const totalTarget = src.reduce((s, h) => h.targetPrice ? s + h.quantity * h.targetPrice : s + h.marketValue, 0);
   const totalPct = totalMv > 0 ? (totalGain / totalMv) * 100 : 0;
   const divYieldPct = totalMv > 0 ? (totalDiv / totalMv) * 100 : 0;
   const projection12m = totalDiv + totalGain;
@@ -516,13 +520,19 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
   return (
     <Page size="A4" orientation={orientation} style={styles.page}>
       {/* Section header */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
-        <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{subtitle}</Text>
-        <View style={{ flexDirection: 'row', gap: 16 }}>
-          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Marché: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
-          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Cible: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalTarget)}</Text></Text>
-        </View>
-      </View>
+      {(() => {
+        const allMv = allEquities.reduce((s, h) => s + h.marketValue, 0);
+        const allTarget = allEquities.reduce((s, h) => h.targetPrice ? s + h.quantity * h.targetPrice : s + h.marketValue, 0);
+        return (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>{subtitle}</Text>
+            <View style={{ flexDirection: 'row', gap: 16 }}>
+              <Text style={{ fontSize: 7.5, color: '#64748b' }}>Marché: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(allMv)}</Text></Text>
+              <Text style={{ fontSize: 7.5, color: '#64748b' }}>Cible: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(allTarget)}</Text></Text>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* USD/CAD exchange rate indicator — shown on first equity page */}
       {isFirstEquityPage && usdCadRate && usdCadRate > 0 && (
@@ -614,24 +624,26 @@ function EquityTablePage({ holdings, pageNum, totalPages, subtitle, isLastEquity
           );
         })}
 
-        {/* Total */}
-        <View style={{
-          flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8,
-          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
-          alignItems: 'center',
-        }}>
-          <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '9%' }}>{''}</Text>
-          <Text style={{ width: '16%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
-          <Text style={{ width: '5%' }}>{''}</Text>
-          <Text style={{ width: '7%' }}>{''}</Text>
-          <Text style={{ width: '8%' }}>{''}</Text>
-          <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
-          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
-          <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
-          <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
-          <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalDiv > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
-        </View>
+        {/* Grand total row — only on the last equity page */}
+        {isLastEquityPage && (
+          <View style={{
+            flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8,
+            backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+            alignItems: 'center',
+          }}>
+            <Text style={{ width: '5%' }}>{''}</Text>
+            <Text style={{ width: '9%' }}>{''}</Text>
+            <Text style={{ width: '16%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
+            <Text style={{ width: '5%' }}>{''}</Text>
+            <Text style={{ width: '7%' }}>{''}</Text>
+            <Text style={{ width: '8%' }}>{''}</Text>
+            <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
+            <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalTarget)}</Text>
+            <Text style={{ width: '9%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalPct), textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
+            <Text style={{ width: '12%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: gc(totalGain), textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
+            <Text style={{ width: '11%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalDiv > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
+          </View>
+        )}
       </View>
 
       {/* Projection 12 mois summary — only on the last equity page */}
@@ -1273,6 +1285,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
           <EquityTablePage
             key={`eq-${idx}`}
             holdings={pageHoldings}
+            allEquities={equities}
             pageNum={pageNum}
             totalPages={totalPages}
             subtitle={subtitle}
