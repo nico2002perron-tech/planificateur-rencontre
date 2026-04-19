@@ -491,6 +491,64 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
         </View>
       </View>
 
+      {/* Compact projection 12 mois — before table */}
+      {(() => {
+        const divPct = projection12m > 0 ? (Math.max(totalDiv, 0) / projection12m) * 100 : 0;
+        const gainPct = projection12m > 0 ? (Math.max(totalGain, 0) / projection12m) * 100 : 0;
+        return (
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 6,
+            marginBottom: 8, padding: 7, borderRadius: 8,
+            backgroundColor: '#f0f9ff', borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
+          }}>
+            {/* Title accent */}
+            <View style={{ width: 2.5, height: 20, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
+            {/* Dividendes */}
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Dividendes</Text>
+              <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2' }}>{fmt(totalDiv)}</Text>
+              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{divYieldPct.toFixed(2)} % yield</Text>
+            </View>
+            <Text style={{ fontSize: 10, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>+</Text>
+            {/* Gain capital */}
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Gain capital</Text>
+              <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#059669' : '#dc2626' }}>{fmt(totalGain)}</Text>
+              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{fmtPct(totalPct)} vs actuel</Text>
+            </View>
+            <Text style={{ fontSize: 10, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>=</Text>
+            {/* Total */}
+            <View style={{
+              flex: 1.2, backgroundColor: C.navy, borderRadius: 6, padding: 6,
+            }}>
+              <Text style={{ fontSize: 5, color: '#94a3b8', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Total 12 mois</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>{fmt(projection12m)}</Text>
+            </View>
+            {/* Rendement pill */}
+            <View style={{
+              backgroundColor: projectionPct >= 0 ? '#059669' : '#dc2626',
+              paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6,
+            }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                {fmtPct(projectionPct)}
+              </Text>
+            </View>
+            {/* Mini breakdown bar */}
+            {projection12m > 0 && (
+              <View style={{ width: 40 }}>
+                <View style={{ flexDirection: 'row', height: 4, borderRadius: 2, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
+                  {divPct > 0 && <View style={{ width: `${divPct}%`, backgroundColor: '#0891b2' }} />}
+                  {gainPct > 0 && <View style={{ width: `${gainPct}%`, backgroundColor: '#10b981' }} />}
+                </View>
+                <Text style={{ fontSize: 4.5, color: '#94a3b8', marginTop: 1 }}>
+                  Div {divPct.toFixed(0)}% · Cap {gainPct.toFixed(0)}%
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      })()}
+
       {/* USD/CAD exchange rate indicator */}
       {usdCadRate && usdCadRate > 0 && (
         <View style={{
@@ -500,7 +558,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 5,
             backgroundColor: '#f0fdfa', borderRadius: 6,
-            paddingHorizontal: 8, paddingVertical: 4,
+            paddingHorizontal: 8, paddingVertical: 3,
             borderWidth: 1, borderColor: '#99f6e4', borderStyle: 'solid' as const,
           }}>
             <Text style={{ fontSize: 6.5, color: '#0d9488', fontFamily: 'Open Sans', fontWeight: 600 }}>
@@ -601,136 +659,8 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
         </View>
       </View>
 
-      {/* Projection 12 mois summary */}
-      {(() => {
-        const divPct = projection12m > 0 ? (Math.max(totalDiv, 0) / projection12m) * 100 : 0;
-        const gainPct = projection12m > 0 ? (Math.max(totalGain, 0) / projection12m) * 100 : 0;
-        return (
-        <PaleGradientBox gradientId="equityProjGrad" style={{ marginTop: 8, marginBottom: 4 }}>
-          <View style={{ padding: 10, paddingTop: 12 }}>
-            {/* Header row: title + total pill */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 2.5, height: 11, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
-                <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-                  Projection 12 mois — Actions
-                </Text>
-              </View>
-              <View style={{
-                backgroundColor: projectionPct >= 0 ? '#059669' : '#dc2626',
-                paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
-              }}>
-                <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-                  {fmtPct(projectionPct)} rendement espéré
-                </Text>
-              </View>
-            </View>
-
-            {/* Three cards row */}
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
-              {/* Dividendes card */}
-              <View style={{
-                flex: 1,
-                backgroundColor: '#ffffff',
-                borderRadius: 6,
-                borderWidth: 1, borderColor: '#e0f2fe', borderStyle: 'solid' as const,
-                borderLeftWidth: 2.5, borderLeftColor: '#0891b2', borderLeftStyle: 'solid' as const,
-                padding: 7,
-              }}>
-                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
-                  Dividendes projetés
-                </Text>
-                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2', marginBottom: 3 }}>
-                  {fmt(totalDiv)}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <View style={{ backgroundColor: '#ecfeff', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 }}>
-                    <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 700, color: '#0e7490' }}>
-                      {divYieldPct.toFixed(2)} %
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>yield</Text>
-                </View>
-              </View>
-
-              {/* Plus sign */}
-              <View style={{ justifyContent: 'center', alignItems: 'center', width: 10 }}>
-                <Text style={{ fontSize: 13, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>+</Text>
-              </View>
-
-              {/* Gain en capital card */}
-              <View style={{
-                flex: 1,
-                backgroundColor: '#ffffff',
-                borderRadius: 6,
-                borderWidth: 1, borderColor: '#d1fae5', borderStyle: 'solid' as const,
-                borderLeftWidth: 2.5, borderLeftColor: totalGain >= 0 ? '#10b981' : '#ef4444', borderLeftStyle: 'solid' as const,
-                padding: 7,
-              }}>
-                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
-                  Gain en capital
-                </Text>
-                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#059669' : '#dc2626', marginBottom: 3 }}>
-                  {fmt(totalGain)}
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <View style={{ backgroundColor: totalPct >= 0 ? '#ecfdf5' : '#fef2f2', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 }}>
-                    <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 700, color: totalPct >= 0 ? '#047857' : '#b91c1c' }}>
-                      {fmtPct(totalPct)}
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>vs prix actuel</Text>
-                </View>
-              </View>
-
-              {/* Equals sign */}
-              <View style={{ justifyContent: 'center', alignItems: 'center', width: 10 }}>
-                <Text style={{ fontSize: 13, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>=</Text>
-              </View>
-
-              {/* Total hero card */}
-              <View style={{
-                flex: 1.35,
-                backgroundColor: C.navy,
-                borderRadius: 6,
-                padding: 7,
-              }}>
-                <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>
-                  Total espéré 12 mois
-                </Text>
-                <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>
-                  {fmt(projection12m)}
-                </Text>
-                <Text style={{ fontSize: 5.5, color: '#cbd5e1' }}>
-                  Dividendes + gain en capital (cible 1 an)
-                </Text>
-              </View>
-            </View>
-
-            {/* Proportion breakdown bar */}
-            {projection12m > 0 && (
-              <View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <Text style={{ fontSize: 5.5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.7 }}>
-                    Répartition de la projection
-                  </Text>
-                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>
-                    Div. {divPct.toFixed(0)} %  ·  Gain cap. {gainPct.toFixed(0)} %
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', height: 5, borderRadius: 2.5, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
-                  {divPct > 0 && <View style={{ width: `${divPct}%`, backgroundColor: '#0891b2' }} />}
-                  {gainPct > 0 && <View style={{ width: `${gainPct}%`, backgroundColor: '#10b981' }} />}
-                </View>
-              </View>
-            )}
-          </View>
-        </PaleGradientBox>
-        );
-      })()}
-
       {/* Source */}
-      <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 4 }}>
+      <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 6 }}>
         Source : Consensus des analystes via Yahoo Finance. Dividendes : Yahoo forward rate (actuel) × quantité.
       </Text>
 
