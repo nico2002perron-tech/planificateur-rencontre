@@ -798,16 +798,72 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
         </View>
       </View>
 
-      {/* Maturity legend */}
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8, alignItems: 'center' }}>
-        <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>Échéance :</Text>
-        {MATURITY_BANDS.map((band) => (
-          <View key={band.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: band.color }} />
-            <Text style={{ fontSize: 6.5, color: '#64748b' }}>{band.label}</Text>
+      {/* Maturity distribution bar */}
+      {(() => {
+        const bandData = MATURITY_BANDS.map(band => {
+          const matched = holdings.filter(h => {
+            const b = getMaturityBand(h.maturityDate);
+            return b && b.label === band.label;
+          });
+          const value = matched.reduce((s, h) => s + h.marketValue, 0);
+          return { ...band, value, count: matched.length };
+        }).filter(b => b.value > 0);
+        const noDate = holdings.filter(h => !getMaturityBand(h.maturityDate));
+        const noDateValue = noDate.reduce((s, h) => s + h.marketValue, 0);
+        const totalBarValue = bandData.reduce((s, b) => s + b.value, 0) + noDateValue;
+
+        return totalBarValue > 0 ? (
+          <View style={{
+            marginBottom: 8, padding: 8, borderRadius: 8,
+            backgroundColor: '#fefce8', borderWidth: 1, borderColor: '#fef08a', borderStyle: 'solid' as const,
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+              <Text style={{ fontSize: 6.5, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
+                Répartition par échéance
+              </Text>
+              <Text style={{ fontSize: 6, color: '#94a3b8' }}>
+                {holdings.length} position{holdings.length > 1 ? 's' : ''} · {fmt(totalMv)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden' as const, marginBottom: 5, backgroundColor: '#e2e8f0' }}>
+              {bandData.map(b => (
+                <View key={b.label} style={{ width: `${(b.value / totalBarValue) * 100}%`, backgroundColor: b.color }} />
+              ))}
+              {noDateValue > 0 && (
+                <View style={{ width: `${(noDateValue / totalBarValue) * 100}%`, backgroundColor: '#cbd5e1' }} />
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {bandData.map(b => (
+                <View key={b.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: b.color }} />
+                  <Text style={{ fontSize: 6, color: '#64748b' }}>
+                    {b.label}: {fmt(b.value)} ({b.count})
+                  </Text>
+                </View>
+              ))}
+              {noDateValue > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: '#cbd5e1' }} />
+                  <Text style={{ fontSize: 6, color: '#64748b' }}>
+                    N/D: {fmt(noDateValue)} ({noDate.length})
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
-        ))}
-      </View>
+        ) : (
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8, alignItems: 'center' }}>
+            <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>Échéance :</Text>
+            {MATURITY_BANDS.map((band) => (
+              <View key={band.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: band.color }} />
+                <Text style={{ fontSize: 6.5, color: '#64748b' }}>{band.label}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      })()}
 
       <View style={styles.tablePremium}>
         <View style={styles.thPremium}>
@@ -977,6 +1033,29 @@ function FixedIncomeTablePage({ holdings, pageNum, totalPages, orientation }: {
               </Text>
             </View>
           </View>
+
+          {/* Capital vs Coupons breakdown bar */}
+          {totalMv > 0 && totalIncome > 0 && (() => {
+            const total = totalMv + totalIncome;
+            const capPct = (totalMv / total) * 100;
+            const coupPct = (totalIncome / total) * 100;
+            return (
+              <View style={{ marginTop: 8 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text style={{ fontSize: 5.5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.7 }}>
+                    Répartition du total projeté
+                  </Text>
+                  <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>
+                    Capital {capPct.toFixed(0)} %  ·  Coupons {coupPct.toFixed(0)} %
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', height: 5, borderRadius: 2.5, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
+                  <View style={{ width: `${capPct}%`, backgroundColor: '#0891b2' }} />
+                  <View style={{ width: `${coupPct}%`, backgroundColor: '#10b981' }} />
+                </View>
+              </View>
+            );
+          })()}
         </View>
       </PaleGradientBox>
 

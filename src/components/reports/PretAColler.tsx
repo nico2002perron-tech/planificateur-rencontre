@@ -513,6 +513,11 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   const [aiChecking, setAiChecking] = useState(false);
   const [aiChecked, setAiChecked] = useState(false);
 
+  // AI maturity extraction for fixed income
+  const [aiMaturities, setAiMaturities] = useState<Record<string, { maturityDate: string; couponRate?: number }>>({});
+  const [aiMaturityChecking, setAiMaturityChecking] = useState(false);
+  const [aiMaturityDone, setAiMaturityDone] = useState(false);
+
   // Fund document status check
   interface FundCheckResult {
     fund_code: string;
@@ -565,20 +570,72 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     runAiCheck();
   }, [result.holdings]);
 
+  // AI maturity extraction — runs once on mount for FIXED_INCOME holdings
+  const aiMaturityRan = useRef(false);
+  useEffect(() => {
+    if (aiMaturityRan.current) return;
+    aiMaturityRan.current = true;
+
+    const fiHoldings = result.holdings.filter(h => h.assetType === 'FIXED_INCOME');
+    if (fiHoldings.length === 0) { setAiMaturityDone(true); return; }
+
+    const run = async () => {
+      setAiMaturityChecking(true);
+      try {
+        const payload = fiHoldings.map(h => ({
+          symbol: h.symbol,
+          name: h.name,
+          maturityDate: h.maturityDate,
+          couponRate: h.couponRate,
+        }));
+
+        const res = await fetch('/api/ai/extract-maturities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ holdings: payload }),
+        });
+
+        if (res.ok) {
+          const { maturities } = await res.json();
+          if (maturities && maturities.length > 0) {
+            const map: Record<string, { maturityDate: string; couponRate?: number }> = {};
+            for (const m of maturities) {
+              map[m.symbol] = { maturityDate: m.maturityDate, couponRate: m.couponRate };
+            }
+            setAiMaturities(map);
+          }
+        }
+      } catch {
+        // Silently fail — AI maturity extraction is optional
+      } finally {
+        setAiMaturityChecking(false);
+        setAiMaturityDone(true);
+      }
+    };
+
+    run();
+  }, [result.holdings]);
+
   // Fund document status check — reactive to computed holdings (with type overrides)
   // Tracks which symbols we've already checked to avoid redundant API calls
   const checkedFundSymbols = useRef(new Set<string>());
 
-  // Apply symbol & type overrides
+  // Apply symbol & type overrides + AI maturity dates
   const holdings = useMemo(() => {
-    return result.holdings.map((h, idx) => ({
-      ...h,
-      symbol: symbolOverrides[`${idx}_${h.symbol}`] || h.symbol,
-      assetType: typeOverrides[h.symbol] || h.assetType,
-      _key: `${idx}_${h.symbol}_${h.accountType}`,
-      _originalKey: `${idx}_${h.symbol}`,
-    }));
-  }, [result.holdings, symbolOverrides, typeOverrides]);
+    return result.holdings.map((h, idx) => {
+      const aiMat = aiMaturities[h.symbol];
+      return {
+        ...h,
+        symbol: symbolOverrides[`${idx}_${h.symbol}`] || h.symbol,
+        assetType: typeOverrides[h.symbol] || h.assetType,
+        // AI maturity: use AI-extracted date if no date from parser, or AI found one
+        maturityDate: aiMat?.maturityDate || h.maturityDate,
+        couponRate: h.couponRate || aiMat?.couponRate,
+        _key: `${idx}_${h.symbol}_${h.accountType}`,
+        _originalKey: `${idx}_${h.symbol}`,
+      };
+    });
+  }, [result.holdings, symbolOverrides, typeOverrides, aiMaturities]);
 
   // Effective FUND symbols (from current holdings after overrides)
   const currentFundSymbols = useMemo(() => {
@@ -1342,6 +1399,22 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
           <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
           <span className="text-sm text-emerald-700 font-medium">IA — Classifications vérifiées, tout semble correct</span>
+        </div>
+      )}
+
+      {/* AI maturity extraction status */}
+      {aiMaturityChecking && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+          <Spinner className="h-4 w-4 text-amber-600" />
+          <span className="text-sm text-amber-700 font-medium">IA — Analyse des dates d'échéance en cours…</span>
+        </div>
+      )}
+      {aiMaturityDone && Object.keys(aiMaturities).length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+          <Check className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <span className="text-sm text-amber-700 font-medium">
+            IA — {Object.keys(aiMaturities).length} date{Object.keys(aiMaturities).length > 1 ? 's' : ''} d&apos;échéance extraite{Object.keys(aiMaturities).length > 1 ? 's' : ''} des descriptions
+          </span>
         </div>
       )}
 
