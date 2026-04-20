@@ -456,3 +456,31 @@ CREATE TABLE simulation_snapshots (
 );
 
 CREATE INDEX idx_simulation_snapshots_sim ON simulation_snapshots(simulation_id, date DESC);
+
+-- ============================================
+-- 23. MEETING_NOTES (notes de réunion client)
+-- ============================================
+CREATE TABLE meeting_notes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  advisor_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_name TEXT NOT NULL DEFAULT '',
+  account_number TEXT DEFAULT '',
+  meeting_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  meeting_time TEXT DEFAULT '',
+  meeting_type TEXT NOT NULL DEFAULT 'in_person' CHECK (meeting_type IN ('phone', 'in_person', 'video')),
+  subject TEXT NOT NULL DEFAULT 'revision' CHECK (subject IN ('revision', 'placement', 'both')),
+  compliance JSONB NOT NULL DEFAULT '{}',
+  transaction JSONB,
+  notes JSONB NOT NULL DEFAULT '{}',
+  transcription TEXT,
+  ai_summary_advisor TEXT,
+  ai_summary_client TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'completed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_meeting_notes_advisor ON meeting_notes(advisor_id);
+CREATE INDEX idx_meeting_notes_date ON meeting_notes(meeting_date DESC);
+
+CREATE TRIGGER meeting_notes_updated_at BEFORE UPDATE ON meeting_notes FOR EACH ROW EXECUTE FUNCTION update_updated_at();
