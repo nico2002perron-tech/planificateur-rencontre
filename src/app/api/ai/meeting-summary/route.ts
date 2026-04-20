@@ -112,6 +112,15 @@ export async function POST(req: NextRequest) {
       content += '\n';
     }
 
+    // Topics covered (from chip selection)
+    if (meetingContext?.topicsCovered?.length > 0) {
+      content += `SUJETS COUVERTS PENDANT LA RENCONTRE:\n`;
+      for (const topic of meetingContext.topicsCovered) {
+        content += `- ${topic}\n`;
+      }
+      content += '\n';
+    }
+
     // Transactions
     if (meetingContext?.transactions?.length > 0) {
       content += `TRANSACTIONS PRÉVUES:\n`;
