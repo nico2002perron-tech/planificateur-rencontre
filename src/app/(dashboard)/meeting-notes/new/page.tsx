@@ -17,7 +17,7 @@ import {
   Lightbulb, Receipt, Wallet, RefreshCw,
   MessageCircle, UserCircle, Briefcase, FileCheck,
   Zap, PlayCircle, ClipboardCheck, Eye, PenLine,
-  Calendar, Trophy,
+  Calendar, Trophy, ChevronDown, ChevronUp, BookOpen,
 } from 'lucide-react';
 
 // ─── Phase type ─────────────────────────────────────────────────
@@ -34,24 +34,25 @@ interface TopicItem {
   category: 'profil' | 'portefeuille' | 'placement' | 'admin';
   complianceKeys: string[];
   reminder: string; // short reminder for prep phase
+  questions: string[]; // suggested questions to ask during the meeting
 }
 
 const TOPICS: TopicItem[] = [
-  { id: 'objectifs', label: 'Objectifs de placement', shortLabel: 'Objectifs', icon: Target, gradient: 'from-blue-500 to-blue-600', iconColor: 'text-blue-600', category: 'profil', complianceKeys: ['q_objectifs'], reminder: 'Valider les buts financiers' },
-  { id: 'horizon', label: 'Horizon de placement', shortLabel: 'Horizon', icon: Clock, gradient: 'from-indigo-500 to-indigo-600', iconColor: 'text-indigo-600', category: 'profil', complianceKeys: ['q_horizon'], reminder: 'Revalider le timeframe' },
-  { id: 'tolerance', label: 'Tolérance au risque', shortLabel: 'Risque', icon: HeartPulse, gradient: 'from-rose-500 to-rose-600', iconColor: 'text-rose-600', category: 'profil', complianceKeys: ['q_tolerance'], reminder: 'Vérifier le confort' },
-  { id: 'situation', label: 'Situation financière', shortLabel: 'Situation', icon: Wallet, gradient: 'from-amber-500 to-amber-600', iconColor: 'text-amber-600', category: 'profil', complianceKeys: ['q_situation'], reminder: 'Revenus, dettes, changements' },
-  { id: 'liquidite', label: 'Besoins en liquidité', shortLabel: 'Liquidité', icon: DollarSign, gradient: 'from-emerald-500 to-emerald-600', iconColor: 'text-emerald-600', category: 'profil', complianceKeys: ['q_liquidite'], reminder: 'Retraits à venir?' },
-  { id: 'changements', label: 'Changements de vie', shortLabel: 'Vie', icon: RefreshCw, gradient: 'from-teal-500 to-teal-600', iconColor: 'text-teal-600', category: 'profil', complianceKeys: ['q_changements'], reminder: 'Mariage, retraite, emploi?' },
-  { id: 'repartition', label: 'Répartition d\'actifs', shortLabel: 'Répartition', icon: PieChart, gradient: 'from-violet-500 to-violet-600', iconColor: 'text-violet-600', category: 'portefeuille', complianceKeys: ['q_repartition'], reminder: 'Revoir allocation vs cible' },
-  { id: 'rendements', label: 'Rendements', shortLabel: 'Rendements', icon: TrendingUp, gradient: 'from-green-500 to-green-600', iconColor: 'text-green-600', category: 'portefeuille', complianceKeys: ['q_rendements'], reminder: 'Présenter la performance' },
-  { id: 'concentration', label: 'Concentration', shortLabel: 'Concentration', icon: AlertTriangle, gradient: 'from-orange-500 to-orange-600', iconColor: 'text-orange-600', category: 'portefeuille', complianceKeys: ['q_concentration'], reminder: 'Titre > 10%? Secteur?' },
-  { id: 'non_conforme', label: 'Conformité des titres', shortLabel: 'Conformité', icon: ShieldCheck, gradient: 'from-red-500 to-red-600', iconColor: 'text-red-600', category: 'portefeuille', complianceKeys: ['q_non_conforme'], reminder: 'Titres hors politique?' },
-  { id: 'frais', label: 'Frais', shortLabel: 'Frais', icon: Receipt, gradient: 'from-slate-500 to-slate-600', iconColor: 'text-slate-600', category: 'admin', complianceKeys: ['q_frais'], reminder: 'Mentionner si demandé' },
-  { id: 'recommandation', label: 'Recommandation', shortLabel: 'Reco', icon: Lightbulb, gradient: 'from-cyan-500 to-cyan-600', iconColor: 'text-cyan-600', category: 'placement', complianceKeys: ['q_recommande'], reminder: 'Présenter le titre recommandé' },
-  { id: 'risques_placement', label: 'Risques expliqués', shortLabel: 'Risques', icon: Scale, gradient: 'from-pink-500 to-pink-600', iconColor: 'text-pink-600', category: 'placement', complianceKeys: ['q_risques', 'q_comprend'], reminder: 'Informer des risques' },
-  { id: 'conformite_profil', label: 'Conforme au profil', shortLabel: 'Profil OK', icon: FileCheck, gradient: 'from-lime-500 to-lime-600', iconColor: 'text-lime-600', category: 'placement', complianceKeys: ['q_conforme'], reminder: 'Confirmer compatibilité' },
-  { id: 'conflit', label: 'Conflit d\'intérêts', shortLabel: 'Conflit', icon: AlertTriangle, gradient: 'from-yellow-500 to-yellow-600', iconColor: 'text-yellow-600', category: 'placement', complianceKeys: ['q_conflit'], reminder: 'Signaler si applicable' },
+  { id: 'objectifs', label: 'Objectifs de placement', shortLabel: 'Objectifs', icon: Target, gradient: 'from-blue-500 to-blue-600', iconColor: 'text-blue-600', category: 'profil', complianceKeys: ['q_objectifs'], reminder: 'Valider les buts financiers', questions: ['Vos objectifs de placement ont-ils changé depuis notre dernière rencontre?', 'Avez-vous de nouveaux projets financiers à court ou moyen terme?', 'Est-ce que la croissance ou le revenu demeure votre priorité?'] },
+  { id: 'horizon', label: 'Horizon de placement', shortLabel: 'Horizon', icon: Clock, gradient: 'from-indigo-500 to-indigo-600', iconColor: 'text-indigo-600', category: 'profil', complianceKeys: ['q_horizon'], reminder: 'Revalider le timeframe', questions: ['Quand prévoyez-vous avoir besoin de ces fonds?', 'Votre horizon de placement est-il toujours le même?', 'Y a-t-il des échéances importantes à venir (retraite, achat, études)?'] },
+  { id: 'tolerance', label: 'Tolérance au risque', shortLabel: 'Risque', icon: HeartPulse, gradient: 'from-rose-500 to-rose-600', iconColor: 'text-rose-600', category: 'profil', complianceKeys: ['q_tolerance'], reminder: 'Vérifier le confort', questions: ['Comment vous sentez-vous face aux fluctuations récentes du marché?', 'Êtes-vous toujours à l\'aise avec le niveau de risque actuel de votre portefeuille?', 'Une baisse temporaire de 15-20% vous inquiéterait-elle?'] },
+  { id: 'situation', label: 'Situation financière', shortLabel: 'Situation', icon: Wallet, gradient: 'from-amber-500 to-amber-600', iconColor: 'text-amber-600', category: 'profil', complianceKeys: ['q_situation'], reminder: 'Revenus, dettes, changements', questions: ['Y a-t-il eu des changements dans vos revenus ou vos dépenses?', 'Avez-vous contracté de nouvelles dettes ou remboursé des emprunts?', 'Votre situation d\'emploi est-elle stable?'] },
+  { id: 'liquidite', label: 'Besoins en liquidité', shortLabel: 'Liquidité', icon: DollarSign, gradient: 'from-emerald-500 to-emerald-600', iconColor: 'text-emerald-600', category: 'profil', complianceKeys: ['q_liquidite'], reminder: 'Retraits à venir?', questions: ['Prévoyez-vous des retraits dans les prochains mois?', 'Avez-vous un fonds d\'urgence suffisant en dehors de vos placements?', 'Y a-t-il des dépenses importantes prévues bientôt?'] },
+  { id: 'changements', label: 'Changements de vie', shortLabel: 'Vie', icon: RefreshCw, gradient: 'from-teal-500 to-teal-600', iconColor: 'text-teal-600', category: 'profil', complianceKeys: ['q_changements'], reminder: 'Mariage, retraite, emploi?', questions: ['Y a-t-il eu des changements dans votre vie personnelle (mariage, naissance, séparation)?', 'Avez-vous changé d\'emploi ou pris votre retraite?', 'Votre situation familiale ou de résidence a-t-elle changé?'] },
+  { id: 'repartition', label: 'Répartition d\'actifs', shortLabel: 'Répartition', icon: PieChart, gradient: 'from-violet-500 to-violet-600', iconColor: 'text-violet-600', category: 'portefeuille', complianceKeys: ['q_repartition'], reminder: 'Revoir allocation vs cible', questions: ['Voici comment votre portefeuille est réparti actuellement — est-ce toujours en ligne avec vos attentes?', 'Souhaitez-vous ajuster la proportion actions/obligations?', 'La répartition géographique vous convient-elle?'] },
+  { id: 'rendements', label: 'Rendements', shortLabel: 'Rendements', icon: TrendingUp, gradient: 'from-green-500 to-green-600', iconColor: 'text-green-600', category: 'portefeuille', complianceKeys: ['q_rendements'], reminder: 'Présenter la performance', questions: ['Voici le rendement de votre portefeuille sur la dernière période.', 'Avez-vous des questions sur la performance de certains titres?', 'Êtes-vous satisfait du rendement par rapport à vos attentes?'] },
+  { id: 'concentration', label: 'Concentration', shortLabel: 'Concentration', icon: AlertTriangle, gradient: 'from-orange-500 to-orange-600', iconColor: 'text-orange-600', category: 'portefeuille', complianceKeys: ['q_concentration'], reminder: 'Titre > 10%? Secteur?', questions: ['Je remarque une concentration dans certains titres/secteurs — souhaitez-vous diversifier?', 'Y a-t-il une raison pour laquelle vous souhaitez maintenir cette position concentrée?', 'Êtes-vous conscient du risque lié à cette concentration?'] },
+  { id: 'non_conforme', label: 'Conformité des titres', shortLabel: 'Conformité', icon: ShieldCheck, gradient: 'from-red-500 to-red-600', iconColor: 'text-red-600', category: 'portefeuille', complianceKeys: ['q_non_conforme'], reminder: 'Titres hors politique?', questions: ['Certains titres ne sont plus conformes à notre politique — voici les options.', 'Souhaitez-vous remplacer les titres identifiés comme non conformes?'] },
+  { id: 'frais', label: 'Frais', shortLabel: 'Frais', icon: Receipt, gradient: 'from-slate-500 to-slate-600', iconColor: 'text-slate-600', category: 'admin', complianceKeys: ['q_frais'], reminder: 'Mentionner si demandé', questions: ['Avez-vous des questions concernant les frais de gestion?', 'Voici un aperçu des frais associés à votre compte.', 'Souhaitez-vous qu\'on revoie la structure de frais ensemble?'] },
+  { id: 'recommandation', label: 'Recommandation', shortLabel: 'Reco', icon: Lightbulb, gradient: 'from-cyan-500 to-cyan-600', iconColor: 'text-cyan-600', category: 'placement', complianceKeys: ['q_recommande'], reminder: 'Présenter le titre recommandé', questions: ['Je vous recommande ce titre pour les raisons suivantes...', 'Ce placement correspond à votre profil et vos objectifs parce que...', 'Voici pourquoi je pense que c\'est une bonne opportunité actuellement.'] },
+  { id: 'risques_placement', label: 'Risques expliqués', shortLabel: 'Risques', icon: Scale, gradient: 'from-pink-500 to-pink-600', iconColor: 'text-pink-600', category: 'placement', complianceKeys: ['q_risques', 'q_comprend'], reminder: 'Informer des risques', questions: ['Voici les principaux risques associés à ce placement...', 'Comprenez-vous que la valeur de ce placement peut fluctuer?', 'Êtes-vous à l\'aise avec le niveau de risque de ce produit?'] },
+  { id: 'conformite_profil', label: 'Conforme au profil', shortLabel: 'Profil OK', icon: FileCheck, gradient: 'from-lime-500 to-lime-600', iconColor: 'text-lime-600', category: 'placement', complianceKeys: ['q_conforme'], reminder: 'Confirmer compatibilité', questions: ['Ce placement est compatible avec votre profil d\'investisseur.', 'Ce produit correspond à votre tolérance au risque et votre horizon.'] },
+  { id: 'conflit', label: 'Conflit d\'intérêts', shortLabel: 'Conflit', icon: AlertTriangle, gradient: 'from-yellow-500 to-yellow-600', iconColor: 'text-yellow-600', category: 'placement', complianceKeys: ['q_conflit'], reminder: 'Signaler si applicable', questions: ['Je dois vous informer d\'un potentiel conflit d\'intérêts concernant...', 'En toute transparence, voici les éléments à considérer...'] },
 ];
 
 const MEETING_TYPES = [
@@ -107,6 +108,10 @@ export default function NewMeetingNotePage() {
   // Notes
   const [freeNotes, setFreeNotes] = useState('');
   const [nextMeeting, setNextMeeting] = useState('');
+
+  // Guide / aide-mémoire
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [expandedTopic, setExpandedTopic] = useState<string | null>(null);
 
   // AI
   const [transcription, setTranscription] = useState('');
@@ -296,19 +301,34 @@ export default function NewMeetingNotePage() {
           </div>
           <div>
             <p className="text-sm font-bold text-amber-900">Aide-mémoire</p>
-            <p className="text-[11px] text-amber-700/70">Points à couvrir pendant la rencontre</p>
+            <p className="text-[11px] text-amber-700/70">Points et questions à couvrir pendant la rencontre</p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {visibleTopics.map((topic) => {
             const Icon = topic.icon;
+            const isExpanded = expandedTopic === topic.id;
             return (
-              <div key={topic.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/60 border border-amber-200/50">
-                <Icon className={`h-4 w-4 ${topic.iconColor} flex-shrink-0`} />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-amber-900 truncate">{topic.shortLabel}</p>
-                  <p className="text-[10px] text-amber-700/70 truncate">{topic.reminder}</p>
-                </div>
+              <div key={topic.id} className={`rounded-xl bg-white/60 border border-amber-200/50 overflow-hidden transition-all ${isExpanded ? 'sm:col-span-2' : ''}`}>
+                <button type="button" onClick={() => setExpandedTopic(isExpanded ? null : topic.id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-white/40 transition-colors">
+                  <Icon className={`h-4 w-4 ${topic.iconColor} flex-shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-amber-900 truncate">{topic.shortLabel}</p>
+                    <p className="text-[10px] text-amber-700/70 truncate">{topic.reminder}</p>
+                  </div>
+                  {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />}
+                </button>
+                {isExpanded && (
+                  <div className="px-3 pb-2.5 space-y-1 border-t border-amber-200/30 pt-2">
+                    {topic.questions.map((q, qi) => (
+                      <div key={qi} className="flex items-start gap-2 px-2.5 py-1.5 rounded-lg bg-white/80">
+                        <MessageCircle className="h-3 w-3 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-[11px] text-amber-800 leading-relaxed">{q}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -410,6 +430,66 @@ export default function NewMeetingNotePage() {
             );
           })}
         </div>
+      </div>
+
+      {/* Aide-mémoire — conversation guide */}
+      <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200/80 mb-4 shadow-sm overflow-hidden">
+        <button type="button" onClick={() => setGuideOpen(!guideOpen)}
+          className="w-full flex items-center justify-between p-4 hover:bg-amber-100/30 transition-colors">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-sm">
+              <BookOpen className="h-4 w-4 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold text-amber-900">Guide de conversation</p>
+              <p className="text-[11px] text-amber-700/70">Questions à poser selon les sujets</p>
+            </div>
+          </div>
+          {guideOpen ? <ChevronUp className="h-5 w-5 text-amber-600" /> : <ChevronDown className="h-5 w-5 text-amber-600" />}
+        </button>
+
+        {guideOpen && (
+          <div className="px-4 pb-4 space-y-1.5">
+            {visibleTopics.map((topic) => {
+              const Icon = topic.icon;
+              const isExpanded = expandedTopic === topic.id;
+              const isSelected = selectedChips.has(topic.id);
+              return (
+                <div key={topic.id} className={`rounded-xl border transition-all ${isSelected ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-200/60 bg-white/70'}`}>
+                  <button type="button"
+                    onClick={() => setExpandedTopic(isExpanded ? null : topic.id)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left">
+                    <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${topic.gradient} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className="h-3.5 w-3.5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-gray-800">{topic.label}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{topic.reminder}</p>
+                    </div>
+                    {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />}
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />}
+                  </button>
+                  {isExpanded && (
+                    <div className="px-3 pb-3 pt-0.5 space-y-1.5 ml-9 mr-2">
+                      {topic.questions.map((q, qi) => (
+                        <div key={qi} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-white border border-gray-100 shadow-sm">
+                          <MessageCircle className="h-3.5 w-3.5 text-brand-primary mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-gray-700 leading-relaxed">{q}</p>
+                        </div>
+                      ))}
+                      {!isSelected && (
+                        <button type="button" onClick={() => toggleChip(topic.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary/10 text-brand-primary text-[11px] font-semibold hover:bg-brand-primary/20 transition-colors mt-1">
+                          <Check className="h-3 w-3" />Marquer comme abordé
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Quick note during meeting */}
