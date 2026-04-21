@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { AudioWaveform } from '@/components/meeting-notes/AudioWaveform';
@@ -15,126 +14,129 @@ import {
   Plus, X, ArrowDownRight, ArrowUpRight, ArrowLeftRight,
   Target, ShieldCheck, PieChart, DollarSign, Clock,
   HeartPulse, Scale, AlertTriangle,
-  BookOpen, Receipt, Wallet, RefreshCw, ChevronDown,
-  MessageCircle,
+  BookOpen, Receipt, Wallet, RefreshCw,
+  MessageCircle, UserCircle, Briefcase, Lightbulb, FileCheck,
+  Zap, Trophy,
 } from 'lucide-react';
 
-// ─── Topic data with suggested prompts ──────────────────────────
+// ─── Topic data ─────────────────────────────────────────────────
 interface TopicItem {
   id: string;
   label: string;
   description: string;
   icon: typeof Target;
-  color: string;
-  selectedColor: string;
+  gradient: string;      // bg gradient for icon container when selected
+  iconColor: string;     // icon color
+  bgSelected: string;    // card background when selected
+  borderSelected: string;
   category: 'profil' | 'portefeuille' | 'placement' | 'admin';
-  prompts: string[]; // suggested questions/prompts for the advisor
+  prompts: string[];
   complianceKeys: string[];
 }
 
 const TOPICS: TopicItem[] = [
   {
     id: 'objectifs', label: 'Objectifs', description: 'Buts financiers du client',
-    icon: Target, color: 'border-blue-200 bg-white', selectedColor: 'border-blue-400 bg-blue-50 ring-2 ring-blue-200',
+    icon: Target, gradient: 'from-blue-500 to-blue-600', iconColor: 'text-blue-600', bgSelected: 'bg-blue-50', borderSelected: 'border-blue-300',
     category: 'profil', complianceKeys: ['q_objectifs'],
     prompts: ['Quels sont vos objectifs financiers cette année?', 'Y a-t-il de nouveaux projets à planifier?', 'Vos priorités ont-elles changé?'],
   },
   {
     id: 'horizon', label: 'Horizon', description: 'Durée prévue des placements',
-    icon: Clock, color: 'border-indigo-200 bg-white', selectedColor: 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200',
+    icon: Clock, gradient: 'from-indigo-500 to-indigo-600', iconColor: 'text-indigo-600', bgSelected: 'bg-indigo-50', borderSelected: 'border-indigo-300',
     category: 'profil', complianceKeys: ['q_horizon'],
-    prompts: ['Prévoyez-vous avoir besoin de ces fonds bientôt?', 'Votre horizon a-t-il changé depuis notre dernière rencontre?'],
+    prompts: ['Prévoyez-vous avoir besoin de ces fonds bientôt?', 'Votre horizon a-t-il changé?'],
   },
   {
     id: 'tolerance', label: 'Tolérance au risque', description: 'Confort face aux fluctuations',
-    icon: HeartPulse, color: 'border-rose-200 bg-white', selectedColor: 'border-rose-400 bg-rose-50 ring-2 ring-rose-200',
+    icon: HeartPulse, gradient: 'from-rose-500 to-rose-600', iconColor: 'text-rose-600', bgSelected: 'bg-rose-50', borderSelected: 'border-rose-300',
     category: 'profil', complianceKeys: ['q_tolerance'],
-    prompts: ['Comment avez-vous vécu les baisses de marché récentes?', 'Êtes-vous toujours confortable avec le niveau de risque actuel?'],
+    prompts: ['Comment avez-vous vécu les baisses récentes?', 'Êtes-vous encore confortable avec le niveau de risque?'],
   },
   {
     id: 'situation', label: 'Situation financière', description: 'Revenus, dépenses, dettes',
-    icon: Wallet, color: 'border-amber-200 bg-white', selectedColor: 'border-amber-400 bg-amber-50 ring-2 ring-amber-200',
+    icon: Wallet, gradient: 'from-amber-500 to-amber-600', iconColor: 'text-amber-600', bgSelected: 'bg-amber-50', borderSelected: 'border-amber-300',
     category: 'profil', complianceKeys: ['q_situation'],
-    prompts: ['Y a-t-il des changements dans vos revenus ou dépenses?', 'Avez-vous contracté de nouvelles dettes?', 'Avez-vous reçu un héritage ou un bonus?'],
+    prompts: ['Changements dans vos revenus ou dépenses?', 'Nouvelles dettes?', 'Héritage ou bonus reçu?'],
   },
   {
     id: 'liquidite', label: 'Liquidité', description: 'Besoins en retraits à venir',
-    icon: DollarSign, color: 'border-emerald-200 bg-white', selectedColor: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200',
+    icon: DollarSign, gradient: 'from-emerald-500 to-emerald-600', iconColor: 'text-emerald-600', bgSelected: 'bg-emerald-50', borderSelected: 'border-emerald-300',
     category: 'profil', complianceKeys: ['q_liquidite'],
-    prompts: ['Prévoyez-vous des retraits dans les 6 à 12 prochains mois?', 'Avez-vous des dépenses importantes à venir?'],
+    prompts: ['Retraits prévus dans les 6-12 prochains mois?', 'Dépenses importantes à venir?'],
   },
   {
     id: 'changements', label: 'Changements de vie', description: 'Mariage, retraite, enfant...',
-    icon: RefreshCw, color: 'border-teal-200 bg-white', selectedColor: 'border-teal-400 bg-teal-50 ring-2 ring-teal-200',
+    icon: RefreshCw, gradient: 'from-teal-500 to-teal-600', iconColor: 'text-teal-600', bgSelected: 'bg-teal-50', borderSelected: 'border-teal-300',
     category: 'profil', complianceKeys: ['q_changements'],
-    prompts: ['Y a-t-il des événements importants à prévoir?', 'Changement d\'emploi, déménagement, retraite?'],
+    prompts: ['Événements importants à prévoir?', 'Changement d\'emploi, déménagement?'],
   },
   {
     id: 'repartition', label: 'Répartition d\'actifs', description: 'Allocation actions/obligations',
-    icon: PieChart, color: 'border-violet-200 bg-white', selectedColor: 'border-violet-400 bg-violet-50 ring-2 ring-violet-200',
+    icon: PieChart, gradient: 'from-violet-500 to-violet-600', iconColor: 'text-violet-600', bgSelected: 'bg-violet-50', borderSelected: 'border-violet-300',
     category: 'portefeuille', complianceKeys: ['q_repartition'],
-    prompts: ['Votre répartition actuelle est de X% actions / Y% obligations', 'Souhaitez-vous ajuster l\'allocation?'],
+    prompts: ['Répartition actuelle: X% actions / Y% obligations', 'Souhaitez-vous ajuster l\'allocation?'],
   },
   {
     id: 'rendements', label: 'Rendements', description: 'Performance du portefeuille',
-    icon: TrendingUp, color: 'border-green-200 bg-white', selectedColor: 'border-green-400 bg-green-50 ring-2 ring-green-200',
+    icon: TrendingUp, gradient: 'from-green-500 to-green-600', iconColor: 'text-green-600', bgSelected: 'bg-green-50', borderSelected: 'border-green-300',
     category: 'portefeuille', complianceKeys: ['q_rendements'],
-    prompts: ['Votre rendement depuis le début de l\'année est de X%', 'Comparé à l\'indice de référence...', 'Les titres qui ont le plus performé sont...'],
+    prompts: ['Rendement YTD: X%', 'Comparé à l\'indice de référence...', 'Titres les plus performants...'],
   },
   {
-    id: 'concentration', label: 'Concentration', description: 'Exposition à un seul titre/secteur',
-    icon: AlertTriangle, color: 'border-orange-200 bg-white', selectedColor: 'border-orange-400 bg-orange-50 ring-2 ring-orange-200',
+    id: 'concentration', label: 'Concentration', description: 'Exposition à un titre/secteur',
+    icon: AlertTriangle, gradient: 'from-orange-500 to-orange-600', iconColor: 'text-orange-600', bgSelected: 'bg-orange-50', borderSelected: 'border-orange-300',
     category: 'portefeuille', complianceKeys: ['q_concentration'],
-    prompts: ['Vérifier si un titre dépasse 10% du portefeuille', 'Un secteur est-il surreprésenté?'],
+    prompts: ['Un titre dépasse-t-il 10% du portefeuille?', 'Secteur surreprésenté?'],
   },
   {
     id: 'non_conforme', label: 'Conformité des titres', description: 'Titres hors politique',
-    icon: ShieldCheck, color: 'border-red-200 bg-white', selectedColor: 'border-red-400 bg-red-50 ring-2 ring-red-200',
+    icon: ShieldCheck, gradient: 'from-red-500 to-red-600', iconColor: 'text-red-600', bgSelected: 'bg-red-50', borderSelected: 'border-red-300',
     category: 'portefeuille', complianceKeys: ['q_non_conforme'],
-    prompts: ['Y a-t-il des placements qui ne respectent plus la politique?', 'Certains titres sont-ils à vendre?'],
+    prompts: ['Placements qui ne respectent plus la politique?', 'Titres à vendre?'],
   },
   {
     id: 'frais', label: 'Frais', description: 'Frais de gestion et commissions',
-    icon: Receipt, color: 'border-slate-200 bg-white', selectedColor: 'border-slate-400 bg-slate-50 ring-2 ring-slate-200',
+    icon: Receipt, gradient: 'from-slate-500 to-slate-600', iconColor: 'text-slate-600', bgSelected: 'bg-slate-50', borderSelected: 'border-slate-300',
     category: 'admin', complianceKeys: ['q_frais'],
-    prompts: ['Vos frais de gestion totaux sont de X%', 'Voulez-vous qu\'on révise la structure de frais?'],
+    prompts: ['Frais de gestion totaux: X%', 'Réviser la structure de frais?'],
   },
   {
     id: 'recommandation', label: 'Recommandation', description: 'Titre suggéré au client',
-    icon: BookOpen, color: 'border-cyan-200 bg-white', selectedColor: 'border-cyan-400 bg-cyan-50 ring-2 ring-cyan-200',
+    icon: Lightbulb, gradient: 'from-cyan-500 to-cyan-600', iconColor: 'text-cyan-600', bgSelected: 'bg-cyan-50', borderSelected: 'border-cyan-300',
     category: 'placement', complianceKeys: ['q_recommande'],
-    prompts: ['Je vous recommande le titre X parce que...', 'Ce placement correspond à votre profil car...'],
+    prompts: ['Je recommande le titre X parce que...', 'Ce placement correspond à votre profil car...'],
   },
   {
     id: 'risques_placement', label: 'Risques expliqués', description: 'Client informé des risques',
-    icon: Scale, color: 'border-pink-200 bg-white', selectedColor: 'border-pink-400 bg-pink-50 ring-2 ring-pink-200',
+    icon: Scale, gradient: 'from-pink-500 to-pink-600', iconColor: 'text-pink-600', bgSelected: 'bg-pink-50', borderSelected: 'border-pink-300',
     category: 'placement', complianceKeys: ['q_risques', 'q_comprend'],
-    prompts: ['Les risques principaux sont...', 'Dans le pire scénario, la perte potentielle serait de...', 'Le client confirme comprendre les risques'],
+    prompts: ['Risques principaux: ...', 'Pire scénario: perte potentielle de X%', 'Client confirme comprendre'],
   },
   {
     id: 'conformite_profil', label: 'Conforme au profil', description: 'Respecte le profil d\'investisseur',
-    icon: ShieldCheck, color: 'border-lime-200 bg-white', selectedColor: 'border-lime-400 bg-lime-50 ring-2 ring-lime-200',
+    icon: FileCheck, gradient: 'from-lime-500 to-lime-600', iconColor: 'text-lime-600', bgSelected: 'bg-lime-50', borderSelected: 'border-lime-300',
     category: 'placement', complianceKeys: ['q_conforme'],
-    prompts: ['Ce placement est conforme à votre profil d\'investisseur', 'La cote de risque du titre est compatible'],
+    prompts: ['Placement conforme au profil d\'investisseur', 'Cote de risque compatible'],
   },
   {
     id: 'conflit', label: 'Conflit d\'intérêts', description: 'Signaler si applicable',
-    icon: AlertTriangle, color: 'border-yellow-200 bg-white', selectedColor: 'border-yellow-400 bg-yellow-50 ring-2 ring-yellow-200',
+    icon: AlertTriangle, gradient: 'from-yellow-500 to-yellow-600', iconColor: 'text-yellow-600', bgSelected: 'bg-yellow-50', borderSelected: 'border-yellow-300',
     category: 'placement', complianceKeys: ['q_conflit'],
     prompts: ['Aucun conflit d\'intérêts à signaler', 'Conflit potentiel: [détails]'],
   },
 ];
 
-const CATEGORY_INFO: Record<string, { label: string; description: string; emoji: string }> = {
-  profil: { label: 'Profil du client', description: 'Ce que vous avez discuté sur sa situation', emoji: '👤' },
-  portefeuille: { label: 'Portefeuille', description: 'Ce que vous avez revu ensemble', emoji: '📊' },
-  placement: { label: 'Nouveau placement', description: 'Si un titre est recommandé', emoji: '💡' },
-  admin: { label: 'Administratif', description: 'Frais, documents, etc.', emoji: '📋' },
+const CATEGORY_INFO: Record<string, { label: string; description: string; icon: typeof User; color: string }> = {
+  profil: { label: 'Profil du client', description: 'Sujets sur sa situation personnelle', icon: UserCircle, color: 'text-blue-600 bg-blue-100' },
+  portefeuille: { label: 'Portefeuille', description: 'Analyse et revue des placements', icon: Briefcase, color: 'text-violet-600 bg-violet-100' },
+  placement: { label: 'Nouveau placement', description: 'Si un titre est recommandé', icon: Lightbulb, color: 'text-emerald-600 bg-emerald-100' },
+  admin: { label: 'Administratif', description: 'Frais, documents, paperasse', icon: FileCheck, color: 'text-slate-600 bg-slate-100' },
 };
 
 const MEETING_TYPES = [
-  { value: 'phone', label: 'Tél.', icon: Phone },
-  { value: 'in_person', label: 'Personne', icon: UsersIcon },
+  { value: 'phone', label: 'Téléphone', icon: Phone },
+  { value: 'in_person', label: 'En personne', icon: UsersIcon },
   { value: 'video', label: 'Vidéo', icon: Monitor },
 ] as const;
 
@@ -145,18 +147,18 @@ const SUBJECTS = [
 ] as const;
 
 const TEMPLATES = [
-  { id: 'revision_annuelle', label: 'Révision annuelle', icon: Calendar, color: 'border-blue-300 bg-blue-50 text-blue-700',
+  { id: 'revision_annuelle', label: 'Révision annuelle', icon: Calendar, gradient: 'from-blue-500 to-indigo-500',
     chips: ['objectifs', 'horizon', 'tolerance', 'situation', 'repartition', 'rendements', 'changements'], subject: 'revision' },
-  { id: 'nouveau_placement', label: 'Nouveau placement', icon: TrendingUp, color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+  { id: 'nouveau_placement', label: 'Nouveau placement', icon: TrendingUp, gradient: 'from-emerald-500 to-teal-500',
     chips: ['recommandation', 'risques_placement', 'conformite_profil'], subject: 'placement' },
-  { id: 'suivi_trimestriel', label: 'Suivi rapide', icon: BarChart3, color: 'border-purple-300 bg-purple-50 text-purple-700',
+  { id: 'suivi_trimestriel', label: 'Suivi rapide', icon: Zap, gradient: 'from-purple-500 to-pink-500',
     chips: ['rendements', 'repartition', 'objectifs'], subject: 'revision' },
 ] as const;
 
 const TX_ICONS: Record<string, { icon: typeof ArrowUpRight; color: string; bgColor: string; label: string }> = {
-  buy: { icon: ArrowUpRight, color: 'text-emerald-600', bgColor: 'bg-emerald-50', label: 'Achat' },
-  sell: { icon: ArrowDownRight, color: 'text-red-600', bgColor: 'bg-red-50', label: 'Vente' },
-  switch: { icon: ArrowLeftRight, color: 'text-blue-600', bgColor: 'bg-blue-50', label: 'Échange' },
+  buy: { icon: ArrowUpRight, color: 'text-emerald-600', bgColor: 'bg-emerald-100', label: 'Achat' },
+  sell: { icon: ArrowDownRight, color: 'text-red-600', bgColor: 'bg-red-100', label: 'Vente' },
+  switch: { icon: ArrowLeftRight, color: 'text-blue-600', bgColor: 'bg-blue-100', label: 'Échange' },
 };
 
 // ─── CopyButton ─────────────────────────────────────────────────
@@ -164,8 +166,8 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   return (
-    <button type="button" onClick={copy} className="px-2.5 py-1 rounded-lg bg-white/60 hover:bg-white text-xs font-medium transition-all flex items-center gap-1" title="Copier">
-      {copied ? <><Check className="h-3.5 w-3.5 text-emerald-600" />Copié!</> : <><Copy className="h-3.5 w-3.5" />Copier</>}
+    <button type="button" onClick={copy} className="px-3 py-1.5 rounded-xl bg-white/70 hover:bg-white border border-current/10 text-xs font-semibold transition-all flex items-center gap-1.5 hover:shadow-sm">
+      {copied ? <><Check className="h-3.5 w-3.5 text-emerald-600" /><span className="text-emerald-700">Copié!</span></> : <><Copy className="h-3.5 w-3.5" />Copier</>}
     </button>
   );
 }
@@ -176,7 +178,6 @@ export default function NewMeetingNotePage() {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
 
-  // Meeting info
   const [clientName, setClientName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split('T')[0]);
@@ -184,24 +185,18 @@ export default function NewMeetingNotePage() {
   const [meetingType, setMeetingType] = useState<string>('in_person');
   const [subject, setSubject] = useState<string>('revision');
 
-  // Topics
   const [selectedChips, setSelectedChips] = useState<Set<string>>(new Set());
   const [expandedChip, setExpandedChip] = useState<string | null>(null);
 
-  // Transactions
   const [transactions, setTransactions] = useState<MeetingTransaction[]>([]);
-
-  // Notes
   const [freeNotes, setFreeNotes] = useState('');
   const [nextMeeting, setNextMeeting] = useState('');
 
-  // AI
   const [transcription, setTranscription] = useState('');
   const [aiSummaryAdvisor, setAiSummaryAdvisor] = useState('');
   const [aiSummaryClient, setAiSummaryClient] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Recording
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
@@ -210,31 +205,25 @@ export default function NewMeetingNotePage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // ─── Logic ────────────────────────────────────────────────────
+  // Logic
   const toggleChip = (chipId: string) => {
     setSelectedChips((prev) => {
       const next = new Set(prev);
-      if (next.has(chipId)) { next.delete(chipId); setExpandedChip(null); }
+      if (next.has(chipId)) { next.delete(chipId); if (expandedChip === chipId) setExpandedChip(null); }
       else { next.add(chipId); setExpandedChip(chipId); }
       return next;
     });
   };
 
   const applyTemplate = (tpl: typeof TEMPLATES[number]) => {
-    setSubject(tpl.subject);
-    setSelectedChips(new Set(tpl.chips));
-    setExpandedChip(null);
+    setSubject(tpl.subject); setSelectedChips(new Set(tpl.chips)); setExpandedChip(null);
     toast('success', `"${tpl.label}" appliqué`);
   };
 
   const deriveCompliance = (): Record<string, string> => {
-    const compliance: Record<string, string> = {};
-    for (const topic of TOPICS) {
-      for (const key of topic.complianceKeys) {
-        compliance[key] = selectedChips.has(topic.id) ? 'oui' : '';
-      }
-    }
-    return compliance;
+    const c: Record<string, string> = {};
+    for (const t of TOPICS) { for (const k of t.complianceKeys) { c[k] = selectedChips.has(t.id) ? 'oui' : ''; } }
+    return c;
   };
 
   const getVisibleTopics = () => TOPICS.filter((t) => {
@@ -256,23 +245,23 @@ export default function NewMeetingNotePage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
-      mediaRecorder.onstop = async () => {
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop()); streamRef.current = null;
         if (timerRef.current) clearInterval(timerRef.current);
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         if (blob.size < 1000) { toast('warning', 'Enregistrement trop court'); return; }
         setTranscribing(true);
         try {
-          const formData = new FormData(); formData.append('file', blob, 'recording.webm');
-          const res = await fetch('/api/ai/transcribe', { method: 'POST', body: formData });
-          if (res.ok) { const data = await res.json(); setTranscription((prev) => (prev ? prev + '\n\n' : '') + data.text); toast('success', 'Transcription terminée'); }
+          const fd = new FormData(); fd.append('file', blob, 'recording.webm');
+          const res = await fetch('/api/ai/transcribe', { method: 'POST', body: fd });
+          if (res.ok) { const d = await res.json(); setTranscription((p) => (p ? p + '\n\n' : '') + d.text); toast('success', 'Transcription terminée'); }
           else toast('error', 'Erreur de transcription');
         } catch { toast('error', 'Erreur de transcription'); } finally { setTranscribing(false); }
       };
-      mediaRecorder.start(1000); mediaRecorderRef.current = mediaRecorder;
+      mr.start(1000); mediaRecorderRef.current = mr;
       setIsRecording(true); setRecordingTime(0);
       timerRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
     } catch { toast('error', "Impossible d'accéder au microphone"); }
@@ -296,7 +285,7 @@ export default function NewMeetingNotePage() {
             topicsCovered: Array.from(selectedChips).map((id) => TOPICS.find((t) => t.id === id)?.label).filter(Boolean) },
         }),
       });
-      if (res.ok) { const data = await res.json(); setAiSummaryAdvisor(data.advisor_summary || ''); setAiSummaryClient(data.client_summary || ''); toast('success', 'Résumés générés'); }
+      if (res.ok) { const d = await res.json(); setAiSummaryAdvisor(d.advisor_summary || ''); setAiSummaryClient(d.client_summary || ''); toast('success', 'Résumés générés'); }
       else toast('error', 'Erreur lors de la génération');
     } catch { toast('error', 'Erreur de connexion'); } finally { setAiLoading(false); }
   };
@@ -315,11 +304,11 @@ export default function NewMeetingNotePage() {
       };
       const res = await fetch('/api/meeting-notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) { toast('success', status === 'completed' ? 'Note complétée!' : 'Brouillon sauvegardé'); router.push('/meeting-notes'); }
-      else toast('error', 'Erreur lors de la sauvegarde');
+      else toast('error', 'Erreur');
     } catch { toast('error', 'Erreur de connexion'); } finally { setSaving(false); }
   };
 
-  // ─── Render ───────────────────────────────────────────────────
+  // Categories to show
   const categories = (subject === 'placement' || subject === 'both')
     ? ['profil', 'portefeuille', 'placement', 'admin'] as const
     : ['profil', 'portefeuille', 'admin'] as const;
@@ -328,54 +317,79 @@ export default function NewMeetingNotePage() {
     <div className="max-w-2xl mx-auto pb-28">
       {/* Back */}
       <button type="button" onClick={() => router.push('/meeting-notes')}
-        className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text-main transition-colors mb-4">
-        <ArrowLeft className="h-4 w-4" />Retour aux notes
+        className="flex items-center gap-1.5 text-sm text-text-muted hover:text-brand-primary transition-colors mb-5">
+        <ArrowLeft className="h-4 w-4" />Retour
       </button>
 
-      {/* ─── Hero header ─────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-text-main font-[family-name:var(--font-heading)] mb-1">
-          Nouvelle rencontre
-        </h1>
-        <p className="text-text-muted">
-          Sélectionnez les sujets abordés, l&apos;IA s&apos;occupe du reste.
-        </p>
+      {/* ─── Hero ────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-primary via-brand-primary to-[#03045e] p-6 mb-6 shadow-lg">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
+        <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-full translate-y-6 -translate-x-6" />
+        <div className="relative">
+          <h1 className="text-2xl font-bold text-white font-[family-name:var(--font-heading)] mb-1">
+            Nouvelle rencontre
+          </h1>
+          <p className="text-white/70 text-sm">
+            Tapez les sujets abordés — l&apos;IA génère vos notes automatiquement
+          </p>
+        </div>
       </div>
 
-      {/* ─── Quick info row ──────────────────────────────────────── */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 mb-5 shadow-sm">
-        <div className="grid grid-cols-[1fr,auto,auto] gap-3 items-end mb-3">
-          <Input placeholder="Nom du client" value={clientName} onChange={(e) => setClientName(e.target.value)} />
-          <Input type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} className="w-36" />
-          <Input type="time" value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} className="w-28" />
+      {/* ─── Client + Meeting info ───────────────────────────────── */}
+      <div className="rounded-2xl bg-white border border-gray-200 p-5 mb-5 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+            <User className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-text-main">Informations</p>
+            <p className="text-[11px] text-text-muted">Client et détails de la rencontre</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {MEETING_TYPES.map((mt) => {
-            const Icon = mt.icon; const active = meetingType === mt.value;
-            return (<button key={mt.value} type="button" onClick={() => setMeetingType(mt.value)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${active ? 'bg-brand-primary text-white shadow-sm' : 'bg-gray-100 text-text-muted hover:bg-gray-200'}`}>
-              <Icon className="h-3.5 w-3.5" />{mt.label}</button>);
-          })}
-          <div className="w-px h-5 bg-gray-200" />
-          {SUBJECTS.map((s) => {
-            const active = subject === s.value;
-            return (<button key={s.value} type="button" onClick={() => { setSubject(s.value); setExpandedChip(null); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${active ? 'bg-brand-primary text-white shadow-sm' : 'bg-gray-100 text-text-muted hover:bg-gray-200'}`}>
-              {s.label}</button>);
-          })}
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,140px,120px] gap-3">
+            <Input placeholder="Nom du client *" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+            <Input type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+            <Input type="time" value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {MEETING_TYPES.map((mt) => {
+              const Icon = mt.icon; const active = meetingType === mt.value;
+              return (<button key={mt.value} type="button" onClick={() => setMeetingType(mt.value)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all duration-200 ${
+                  active ? 'bg-gradient-to-r from-brand-primary to-brand-primary/90 text-white shadow-md shadow-brand-primary/20 scale-105' : 'bg-gray-100 text-text-muted hover:bg-gray-200 hover:scale-[1.02]'
+                }`}><Icon className="h-3.5 w-3.5" />{mt.label}</button>);
+            })}
+            <div className="w-px h-7 bg-gray-200 self-center mx-1" />
+            {SUBJECTS.map((s) => {
+              const active = subject === s.value;
+              return (<button key={s.value} type="button" onClick={() => { setSubject(s.value); setExpandedChip(null); }}
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-all duration-200 ${
+                  active ? 'bg-gradient-to-r from-brand-primary to-brand-primary/90 text-white shadow-md shadow-brand-primary/20 scale-105' : 'bg-gray-100 text-text-muted hover:bg-gray-200 hover:scale-[1.02]'
+                }`}>{s.label}</button>);
+            })}
+          </div>
         </div>
       </div>
 
       {/* ─── Templates ───────────────────────────────────────────── */}
-      <div className="mb-5">
-        <p className="text-xs font-medium text-text-muted mb-2">Commencer avec un template:</p>
-        <div className="flex gap-2 overflow-x-auto">
+      <div className="mb-6">
+        <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2.5 ml-1">Démarrage rapide</p>
+        <div className="grid grid-cols-3 gap-3">
           {TEMPLATES.map((tpl) => {
             const Icon = tpl.icon;
             return (
               <button key={tpl.id} type="button" onClick={() => applyTemplate(tpl)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 text-sm font-semibold whitespace-nowrap transition-all hover:scale-[1.03] hover:shadow-md ${tpl.color}`}>
-                <Icon className="h-4 w-4" />{tpl.label}
+                className="group relative overflow-hidden rounded-2xl p-4 bg-white border-2 border-gray-200 hover:border-transparent hover:shadow-lg transition-all duration-300">
+                <div className={`absolute inset-0 bg-gradient-to-br ${tpl.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
+                <div className="relative flex flex-col items-center gap-2 text-center">
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tpl.gradient} flex items-center justify-center shadow-sm group-hover:shadow-md group-hover:scale-110 transition-all`}>
+                    <Icon className="h-5 w-5 text-white" />
+                  </div>
+                  <span className="text-xs font-bold text-text-main group-hover:text-white transition-colors">{tpl.label}</span>
+                </div>
               </button>
             );
           })}
@@ -383,37 +397,47 @@ export default function NewMeetingNotePage() {
       </div>
 
       {/* ─── Topics covered ──────────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-text-main font-[family-name:var(--font-heading)]">
-              Qu&apos;avez-vous couvert?
-            </h2>
-            <p className="text-xs text-text-muted mt-0.5">Tapez les sujets abordés pendant la rencontre</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-sm">
+              <CheckCircle2 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-text-main font-[family-name:var(--font-heading)]">
+                Sujets abordés
+              </h2>
+              <p className="text-[11px] text-text-muted">Tapez tout ce que vous avez couvert</p>
+            </div>
           </div>
           {selectedCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm font-bold text-emerald-700">{selectedCount}</span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-sm">
+              <Trophy className="h-3.5 w-3.5 text-white" />
+              <span className="text-sm font-bold text-white">{selectedCount}</span>
             </div>
           )}
         </div>
 
         {categories.filter((cat) => visibleTopics.some((t) => t.category === cat)).map((cat) => {
           const info = CATEGORY_INFO[cat];
+          const CatIcon = info.icon;
           const catTopics = visibleTopics.filter((t) => t.category === cat);
 
           return (
             <div key={cat} className="mb-5">
-              <div className="flex items-center gap-2 mb-2.5">
-                <span className="text-lg">{info.emoji}</span>
+              {/* Category header */}
+              <div className="flex items-center gap-2.5 mb-3 ml-1">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${info.color}`}>
+                  <CatIcon className="h-4 w-4" />
+                </div>
                 <div>
-                  <p className="text-sm font-bold text-text-main">{info.label}</p>
-                  <p className="text-[11px] text-text-muted">{info.description}</p>
+                  <p className="text-sm font-bold text-text-main leading-tight">{info.label}</p>
+                  <p className="text-[10px] text-text-muted">{info.description}</p>
                 </div>
               </div>
 
-              <div className="space-y-2">
+              {/* Topic cards */}
+              <div className="space-y-2.5">
                 {catTopics.map((topic) => {
                   const Icon = topic.icon;
                   const selected = selectedChips.has(topic.id);
@@ -421,45 +445,50 @@ export default function NewMeetingNotePage() {
 
                   return (
                     <div key={topic.id}>
-                      <button type="button"
-                        onClick={() => toggleChip(topic.id)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2 text-left transition-all duration-200 ${
-                          selected ? topic.selectedColor : `${topic.color} hover:shadow-sm hover:scale-[1.01]`
+                      <button type="button" onClick={() => toggleChip(topic.id)}
+                        className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border-2 text-left transition-all duration-300 ${
+                          selected
+                            ? `${topic.bgSelected} ${topic.borderSelected} shadow-md scale-[1.01]`
+                            : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm hover:scale-[1.005]'
                         }`}>
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
-                          selected ? 'bg-white shadow-sm' : 'bg-gray-50'
+                        {/* Icon */}
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-300 shadow-sm ${
+                          selected ? `bg-gradient-to-br ${topic.gradient} shadow-md` : 'bg-gray-100'
                         }`}>
-                          <Icon className={`h-5 w-5 ${selected ? 'text-current' : 'text-gray-400'}`} />
+                          <Icon className={`h-5 w-5 transition-colors ${selected ? 'text-white' : 'text-gray-400'}`} />
                         </div>
+
+                        {/* Text */}
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold ${selected ? 'text-current' : 'text-text-main'}`}>{topic.label}</p>
-                          <p className="text-[11px] text-text-muted truncate">{topic.description}</p>
+                          <p className={`text-sm font-bold transition-colors ${selected ? topic.iconColor : 'text-text-main'}`}>
+                            {topic.label}
+                          </p>
+                          <p className="text-[11px] text-text-muted leading-tight mt-0.5">{topic.description}</p>
                         </div>
-                        {selected ? (
-                          <CheckCircle2 className="h-5 w-5 text-current flex-shrink-0" />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0" />
-                        )}
+
+                        {/* Checkbox */}
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+                          selected ? `bg-gradient-to-br ${topic.gradient} shadow-sm` : 'border-2 border-gray-300'
+                        }`}>
+                          {selected && <Check className="h-3.5 w-3.5 text-white" />}
+                        </div>
                       </button>
 
-                      {/* Expanded prompts */}
+                      {/* Prompts panel */}
                       {expanded && (
-                        <div className="ml-6 mt-1.5 mb-1 p-3 rounded-xl bg-white border border-gray-100 shadow-sm animate-in slide-in-from-top-1">
-                          <div className="flex items-center gap-1.5 mb-2">
+                        <div className="ml-[60px] mr-4 mt-2 mb-1 p-3.5 rounded-xl bg-gradient-to-r from-gray-50 to-white border border-gray-200 shadow-sm">
+                          <div className="flex items-center gap-1.5 mb-2.5">
                             <MessageCircle className="h-3.5 w-3.5 text-brand-primary" />
-                            <p className="text-[11px] font-semibold text-brand-primary uppercase tracking-wide">Questions suggérées</p>
+                            <p className="text-[11px] font-bold text-brand-primary uppercase tracking-wider">Questions suggérées</p>
                           </div>
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             {topic.prompts.map((prompt, i) => (
-                              <p key={i} className="text-xs text-text-muted pl-2 border-l-2 border-gray-200 leading-relaxed">
-                                &ldquo;{prompt}&rdquo;
-                              </p>
+                              <div key={i} className="flex items-start gap-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-brand-primary/40 mt-1.5 flex-shrink-0" />
+                                <p className="text-xs text-text-muted leading-relaxed italic">&ldquo;{prompt}&rdquo;</p>
+                              </div>
                             ))}
                           </div>
-                          <button type="button" onClick={() => setExpandedChip(null)}
-                            className="mt-2 text-[11px] text-text-muted hover:text-text-main">
-                            <ChevronDown className="h-3 w-3 inline mr-0.5 rotate-180" />Fermer
-                          </button>
                         </div>
                       )}
                     </div>
@@ -473,58 +502,64 @@ export default function NewMeetingNotePage() {
 
       {/* ─── Transactions ────────────────────────────────────────── */}
       {(subject === 'placement' || subject === 'both') && (
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-text-main font-[family-name:var(--font-heading)]">
-              Changements au portefeuille
-            </h2>
-            <Button variant="ghost" size="sm" onClick={addTransaction}><Plus className="h-4 w-4 mr-1" />Ajouter</Button>
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-sm">
+                <ArrowLeftRight className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-text-main font-[family-name:var(--font-heading)]">Transactions</h2>
+                <p className="text-[11px] text-text-muted">Changements au portefeuille</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={addTransaction} className="rounded-xl"><Plus className="h-4 w-4 mr-1" />Ajouter</Button>
           </div>
 
           {transactions.length === 0 ? (
             <button type="button" onClick={addTransaction}
-              className="w-full py-8 border-2 border-dashed border-gray-200 rounded-2xl text-text-muted hover:border-brand-primary hover:text-brand-primary transition-all group">
-              <Plus className="h-6 w-6 mx-auto mb-1 group-hover:scale-110 transition-transform" />
-              <p className="text-sm font-medium">Ajouter une transaction</p>
-              <p className="text-xs mt-0.5">Achat, vente ou échange de titres</p>
+              className="w-full py-8 rounded-2xl border-2 border-dashed border-gray-300 text-text-muted hover:border-brand-primary hover:text-brand-primary transition-all duration-300 group">
+              <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-brand-primary/10 flex items-center justify-center mx-auto mb-2 transition-colors">
+                <Plus className="h-6 w-6 group-hover:scale-110 transition-transform" />
+              </div>
+              <p className="text-sm font-semibold">Ajouter une transaction</p>
+              <p className="text-xs mt-0.5 text-text-muted">Achat, vente ou échange</p>
             </button>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-gray-200 shadow-sm">
-                  <div className="flex gap-0.5 bg-gray-100 rounded-xl p-1">
+                <div key={tx.id} className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-white border-2 border-gray-200 shadow-sm">
+                  <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
                     {(['buy', 'sell', 'switch'] as const).map((t) => {
                       const s = TX_ICONS[t]; const Icon = s.icon;
                       return (<button key={t} type="button" onClick={() => updateTransaction(tx.id, { type: t })}
-                        className={`p-2 rounded-lg transition-all ${tx.type === t ? `${s.bgColor} ${s.color} shadow-sm` : 'text-gray-400 hover:text-gray-600'}`} title={s.label}>
+                        className={`p-2 rounded-lg transition-all duration-200 ${tx.type === t ? `${s.bgColor} ${s.color} shadow-sm scale-105` : 'text-gray-400 hover:text-gray-600'}`} title={s.label}>
                         <Icon className="h-4 w-4" /></button>);
                     })}
                   </div>
-                  <input className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none uppercase"
+                  <input className="flex-1 min-w-0 px-3 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none uppercase tracking-wide"
                     placeholder="SYMBOLE" value={tx.symbol} onChange={(e) => updateTransaction(tx.id, { symbol: e.target.value.toUpperCase() })} />
-                  <input className="w-20 px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none"
+                  <input className="w-20 px-3 py-2 rounded-xl border-2 border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none"
                     type="number" placeholder="Qté" value={tx.quantity} onChange={(e) => updateTransaction(tx.id, { quantity: e.target.value })} />
-                  <input className="w-24 px-3 py-2 rounded-xl border border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none"
+                  <input className="w-24 px-3 py-2 rounded-xl border-2 border-gray-200 text-sm bg-gray-50 focus:bg-white focus:border-brand-primary focus:outline-none"
                     type="number" step="0.01" placeholder="Prix $" value={tx.price} onChange={(e) => updateTransaction(tx.id, { price: e.target.value })} />
                   <button type="button" onClick={() => removeTransaction(tx.id)}
-                    className="p-2 rounded-xl hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all"><X className="h-4 w-4" /></button>
+                    className="p-2 rounded-xl hover:bg-red-100 text-gray-400 hover:text-red-500 transition-all"><X className="h-4 w-4" /></button>
                 </div>
               ))}
-
-              {/* Recap */}
               {transactions.some((t) => t.symbol) && (
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-50 to-white border border-gray-100 mt-3">
-                  <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Résumé des transactions</p>
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-gray-50 via-white to-gray-50 border border-gray-200">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2.5">Résumé</p>
                   {transactions.filter((t) => t.symbol).map((tx) => {
                     const s = TX_ICONS[tx.type]; const TxIcon = s.icon;
                     const val = tx.quantity && tx.price ? parseFloat(tx.quantity) * parseFloat(tx.price) : null;
                     return (
-                      <div key={tx.id} className="flex items-center gap-2 py-1.5 text-sm">
-                        <div className={`w-6 h-6 rounded-lg ${s.bgColor} flex items-center justify-center`}><TxIcon className={`h-3.5 w-3.5 ${s.color}`} /></div>
-                        <span className="font-bold text-text-main">{s.label}</span>
-                        <span className="font-semibold">{tx.symbol}</span>
+                      <div key={tx.id} className="flex items-center gap-2.5 py-1.5 text-sm">
+                        <div className={`w-7 h-7 rounded-lg ${s.bgColor} flex items-center justify-center`}><TxIcon className={`h-4 w-4 ${s.color}`} /></div>
+                        <span className="font-bold">{s.label}</span>
+                        <span className="font-semibold text-text-main">{tx.symbol}</span>
                         {tx.quantity && <span className="text-text-muted">× {tx.quantity}</span>}
-                        {val && <span className="ml-auto font-bold">{val.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}</span>}
+                        {val && <span className="ml-auto font-bold text-text-main">{val.toLocaleString('fr-CA', { style: 'currency', currency: 'CAD' })}</span>}
                       </div>
                     );
                   })}
@@ -536,49 +571,60 @@ export default function NewMeetingNotePage() {
       )}
 
       {/* ─── Audio + Notes ───────────────────────────────────────── */}
-      <div className="mb-5">
-        <h2 className="text-lg font-bold text-text-main font-[family-name:var(--font-heading)] mb-3">
-          Notes & Audio <span className="text-xs font-normal text-text-muted ml-1">optionnel</span>
-        </h2>
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-sm">
+            <MessageCircle className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-text-main font-[family-name:var(--font-heading)]">Notes & Audio</h2>
+            <p className="text-[11px] text-text-muted">Optionnel — ajoutez des précisions</p>
+          </div>
+        </div>
 
-        {/* Mic row */}
-        <div className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-gray-200 shadow-sm mb-3">
+        {/* Recording */}
+        <div className="flex items-center gap-4 p-4 rounded-2xl bg-white border-2 border-gray-200 shadow-sm mb-3">
           {!isRecording ? (
             <button type="button" onClick={startRecording} disabled={transcribing}
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white flex items-center justify-center shadow-md hover:shadow-lg hover:scale-105 transition-all disabled:opacity-50 flex-shrink-0">
-              {transcribing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic className="h-5 w-5" />}
+              className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-red-600 text-white flex items-center justify-center shadow-lg shadow-red-200/50 hover:shadow-xl hover:scale-105 transition-all duration-200 disabled:opacity-50 flex-shrink-0">
+              {transcribing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic className="h-6 w-6" />}
             </button>
           ) : (
             <div className="relative flex-shrink-0">
-              <div className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
+              <div className="absolute inset-0 rounded-2xl bg-red-500/20 animate-ping" />
               <button type="button" onClick={stopRecording}
-                className="relative w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-red-600 text-white flex items-center justify-center shadow-md">
+                className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-red-600 text-white flex items-center justify-center shadow-lg">
                 <Square className="h-5 w-5" /></button>
             </div>
           )}
           <div className="flex-1 min-w-0">
             {isRecording ? (
               <div>
-                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  <span className="text-sm font-bold font-mono">{formatTime(recordingTime)}</span></div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-base font-bold font-mono text-text-main">{formatTime(recordingTime)}</span>
+                  <span className="text-xs text-red-500 font-semibold">REC</span>
+                </div>
                 <AudioWaveform stream={streamRef.current} isRecording={isRecording} />
               </div>
             ) : transcribing ? (
-              <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin text-brand-primary" /><span className="text-sm text-text-muted">Transcription...</span></div>
+              <div className="flex items-center gap-2.5"><Loader2 className="h-5 w-5 animate-spin text-brand-primary" /><span className="text-sm font-medium text-text-muted">Transcription en cours...</span></div>
             ) : (
-              <div><p className="text-sm font-medium text-text-main">Enregistrer</p><p className="text-[11px] text-text-muted">Le résumé fonctionne aussi sans audio</p></div>
+              <div><p className="text-sm font-bold text-text-main">Enregistrer la rencontre</p><p className="text-[11px] text-text-muted mt-0.5">Le résumé IA fonctionne aussi sans audio</p></div>
             )}
           </div>
         </div>
 
         {transcription && (
-          <div className="mb-3"><label className="block text-xs font-semibold text-text-main mb-1">Transcription</label>
-            <textarea className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none resize-none"
-              rows={3} value={transcription} onChange={(e) => setTranscription(e.target.value)} /></div>
+          <div className="mb-3">
+            <label className="block text-xs font-bold text-text-main mb-1.5 ml-1">Transcription</label>
+            <textarea className="w-full px-4 py-3 rounded-2xl border-2 border-gray-200 bg-gray-50 text-sm focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none resize-none"
+              rows={3} value={transcription} onChange={(e) => setTranscription(e.target.value)} />
+          </div>
         )}
 
-        <textarea className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm placeholder:text-text-light focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none resize-none shadow-sm"
-          rows={3} placeholder="Notes libres — points importants, suivis, observations..." value={freeNotes} onChange={(e) => setFreeNotes(e.target.value)} />
+        <textarea className="w-full px-4 py-3.5 rounded-2xl border-2 border-gray-200 bg-white text-sm placeholder:text-text-light focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 focus:outline-none resize-none shadow-sm"
+          rows={3} placeholder="Notes libres — points importants, suivis à faire, observations..." value={freeNotes} onChange={(e) => setFreeNotes(e.target.value)} />
 
         <div className="mt-3">
           <Input label="Prochaine rencontre" type="date" value={nextMeeting} onChange={(e) => setNextMeeting(e.target.value)} />
@@ -586,68 +632,89 @@ export default function NewMeetingNotePage() {
       </div>
 
       {/* ─── AI Generation ───────────────────────────────────────── */}
-      <div className="rounded-2xl border-2 border-dashed border-purple-200 bg-gradient-to-br from-purple-50/50 to-amber-50/30 p-5 mb-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-amber-500 flex items-center justify-center shadow-md">
-              <Sparkles className="h-5 w-5 text-white" />
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1a1a2e] to-[#16213e] p-6 mb-6 shadow-xl">
+        {/* Decorative dots */}
+        <div className="absolute top-4 right-4 w-20 h-20 bg-purple-500/10 rounded-full blur-xl" />
+        <div className="absolute bottom-4 left-4 w-16 h-16 bg-amber-500/10 rounded-full blur-xl" />
+
+        <div className="relative">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-400 to-amber-400 flex items-center justify-center shadow-lg">
+                <Sparkles className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white font-[family-name:var(--font-heading)]">Résumés IA</h2>
+                <p className="text-[11px] text-white/50">Notes Croesus + récapitulatif client</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-text-main font-[family-name:var(--font-heading)]">Résumés IA</h2>
-              <p className="text-[11px] text-text-muted">Notes Croesus + récapitulatif client en 1 clic</p>
-            </div>
+            <button type="button" onClick={generateSummary} disabled={aiLoading}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-amber-500 text-white text-sm font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100">
+              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {aiSummaryAdvisor ? 'Regénérer' : 'Générer'}
+            </button>
           </div>
-          <Button variant="primary" onClick={generateSummary} loading={aiLoading}
-            className="rounded-xl shadow-md">
-            <Sparkles className="h-4 w-4 mr-1.5" />{aiSummaryAdvisor ? 'Regénérer' : 'Générer'}
-          </Button>
+
+          {!aiSummaryAdvisor && !aiSummaryClient && !aiLoading && (
+            <div className="text-center py-6 rounded-2xl border border-white/10 bg-white/5">
+              <Sparkles className="h-10 w-10 mx-auto mb-3 text-white/20" />
+              <p className="text-sm text-white/60 font-medium">
+                {selectedCount > 0
+                  ? `${selectedCount} sujet${selectedCount > 1 ? 's' : ''} sélectionné${selectedCount > 1 ? 's' : ''} — prêt à générer!`
+                  : 'Sélectionnez des sujets puis cliquez Générer'}
+              </p>
+              <p className="text-[11px] text-white/30 mt-1">Fonctionne avec ou sans enregistrement audio</p>
+            </div>
+          )}
+
+          {aiSummaryAdvisor && (
+            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-400/20 backdrop-blur-sm mb-3">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-bold text-blue-300 uppercase tracking-wider">Notes Croesus</span>
+                <CopyButton text={aiSummaryAdvisor} />
+              </div>
+              <textarea className="w-full bg-transparent text-sm text-blue-100 resize-none border-0 focus:ring-0 focus:outline-none leading-relaxed placeholder:text-blue-300/30"
+                rows={6} value={aiSummaryAdvisor} onChange={(e) => setAiSummaryAdvisor(e.target.value)} />
+            </div>
+          )}
+
+          {aiSummaryClient && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-400/20 backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider">Récapitulatif client</span>
+                <CopyButton text={aiSummaryClient} />
+              </div>
+              <textarea className="w-full bg-transparent text-sm text-emerald-100 resize-none border-0 focus:ring-0 focus:outline-none leading-relaxed placeholder:text-emerald-300/30"
+                rows={6} value={aiSummaryClient} onChange={(e) => setAiSummaryClient(e.target.value)} />
+            </div>
+          )}
         </div>
-
-        {!aiSummaryAdvisor && !aiSummaryClient && !aiLoading && (
-          <div className="text-center py-4">
-            <p className="text-sm text-text-muted">
-              {selectedChips.size > 0
-                ? `${selectedCount} sujet${selectedCount > 1 ? 's' : ''} sélectionné${selectedCount > 1 ? 's' : ''} — prêt à générer`
-                : 'Sélectionnez des sujets ci-dessus pour activer la génération'}
-            </p>
-          </div>
-        )}
-
-        {aiSummaryAdvisor && (
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 mb-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-blue-800 uppercase tracking-wider">Notes Croesus</span>
-              <CopyButton text={aiSummaryAdvisor} />
-            </div>
-            <textarea className="w-full bg-transparent text-sm text-blue-900 resize-none border-0 focus:ring-0 focus:outline-none leading-relaxed"
-              rows={6} value={aiSummaryAdvisor} onChange={(e) => setAiSummaryAdvisor(e.target.value)} />
-          </div>
-        )}
-
-        {aiSummaryClient && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Récapitulatif client</span>
-              <CopyButton text={aiSummaryClient} />
-            </div>
-            <textarea className="w-full bg-transparent text-sm text-emerald-900 resize-none border-0 focus:ring-0 focus:outline-none leading-relaxed"
-              rows={6} value={aiSummaryClient} onChange={(e) => setAiSummaryClient(e.target.value)} />
-          </div>
-        )}
       </div>
 
       {/* ─── Sticky save bar ─────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 sm:sticky sm:bottom-4 bg-white/95 backdrop-blur-sm border-t sm:border-2 sm:border-gray-200 sm:rounded-2xl shadow-xl px-5 py-4 flex items-center justify-between z-30">
-        <div className="hidden sm:flex items-center gap-2 text-sm text-text-muted">
-          {selectedCount > 0 && <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">{selectedCount} sujets</span>}
-          {transactions.length > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">{transactions.length} tx</span>}
-          {transcription && <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">Audio</span>}
+      <div className="fixed bottom-0 left-0 right-0 sm:sticky sm:bottom-4 bg-white/95 backdrop-blur-sm border-t sm:border-2 sm:border-gray-200 sm:rounded-2xl shadow-2xl px-5 py-4 flex items-center justify-between z-30">
+        <div className="hidden sm:flex items-center gap-2">
+          {selectedCount > 0 && (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+              <CheckCircle2 className="h-3 w-3" />{selectedCount} sujets
+            </span>
+          )}
+          {transactions.length > 0 && (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
+              <ArrowLeftRight className="h-3 w-3" />{transactions.length} tx
+            </span>
+          )}
+          {transcription && (
+            <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
+              <Mic className="h-3 w-3" />Audio
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 ml-auto">
           <Button variant="outline" onClick={() => handleSave('draft')} loading={saving} className="rounded-xl">
             <Save className="h-4 w-4 mr-2" />Brouillon
           </Button>
-          <Button variant="primary" onClick={() => handleSave('completed')} loading={saving} disabled={!clientName.trim()} className="rounded-xl shadow-md">
+          <Button variant="primary" onClick={() => handleSave('completed')} loading={saving} disabled={!clientName.trim()} className="rounded-xl shadow-lg shadow-brand-primary/20">
             <CheckCircle2 className="h-4 w-4 mr-2" />Compléter
           </Button>
         </div>
