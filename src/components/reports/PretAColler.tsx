@@ -1179,6 +1179,12 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
     if (!targetSummary) return;
+    // Grand total consistent with UI and PDF: dividends + fixed income + capital gain
+    const eqDiv = incomeTotals.equityDividends;
+    const totalBase = targetSummary.totalCurrent + targetSummary.fixedIncomeMarketValue;
+    const grandTotal = eqDiv + incomeTotals.fixedIncomeCoupons + targetSummary.equityGain;
+    const grandTotalPct = totalBase > 0 ? (grandTotal / totalBase) * 100 : 0;
+    const divYieldPct = targetSummary.totalCurrent > 0 ? (eqDiv / targetSummary.totalCurrent) * 100 : 0;
     const lines: string[] = [
       `RÉSUMÉ DES COURS CIBLES — ${new Date().toLocaleDateString('fr-CA')}`,
       ``,
@@ -1191,11 +1197,14 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       `  Valeur cible 12 mois: ${formatCurrency(targetSummary.totalTarget)}`,
       `  Gain estimé: ${formatCurrency(targetSummary.equityGain)} (${formatPercent(targetSummary.equityGainPct)})`,
       ``,
+      `DIVIDENDES (forward 12 mois):`,
+      `  Revenu annuel: ${formatCurrency(eqDiv)} (${formatPercent(divYieldPct)})`,
+      ``,
       `REVENUS FIXES (revenu annuel):`,
       `  Valeur marchande: ${formatCurrency(targetSummary.fixedIncomeMarketValue)}`,
-      `  Revenu annuel: ${formatCurrency(targetSummary.fixedIncomeAnnualIncome)} (${formatPercent(targetSummary.fixedIncomeGainPct)})`,
+      `  Revenu annuel: ${formatCurrency(incomeTotals.fixedIncomeCoupons)} (${formatPercent(targetSummary.fixedIncomeGainPct)})`,
       ``,
-      `TOTAL ESTIMÉ: ${formatCurrency(targetSummary.totalEstimated)} (${formatPercent(targetSummary.totalEstimatedPct)})`,
+      `TOTAL ESTIMÉ (gains + dividendes + revenus fixes): ${formatCurrency(grandTotal)} (${formatPercent(grandTotalPct)})`,
     ];
 
     // Add top/worst positions
@@ -1225,7 +1234,7 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
     setCopiedSummary(true);
     toast('success', 'Résumé copié dans le presse-papiers');
     setTimeout(() => setCopiedSummary(false), 2000);
-  }, [targetSummary, holdings, targetData, toast]);
+  }, [targetSummary, holdings, targetData, incomeTotals, toast]);
 
   // Export targets to CSV
   const handleExportCSV = useCallback(() => {
