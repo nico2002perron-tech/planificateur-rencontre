@@ -451,10 +451,11 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             </View>
           </View>
 
-          {/* Total + breakdown bar */}
+          {/* Total + detailed breakdown recap */}
           <PaleGradientBox gradientId="coverTotalGrad" style={{ marginBottom: 14 }}>
             <View style={{ padding: 16 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              {/* Header: total + rendement pill */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 <View>
                   <Text style={{ fontSize: 6.5, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
                     Total revenus + gains projetés 12 mois
@@ -465,7 +466,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 </View>
                 <View style={{ alignItems: 'flex-end' as const }}>
                   <Text style={{ fontSize: 6.5, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>
-                    Rendement total
+                    Rendement total espéré
                   </Text>
                   <View style={{ backgroundColor: totalEstPct >= 0 ? '#d1fae5' : '#fee2e2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800, color: totalEstPct >= 0 ? '#047857' : '#b91c1c' }}>
@@ -477,28 +478,73 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
 
               {/* Breakdown bar */}
               {partsSum > 0 && (
-                <>
-                  <View style={{ flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' as const, marginBottom: 8, backgroundColor: '#ffffff' }}>
-                    {pctDiv > 0 && <View style={{ width: `${pctDiv}%`, backgroundColor: C.duoGreen }} />}
-                    {pctFi > 0 && <View style={{ width: `${pctFi}%`, backgroundColor: C.duoBlue }} />}
-                    {pctCap > 0 && <View style={{ width: `${pctCap}%`, backgroundColor: C.duoPurple }} />}
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoGreen }} />
-                      <Text style={{ fontSize: 6.5, color: '#475569' }}>Dividendes {pctDiv.toFixed(0)} %</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoBlue }} />
-                      <Text style={{ fontSize: 6.5, color: '#475569' }}>Revenus fixes {pctFi.toFixed(0)} %</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: C.duoPurple }} />
-                      <Text style={{ fontSize: 6.5, color: '#475569' }}>Gain capital {pctCap.toFixed(0)} %</Text>
-                    </View>
-                  </View>
-                </>
+                <View style={{ flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' as const, marginBottom: 12, backgroundColor: '#ffffff' }}>
+                  {pctDiv > 0 && <View style={{ width: `${pctDiv}%`, backgroundColor: C.duoGreen }} />}
+                  {pctFi > 0 && <View style={{ width: `${pctFi}%`, backgroundColor: C.duoBlue }} />}
+                  {pctCap > 0 && <View style={{ width: `${pctCap}%`, backgroundColor: C.duoPurple }} />}
+                </View>
               )}
+
+              {/* Line-by-line recap */}
+              {(() => {
+                const totalPortfolio = (s.totalCurrentValue || 0) + (s.fixedIncomeMarketValue ?? 0);
+                const capYieldPct = totalPortfolio > 0 ? (eqGain / totalPortfolio) * 100 : 0;
+                const divYieldPctTotal = totalPortfolio > 0 ? (eqDiv / totalPortfolio) * 100 : 0;
+                const fiYieldPctTotal = totalPortfolio > 0 ? (fiIncome / totalPortfolio) * 100 : 0;
+                const lines: { color: string; label: string; sublabel: string; amount: number; pct: number; sharePct: number }[] = [];
+                if (eqGain !== 0) lines.push({ color: C.duoPurple, label: 'Gain en capital', sublabel: 'Actions — prix actuel → cours cible 12 mois', amount: eqGain, pct: capYieldPct, sharePct: pctCap });
+                if (eqDiv > 0) lines.push({ color: C.duoGreen, label: 'Dividendes', sublabel: 'Actions — revenu de dividendes forward 12 mois', amount: eqDiv, pct: divYieldPctTotal, sharePct: pctDiv });
+                if (fiIncome > 0) lines.push({ color: C.duoBlue, label: 'Revenus fixes', sublabel: 'Obligations — coupons et intérêts annuels', amount: fiIncome, pct: fiYieldPctTotal, sharePct: pctFi });
+                return lines.map((l, i) => (
+                  <View key={i} style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 8,
+                    paddingVertical: 6,
+                    borderTopWidth: i === 0 ? 0 : 0.5,
+                    borderTopColor: '#e2e8f0',
+                    borderTopStyle: 'solid' as const,
+                  }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 1.5, backgroundColor: l.color }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 700, color: C.text }}>{l.label}</Text>
+                      <Text style={{ fontSize: 5.5, color: '#94a3b8', marginTop: 1 }}>{l.sublabel}</Text>
+                    </View>
+                    <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: l.amount >= 0 ? '#059669' : '#dc2626', width: 70, textAlign: 'right' }}>
+                      {l.amount >= 0 ? '+' : ''}{fmt(l.amount)}
+                    </Text>
+                    <View style={{ backgroundColor: l.pct >= 0 ? '#ecfdf5' : '#fef2f2', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, width: 48, alignItems: 'center' as const }}>
+                      <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 700, color: l.pct >= 0 ? '#047857' : '#b91c1c' }}>
+                        {l.pct >= 0 ? '+' : ''}{l.pct.toFixed(1)} %
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 6, color: '#94a3b8', width: 30, textAlign: 'right' }}>
+                      {l.sharePct.toFixed(0)} %
+                    </Text>
+                  </View>
+                ));
+              })()}
+
+              {/* Total separator line */}
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 8,
+                paddingTop: 8, marginTop: 4,
+                borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+              }}>
+                <View style={{ width: 6 }} />
+                <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
+                  Total projeté 12 mois
+                </Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: totalEst >= 0 ? '#059669' : '#dc2626', width: 70, textAlign: 'right' }}>
+                  {totalEst >= 0 ? '+' : ''}{fmt(totalEst)}
+                </Text>
+                <View style={{ backgroundColor: totalEstPct >= 0 ? '#d1fae5' : '#fee2e2', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, width: 48, alignItems: 'center' as const }}>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalEstPct >= 0 ? '#047857' : '#b91c1c' }}>
+                    {fmtPct(totalEstPct)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 6, color: '#94a3b8', width: 30, textAlign: 'right' }}>
+                  100 %
+                </Text>
+              </View>
             </View>
           </PaleGradientBox>
         </>
