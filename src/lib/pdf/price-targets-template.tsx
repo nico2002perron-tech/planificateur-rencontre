@@ -633,27 +633,19 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
               <Text style={{ fontSize: 5, color: '#94a3b8', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Total actions 12 mois</Text>
               <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>{fmt(projection12m)}</Text>
             </View>
-            {/* Rendement pill */}
-            <View style={{
-              backgroundColor: projectionPct >= 0 ? '#059669' : '#dc2626',
-              paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6,
-            }}>
-              <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-                {fmtPct(projectionPct)}
-              </Text>
-            </View>
-            {/* Mini breakdown bar */}
-            {projection12m > 0 && (
-              <View style={{ width: 40 }}>
-                <View style={{ flexDirection: 'row', height: 4, borderRadius: 2, overflow: 'hidden' as const, backgroundColor: '#e2e8f0' }}>
-                  {divPct > 0 && <View style={{ width: `${divPct}%`, backgroundColor: '#0891b2' }} />}
-                  {gainPct > 0 && <View style={{ width: `${gainPct}%`, backgroundColor: '#10b981' }} />}
-                </View>
-                <Text style={{ fontSize: 4.5, color: '#94a3b8', marginTop: 1 }}>
-                  Div {divPct.toFixed(0)}% · Cap {gainPct.toFixed(0)}%
+            {/* Rendement pill with label */}
+            <View style={{ alignItems: 'center' as const, gap: 2 }}>
+              <Text style={{ fontSize: 4.5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Rend. total</Text>
+              <View style={{
+                backgroundColor: projectionPct >= 0 ? '#059669' : '#dc2626',
+                paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6,
+              }}>
+                <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                  {fmtPct(projectionPct)}
                 </Text>
               </View>
-            )}
+              <Text style={{ fontSize: 4, color: '#94a3b8' }}>div. + cap.</Text>
+            </View>
           </View>
         );
       })()}
