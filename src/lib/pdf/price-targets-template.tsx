@@ -300,13 +300,73 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         </Text>
       </View>
 
+      {/* Portfolio value: today vs projected */}
+      {hasTargets && (() => {
+        const portfolioToday = s.totalMarketValue;
+        const projected12m = portfolioToday + totalEst;
+        const diffPct = portfolioToday > 0 ? (totalEst / portfolioToday) * 100 : 0;
+        const cashOther = portfolioToday - (s.totalCurrentValue || 0) - (s.fixedIncomeMarketValue ?? 0);
+        return (
+          <View style={{
+            flexDirection: 'row', gap: 0, marginBottom: 14,
+            borderRadius: 12, overflow: 'hidden' as const,
+            borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
+          }}>
+            {/* Today */}
+            <View style={{ flex: 1, backgroundColor: '#ffffff', padding: 16 }}>
+              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
+                Portefeuille aujourd&apos;hui
+              </Text>
+              <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 8 }}>
+                {fmt(portfolioToday)}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                {(s.totalCurrentValue || 0) > 0 && (
+                  <Text style={{ fontSize: 6.5, color: '#64748b' }}>Actions: <Text style={{ fontWeight: 600 }}>{fmt(s.totalCurrentValue || 0)}</Text></Text>
+                )}
+                {(s.fixedIncomeMarketValue ?? 0) > 0 && (
+                  <Text style={{ fontSize: 6.5, color: '#64748b' }}>Rev. fixe: <Text style={{ fontWeight: 600 }}>{fmt(s.fixedIncomeMarketValue ?? 0)}</Text></Text>
+                )}
+                {cashOther > 0 && (
+                  <Text style={{ fontSize: 6.5, color: '#64748b' }}>Liquidités: <Text style={{ fontWeight: 600 }}>{fmt(cashOther)}</Text></Text>
+                )}
+              </View>
+            </View>
+            {/* Arrow */}
+            <View style={{ width: 40, backgroundColor: C.navy, justifyContent: 'center' as const, alignItems: 'center' as const }}>
+              <Text style={{ fontSize: 14, color: '#ffffff', fontFamily: 'Montserrat', fontWeight: 800 }}>→</Text>
+              <Text style={{ fontSize: 6, color: '#94a3b8', marginTop: 2 }}>12 mois</Text>
+            </View>
+            {/* Projected */}
+            <View style={{ flex: 1, backgroundColor: totalEst >= 0 ? '#f0fdf4' : '#fef2f2', padding: 16 }}>
+              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
+                Portefeuille projeté 12 mois
+              </Text>
+              <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: totalEst >= 0 ? '#059669' : '#dc2626', marginBottom: 8 }}>
+                {fmt(projected12m)}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ backgroundColor: totalEst >= 0 ? '#d1fae5' : '#fee2e2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 700, color: totalEst >= 0 ? '#047857' : '#b91c1c' }}>
+                    {fmtPct(diffPct)}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: totalEst >= 0 ? '#059669' : '#dc2626' }}>
+                  {totalEst >= 0 ? '+' : ''}{fmt(totalEst)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
       {/* Projections 12 mois — section title */}
       {hasTargets && (
         <>
           <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ width: 3, height: 14, backgroundColor: C.cyan, borderRadius: 1.5 }} />
             <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-              Projections 12 mois
+              Détail des projections
             </Text>
           </View>
 
