@@ -371,6 +371,10 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
           </View>
 
           {/* 3 breakdown cards */}
+          {(() => {
+            const eqMv = s.totalCurrentValue || 0;
+            const fiMv = s.fixedIncomeMarketValue ?? 0;
+            return (
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
             {/* Dividendes projetés */}
             <View style={{
@@ -382,11 +386,14 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Dividendes projetés
               </Text>
-              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 4 }}>
                 Actions (forward)
               </Text>
-              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 3 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 2 }}>
                 {fmt(eqDiv)}
+              </Text>
+              <Text style={{ fontSize: 6.5, color: '#64748b', marginBottom: 4 }}>
+                sur {fmt(eqMv)} en actions
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
@@ -394,7 +401,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                     {fmtPct(eqDivYieldPct)}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>yield</Text>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>yield annuel</Text>
               </View>
             </View>
 
@@ -408,11 +415,14 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Revenus fixes
               </Text>
-              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 4 }}>
                 Coupons obligations
               </Text>
-              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 3 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: upColor, marginBottom: 2 }}>
                 {fmt(fiIncome)}
+              </Text>
+              <Text style={{ fontSize: 6.5, color: '#64748b', marginBottom: 4 }}>
+                sur {fmt(fiMv)} en obligations
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
@@ -420,7 +430,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                     {fmtPct(fiYieldPct)}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>rendement</Text>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>rendement annuel</Text>
               </View>
             </View>
 
@@ -434,11 +444,14 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Gain en capital
               </Text>
-              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 8 }}>
+              <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, marginBottom: 4 }}>
                 Actions (cible 1 an)
               </Text>
-              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: eqGain >= 0 ? upColor : downColor, marginBottom: 3 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: eqGain >= 0 ? upColor : downColor, marginBottom: 2 }}>
                 {fmt(eqGain)}
+              </Text>
+              <Text style={{ fontSize: 6.5, color: '#64748b', marginBottom: 4 }}>
+                sur {fmt(eqMv)} en actions
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ backgroundColor: eqGainPct >= 0 ? C.upBg : C.downBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
@@ -446,10 +459,12 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                     {fmtPct(eqGainPct)}
                   </Text>
                 </View>
-                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>vs prix actuel</Text>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>prix → cible</Text>
               </View>
             </View>
           </View>
+            );
+          })()}
 
           {/* Total + detailed breakdown recap */}
           <PaleGradientBox gradientId="coverTotalGrad" style={{ marginBottom: 14 }}>
