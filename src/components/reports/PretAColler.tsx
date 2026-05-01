@@ -843,15 +843,26 @@ function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => 
       let source: 'forward' | 'croesus' | 'coupon' | 'none' = 'none';
 
       if (isEquityLike) {
-        // Prefer Yahoo forward dividend rate (most reliable forward estimate)
-        const yahoo = prices.get(h.symbol);
-        if (yahoo?.dividendRate && yahoo.dividendRate > 0 && h.quantity > 0) {
-          annualIncome = h.quantity * yahoo.dividendRate;
-          source = 'forward';
-        } else if (h.annualIncome > 0) {
-          // Fallback: Croesus trailing actual
-          annualIncome = h.annualIncome;
-          source = 'croesus';
+        if (h.isCDR) {
+          // CDR holdings: Yahoo dividendRate is per US underlying share, but
+          // quantity is in CDR units (each CDR = a fraction of 1 US share).
+          // Using Yahoo rate × CDR quantity massively overstates income.
+          // Croesus annualIncome is the actual income — always use it.
+          if (h.annualIncome > 0) {
+            annualIncome = h.annualIncome;
+            source = 'croesus';
+          }
+        } else {
+          // Prefer Yahoo forward dividend rate (most reliable forward estimate)
+          const yahoo = prices.get(h.symbol);
+          if (yahoo?.dividendRate && yahoo.dividendRate > 0 && h.quantity > 0) {
+            annualIncome = h.quantity * yahoo.dividendRate;
+            source = 'forward';
+          } else if (h.annualIncome > 0) {
+            // Fallback: Croesus trailing actual
+            annualIncome = h.annualIncome;
+            source = 'croesus';
+          }
         }
       } else if (isFixed) {
         if (h.annualIncome > 0) {
