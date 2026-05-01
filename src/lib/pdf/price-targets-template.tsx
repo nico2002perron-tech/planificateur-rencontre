@@ -544,10 +544,13 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
     <Page size="A4" orientation={orientation} style={styles.page}>
       {/* Section header */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
-        <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Cours cibles des analystes</Text>
+        <View>
+          <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Cours cibles des analystes — Actions / FNB</Text>
+          <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 2 }}>Gain en capital espéré selon les cibles des analystes (prix actuel → cours cible 12 mois)</Text>
+        </View>
         <View style={{ flexDirection: 'row', gap: 16 }}>
-          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Marché: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
-          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Cible: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalTarget)}</Text></Text>
+          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Val. marché: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
+          <Text style={{ fontSize: 7.5, color: '#64748b' }}>Val. cible: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalTarget)}</Text></Text>
         </View>
       </View>
 
@@ -565,23 +568,23 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
             <View style={{ width: 2.5, height: 20, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
             {/* Dividendes */}
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Dividendes</Text>
+              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Dividendes (revenu)</Text>
               <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2' }}>{fmt(totalDiv)}</Text>
-              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{divYieldPct.toFixed(2)} % yield</Text>
+              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{divYieldPct.toFixed(2)} % yield annuel</Text>
             </View>
             <Text style={{ fontSize: 10, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>+</Text>
             {/* Gain capital */}
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Gain capital</Text>
+              <Text style={{ fontSize: 5, color: '#64748b', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Gain en capital (cible)</Text>
               <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#059669' : '#dc2626' }}>{fmt(totalGain)}</Text>
-              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{fmtPct(totalPct)} vs actuel</Text>
+              <Text style={{ fontSize: 5, color: '#94a3b8' }}>{fmtPct(totalPct)} prix → cible</Text>
             </View>
             <Text style={{ fontSize: 10, color: '#cbd5e1', fontFamily: 'Montserrat', fontWeight: 700 }}>=</Text>
             {/* Total */}
             <View style={{
               flex: 1.2, backgroundColor: C.navy, borderRadius: 6, padding: 6,
             }}>
-              <Text style={{ fontSize: 5, color: '#94a3b8', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Total 12 mois</Text>
+              <Text style={{ fontSize: 5, color: '#94a3b8', fontFamily: 'Open Sans', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 1 }}>Total actions 12 mois</Text>
               <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>{fmt(projection12m)}</Text>
             </View>
             {/* Rendement pill */}
@@ -640,10 +643,10 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
           <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right' }]}>PBR</Text>
           <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Prix</Text>
           <Text style={[styles.thCellPremium, { width: '10%', textAlign: 'right' }]}>Marché</Text>
-          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Cible</Text>
-          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>% espéré</Text>
-          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>$ espéré</Text>
-          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Div.</Text>
+          <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right' }]}>Cible 1 an</Text>
+          <Text style={[styles.thCellPremium, { width: '9%', textAlign: 'right' }]}>Gain cap. %</Text>
+          <Text style={[styles.thCellPremium, { width: '12%', textAlign: 'right' }]}>Gain cap. $</Text>
+          <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Div. ann.</Text>
         </View>
 
         {holdings.map((h, i) => {
@@ -707,7 +710,10 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
         }} wrap={false}>
           <Text style={{ width: '5%' }}>{''}</Text>
           <Text style={{ width: '9%' }}>{''}</Text>
-          <Text style={{ width: '16%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8, paddingHorizontal: 4 }}>Total</Text>
+          <View style={{ width: '16%', paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Total actions</Text>
+            <Text style={{ fontSize: 5.5, color: '#64748b', marginTop: 1 }}>Gain en capital (prix → cible)</Text>
+          </View>
           <Text style={{ width: '5%' }}>{''}</Text>
           <Text style={{ width: '7%' }}>{''}</Text>
           <Text style={{ width: '8%' }}>{''}</Text>
