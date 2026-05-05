@@ -106,6 +106,48 @@ export interface TransitionPDFData {
   holdingsCount: number;
   modelStocksCount: number;
   modelBondsCount: number;
+
+  // Advisor notes
+  advisorNotes?: string;
+
+  // Fee comparison
+  feeComparison?: {
+    currentFees: number;
+    currentFeePct: number;
+    modelFees: number;
+    modelFeePct: number;
+    annualSavings: number;
+    savingsOver5Years: number;
+    savingsOver10Years: number;
+  };
+
+  // Tax simulation
+  taxSimulation?: {
+    netCapitalGain: number;
+    taxableAmount: number;
+    estimatedTax30: number;
+    estimatedTax40: number;
+    estimatedTax50: number;
+    lossCarryForward: number;
+  };
+
+  // Phases
+  phases?: {
+    phase: number;
+    label: string;
+    transactions: number;
+    totalValue: number;
+  }[];
+
+  // Projected returns
+  projectedReturns?: {
+    year: number;
+    actuel: number;
+    modele: number;
+  }[];
+
+  // Concentration alerts
+  concentrationAlerts?: string[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -329,6 +371,8 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
 
   // Calculate total pages
   let totalPages = 4; // Cover + Allocation + Sectors + Transactions
+  const hasDetailedAnalysis = data.feeComparison || data.taxSimulation || (data.projectedReturns && data.projectedReturns.length > 0);
+  if (hasDetailedAnalysis) totalPages++; // Detailed analysis page
   if (data.aiAnalysis) totalPages++;
   totalPages++; // Disclaimers
 
@@ -637,7 +681,131 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
         )}
       </Page>
 
-      {/* ═══════════ PAGE 5 — AI ANALYSIS (optional) ═══════════ */}
+      {/* ═══════════ PAGE 5 — DETAILED ANALYSIS (fees, tax, projections) ═══════════ */}
+      {hasDetailedAnalysis && (
+        <Page size="LETTER" style={styles.page}>
+          <AccentBar />
+          <PageFooter num={++pageNum} total={totalPages} />
+
+          <SectionTitle>Analyse detaillee</SectionTitle>
+
+          {/* Fee comparison */}
+          {data.feeComparison && data.feeComparison.currentFees > 0 && (
+            <View style={{ ...styles.card, marginBottom: 12 }}>
+              <SubsectionTitle>Comparaison des frais de gestion (RFG)</SubsectionTitle>
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 8 }}>
+                <View style={{ flex: 1, backgroundColor: '#fef2f2', borderRadius: 8, padding: 10, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 7, color: '#ef4444', textTransform: 'uppercase' as const, marginBottom: 4 }}>Portefeuille actuel</Text>
+                  <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#ef4444' }}>{fmt(data.feeComparison.currentFees)}/an</Text>
+                  <Text style={{ fontSize: 7, color: '#b91c1c', marginTop: 2 }}>{fmtDec(data.feeComparison.currentFeePct, 2)}% RFG moyen</Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: '#f0fdf4', borderRadius: 8, padding: 10, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 7, color: '#10b981', textTransform: 'uppercase' as const, marginBottom: 4 }}>Portefeuille modele</Text>
+                  <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#10b981' }}>{fmt(data.feeComparison.modelFees)}/an</Text>
+                  <Text style={{ fontSize: 7, color: '#059669', marginTop: 2 }}>0,00% RFG</Text>
+                </View>
+              </View>
+              <View style={{ backgroundColor: C.cyanPale, borderRadius: 8, padding: 10 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>Economie annuelle</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: C.cyan }}>{fmt(data.feeComparison.annualSavings)}/an</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 7, color: C.textSec }}>Sur 5 ans: {fmt(data.feeComparison.savingsOver5Years)}</Text>
+                  <Text style={{ fontSize: 7, color: C.textSec }}>Sur 10 ans: {fmt(data.feeComparison.savingsOver10Years)}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Tax simulation */}
+          {data.taxSimulation && (
+            <View style={{ ...styles.card, marginBottom: 12 }}>
+              <SubsectionTitle>Simulation fiscale</SubsectionTitle>
+              {data.taxSimulation.netCapitalGain >= 0 ? (
+                <View>
+                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 8 }}>
+                    <View style={{ flex: 1, backgroundColor: '#f9fafb', borderRadius: 8, padding: 10 }}>
+                      <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, marginBottom: 2 }}>Gain net en capital</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>{fmt(data.taxSimulation.netCapitalGain)}</Text>
+                    </View>
+                    <View style={{ flex: 1, backgroundColor: '#f9fafb', borderRadius: 8, padding: 10 }}>
+                      <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, marginBottom: 2 }}>Montant imposable (50%)</Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#f59e0b' }}>{fmt(data.taxSimulation.taxableAmount)}</Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 7, color: C.textSec, marginBottom: 6 }}>Impot estime selon le taux marginal:</Text>
+                  {[
+                    { label: 'Taux 30% (~50K)', value: data.taxSimulation.estimatedTax30, color: '#10b981' },
+                    { label: 'Taux 40% (~90K)', value: data.taxSimulation.estimatedTax40, color: '#f59e0b' },
+                    { label: 'Taux 50% (~150K+)', value: data.taxSimulation.estimatedTax50, color: '#ef4444' },
+                  ].map((r, i) => (
+                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: i < 2 ? 0.5 : 0, borderBottomColor: '#f0f0f0' }}>
+                      <Text style={{ fontSize: 8, color: C.textSec }}>{r.label}</Text>
+                      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: r.color }}>~{fmt(r.value)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={{ backgroundColor: '#f0fdf4', borderRadius: 8, padding: 12, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: '#10b981', marginBottom: 4 }}>Perte nette en capital</Text>
+                  <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: '#10b981' }}>{fmt(data.taxSimulation.lossCarryForward)}</Text>
+                  <Text style={{ fontSize: 7, color: '#059669', marginTop: 4, textAlign: 'center' }}>Reportable sur les gains futurs ou les 3 annees precedentes</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Phases breakdown */}
+          {data.phases && data.phases.length > 0 && (
+            <View style={{ ...styles.card, marginBottom: 12 }}>
+              <SubsectionTitle>Approche par phases</SubsectionTitle>
+              {data.phases.map((p, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: i < data.phases!.length - 1 ? 0.5 : 0, borderBottomColor: '#f0f0f0' }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: i === 0 ? '#ef4444' : i === 1 ? '#f59e0b' : '#10b981', justifyContent: 'center', alignItems: 'center', marginRight: 8 }}>
+                    <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>{p.phase}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{p.label}</Text>
+                    <Text style={{ fontSize: 7, color: C.textSec }}>{p.transactions} transactions</Text>
+                  </View>
+                  <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(p.totalValue)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Projected returns table */}
+          {data.projectedReturns && data.projectedReturns.length > 0 && (
+            <View style={styles.card}>
+              <SubsectionTitle>Rendement projete sur 5 ans</SubsectionTitle>
+              <View style={styles.tablePremium}>
+                <View style={styles.thPremium}>
+                  <Text style={{ ...styles.thCellPremium, width: 60 }}>Annee</Text>
+                  <Text style={{ ...styles.thCellPremium, flex: 1, textAlign: 'right' as const }}>Actuel (avec frais)</Text>
+                  <Text style={{ ...styles.thCellPremium, flex: 1, textAlign: 'right' as const }}>Modele (sans RFG)</Text>
+                  <Text style={{ ...styles.thCellPremium, width: 80, textAlign: 'right' as const }}>Ecart</Text>
+                </View>
+                {data.projectedReturns.map((r, i) => (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.td, width: 60 }}>{r.year === 0 ? 'Depart' : `An ${r.year}`}</Text>
+                    <Text style={{ ...styles.td, flex: 1, textAlign: 'right' as const }}>{fmt(r.actuel)}</Text>
+                    <Text style={{ ...styles.tdBold, flex: 1, textAlign: 'right' as const, color: C.cyan }}>{fmt(r.modele)}</Text>
+                    <Text style={{ ...styles.tdBold, width: 80, textAlign: 'right' as const, color: r.modele - r.actuel > 0 ? '#10b981' : C.navy }}>
+                      {r.year === 0 ? '—' : `+${fmt(r.modele - r.actuel)}`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={{ fontSize: 6.5, color: C.textTer, marginTop: 6, fontStyle: 'italic' }}>
+                * Estimation basee sur les rendements historiques moyens (actions 6%, obligations 2.5%) et les frais de gestion actuels. Rendements passes non garants du futur.
+              </Text>
+            </View>
+          )}
+        </Page>
+      )}
+
+      {/* ═══════════ PAGE — AI ANALYSIS (optional) ═══════════ */}
       {data.aiAnalysis && (
         <Page size="LETTER" style={styles.page}>
           <AccentBar />
@@ -673,6 +841,27 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
         <PageFooter num={++pageNum} total={totalPages} />
 
         <SectionTitle>Avis importants</SectionTitle>
+
+        {/* Advisor notes */}
+        {data.advisorNotes && (
+          <View style={{ ...styles.card, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: '#6366f1' }}>
+            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: '#6366f1', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 6 }}>NOTES DU CONSEILLER</Text>
+            <Text style={{ fontSize: 8.5, color: C.text, lineHeight: 1.6 }}>{data.advisorNotes}</Text>
+          </View>
+        )}
+
+        {/* Concentration alerts */}
+        {data.concentrationAlerts && data.concentrationAlerts.length > 0 && (
+          <View style={{ ...styles.card, marginBottom: 12, backgroundColor: '#fffbeb' }}>
+            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: '#f59e0b', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 6 }}>POINTS D&apos;ATTENTION</Text>
+            {data.concentrationAlerts.map((alert, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 }}>
+                <Text style={{ fontSize: 7, color: '#f59e0b', marginRight: 4 }}>&#9679;</Text>
+                <Text style={{ fontSize: 7.5, color: '#92400e', flex: 1 }}>{alert}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.disclaimer}>

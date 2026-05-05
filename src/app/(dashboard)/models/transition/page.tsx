@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid,
+  XAxis, YAxis, CartesianGrid, LineChart, Line, Legend,
 } from 'recharts';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -19,7 +19,8 @@ import {
   ArrowLeft, ClipboardPaste, RefreshCw, Target, ArrowRightLeft,
   ShoppingCart, Ban, Copy, Check, AlertTriangle, Sparkles,
   ChevronDown, ChevronUp, ArrowUpCircle, ArrowDownCircle, Scale,
-  FileText, Download,
+  FileText, Download, TrendingUp, Layers, DollarSign, MessageSquare,
+  Save, Shield, Clock,
 } from 'lucide-react';
 
 // ── Couleurs ──
@@ -401,6 +402,17 @@ export default function TransitionPage() {
   // Step 5: PDF
   const [pdfLoading, setPdfLoading] = useState(false);
 
+  // Advisor notes
+  const [advisorNotes, setAdvisorNotes] = useState('');
+
+  // Phase view
+  const [phaseView, setPhaseView] = useState<'all' | 1 | 2 | 3>('all');
+
+  // History
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<{ id: string; client_name: string; profile_name: string; total_value: number; created_at: string }[]>([]);
+
   // ── Allocations ──
   const allocations = useMemo(() => {
     if (holdings.length === 0) return null;
@@ -515,6 +527,129 @@ export default function TransitionPage() {
   const incomeBefore = holdings.reduce((s, h) => s + h.annualIncome, 0);
   const incomeAfter = model ? model.stats.estimatedAnnualIncome : 0;
 
+  // ── Concentration alerts ──
+  const concentrationAlerts = useMemo(() => {
+    if (transactions.length === 0 || totalValue <= 0) return [];
+    const alerts: { type: string; severity: 'warning' | 'danger'; message: string }[] = [];
+
+    // Single transaction > 10% of portfolio
+    for (const t of transactions) {
+      const pct = (t.value / totalValue) * 100;
+      if (pct > 15) {
+        alerts.push({ type: 'large_tx', severity: 'danger', message: `${t.action === 'SELL' ? 'Vente' : 'Achat'} de ${t.symbol} represente ${fmtDec(pct, 1)}% du portefeuille` });
+      } else if (pct > 10) {
+        alerts.push({ type: 'large_tx', severity: 'warning', message: `${t.action === 'SELL' ? 'Vente' : 'Achat'} de ${t.symbol} represente ${fmtDec(pct, 1)}% du portefeuille` });
+      }
+    }
+
+    // Sector concentration in model > 25%
+    if (model) {
+      for (const sec of model.sectors) {
+        if (sec.realWeight > 25) {
+          alerts.push({ type: 'sector', severity: 'warning', message: `Secteur ${sec.sectorLabel} surpondere a ${fmtDec(sec.realWeight, 1)}% dans le modele` });
+        }
+      }
+    }
+
+    // Fund concentration > 30% of portfolio
+    const fundPct = holdings.filter(h => h.assetType === 'FUND').reduce((s, h) => s + h.marketValue, 0) / totalValue * 100;
+    if (fundPct > 30) {
+      alerts.push({ type: 'fund', severity: 'warning', message: `${fmtDec(fundPct, 0)}% du portefeuille est en fonds communs — transition importante` });
+    }
+
+    return alerts;
+  }, [transactions, totalValue, model, holdings]);
+
+  // ── Overlap warnings (funds may hold model stocks) ──
+  const overlapWarnings = useMemo(() => {
+    if (!model || holdings.length === 0) return [];
+    const funds = holdings.filter(h => h.assetType === 'FUND' && h.marketValue > 0);
+    if (funds.length === 0) return [];
+
+    const modelSymbols = model.sectors.flatMap(s => s.stocks.map(st => st.symbol));
+    return funds.map(f => ({
+      fundSymbol: f.symbol,
+      fundName: f.name,
+      fundValue: f.marketValue,
+      note: `Le fonds ${f.name} (${fmt(f.marketValue)}) detient probablement certains des ${modelSymbols.length} titres du modele. Prevoir une double exposition temporaire lors de la transition.`,
+    }));
+  }, [model, holdings]);
+
+  // ── Fee comparison ──
+  const feeComparison = useMemo(() => {
+    if (holdings.length === 0 || totalValue <= 0) return null;
+    const MER: Record<string, number> = { FUND: 0.022, ETF: 0.0025, EQUITY: 0, FIXED_INCOME: 0, PREFERRED: 0, CASH: 0, OTHER: 0 };
+    const currentFees = holdings.reduce((s, h) => s + h.marketValue * (MER[h.assetType] ?? 0), 0);
+    const currentFeePct = (currentFees / totalValue) * 100;
+    // Model portfolio: individual stocks/bonds, ~0% MER
+    const modelFeePct = 0;
+    const modelFees = 0;
+    const annualSavings = currentFees - modelFees;
+    return {
+      currentFees, currentFeePct,
+      modelFees, modelFeePct,
+      annualSavings,
+      savingsOver5Years: annualSavings * 5,
+      savingsOver10Years: annualSavings * 10,
+    };
+  }, [holdings, totalValue]);
+
+  // ── Tax simulation ──
+  const taxSimulation = useMemo(() => {
+    if (sells.length === 0) return null;
+    const netGain = totalGainLoss;
+    const inclusionRate = 0.5;
+    const taxableAmount = netGain > 0 ? netGain * inclusionRate : 0;
+    const lossCarryForward = netGain < 0 ? Math.abs(netGain) : 0;
+    return {
+      netCapitalGain: netGain,
+      taxableAmount,
+      estimatedTax30: taxableAmount * 0.30,
+      estimatedTax40: taxableAmount * 0.40,
+      estimatedTax50: taxableAmount * 0.50,
+      lossCarryForward,
+    };
+  }, [sells, totalGainLoss]);
+
+  // ── Transaction phases ──
+  const phases = useMemo(() => {
+    const p1 = transactions.filter(t => t.action === 'SELL' && t.reason.includes('Fonds commun'));
+    const p2 = transactions.filter(t => t.action === 'SELL' && !t.reason.includes('Fonds commun'));
+    const p3 = transactions.filter(t => t.action === 'BUY');
+    return {
+      1: { label: 'Phase 1 — Liquider les fonds', transactions: p1, total: p1.reduce((s, t) => s + t.value, 0) },
+      2: { label: 'Phase 2 — Ajuster les actions/obligations', transactions: p2, total: p2.reduce((s, t) => s + t.value, 0) },
+      3: { label: 'Phase 3 — Acheter le modele', transactions: p3, total: p3.reduce((s, t) => s + t.value, 0) },
+    };
+  }, [transactions]);
+
+  // ── Projected returns (5-year) ──
+  const projectedReturns = useMemo(() => {
+    if (!model || totalValue <= 0) return [];
+    const currentYield = totalValue > 0 ? incomeBefore / totalValue : 0;
+    const modelYield = totalValue > 0 ? incomeAfter / totalValue : 0;
+    // Estimated total return: yield + growth estimate
+    const currentEquityPct = allocations ? (allocations.equityPct + allocations.etfPct + allocations.preferredPct + allocations.fundPct * 0.6) / 100 : 0.5;
+    const currentBondPct = allocations ? (allocations.bondPct + allocations.fundPct * 0.4) / 100 : 0.5;
+    const currentGrowth = currentEquityPct * 0.06 + currentBondPct * 0.025 + currentYield;
+    const modelEquityPct = model.realEquityPct / 100;
+    const modelBondPct = model.realBondPct / 100;
+    const modelGrowth = modelEquityPct * 0.06 + modelBondPct * 0.025 + modelYield;
+    // Subtract fees
+    const currentNet = currentGrowth - (feeComparison?.currentFeePct ?? 0) / 100;
+    const modelNet = modelGrowth;
+
+    const data = [{ year: 0, actuel: totalValue, modele: totalValue }];
+    for (let y = 1; y <= 5; y++) {
+      data.push({
+        year: y,
+        actuel: Math.round(totalValue * Math.pow(1 + currentNet, y)),
+        modele: Math.round(totalValue * Math.pow(1 + modelNet, y)),
+      });
+    }
+    return data;
+  }, [model, totalValue, incomeBefore, incomeAfter, allocations, feeComparison]);
+
   // ── Sector comparison data ──
   const sectorComparison = useMemo(() => {
     if (!model || holdings.length === 0) return [];
@@ -609,6 +744,16 @@ export default function TransitionPage() {
         holdingsCount: holdings.length,
         modelStocksCount: model.stats.nbStocks,
         modelBondsCount: model.stats.nbBonds,
+        advisorNotes: advisorNotes.trim() || undefined,
+        feeComparison: feeComparison || undefined,
+        taxSimulation: taxSimulation || undefined,
+        phases: [
+          { phase: 1, label: phases[1].label, transactions: phases[1].transactions.length, totalValue: phases[1].total },
+          { phase: 2, label: phases[2].label, transactions: phases[2].transactions.length, totalValue: phases[2].total },
+          { phase: 3, label: phases[3].label, transactions: phases[3].transactions.length, totalValue: phases[3].total },
+        ].filter(p => p.transactions > 0),
+        projectedReturns: projectedReturns.length > 0 ? projectedReturns : undefined,
+        concentrationAlerts: concentrationAlerts.length > 0 ? concentrationAlerts.map(a => a.message) : undefined,
       };
 
       const res = await fetch('/api/transition/generate-pdf', {
@@ -633,7 +778,7 @@ export default function TransitionPage() {
     } finally {
       setPdfLoading(false);
     }
-  }, [model, allocations, profiles, matches, selectedProfileId, totalValue, sectorComparison, transactions, totalBuys, totalSells, totalGainLoss, totalGains, totalLosses, incomeBefore, incomeAfter, aiAnalysis, holdings, clientName, toast]);
+  }, [model, allocations, profiles, matches, selectedProfileId, totalValue, sectorComparison, transactions, totalBuys, totalSells, totalGainLoss, totalGains, totalLosses, incomeBefore, incomeAfter, aiAnalysis, holdings, clientName, advisorNotes, feeComparison, taxSimulation, phases, projectedReturns, concentrationAlerts, toast]);
 
   // ── Copy transactions ──
   function handleCopyTx() {
@@ -666,6 +811,50 @@ export default function TransitionPage() {
     toast('success', 'CSV exporte');
   }
 
+  // ── Save to history ──
+  async function handleSaveHistory() {
+    if (!model || transactions.length === 0) return;
+    setSaveLoading(true);
+    try {
+      const profile = profiles.find(p => p.id === selectedProfileId);
+      const res = await fetch('/api/transition/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: clientName.trim() || 'Sans nom',
+          profile_name: profile?.name || '',
+          profile_id: selectedProfileId,
+          total_value: totalValue,
+          total_buys: totalBuys,
+          total_sells: totalSells,
+          total_gain_loss: totalGainLoss,
+          transactions_count: transactions.length,
+          advisor_notes: advisorNotes.trim() || null,
+          data: { transactions, allocations, sectorComparison },
+        }),
+      });
+      if (!res.ok) throw new Error('Erreur');
+      toast('success', 'Transition sauvegardee dans l\'historique');
+    } catch {
+      toast('error', 'Erreur lors de la sauvegarde');
+    } finally {
+      setSaveLoading(false);
+    }
+  }
+
+  // ── Load history ──
+  async function handleLoadHistory() {
+    try {
+      const res = await fetch('/api/transition/history');
+      if (!res.ok) throw new Error('Erreur');
+      const data = await res.json();
+      setHistory(data.transitions || []);
+      setHistoryOpen(true);
+    } catch {
+      toast('error', 'Impossible de charger l\'historique');
+    }
+  }
+
   if (profilesLoading) {
     return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
   }
@@ -678,9 +867,14 @@ export default function TransitionPage() {
         title="Transition discretionnaire"
         description="Detectez le profil du client, generez un plan de transition vers votre portefeuille modele"
         action={
-          <Link href="/models">
-            <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={handleLoadHistory} icon={<Clock className="h-4 w-4" />}>
+              Historique
+            </Button>
+            <Link href="/models">
+              <Button variant="ghost" icon={<ArrowLeft className="h-4 w-4" />}>Retour</Button>
+            </Link>
+          </div>
         }
       />
 
@@ -1143,10 +1337,170 @@ export default function TransitionPage() {
             </Card>
           </div>
 
+          {/* Alerts & Warnings */}
+          {(concentrationAlerts.length > 0 || overlapWarnings.length > 0) && (
+            <Card className="border-amber-200 bg-amber-50/30">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-5 w-5 text-amber-600" />
+                <h3 className="text-sm font-semibold text-amber-800">Alertes et avertissements</h3>
+              </div>
+              <div className="space-y-2">
+                {concentrationAlerts.map((a, i) => (
+                  <div key={`alert-${i}`} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${a.severity === 'danger' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                    <span>{a.message}</span>
+                  </div>
+                ))}
+                {overlapWarnings.map((w, i) => (
+                  <div key={`overlap-${i}`} className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs bg-blue-50 text-blue-700 border border-blue-200">
+                    <Layers className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                    <span>{w.note}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Fee comparison + Tax simulation */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Fee comparison */}
+            {feeComparison && feeComparison.currentFees > 0 && (
+              <Card>
+                <div className="flex items-center gap-2 mb-3">
+                  <DollarSign className="h-5 w-5 text-brand-primary" />
+                  <h3 className="text-sm font-semibold text-text-main">Comparaison des frais (RFG)</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="p-3 bg-red-50 rounded-lg text-center">
+                    <p className="text-[10px] text-red-600 uppercase tracking-wider mb-1">Portefeuille actuel</p>
+                    <p className="text-lg font-bold text-red-600">{fmt(feeComparison.currentFees)}/an</p>
+                    <p className="text-xs text-red-500">{fmtDec(feeComparison.currentFeePct, 2)}% RFG moyen</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg text-center">
+                    <p className="text-[10px] text-emerald-600 uppercase tracking-wider mb-1">Portefeuille modele</p>
+                    <p className="text-lg font-bold text-emerald-600">{fmt(feeComparison.modelFees)}/an</p>
+                    <p className="text-xs text-emerald-500">0,00% RFG</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-brand-primary/5 rounded-lg border border-brand-primary/20">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-semibold text-brand-primary">Economie annuelle</span>
+                    <span className="text-lg font-bold text-brand-primary">{fmt(feeComparison.annualSavings)}/an</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-xs text-text-muted">Sur 5 ans</span>
+                    <span className="text-sm font-semibold text-emerald-600">{fmt(feeComparison.savingsOver5Years)}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-0.5">
+                    <span className="text-xs text-text-muted">Sur 10 ans</span>
+                    <span className="text-sm font-semibold text-emerald-600">{fmt(feeComparison.savingsOver10Years)}</span>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Tax simulation */}
+            {taxSimulation && (
+              <Card>
+                <div className="flex items-center gap-2 mb-3">
+                  <Scale className="h-5 w-5 text-purple-600" />
+                  <h3 className="text-sm font-semibold text-text-main">Simulation fiscale</h3>
+                </div>
+                {taxSimulation.netCapitalGain >= 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-[10px] text-text-muted uppercase">Gain net en capital</p>
+                        <p className="text-lg font-bold text-text-main">{fmt(taxSimulation.netCapitalGain)}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-[10px] text-text-muted uppercase">Montant imposable (50%)</p>
+                        <p className="text-lg font-bold text-amber-600">{fmt(taxSimulation.taxableAmount)}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted mb-2">Impot estime selon le taux marginal:</p>
+                    <div className="space-y-1.5">
+                      {[
+                        { label: 'Taux 30% (revenu ~50K)', value: taxSimulation.estimatedTax30, color: 'text-emerald-600' },
+                        { label: 'Taux 40% (revenu ~90K)', value: taxSimulation.estimatedTax40, color: 'text-amber-600' },
+                        { label: 'Taux 50% (revenu ~150K+)', value: taxSimulation.estimatedTax50, color: 'text-red-600' },
+                      ].map(r => (
+                        <div key={r.label} className="flex justify-between items-center px-3 py-1.5 bg-gray-50 rounded-lg">
+                          <span className="text-xs text-text-muted">{r.label}</span>
+                          <span className={`text-sm font-semibold ${r.color}`}>~{fmt(r.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-4 bg-emerald-50 rounded-lg text-center">
+                    <p className="text-sm font-semibold text-emerald-700">Perte nette en capital</p>
+                    <p className="text-2xl font-bold text-emerald-600 mt-1">{fmt(taxSimulation.lossCarryForward)}</p>
+                    <p className="text-xs text-emerald-600 mt-1">Reportable sur les gains futurs ou les 3 annees precedentes</p>
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+
+          {/* Projected returns */}
+          {projectedReturns.length > 0 && (
+            <Card>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-5 w-5 text-brand-primary" />
+                <h3 className="text-sm font-semibold text-text-main">Rendement projete sur 5 ans</h3>
+                <span className="text-[10px] text-text-muted ml-auto">Estimation basee sur les rendements historiques moyens</span>
+              </div>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={projectedReturns} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="year" tick={{ fontSize: 11 }} tickFormatter={(v: number) => `An ${v}`} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}K`} />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    labelFormatter={(v: any) => `Annee ${v}`}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    formatter={(v: any, name: any) => [fmt(Number(v)), name === 'actuel' ? 'Portefeuille actuel' : 'Portefeuille modele']}
+                  />
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  <Legend formatter={(v: any) => v === 'actuel' ? 'Actuel (avec frais)' : 'Modele (sans frais RFG)'} />
+                  <Line type="monotone" dataKey="actuel" stroke={RED} strokeWidth={2} dot={{ r: 4 }} name="actuel" />
+                  <Line type="monotone" dataKey="modele" stroke={BRAND} strokeWidth={2.5} dot={{ r: 4 }} name="modele" />
+                </LineChart>
+              </ResponsiveContainer>
+              {projectedReturns.length > 0 && (
+                <div className="flex justify-center gap-6 mt-2 text-xs text-text-muted">
+                  <span>Valeur actuelle: <strong>{fmt(totalValue)}</strong></span>
+                  <span>Projection modele 5 ans: <strong className="text-brand-primary">{fmt(projectedReturns[5]?.modele || 0)}</strong></span>
+                  <span>Ecart: <strong className="text-emerald-600">+{fmt((projectedReturns[5]?.modele || 0) - (projectedReturns[5]?.actuel || 0))}</strong></span>
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Transaction table */}
           <Card padding="none">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-text-main">Plan de transition complet</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-text-main">Plan de transition</h3>
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  {[
+                    { key: 'all' as const, label: 'Tout' },
+                    { key: 1 as const, label: `P1 (${phases[1].transactions.length})` },
+                    { key: 2 as const, label: `P2 (${phases[2].transactions.length})` },
+                    { key: 3 as const, label: `P3 (${phases[3].transactions.length})` },
+                  ].filter(p => p.key === 'all' || (typeof p.key === 'number' && phases[p.key].transactions.length > 0)).map(p => (
+                    <button
+                      key={p.key}
+                      onClick={() => setPhaseView(p.key)}
+                      className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-colors ${phaseView === p.key ? 'bg-white text-brand-primary shadow-sm' : 'text-text-muted hover:text-text-main'}`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={handleExportCSV} icon={<Download className="h-3.5 w-3.5" />}>
                   CSV
@@ -1157,12 +1511,27 @@ export default function TransitionPage() {
               </div>
             </div>
 
+            {/* Phase description */}
+            {phaseView !== 'all' && (
+              <div className="px-5 py-2 bg-brand-primary/5 border-b border-brand-primary/20">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-3.5 w-3.5 text-brand-primary" />
+                  <p className="text-xs font-semibold text-brand-primary">{phases[phaseView].label}</p>
+                  <span className="text-xs text-text-muted">— {phases[phaseView].transactions.length} transactions, {fmt(phases[phaseView].total)}</span>
+                </div>
+              </div>
+            )}
+
             {/* Sells section */}
-            {sells.length > 0 && (
+            {(() => {
+              const filteredSells = phaseView === 'all' ? sells : phaseView === 3 ? [] : phases[phaseView].transactions;
+              if (filteredSells.length === 0) return null;
+              const filteredTotal = filteredSells.reduce((s, t) => s + t.value, 0);
+              return (
               <>
                 <div className="px-5 py-2 bg-red-50/50 border-b border-red-100">
                   <p className="text-xs font-semibold text-red-600 uppercase tracking-wider">
-                    Ventes ({sells.length}) — {fmt(totalSells)}
+                    Ventes ({filteredSells.length}) — {fmt(filteredTotal)}
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -1181,7 +1550,7 @@ export default function TransitionPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sells.map(t => (
+                      {filteredSells.map(t => (
                         <tr key={`${t.symbol}-${t.priority}`} className="border-t border-gray-50 hover:bg-red-50/30">
                           <td className="px-4 py-2 text-text-light font-mono text-xs">{t.priority}</td>
                           <td className="px-3 py-2 font-mono font-medium text-text-main">{t.symbol}</td>
@@ -1201,14 +1570,19 @@ export default function TransitionPage() {
                   </table>
                 </div>
               </>
-            )}
+              );
+            })()}
 
             {/* Buys section */}
-            {buys.length > 0 && (
+            {(() => {
+              const filteredBuys = phaseView === 'all' ? buys : phaseView === 3 ? phases[3].transactions : [];
+              if (filteredBuys.length === 0) return null;
+              const filteredTotal = filteredBuys.reduce((s, t) => s + t.value, 0);
+              return (
               <>
                 <div className="px-5 py-2 bg-emerald-50/50 border-b border-emerald-100 border-t border-gray-100">
                   <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">
-                    Achats ({buys.length}) — {fmt(totalBuys)}
+                    Achats ({filteredBuys.length}) — {fmt(filteredTotal)}
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -1226,7 +1600,7 @@ export default function TransitionPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {buys.map(t => (
+                      {filteredBuys.map(t => (
                         <tr key={`${t.symbol}-${t.priority}`} className="border-t border-gray-50 hover:bg-emerald-50/30">
                           <td className="px-4 py-2 text-text-light font-mono text-xs">{t.priority}</td>
                           <td className="px-3 py-2 font-mono font-medium text-text-main">{t.symbol}</td>
@@ -1242,7 +1616,8 @@ export default function TransitionPage() {
                   </table>
                 </div>
               </>
-            )}
+              );
+            })()}
           </Card>
 
           {/* AI Analysis section */}
@@ -1293,30 +1668,105 @@ export default function TransitionPage() {
             )}
           </Card>
 
-          {/* PDF Generation */}
+          {/* Advisor notes */}
           <Card>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-rose-50 rounded-xl">
-                  <FileText className="h-6 w-6 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-text-main">Rapport PDF de transition</h3>
-                  <p className="text-sm text-text-muted">
-                    Inclut les allocations avant/apres, la comparaison sectorielle,
-                    le plan de transactions{aiAnalysis ? ' et l\'analyse IA' : ''}.
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={handleGeneratePDF}
-                loading={pdfLoading}
-                icon={<Download className="h-4 w-4" />}
-              >
-                Telecharger le PDF
-              </Button>
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="h-5 w-5 text-indigo-500" />
+              <h3 className="text-sm font-semibold text-text-main">Notes du conseiller</h3>
+              <span className="text-[10px] text-text-muted">(optionnel — apparaitra dans le PDF)</span>
             </div>
+            <textarea
+              value={advisorNotes}
+              onChange={(e) => setAdvisorNotes(e.target.value)}
+              placeholder="Ajoutez vos commentaires personnalises pour le client (contexte, recommandations specifiques, suivi)..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary resize-none"
+            />
           </Card>
+
+          {/* PDF Generation + Save */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-rose-50 rounded-xl">
+                    <FileText className="h-6 w-6 text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-main">Rapport PDF</h3>
+                    <p className="text-xs text-text-muted">
+                      Allocations, frais, fiscal, transactions{aiAnalysis ? ', analyse IA' : ''}{advisorNotes ? ', notes' : ''}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleGeneratePDF}
+                  loading={pdfLoading}
+                  icon={<Download className="h-4 w-4" />}
+                >
+                  PDF
+                </Button>
+              </div>
+            </Card>
+            <Card>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-50 rounded-xl">
+                    <Save className="h-6 w-6 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-main">Sauvegarder</h3>
+                    <p className="text-xs text-text-muted">
+                      Enregistrer cette transition dans l&apos;historique
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={handleSaveHistory}
+                  loading={saveLoading}
+                  icon={<Save className="h-4 w-4" />}
+                >
+                  Sauvegarder
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* History modal */}
+      {historyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[70vh] overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-brand-primary" />
+                <h3 className="font-semibold text-text-main">Historique des transitions</h3>
+              </div>
+              <button onClick={() => setHistoryOpen(false)} className="text-text-muted hover:text-text-main text-lg">&times;</button>
+            </div>
+            <div className="overflow-y-auto max-h-[55vh] p-4">
+              {history.length === 0 ? (
+                <p className="text-sm text-text-muted text-center py-8">Aucune transition sauvegardee</p>
+              ) : (
+                <div className="space-y-2">
+                  {history.map(h => (
+                    <div key={h.id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-sm text-text-main">{h.client_name}</span>
+                        <span className="text-xs text-text-muted">{new Date(h.created_at).toLocaleDateString('fr-CA')}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-text-muted">
+                        <Badge variant="outline">{h.profile_name}</Badge>
+                        <span>{fmt(h.total_value)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -484,3 +484,25 @@ CREATE INDEX idx_meeting_notes_advisor ON meeting_notes(advisor_id);
 CREATE INDEX idx_meeting_notes_date ON meeting_notes(meeting_date DESC);
 
 CREATE TRIGGER meeting_notes_updated_at BEFORE UPDATE ON meeting_notes FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- 24. TRANSITION_HISTORY (historique des transitions discretionnaires)
+-- ============================================
+CREATE TABLE transition_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_name TEXT NOT NULL DEFAULT '',
+  profile_name TEXT NOT NULL DEFAULT '',
+  profile_id UUID REFERENCES investment_profiles(id) ON DELETE SET NULL,
+  total_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+  total_buys NUMERIC(18,2) DEFAULT 0,
+  total_sells NUMERIC(18,2) DEFAULT 0,
+  total_gain_loss NUMERIC(18,2) DEFAULT 0,
+  transactions_count INTEGER DEFAULT 0,
+  advisor_notes TEXT,
+  data JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_transition_history_user ON transition_history(user_id);
+CREATE INDEX idx_transition_history_created ON transition_history(created_at DESC);
