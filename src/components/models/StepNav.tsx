@@ -9,12 +9,17 @@ const STEPS = [
   { num: 3, title: 'Construire', href: '/models/generate' },
   { num: 4, title: 'Evaluer la qualite', href: '/models/scoring' },
   { num: 5, title: 'Backtester', href: '/models/backtest' },
-  { num: 6, title: 'Comparer', href: '/models/compare' },
-  { num: 7, title: 'Reequilibrer', href: '/models/rebalance' },
+  { num: 6, title: 'Simuler', href: '/models/simulation' },
+  { num: 7, title: 'Comparer', href: '/models/compare' },
+  { num: 8, title: 'Reequilibrer', href: '/models/rebalance' },
+  { num: 9, title: 'Communiquer', href: '/models/email' },
+  { num: 10, title: 'Transition', href: '/models/transition' },
 ];
 
+const TOTAL_STEPS = STEPS.length;
+
 export function StepNav({ current }: { current: number }) {
-  const next = current < 7 ? STEPS[current] : null;
+  const next = current < TOTAL_STEPS ? STEPS[current] : null;
 
   return (
     <div className="mt-10 pt-6 border-t border-gray-100">
@@ -35,7 +40,7 @@ export function StepNav({ current }: { current: number }) {
       </div>
 
       <p className="text-xs text-text-muted text-center mb-4">
-        Etape {current} de 7
+        Etape {current} de {TOTAL_STEPS}
       </p>
 
       {next ? (

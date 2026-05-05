@@ -319,7 +319,7 @@ export default function RebalancePage() {
         />
       )}
 
-      <StepNav current={7} />
+      <StepNav current={8} />
     </div>
   );
 }

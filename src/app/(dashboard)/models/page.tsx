@@ -14,6 +14,7 @@ import {
   SlidersHorizontal, Globe, Zap, ArrowRightLeft, Activity,
   Target, Mail, Scale, ChevronRight, CheckCircle2, Lock,
   Sparkles, BarChart3, TrendingUp, Search, ArrowUpDown, Eye, X,
+  RefreshCw,
 } from 'lucide-react';
 
 // ── Constantes ──
@@ -157,6 +158,17 @@ const JOURNEY_STEPS: JourneyStep[] = [
     color: 'text-pink-600',
     bgColor: 'bg-pink-50',
     borderColor: 'border-pink-200',
+    category: 'act',
+  },
+  {
+    number: 10,
+    title: 'Transition discretionnaire',
+    description: 'Collez les positions Croesus, detectez le profil et generez un plan de transition vers le modele',
+    icon: <RefreshCw className="h-5 w-5" />,
+    href: '/models/transition',
+    color: 'text-rose-600',
+    bgColor: 'bg-rose-50',
+    borderColor: 'border-rose-200',
     category: 'act',
   },
 ];
