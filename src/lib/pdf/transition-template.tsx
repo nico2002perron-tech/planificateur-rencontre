@@ -74,6 +74,9 @@ export interface TransitionPDFData {
     price: number;
     value: number;
     reason: string;
+    bookValue?: number;
+    gainLoss?: number;
+    gainLossPct?: number;
   }[];
 
   // Summary
@@ -89,6 +92,15 @@ export interface TransitionPDFData {
     recommendations: string;
     taxConsiderations: string;
   };
+
+  // Gain/loss summary
+  totalGainLoss?: number;
+  totalGains?: number;
+  totalLosses?: number;
+
+  // Income before/after
+  incomeBefore?: number;
+  incomeAfter?: number;
 
   // Holdings summary
   holdingsCount: number;
@@ -389,6 +401,46 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
           </View>
         </View>
 
+        {/* Gain/loss + Income summary */}
+        {(data.totalGainLoss != null || data.incomeBefore != null) && (
+          <View style={{ ...styles.card, flexDirection: 'row', gap: 12 }}>
+            {data.totalGainLoss != null && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>G/P LATENT</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: data.totalGainLoss >= 0 ? '#10b981' : '#ef4444' }}>
+                  {data.totalGainLoss >= 0 ? '+' : ''}{fmt(data.totalGainLoss)}
+                </Text>
+              </View>
+            )}
+            {data.totalGains != null && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>GAINS CAPITAL</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#10b981' }}>+{fmt(data.totalGains)}</Text>
+                <Text style={{ fontSize: 7, color: C.textTer, marginTop: 2 }}>Imposable a 50%</Text>
+              </View>
+            )}
+            {data.totalLosses != null && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>PERTES CAPITAL</Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: '#ef4444' }}>{fmt(data.totalLosses)}</Text>
+                <Text style={{ fontSize: 7, color: C.textTer, marginTop: 2 }}>Deductibles</Text>
+              </View>
+            )}
+            {data.incomeBefore != null && data.incomeAfter != null && (
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 7, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 4 }}>REVENU ANNUEL</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                  <Text style={{ fontSize: 10, color: C.textTer, textDecoration: 'line-through' as const }}>{fmt(data.incomeBefore)}</Text>
+                  <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 800, color: C.cyan }}>{fmt(data.incomeAfter)}</Text>
+                </View>
+                <Text style={{ fontSize: 7, color: data.incomeAfter >= data.incomeBefore ? '#10b981' : '#ef4444', marginTop: 2 }}>
+                  {data.incomeAfter >= data.incomeBefore ? '+' : ''}{fmt(data.incomeAfter - data.incomeBefore)}/an
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Portfolio summary */}
         <View style={{ ...styles.card }}>
           <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 8 }}>Resume du portefeuille</Text>
@@ -513,22 +565,26 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
             <View style={styles.tablePremium}>
               <View style={{ ...styles.thPremium, backgroundColor: '#7f1d1d' }}>
                 <Text style={{ ...styles.thCellPremium, width: 25 }}>#</Text>
-                <Text style={{ ...styles.thCellPremium, width: 70 }}>Symbole</Text>
+                <Text style={{ ...styles.thCellPremium, width: 65 }}>Symbole</Text>
                 <Text style={{ ...styles.thCellPremium, flex: 1 }}>Nom</Text>
-                <Text style={{ ...styles.thCellPremium, width: 45 }}>Type</Text>
-                <Text style={{ ...styles.thCellPremium, width: 40, textAlign: 'right' as const }}>Qte</Text>
-                <Text style={{ ...styles.thCellPremium, width: 55, textAlign: 'right' as const }}>Prix</Text>
-                <Text style={{ ...styles.thCellPremium, width: 65, textAlign: 'right' as const }}>Valeur</Text>
+                <Text style={{ ...styles.thCellPremium, width: 40 }}>Type</Text>
+                <Text style={{ ...styles.thCellPremium, width: 35, textAlign: 'right' as const }}>Qte</Text>
+                <Text style={{ ...styles.thCellPremium, width: 50, textAlign: 'right' as const }}>Prix</Text>
+                <Text style={{ ...styles.thCellPremium, width: 58, textAlign: 'right' as const }}>Valeur</Text>
+                <Text style={{ ...styles.thCellPremium, width: 58, textAlign: 'right' as const }}>G/P</Text>
               </View>
               {sells.slice(0, 20).map((t, i) => (
                 <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                   <Text style={{ ...styles.td, width: 25, color: C.textTer }}>{t.priority}</Text>
-                  <Text style={{ ...styles.tdBold, width: 70, color: C.navy }}>{t.symbol}</Text>
-                  <Text style={{ ...styles.td, flex: 1, color: C.textSec }}>{t.name.substring(0, 25)}</Text>
-                  <Text style={{ ...styles.td, width: 45, fontSize: 7 }}>{ASSET_LABELS[t.assetType] || t.assetType}</Text>
-                  <Text style={{ ...styles.tdBold, width: 40, textAlign: 'right' as const }}>{t.quantity}</Text>
-                  <Text style={{ ...styles.td, width: 55, textAlign: 'right' as const }}>{fmtDec(t.price)}</Text>
-                  <Text style={{ ...styles.tdBold, width: 65, textAlign: 'right' as const, color: '#ef4444' }}>{fmt(t.value)}</Text>
+                  <Text style={{ ...styles.tdBold, width: 65, color: C.navy }}>{t.symbol}</Text>
+                  <Text style={{ ...styles.td, flex: 1, color: C.textSec }}>{t.name.substring(0, 22)}</Text>
+                  <Text style={{ ...styles.td, width: 40, fontSize: 6.5 }}>{ASSET_LABELS[t.assetType] || t.assetType}</Text>
+                  <Text style={{ ...styles.tdBold, width: 35, textAlign: 'right' as const }}>{t.quantity}</Text>
+                  <Text style={{ ...styles.td, width: 50, textAlign: 'right' as const }}>{fmtDec(t.price)}</Text>
+                  <Text style={{ ...styles.tdBold, width: 58, textAlign: 'right' as const, color: '#ef4444' }}>{fmt(t.value)}</Text>
+                  <Text style={{ ...styles.tdBold, width: 58, textAlign: 'right' as const, fontSize: 7, color: (t.gainLoss ?? 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                    {t.gainLoss != null ? `${t.gainLoss >= 0 ? '+' : ''}${fmt(t.gainLoss)}` : '—'}
+                  </Text>
                 </View>
               ))}
               {sells.length > 20 && (

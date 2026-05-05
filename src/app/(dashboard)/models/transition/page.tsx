@@ -86,6 +86,9 @@ interface TransitionTx {
   value: number;
   reason: string;
   assetType: string;
+  bookValue?: number;
+  gainLoss?: number;
+  gainLossPct?: number;
 }
 
 interface AIAnalysis {
@@ -232,9 +235,20 @@ function calculateTransitions(
     }
   }
 
+  // Helper: compute gain/loss for a holding sale
+  function sellGainLoss(h: ParsedHolding, qty?: number) {
+    const sellQty = qty ?? h.quantity;
+    const bv = h.averageCost > 0 ? h.averageCost * sellQty : (h.quantity > 0 ? (h.bookValue / h.quantity) * sellQty : 0);
+    const mv = h.marketPrice * sellQty;
+    const gl = mv - bv;
+    const glPct = bv > 0 ? (gl / bv) * 100 : 0;
+    return { bookValue: Math.round(bv * 100) / 100, gainLoss: Math.round(gl * 100) / 100, gainLossPct: Math.round(glPct * 100) / 100 };
+  }
+
   // 1. SELL: Funds first (transitioning away from funds to direct holdings)
   const funds = holdings.filter(h => h.assetType === 'FUND' && h.marketValue > 0);
   for (const f of funds) {
+    const gl = sellGainLoss(f);
     transactions.push({
       priority: priority++,
       action: 'SELL',
@@ -245,12 +259,14 @@ function calculateTransitions(
       value: f.marketValue,
       reason: 'Fonds commun — transition vers titres individuels',
       assetType: f.assetType,
+      ...gl,
     });
   }
 
   // 2. SELL: Extra equities not in the model
   for (const [sym, h] of actualEquities) {
     if (!modelStocks.has(sym)) {
+      const gl = sellGainLoss(h);
       transactions.push({
         priority: priority++,
         action: 'SELL',
@@ -261,6 +277,7 @@ function calculateTransitions(
         value: h.marketValue,
         reason: 'Hors modele — non inclus dans le portefeuille cible',
         assetType: h.assetType,
+        ...gl,
       });
     }
   }
@@ -270,6 +287,7 @@ function calculateTransitions(
     const actual = actualEquities.get(sym);
     if (actual && actual.quantity > ms.quantity) {
       const qtyDiff = actual.quantity - ms.quantity;
+      const gl = sellGainLoss(actual, qtyDiff);
       transactions.push({
         priority: priority++,
         action: 'SELL',
@@ -280,6 +298,7 @@ function calculateTransitions(
         value: qtyDiff * ms.price,
         reason: `Surpondere — reduire de ${actual.quantity} a ${ms.quantity} actions`,
         assetType: 'EQUITY',
+        ...gl,
       });
     }
   }
@@ -310,6 +329,7 @@ function calculateTransitions(
 
   for (const b of actualBonds) {
     if (!modelBondCusips.has(b.symbol.toUpperCase())) {
+      const gl = sellGainLoss(b);
       transactions.push({
         priority: priority++,
         action: 'SELL',
@@ -320,6 +340,7 @@ function calculateTransitions(
         value: b.marketValue,
         reason: 'Obligation hors modele',
         assetType: 'FIXED_INCOME',
+        ...gl,
       });
     }
   }
@@ -355,6 +376,9 @@ export default function TransitionPage() {
 
   // Step state
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+
+  // Client name (optional)
+  const [clientName, setClientName] = useState('');
 
   // Step 1: Paste data
   const [rawText, setRawText] = useState('');
@@ -482,6 +506,15 @@ export default function TransitionPage() {
   const totalBuys = buys.reduce((s, t) => s + t.value, 0);
   const totalSells = sells.reduce((s, t) => s + t.value, 0);
 
+  // ── Gain/loss totals ──
+  const totalGainLoss = sells.reduce((s, t) => s + (t.gainLoss ?? 0), 0);
+  const totalGains = sells.filter(t => (t.gainLoss ?? 0) > 0).reduce((s, t) => s + (t.gainLoss ?? 0), 0);
+  const totalLosses = sells.filter(t => (t.gainLoss ?? 0) < 0).reduce((s, t) => s + (t.gainLoss ?? 0), 0);
+
+  // ── Annual income before/after ──
+  const incomeBefore = holdings.reduce((s, h) => s + h.annualIncome, 0);
+  const incomeAfter = model ? model.stats.estimatedAnnualIncome : 0;
+
   // ── Sector comparison data ──
   const sectorComparison = useMemo(() => {
     if (!model || holdings.length === 0) return [];
@@ -527,7 +560,7 @@ export default function TransitionPage() {
     try {
       const bestMatch = matches.find(m => m.profile.id === selectedProfileId);
       const pdfData = {
-        clientName: undefined,
+        clientName: clientName.trim() || undefined,
         date: new Date().toLocaleDateString('fr-CA'),
         totalValue,
         profileName: profile.name,
@@ -559,11 +592,19 @@ export default function TransitionPage() {
           price: t.price,
           value: t.value,
           reason: t.reason,
+          bookValue: t.bookValue,
+          gainLoss: t.gainLoss,
+          gainLossPct: t.gainLossPct,
         })),
         totalBuys,
         totalSells,
         netFlow: totalSells - totalBuys,
         estimatedFees: transactions.length * 9.95,
+        totalGainLoss,
+        totalGains,
+        totalLosses,
+        incomeBefore,
+        incomeAfter,
         aiAnalysis: aiAnalysis || undefined,
         holdingsCount: holdings.length,
         modelStocksCount: model.stats.nbStocks,
@@ -592,18 +633,37 @@ export default function TransitionPage() {
     } finally {
       setPdfLoading(false);
     }
-  }, [model, allocations, profiles, matches, selectedProfileId, totalValue, sectorComparison, transactions, totalBuys, totalSells, aiAnalysis, holdings, toast]);
+  }, [model, allocations, profiles, matches, selectedProfileId, totalValue, sectorComparison, transactions, totalBuys, totalSells, totalGainLoss, totalGains, totalLosses, incomeBefore, incomeAfter, aiAnalysis, holdings, clientName, toast]);
 
   // ── Copy transactions ──
   function handleCopyTx() {
     const lines = [
-      'Priorite\tAction\tSymbole\tNom\tType\tQuantite\tPrix\tValeur\tRaison',
+      'Priorite\tAction\tSymbole\tNom\tType\tQuantite\tPrix\tValeur\tG/P\tG/P %\tRaison',
       ...transactions.map(t =>
-        `${t.priority}\t${t.action}\t${t.symbol}\t${t.name}\t${t.assetType}\t${t.quantity}\t${fmtDec(t.price)}\t${fmt(t.value)}\t${t.reason}`
+        `${t.priority}\t${t.action}\t${t.symbol}\t${t.name}\t${t.assetType}\t${t.quantity}\t${fmtDec(t.price)}\t${fmt(t.value)}\t${t.gainLoss != null ? fmt(t.gainLoss) : ''}\t${t.gainLossPct != null ? fmtDec(t.gainLossPct, 1) + '%' : ''}\t${t.reason}`
       ),
     ];
     navigator.clipboard.writeText(lines.join('\n'));
     toast('success', 'Plan de transition copie');
+  }
+
+  // ── CSV export ──
+  function handleExportCSV() {
+    const header = 'Priorite,Action,Symbole,Nom,Type,Quantite,Prix,Valeur,Gain/Perte,G/P %,Raison';
+    const rows = transactions.map(t =>
+      `${t.priority},${t.action},"${t.symbol}","${t.name}",${t.assetType},${t.quantity},${fmtDec(t.price)},${t.value.toFixed(2)},${t.gainLoss != null ? t.gainLoss.toFixed(2) : ''},${t.gainLossPct != null ? t.gainLossPct.toFixed(1) : ''},"${t.reason}"`
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transition-${selectedProfile?.name?.replace(/\s+/g, '-').toLowerCase() || 'plan'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('success', 'CSV exporte');
   }
 
   if (profilesLoading) {
@@ -662,6 +722,16 @@ export default function TransitionPage() {
             Copiez les positions du client depuis Croesus (meme format que Pret a coller) et collez-les ci-dessous.
             Le systeme detectera automatiquement le type de portefeuille le plus proche de vos 6 modeles.
           </p>
+          <div className="mb-4">
+            <label className="block text-xs text-text-muted mb-1">Nom du client (optionnel — apparaitra sur le PDF)</label>
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              placeholder="Ex: Jean Tremblay"
+              className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+            />
+          </div>
           <textarea
             value={rawText}
             onChange={(e) => setRawText(e.target.value)}
@@ -1043,13 +1113,48 @@ export default function TransitionPage() {
             </Card>
           </div>
 
+          {/* Gain/Loss + Income cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card padding="sm">
+              <p className="text-xs text-text-muted mb-1">Gain/perte latent (ventes)</p>
+              <p className={`text-lg font-bold ${totalGainLoss >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {totalGainLoss >= 0 ? '+' : ''}{fmt(totalGainLoss)}
+              </p>
+            </Card>
+            <Card padding="sm">
+              <p className="text-xs text-text-muted mb-1">Gains en capital</p>
+              <p className="text-lg font-bold text-emerald-600">+{fmt(totalGains)}</p>
+              <p className="text-[10px] text-text-muted">Imposable a 50%</p>
+            </Card>
+            <Card padding="sm">
+              <p className="text-xs text-text-muted mb-1">Pertes en capital</p>
+              <p className="text-lg font-bold text-red-500">{fmt(totalLosses)}</p>
+              <p className="text-[10px] text-text-muted">Deductibles</p>
+            </Card>
+            <Card padding="sm">
+              <p className="text-xs text-text-muted mb-1">Revenu annuel est.</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm text-text-light line-through">{fmt(incomeBefore)}</span>
+                <span className="text-lg font-bold text-brand-primary">{fmt(incomeAfter)}</span>
+              </div>
+              <p className={`text-[10px] font-semibold ${incomeAfter >= incomeBefore ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {incomeAfter >= incomeBefore ? '+' : ''}{fmt(incomeAfter - incomeBefore)}/an
+              </p>
+            </Card>
+          </div>
+
           {/* Transaction table */}
           <Card padding="none">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-text-main">Plan de transition complet</h3>
-              <Button variant="ghost" size="sm" onClick={handleCopyTx} icon={<Copy className="h-3.5 w-3.5" />}>
-                Copier
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={handleExportCSV} icon={<Download className="h-3.5 w-3.5" />}>
+                  CSV
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleCopyTx} icon={<Copy className="h-3.5 w-3.5" />}>
+                  Copier
+                </Button>
+              </div>
             </div>
 
             {/* Sells section */}
@@ -1071,6 +1176,7 @@ export default function TransitionPage() {
                         <th className="px-3 py-2 text-right">Qte</th>
                         <th className="px-3 py-2 text-right">Prix</th>
                         <th className="px-3 py-2 text-right">Valeur</th>
+                        <th className="px-3 py-2 text-right">G/P</th>
                         <th className="px-3 py-2">Raison</th>
                       </tr>
                     </thead>
@@ -1084,6 +1190,10 @@ export default function TransitionPage() {
                           <td className="px-3 py-2 text-right font-mono font-semibold">{t.quantity}</td>
                           <td className="px-3 py-2 text-right font-mono text-text-muted">{fmtDec(t.price)}</td>
                           <td className="px-3 py-2 text-right font-mono font-semibold text-red-500">{fmt(t.value)}</td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${(t.gainLoss ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {t.gainLoss != null ? `${t.gainLoss >= 0 ? '+' : ''}${fmt(t.gainLoss)}` : '—'}
+                            {t.gainLossPct != null && <span className="block text-[10px] text-text-muted">{t.gainLossPct >= 0 ? '+' : ''}{fmtDec(t.gainLossPct, 1)}%</span>}
+                          </td>
                           <td className="px-3 py-2 text-text-muted text-xs max-w-[200px]">{t.reason}</td>
                         </tr>
                       ))}
