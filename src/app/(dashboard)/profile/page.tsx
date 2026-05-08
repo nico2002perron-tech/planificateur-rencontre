@@ -544,7 +544,7 @@ export default function ProfilePage() {
                   onChange={(e) => updateField('years_experience', e.target.value)}
                   className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#FF9600]/20 focus:border-[#FF9600] transition-all"
                 >
-                  <option value="" disabled>Choisir...</option>
+                  <option value="">Ne pas afficher</option>
                   {YEARS_OPTIONS.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
