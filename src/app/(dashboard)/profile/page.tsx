@@ -31,6 +31,22 @@ interface TeamProfile {
   is_visible: boolean;
 }
 
+const ROLE_TITLES = [
+  'Conseiller en placement',
+  'Conseiller en placement adjoint',
+  'Conseiller associe en placement',
+  'Gestionnaire de portefeuille',
+  'Planificateur financier',
+  'Directeur de succursale',
+  'Adjoint administratif',
+  'Adjointe administrative',
+  'Associe en placement',
+  'Analyste financier',
+  'Fiscaliste',
+  'Notaire',
+  'Comptable',
+];
+
 const CATEGORY_LABELS: Record<string, string> = {
   'conseiller': 'Conseillers',
   'adjoint': 'Assistants',
@@ -46,12 +62,19 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [photoHover, setPhotoHover] = useState(false);
+  const [customTitle, setCustomTitle] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch('/api/team-profile')
       .then(res => res.json())
-      .then(data => { setProfile(data); setLoading(false); })
+      .then(data => {
+        setProfile(data);
+        if (data.role_title && !ROLE_TITLES.includes(data.role_title)) {
+          setCustomTitle(true);
+        }
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -276,11 +299,43 @@ export default function ProfilePage() {
 
               <div>
                 <label className="block text-xs font-extrabold text-text-main mb-1.5">Titre / Role</label>
-                <Input
-                  value={profile.role_title}
-                  onChange={(e) => updateField('role_title', e.target.value)}
-                  placeholder="Ex: Conseiller en placement"
-                />
+                {customTitle ? (
+                  <div className="flex gap-2">
+                    <Input
+                      value={profile.role_title}
+                      onChange={(e) => updateField('role_title', e.target.value)}
+                      placeholder="Entrez votre titre..."
+                      className="flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setCustomTitle(false); updateField('role_title', ROLE_TITLES[0]); }}
+                      className="px-3 py-2 rounded-xl border-2 border-gray-200 bg-white text-xs font-extrabold text-text-muted hover:border-[#58CC02] hover:text-[#45a300] transition-all whitespace-nowrap"
+                    >
+                      Liste
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <select
+                      value={ROLE_TITLES.includes(profile.role_title) ? profile.role_title : ''}
+                      onChange={(e) => updateField('role_title', e.target.value)}
+                      className="flex-1 rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#58CC02]/20 focus:border-[#58CC02] transition-all"
+                    >
+                      <option value="" disabled>Choisir un titre...</option>
+                      {ROLE_TITLES.map((title) => (
+                        <option key={title} value={title}>{title}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setCustomTitle(true); updateField('role_title', ''); }}
+                      className="px-3 py-2 rounded-xl border-2 border-gray-200 bg-white text-xs font-extrabold text-text-muted hover:border-[#58CC02] hover:text-[#45a300] transition-all whitespace-nowrap"
+                    >
+                      Autre
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
