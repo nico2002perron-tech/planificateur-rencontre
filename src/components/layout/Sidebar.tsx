@@ -16,6 +16,7 @@ import {
   BarChart2,
   BookOpen,
   ClipboardList,
+  UserCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 import { signOut } from 'next-auth/react';
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/meeting-notes', label: 'Notes de réunion', icon: ClipboardList },
   { href: '/reports', label: 'Rapports', icon: FileText },
   { href: '/fund-reports', label: 'Rapports de fonds', icon: BookOpen },
+  { href: '/profile', label: 'Profil', icon: UserCircle },
   { href: '/admin', label: 'Administration', icon: Settings },
 ];
 

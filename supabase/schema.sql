@@ -506,3 +506,27 @@ CREATE TABLE transition_history (
 
 CREATE INDEX idx_transition_history_user ON transition_history(user_id);
 CREATE INDEX idx_transition_history_created ON transition_history(created_at DESC);
+
+-- ============================================
+-- 25. TEAM_PROFILES (profils publics pour le site web)
+-- ============================================
+CREATE TABLE team_profiles (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  role_title TEXT,
+  bio TEXT,
+  photo_url TEXT,
+  linkedin_url TEXT,
+  badge TEXT DEFAULT 'Conseiller' CHECK (badge IN ('Conseiller', 'Assistant', 'Assistante', 'Partenaire')),
+  category TEXT DEFAULT 'conseiller' CHECK (category IN ('conseiller', 'adjoint', 'parent-brassard', 'buisson')),
+  initials TEXT,
+  sort_order INTEGER DEFAULT 99,
+  is_visible BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_team_profiles_category ON team_profiles(category, sort_order);
+
+CREATE TRIGGER team_profiles_updated_at BEFORE UPDATE ON team_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
