@@ -25,6 +25,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Force password change — only allow change-password page and auth API
+  if (token.mustChangePassword && pathname !== '/change-password') {
+    return NextResponse.redirect(new URL('/change-password', request.url));
+  }
+
   // Admin-only routes
   if (pathname.startsWith('/admin') && token.role !== 'admin') {
     return NextResponse.redirect(new URL('/', request.url));

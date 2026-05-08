@@ -17,7 +17,7 @@ export const authOptions: NextAuthOptions = {
         const supabase = createClient();
         const { data: user, error } = await supabase
           .from('users')
-          .select('id, email, name, role, password_hash, status')
+          .select('id, email, name, role, password_hash, status, must_change_password')
           .eq('email', credentials.email)
           .single();
 
@@ -31,6 +31,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
+          mustChangePassword: user.must_change_password ?? false,
         };
       },
     }),
@@ -44,13 +45,15 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as { role: 'admin' | 'advisor' }).role;
         token.id = user.id as string;
+        token.mustChangePassword = (user as { mustChangePassword?: boolean }).mustChangePassword ?? false;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id: string; role: string }).id = token.id as string;
-        (session.user as { id: string; role: string }).role = token.role as string;
+        (session.user as { id: string; role: string; mustChangePassword: boolean }).id = token.id as string;
+        (session.user as { id: string; role: string; mustChangePassword: boolean }).role = token.role as string;
+        (session.user as { id: string; role: string; mustChangePassword: boolean }).mustChangePassword = token.mustChangePassword as boolean;
       }
       return session;
     },

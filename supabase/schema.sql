@@ -16,6 +16,7 @@ CREATE TABLE users (
   name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('admin', 'advisor')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending')),
+  must_change_password BOOLEAN NOT NULL DEFAULT false,
   title TEXT,
   license_number TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
