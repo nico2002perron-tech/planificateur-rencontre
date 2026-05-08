@@ -474,7 +474,7 @@ export default function ProfilePage() {
                     max={99}
                   />
                 </div>
-                <div className="flex items-end pb-1">
+                <div>
                   <button
                     onClick={() => updateField('is_visible', !profile.is_visible)}
                     className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-xl border-2 transition-all duration-200 ${
@@ -488,6 +488,11 @@ export default function ProfilePage() {
                       {profile.is_visible ? 'Visible sur le site' : 'Masque du site'}
                     </span>
                   </button>
+                  <p className="text-xs text-text-muted mt-1.5">
+                    {profile.is_visible
+                      ? 'Ce profil apparait dans la section equipe du site public. Les visiteurs peuvent le voir.'
+                      : 'Ce profil est cache du site public. Personne ne peut le voir tant que cette option est desactivee.'}
+                  </p>
                 </div>
               </div>
             </div>
