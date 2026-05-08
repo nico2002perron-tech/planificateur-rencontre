@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import {
   Save, Upload, Loader2, CheckCircle, Linkedin, UserCircle,
   Camera, Sparkles, Eye, EyeOff, GripVertical, Shield,
-  ExternalLink,
+  ExternalLink, Instagram, Facebook, Globe,
 } from 'lucide-react';
 
 // Duolingo palette (same as Reports page)
@@ -24,6 +24,10 @@ interface TeamProfile {
   bio: string;
   photo_url: string;
   linkedin_url: string;
+  instagram_url: string;
+  facebook_url: string;
+  twitter_url: string;
+  website_url: string;
   badge: string;
   category: string;
   initials: string;
@@ -244,12 +248,15 @@ export default function ProfilePage() {
                   {profile.bio.slice(0, 120)}{profile.bio.length > 120 ? '...' : ''}
                 </p>
               )}
-              {profile.linkedin_url && (
-                <div className="mt-3">
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-[#0077b5]">
-                    <Linkedin className="h-3 w-3" /> LinkedIn
-                    <ExternalLink className="h-2.5 w-2.5" />
-                  </span>
+              {(profile.linkedin_url || profile.instagram_url || profile.facebook_url || profile.twitter_url || profile.website_url) && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  {profile.linkedin_url && <Linkedin className="h-4 w-4 text-[#0077b5]" />}
+                  {profile.instagram_url && <Instagram className="h-4 w-4 text-[#E4405F]" />}
+                  {profile.facebook_url && <Facebook className="h-4 w-4 text-[#1877F2]" />}
+                  {profile.twitter_url && (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  )}
+                  {profile.website_url && <Globe className="h-4 w-4" style={{ color: DUO.blue }} />}
                 </div>
               )}
             </div>
@@ -354,15 +361,61 @@ export default function ProfilePage() {
                 />
               </div>
 
+              {/* Social links */}
               <div>
-                <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
-                  <Linkedin className="h-3.5 w-3.5 text-[#0077b5]" /> Profil LinkedIn
-                </label>
-                <Input
-                  value={profile.linkedin_url}
-                  onChange={(e) => updateField('linkedin_url', e.target.value)}
-                  placeholder="https://linkedin.com/in/votre-profil"
-                />
+                <label className="block text-xs font-extrabold text-text-main mb-3">Reseaux sociaux</label>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0077b515' }}>
+                      <Linkedin className="h-4 w-4 text-[#0077b5]" />
+                    </div>
+                    <Input
+                      value={profile.linkedin_url}
+                      onChange={(e) => updateField('linkedin_url', e.target.value)}
+                      placeholder="https://linkedin.com/in/votre-profil"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#E4405F15' }}>
+                      <Instagram className="h-4 w-4 text-[#E4405F]" />
+                    </div>
+                    <Input
+                      value={profile.instagram_url}
+                      onChange={(e) => updateField('instagram_url', e.target.value)}
+                      placeholder="https://instagram.com/votre-profil"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#1877F215' }}>
+                      <Facebook className="h-4 w-4 text-[#1877F2]" />
+                    </div>
+                    <Input
+                      value={profile.facebook_url}
+                      onChange={(e) => updateField('facebook_url', e.target.value)}
+                      placeholder="https://facebook.com/votre-profil"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#00000010' }}>
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    </div>
+                    <Input
+                      value={profile.twitter_url}
+                      onChange={(e) => updateField('twitter_url', e.target.value)}
+                      placeholder="https://x.com/votre-profil"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${DUO.blue}15` }}>
+                      <Globe className="h-4 w-4" style={{ color: DUO.blue }} />
+                    </div>
+                    <Input
+                      value={profile.website_url}
+                      onChange={(e) => updateField('website_url', e.target.value)}
+                      placeholder="https://votre-site-web.com"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
