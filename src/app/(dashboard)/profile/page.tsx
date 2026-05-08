@@ -266,7 +266,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Live preview card */}
+          {/* Live preview — Card (as seen on public site) */}
           <div
             className="rounded-2xl bg-white p-6 transition-all duration-200"
             style={{ border: `2px solid ${DUO.purple}30`, borderBottom: `5px solid ${DUO.purpleDark}30` }}
@@ -281,49 +281,107 @@ export default function ProfilePage() {
               <h3 className="text-lg font-extrabold text-text-main">Apercu en direct</h3>
             </div>
 
-            <div className="bg-gray-50 rounded-2xl p-6 text-center">
-              <div className="w-24 h-24 rounded-2xl bg-white mx-auto mb-4 overflow-hidden flex items-center justify-center shadow-sm border border-gray-100">
+            {/* Mini card — replica of the public site card */}
+            <div className="relative overflow-hidden rounded-2xl" style={{ aspectRatio: '3/4', maxHeight: 280, background: '#03045e' }}>
+              {profile.photo_url ? (
+                <img src={profile.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #023e8a 0%, #0077b6 50%, #00b4d8 100%)' }}>
+                  <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '3.5rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
+                    {profile.initials || '??'}
+                  </span>
+                </div>
+              )}
+              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16" style={{ background: 'linear-gradient(to top, rgba(3,4,94,0.92) 0%, rgba(3,4,94,0.55) 55%, transparent 100%)' }}>
+                <p style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: '#fff', lineHeight: 1.25, textShadow: '0 2px 8px rgba(0,0,0,0.5)', margin: '0 0 3px' }}>
+                  {profile.display_name || 'Votre nom'}
+                </p>
+                <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.8)', fontStyle: 'italic', textShadow: '0 1px 4px rgba(0,0,0,0.4)', margin: 0 }}>
+                  {profile.role_title || 'Votre titre'}
+                </p>
+              </div>
+            </div>
+            <p className="text-[10px] text-text-muted text-center mt-2 uppercase tracking-wider font-bold">Carte sur le site</p>
+
+            {/* Popup replica — what visitors see when clicking the card */}
+            <div className="mt-4 rounded-2xl overflow-hidden" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
+              {/* Popup photo header */}
+              <div className="relative overflow-hidden" style={{ height: 120 }}>
                 {profile.photo_url ? (
-                  <img src={profile.photo_url} alt="" className="w-full h-full object-cover" />
+                  <img src={profile.photo_url} alt="" className="w-full h-full object-cover object-top" />
                 ) : (
-                  <span className="text-xl font-extrabold text-text-muted">{profile.initials || '??'}</span>
+                  <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(150deg, #023e8a 0%, #0077b6 55%, #00b4d8 100%)' }}>
+                    <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '2.8rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
+                      {profile.initials || '??'}
+                    </span>
+                  </div>
                 )}
               </div>
-              <p className="font-extrabold text-base text-text-main">{profile.display_name || 'Votre nom'}</p>
-              <p className="text-sm text-text-muted mt-0.5">{profile.role_title || 'Votre titre'}</p>
-              {(profile.certifications || []).length > 0 && (
-                <div className="flex flex-wrap justify-center gap-1 mt-2">
-                  {profile.certifications.map((c) => (
-                    <span key={c} className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white" style={{ backgroundColor: DUO.purple }}>{c}</span>
-                  ))}
-                </div>
-              )}
-              {profile.years_experience && (
-                <p className="text-[10px] font-bold text-text-muted mt-1">{profile.years_experience}</p>
-              )}
-              {(profile.languages || []).length > 0 && (
-                <p className="text-[10px] text-text-muted mt-0.5">{profile.languages.join(' · ')}</p>
-              )}
-              {profile.bio && (
-                <p className="text-xs text-text-muted mt-3 leading-relaxed max-w-[250px] mx-auto">
-                  {profile.bio.slice(0, 120)}{profile.bio.length > 120 ? '...' : ''}
+              {/* Popup body */}
+              <div className="px-5 py-4">
+                <span
+                  className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold text-white mb-2"
+                  style={{ background: profile.badge === 'Conseiller' || profile.badge === 'Partenaire' ? 'linear-gradient(90deg, #0077b6, #00b4d8)' : 'linear-gradient(90deg, #0d9488, #14b8a6)' }}
+                >
+                  {profile.badge}
+                </span>
+                <h4 style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '1.1rem', fontWeight: 700, color: '#03045e', margin: '0 0 2px', lineHeight: 1.25 }}>
+                  {profile.display_name || 'Votre nom'}
+                </h4>
+                <p style={{ fontSize: '0.78rem', color: '#5a7d95', fontStyle: 'italic', margin: '0 0 6px', lineHeight: 1.4 }}>
+                  {profile.role_title || 'Votre titre'}
                 </p>
-              )}
-              {(profile.linkedin_url || profile.instagram_url || profile.facebook_url || profile.twitter_url || profile.website_url) && (
-                <div className="flex items-center justify-center gap-2 mt-3">
-                  {profile.linkedin_url && <Linkedin className="h-4 w-4 text-[#0077b5]" />}
-                  {profile.instagram_url && <Instagram className="h-4 w-4 text-[#E4405F]" />}
-                  {profile.facebook_url && <Facebook className="h-4 w-4 text-[#1877F2]" />}
-                  {profile.twitter_url && (
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-                  )}
-                  {profile.website_url && <Globe className="h-4 w-4" style={{ color: DUO.blue }} />}
-                </div>
-              )}
+
+                {/* Certifications */}
+                {(profile.certifications || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {profile.certifications.map((c) => (
+                      <span key={c} className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: '#03045e0d', color: '#03045e' }}>{c}</span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Experience + Languages */}
+                {(profile.years_experience || (profile.languages || []).length > 0) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                    {profile.years_experience && (
+                      <span className="text-[11px] text-[#5a7d95] flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> {profile.years_experience}
+                      </span>
+                    )}
+                    {(profile.languages || []).length > 0 && (
+                      <span className="text-[11px] text-[#5a7d95] flex items-center gap-1">
+                        <Languages className="h-3 w-3" /> {profile.languages.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {profile.bio && (
+                  <p style={{ fontSize: '0.8rem', color: '#4a6277', lineHeight: 1.75, margin: '8px 0 0' }}>
+                    {profile.bio.slice(0, 180)}{profile.bio.length > 180 ? '...' : ''}
+                  </p>
+                )}
+
+                {/* Social icons */}
+                {(profile.linkedin_url || profile.instagram_url || profile.facebook_url || profile.twitter_url || profile.website_url) && (
+                  <div className="flex gap-2 mt-3">
+                    {[
+                      { url: profile.linkedin_url, color: '#0077b5', icon: <Linkedin className="h-4 w-4" /> },
+                      { url: profile.instagram_url, color: '#E4405F', icon: <Instagram className="h-4 w-4" /> },
+                      { url: profile.facebook_url, color: '#1877F2', icon: <Facebook className="h-4 w-4" /> },
+                      { url: profile.twitter_url, color: '#000', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg> },
+                      { url: profile.website_url, color: DUO.blue, icon: <Globe className="h-4 w-4" /> },
+                    ].filter(s => s.url).map((s, i) => (
+                      <span key={i} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)', color: s.color }}>
+                        {s.icon}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-text-muted text-center mt-3">
-              Tel que vu par les visiteurs sur le site
-            </p>
+            <p className="text-[10px] text-text-muted text-center mt-2 uppercase tracking-wider font-bold">Popup au clic</p>
           </div>
         </div>
 
