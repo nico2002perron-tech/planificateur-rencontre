@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import {
   Save, Upload, Loader2, CheckCircle, Linkedin, UserCircle,
   Camera, Sparkles, Eye, EyeOff, GripVertical, Shield,
-  ExternalLink, Instagram, Facebook, Globe,
+  ExternalLink, Instagram, Facebook, Globe, Award, Languages, Clock,
 } from 'lucide-react';
 
 // Duolingo palette (same as Reports page)
@@ -23,6 +23,9 @@ interface TeamProfile {
   role_title: string;
   bio: string;
   photo_url: string;
+  certifications: string[];
+  languages: string[];
+  years_experience: string;
   linkedin_url: string;
   instagram_url: string;
   facebook_url: string;
@@ -49,6 +52,44 @@ const ROLE_TITLES = [
   'Fiscaliste',
   'Notaire',
   'Comptable',
+];
+
+const CERTIFICATIONS = [
+  'CFA',
+  'CIM',
+  'Pl. Fin.',
+  'FCSI',
+  'CFP',
+  'CPA',
+  'MBA',
+  'TEP',
+  'CLU',
+  'CAIA',
+  'FMA',
+  'B.A.A.',
+  'M.Sc.',
+  'LL.B.',
+];
+
+const LANGUAGES = [
+  'Francais',
+  'Anglais',
+  'Espagnol',
+  'Mandarin',
+  'Arabe',
+  'Portugais',
+  'Italien',
+  'Allemand',
+];
+
+const YEARS_OPTIONS = [
+  'Moins de 5 ans',
+  '5-10 ans',
+  '10-15 ans',
+  '15-20 ans',
+  '20-25 ans',
+  '25-30 ans',
+  '30+ ans',
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -123,8 +164,15 @@ export default function ProfilePage() {
     }
   }
 
-  function updateField(field: keyof TeamProfile, value: string | boolean | number) {
+  function updateField(field: keyof TeamProfile, value: string | boolean | number | string[]) {
     setProfile(prev => prev ? { ...prev, [field]: value } : prev);
+  }
+
+  function toggleArrayItem(field: 'certifications' | 'languages', item: string) {
+    if (!profile) return;
+    const arr = profile[field] || [];
+    const next = arr.includes(item) ? arr.filter(v => v !== item) : [...arr, item];
+    updateField(field, next);
   }
 
   if (loading) {
@@ -243,6 +291,19 @@ export default function ProfilePage() {
               </div>
               <p className="font-extrabold text-base text-text-main">{profile.display_name || 'Votre nom'}</p>
               <p className="text-sm text-text-muted mt-0.5">{profile.role_title || 'Votre titre'}</p>
+              {(profile.certifications || []).length > 0 && (
+                <div className="flex flex-wrap justify-center gap-1 mt-2">
+                  {profile.certifications.map((c) => (
+                    <span key={c} className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white" style={{ backgroundColor: DUO.purple }}>{c}</span>
+                  ))}
+                </div>
+              )}
+              {profile.years_experience && (
+                <p className="text-[10px] font-bold text-text-muted mt-1">{profile.years_experience}</p>
+              )}
+              {(profile.languages || []).length > 0 && (
+                <p className="text-[10px] text-text-muted mt-0.5">{profile.languages.join(' · ')}</p>
+              )}
               {profile.bio && (
                 <p className="text-xs text-text-muted mt-3 leading-relaxed max-w-[250px] mx-auto">
                   {profile.bio.slice(0, 120)}{profile.bio.length > 120 ? '...' : ''}
@@ -359,6 +420,77 @@ export default function ProfilePage() {
                   rows={4}
                   className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-text-main placeholder:text-text-muted/40 focus:outline-none focus:ring-2 focus:ring-[#58CC02]/20 focus:border-[#58CC02] transition-all resize-none"
                 />
+              </div>
+
+              {/* Certifications */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-2 flex items-center gap-1.5">
+                  <Award className="h-3.5 w-3.5" style={{ color: DUO.purple }} /> Certifications / Titres professionnels
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {CERTIFICATIONS.map((cert) => {
+                    const selected = (profile.certifications || []).includes(cert);
+                    return (
+                      <button
+                        key={cert}
+                        type="button"
+                        onClick={() => toggleArrayItem('certifications', cert)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+                          selected
+                            ? 'text-white'
+                            : 'border-2 border-gray-200 bg-white text-text-muted hover:border-[#CE82FF] hover:text-[#b06edb]'
+                        }`}
+                        style={selected ? { backgroundColor: DUO.purple, boxShadow: `0 2px 0 0 ${DUO.purpleDark}` } : {}}
+                      >
+                        {cert}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Languages */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-2 flex items-center gap-1.5">
+                  <Languages className="h-3.5 w-3.5" style={{ color: DUO.blue }} /> Langues parlees
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((lang) => {
+                    const selected = (profile.languages || []).includes(lang);
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => toggleArrayItem('languages', lang)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+                          selected
+                            ? 'text-white'
+                            : 'border-2 border-gray-200 bg-white text-text-muted hover:border-[#1CB0F6] hover:text-[#1899d6]'
+                        }`}
+                        style={selected ? { backgroundColor: DUO.blue, boxShadow: `0 2px 0 0 ${DUO.blueDark}` } : {}}
+                      >
+                        {lang}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Years of experience */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" style={{ color: DUO.orange }} /> Annees d&apos;experience
+                </label>
+                <select
+                  value={profile.years_experience || ''}
+                  onChange={(e) => updateField('years_experience', e.target.value)}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#FF9600]/20 focus:border-[#FF9600] transition-all"
+                >
+                  <option value="" disabled>Choisir...</option>
+                  {YEARS_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Social links */}
