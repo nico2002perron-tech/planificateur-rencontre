@@ -7,6 +7,7 @@ import {
   Save, Upload, Loader2, CheckCircle, Linkedin, UserCircle,
   Camera, Sparkles, Eye, EyeOff, GripVertical, Shield,
   ExternalLink, Instagram, Facebook, Globe, Award, Languages, Clock,
+  Phone, CalendarCheck, GraduationCap, Quote, Briefcase, X,
 } from 'lucide-react';
 
 // Duolingo palette (same as Reports page)
@@ -16,6 +17,13 @@ const DUO = {
   purple: '#CE82FF', purpleDark: '#b06edb',
   orange: '#FF9600', orangeDark: '#e08600',
 } as const;
+
+const SITE_BASE = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
+function resolvePhoto(url: string | null | undefined): string {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  return `${SITE_BASE}/${url}`;
+}
 
 interface TeamProfile {
   user_id: string;
@@ -33,6 +41,12 @@ interface TeamProfile {
   website_url: string;
   badge: string;
   category: string;
+  logo_id: string | null;
+  quote: string;
+  specialties: string[];
+  booking_url: string;
+  phone: string;
+  education: { institution: string; program: string; logo_domain: string }[];
   initials: string;
   sort_order: number;
   is_visible: boolean;
@@ -92,6 +106,39 @@ const YEARS_OPTIONS = [
   '30+ ans',
 ];
 
+const SPECIALTIES = [
+  'Planification de retraite',
+  'Gestion successorale',
+  'Optimisation fiscale',
+  'Placements alternatifs',
+  'Gestion de portefeuille',
+  'Assurance et protection',
+  'Planification financiere',
+  'Gestion de patrimoine',
+  'Investissement responsable (ESG)',
+  'Gestion de risques',
+  'Strategies de revenus',
+  'Planification testamentaire',
+];
+
+const UNIVERSITIES = [
+  { name: 'HEC Montreal', domain: 'hec.ca' },
+  { name: 'Universite Laval', domain: 'ulaval.ca' },
+  { name: 'Universite de Montreal', domain: 'umontreal.ca' },
+  { name: 'McGill University', domain: 'mcgill.ca' },
+  { name: 'Concordia University', domain: 'concordia.ca' },
+  { name: 'UQAM', domain: 'uqam.ca' },
+  { name: 'Universite de Sherbrooke', domain: 'usherbrooke.ca' },
+  { name: 'Polytechnique Montreal', domain: 'polymtl.ca' },
+  { name: "Universite d'Ottawa", domain: 'uottawa.ca' },
+  { name: 'University of Toronto', domain: 'utoronto.ca' },
+  { name: 'Western University (Ivey)', domain: 'uwo.ca' },
+  { name: "Queen's University", domain: 'queensu.ca' },
+  { name: 'York University (Schulich)', domain: 'yorku.ca' },
+  { name: 'University of British Columbia', domain: 'ubc.ca' },
+  { name: 'Universite du Quebec', domain: 'uquebec.ca' },
+];
+
 const CATEGORY_LABELS: Record<string, string> = {
   'conseiller': 'Conseillers',
   'adjoint': 'Assistants',
@@ -108,6 +155,7 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [photoHover, setPhotoHover] = useState(false);
   const [customTitle, setCustomTitle] = useState(false);
+  const [logos, setLogos] = useState<{ id: string; name: string; image_url: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -121,6 +169,10 @@ export default function ProfilePage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+    fetch('/api/admin/team-logos')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setLogos(data))
+      .catch(() => {});
   }, []);
 
   async function handleSave() {
@@ -164,11 +216,11 @@ export default function ProfilePage() {
     }
   }
 
-  function updateField(field: keyof TeamProfile, value: string | boolean | number | string[]) {
+  function updateField(field: keyof TeamProfile, value: string | boolean | number | string[] | { institution: string; program: string; logo_domain: string }[]) {
     setProfile(prev => prev ? { ...prev, [field]: value } : prev);
   }
 
-  function toggleArrayItem(field: 'certifications' | 'languages', item: string) {
+  function toggleArrayItem(field: 'certifications' | 'languages' | 'specialties', item: string) {
     if (!profile) return;
     const arr = profile[field] || [];
     const next = arr.includes(item) ? arr.filter(v => v !== item) : [...arr, item];
@@ -227,9 +279,9 @@ export default function ProfilePage() {
                 onMouseEnter={() => setPhotoHover(true)}
                 onMouseLeave={() => setPhotoHover(false)}
               >
-                {profile.photo_url ? (
+                {resolvePhoto(profile.photo_url) ? (
                   <>
-                    <img src={profile.photo_url} alt={profile.display_name} className="w-full h-full object-cover" />
+                    <img src={resolvePhoto(profile.photo_url)} alt={profile.display_name} className="w-full h-full object-cover" />
                     <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity duration-200 ${photoHover ? 'opacity-100' : 'opacity-0'}`}>
                       <div className="text-center text-white">
                         <Camera className="h-6 w-6 mx-auto mb-1" />
@@ -283,8 +335,8 @@ export default function ProfilePage() {
 
             {/* Mini card — replica of the public site card */}
             <div className="relative overflow-hidden rounded-2xl" style={{ aspectRatio: '3/4', maxHeight: 280, background: '#03045e' }}>
-              {profile.photo_url ? (
-                <img src={profile.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+              {resolvePhoto(profile.photo_url) ? (
+                <img src={resolvePhoto(profile.photo_url)} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #023e8a 0%, #0077b6 50%, #00b4d8 100%)' }}>
                   <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '3.5rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
@@ -307,8 +359,8 @@ export default function ProfilePage() {
             <div className="mt-4 rounded-2xl overflow-hidden" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
               {/* Popup photo header */}
               <div className="relative overflow-hidden" style={{ height: 120 }}>
-                {profile.photo_url ? (
-                  <img src={profile.photo_url} alt="" className="w-full h-full object-cover object-top" />
+                {resolvePhoto(profile.photo_url) ? (
+                  <img src={resolvePhoto(profile.photo_url)} alt="" className="w-full h-full object-cover object-top" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(150deg, #023e8a 0%, #0077b6 55%, #00b4d8 100%)' }}>
                     <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '2.8rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
@@ -331,6 +383,22 @@ export default function ProfilePage() {
                 <p style={{ fontSize: '0.78rem', color: '#5a7d95', fontStyle: 'italic', margin: '0 0 6px', lineHeight: 1.4 }}>
                   {profile.role_title || 'Votre titre'}
                 </p>
+
+                {/* Quote */}
+                {profile.quote && (
+                  <p style={{ fontSize: '0.78rem', color: '#5a7d95', fontStyle: 'italic', margin: '6px 0 8px', lineHeight: 1.5 }}>
+                    &laquo; {profile.quote} &raquo;
+                  </p>
+                )}
+
+                {/* Specialties */}
+                {(profile.specialties || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {profile.specialties.map((s: string) => (
+                      <span key={s} className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: '#58CC0215', color: '#45a300' }}>{s}</span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Certifications */}
                 {(profile.certifications || []).length > 0 && (
@@ -377,6 +445,36 @@ export default function ProfilePage() {
                         {s.icon}
                       </span>
                     ))}
+                  </div>
+                )}
+                {/* Education */}
+                {(profile.education || []).length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {(profile.education || []).map((edu: { institution: string; program: string; logo_domain: string }, i: number) => (
+                      <div key={i} className="flex items-center gap-2">
+                        {edu.logo_domain && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`https://logo.clearbit.com/${edu.logo_domain}`} alt="" className="w-4 h-4 rounded object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        )}
+                        <span className="text-[10px] text-[#5a7d95]">{edu.institution} — {edu.program}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Phone + Booking */}
+                {(profile.phone || profile.booking_url) && (
+                  <div className="flex gap-2 mt-3">
+                    {profile.phone && (
+                      <span className="text-[10px] text-[#5a7d95] flex items-center gap-1">
+                        <Phone className="h-3 w-3" /> {profile.phone}
+                      </span>
+                    )}
+                    {profile.booking_url && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ backgroundColor: '#58CC0215', color: '#45a300' }}>
+                        Rendez-vous en ligne
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -479,6 +577,171 @@ export default function ProfilePage() {
                   className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-text-main placeholder:text-text-muted/40 focus:outline-none focus:ring-2 focus:ring-[#58CC02]/20 focus:border-[#58CC02] transition-all resize-none"
                 />
               </div>
+
+              {/* Citation */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
+                  <Quote className="h-3.5 w-3.5" style={{ color: DUO.orange }} /> Citation / Devise
+                </label>
+                <input
+                  type="text"
+                  value={profile.quote || ''}
+                  onChange={(e) => updateField('quote', e.target.value)}
+                  placeholder="Ma philosophie : investir avec patience, prosperer avec confiance"
+                  maxLength={200}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-text-main italic placeholder:text-text-muted/40 focus:outline-none focus:ring-2 focus:ring-[#FF9600]/20 focus:border-[#FF9600] transition-all"
+                />
+                <p className="text-[11px] text-text-muted mt-1">Apparait sous votre nom dans la fiche detaillee</p>
+              </div>
+
+              {/* Phone + Booking */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5" style={{ color: DUO.blue }} /> Telephone direct
+                  </label>
+                  <Input
+                    type="tel"
+                    value={profile.phone || ''}
+                    onChange={(e) => updateField('phone', e.target.value)}
+                    placeholder="418-555-1234"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
+                    <CalendarCheck className="h-3.5 w-3.5" style={{ color: DUO.green }} /> Lien rendez-vous
+                  </label>
+                  <Input
+                    type="url"
+                    value={profile.booking_url || ''}
+                    onChange={(e) => updateField('booking_url', e.target.value)}
+                    placeholder="https://calendly.com/..."
+                  />
+                </div>
+              </div>
+
+              {/* Specialties */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-2 flex items-center gap-1.5">
+                  <Briefcase className="h-3.5 w-3.5" style={{ color: DUO.green }} /> Specialites
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIALTIES.map((spec) => {
+                    const selected = (profile.specialties || []).includes(spec);
+                    return (
+                      <button
+                        key={spec}
+                        type="button"
+                        onClick={() => toggleArrayItem('specialties' as 'certifications', spec)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+                          selected
+                            ? 'text-white'
+                            : 'border-2 border-gray-200 bg-white text-text-muted hover:border-[#58CC02] hover:text-[#45a300]'
+                        }`}
+                        style={selected ? { backgroundColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` } : {}}
+                      >
+                        {spec}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Education */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-extrabold text-text-main flex items-center gap-1.5">
+                    <GraduationCap className="h-3.5 w-3.5" style={{ color: DUO.blue }} /> Formation
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => updateField('education', [...(profile.education || []), { institution: '', program: '', logo_domain: '' }])}
+                    className="text-xs font-bold hover:underline"
+                    style={{ color: DUO.blue }}
+                  >
+                    + Ajouter
+                  </button>
+                </div>
+                {(profile.education || []).map((edu: { institution: string; program: string; logo_domain: string }, i: number) => (
+                  <div key={i} className="flex gap-3 items-start mb-3 p-3 rounded-xl bg-gray-50 border-2 border-gray-100">
+                    {edu.logo_domain && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={`https://logo.clearbit.com/${edu.logo_domain}`} alt="" className="w-8 h-8 rounded-lg object-contain flex-shrink-0 mt-1" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <div className="flex-1 space-y-2">
+                      <select
+                        value={UNIVERSITIES.find(u => u.name === edu.institution) ? edu.institution : (edu.institution ? '__custom' : '')}
+                        onChange={(e) => {
+                          const arr = [...(profile.education || [])];
+                          if (e.target.value === '__custom') {
+                            arr[i] = { ...arr[i], institution: '', logo_domain: '' };
+                          } else {
+                            const uni = UNIVERSITIES.find(u => u.name === e.target.value);
+                            arr[i] = { ...arr[i], institution: e.target.value, logo_domain: uni?.domain || '' };
+                          }
+                          updateField('education', arr);
+                        }}
+                        className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/20 focus:border-[#1CB0F6] transition-all"
+                      >
+                        <option value="" disabled>Choisir une universite...</option>
+                        {UNIVERSITIES.map(u => <option key={u.domain} value={u.name}>{u.name}</option>)}
+                        <option value="__custom">Autre...</option>
+                      </select>
+                      {edu.institution && !UNIVERSITIES.find(u => u.name === edu.institution) && (
+                        <Input
+                          value={edu.institution}
+                          onChange={(e) => { const arr = [...(profile.education || [])]; arr[i] = { ...arr[i], institution: e.target.value }; updateField('education', arr); }}
+                          placeholder="Nom de l'institution"
+                        />
+                      )}
+                      <Input
+                        value={edu.program}
+                        onChange={(e) => { const arr = [...(profile.education || [])]; arr[i] = { ...arr[i], program: e.target.value }; updateField('education', arr); }}
+                        placeholder="Programme (ex: B.A.A. Finance)"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { const arr = [...(profile.education || [])]; arr.splice(i, 1); updateField('education', arr); }}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors mt-1"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Logo badge */}
+              {logos.length > 0 && (
+                <div>
+                  <label className="block text-xs font-extrabold text-text-main mb-2 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" style={{ color: DUO.orange }} /> Logo sur votre fiche
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => updateField('logo_id', '')}
+                      className="px-3 py-2 rounded-xl text-xs font-bold transition-all border-2"
+                      style={{
+                        borderColor: !profile.logo_id ? DUO.orange : '#e5e7eb',
+                        backgroundColor: !profile.logo_id ? `${DUO.orange}10` : 'white',
+                        color: !profile.logo_id ? DUO.orangeDark : '#9ca3af',
+                      }}
+                    >Aucun</button>
+                    {logos.map(l => (
+                      <button key={l.id} type="button" onClick={() => updateField('logo_id', l.id)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border-2"
+                        style={{
+                          borderColor: profile.logo_id === l.id ? DUO.orange : '#e5e7eb',
+                          backgroundColor: profile.logo_id === l.id ? `${DUO.orange}10` : 'white',
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={l.image_url} alt={l.name} className="h-5 w-auto object-contain" />
+                        <span style={{ color: profile.logo_id === l.id ? DUO.orangeDark : '#6b7280' }}>{l.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Certifications */}
               <div>

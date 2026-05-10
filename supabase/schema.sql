@@ -17,6 +17,7 @@ CREATE TABLE users (
   role TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('admin', 'advisor')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending')),
   must_change_password BOOLEAN NOT NULL DEFAULT false,
+  last_login_at TIMESTAMPTZ,
   title TEXT,
   license_number TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -538,3 +539,89 @@ CREATE TABLE team_profiles (
 CREATE INDEX idx_team_profiles_category ON team_profiles(category, sort_order);
 
 CREATE TRIGGER team_profiles_updated_at BEFORE UPDATE ON team_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- 14. TEAM LOGOS (badge logos for team profiles)
+-- ============================================
+CREATE TABLE team_logos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  image_url TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Add logo reference to team_profiles
+ALTER TABLE team_profiles ADD COLUMN logo_id UUID REFERENCES team_logos(id) ON DELETE SET NULL;
+
+-- Add personalization fields to team_profiles
+ALTER TABLE team_profiles ADD COLUMN IF NOT EXISTS quote TEXT DEFAULT '';
+ALTER TABLE team_profiles ADD COLUMN IF NOT EXISTS specialties TEXT[] DEFAULT '{}';
+ALTER TABLE team_profiles ADD COLUMN IF NOT EXISTS booking_url TEXT DEFAULT '';
+ALTER TABLE team_profiles ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT '';
+ALTER TABLE team_profiles ADD COLUMN IF NOT EXISTS education JSONB DEFAULT '[]';
+
+-- ============================================
+-- 26. EVENTS (evenements du groupe)
+-- ============================================
+CREATE TABLE events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_by UUID NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  event_type TEXT NOT NULL DEFAULT 'autre' CHECK (event_type IN ('presentation', 'souper', 'tournoi', 'gala', 'conference', 'activite', 'autre')),
+  date DATE NOT NULL,
+  time TEXT DEFAULT '',
+  end_date DATE,
+  location TEXT DEFAULT '',
+  location_url TEXT DEFAULT '',
+  cover_image TEXT DEFAULT '',
+  images JSONB DEFAULT '[]',
+  collab_logos JSONB DEFAULT '[]',
+  max_attendees INTEGER,
+  registration_deadline DATE,
+  is_registration_open BOOLEAN DEFAULT true,
+  registration_mode TEXT DEFAULT 'individual' CHECK (registration_mode IN ('individual', 'team', 'both')),
+  team_size INTEGER DEFAULT 4,
+  team_label TEXT DEFAULT 'Equipe',
+  pricing JSONB DEFAULT '[]',
+  form_options JSONB DEFAULT '{"show_company":true,"show_dietary":false,"show_skill_level":false,"show_shirt_size":false,"show_is_client":false}',
+  contact_email TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'cancelled', 'completed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_events_date ON events(date DESC);
+CREATE INDEX idx_events_status ON events(status);
+CREATE INDEX idx_events_created_by ON events(created_by);
+
+CREATE TRIGGER events_updated_at BEFORE UPDATE ON events FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- 27. EVENT_REGISTRATIONS (inscriptions aux evenements)
+-- ============================================
+CREATE TABLE event_registrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  company TEXT DEFAULT '',
+  is_client BOOLEAN DEFAULT false,
+  registration_type TEXT DEFAULT 'individual' CHECK (registration_type IN ('individual', 'team')),
+  team_name TEXT DEFAULT '',
+  team_members JSONB DEFAULT '[]',
+  guests INTEGER DEFAULT 0,
+  pricing_option TEXT DEFAULT '',
+  dietary_restrictions TEXT DEFAULT '',
+  skill_level TEXT DEFAULT '',
+  shirt_size TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'cancelled', 'waitlisted')),
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_event_registrations_event ON event_registrations(event_id);
+CREATE INDEX idx_event_registrations_status ON event_registrations(status);

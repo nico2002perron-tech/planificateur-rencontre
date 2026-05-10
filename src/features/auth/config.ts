@@ -26,6 +26,12 @@ export const authOptions: NextAuthOptions = {
         const valid = await compare(credentials.password, user.password_hash);
         if (!valid) return null;
 
+        // Track last login
+        await supabase
+          .from('users')
+          .update({ last_login_at: new Date().toISOString() })
+          .eq('id', user.id);
+
         return {
           id: user.id,
           email: user.email,

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Users, Plus, Shield, UserCircle, Key, Loader2,
   CheckCircle, XCircle, Copy, Eye, EyeOff, AlertTriangle,
+  Pencil, Clock, Link2,
 } from 'lucide-react';
 
 const DUO = {
@@ -13,6 +14,14 @@ const DUO = {
   orange: '#FF9600', orangeDark: '#e08600',
 } as const;
 
+interface TeamProfile {
+  id: string;
+  display_name: string;
+  role_title?: string;
+  photo_url?: string;
+  initials?: string;
+}
+
 interface User {
   id: string;
   email: string;
@@ -20,7 +29,24 @@ interface User {
   role: 'admin' | 'advisor';
   status: 'active' | 'inactive' | 'pending';
   must_change_password: boolean;
+  last_login_at: string | null;
   created_at: string;
+  updated_at: string;
+  team_profile: { user_id: string; display_name: string; photo_url: string | null } | null;
+}
+
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return 'Jamais';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "A l'instant";
+  if (mins < 60) return `Il y a ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Il y a ${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `Il y a ${days}j`;
+  const months = Math.floor(days / 30);
+  return `Il y a ${months} mois`;
 }
 
 export default function AdminUsersPage() {
@@ -36,6 +62,8 @@ export default function AdminUsersPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<'advisor' | 'admin'>('advisor');
   const [newPassword, setNewPassword] = useState('');
+  const [newProfileId, setNewProfileId] = useState('');
+  const [availableProfiles, setAvailableProfiles] = useState<TeamProfile[]>([]);
 
   // Reset password modal
   const [resetTarget, setResetTarget] = useState<User | null>(null);
@@ -43,8 +71,17 @@ export default function AdminUsersPage() {
   const [tempPassword, setTempPassword] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Toggle status
+  // Toggle status (confirmation)
+  const [confirmDeactivate, setConfirmDeactivate] = useState<User | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  // Edit user modal
+  const [editTarget, setEditTarget] = useState<User | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState<'advisor' | 'admin'>('advisor');
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => { fetchUsers(); }, []);
 
@@ -55,6 +92,14 @@ export default function AdminUsersPage() {
       setUsers(data);
     }
     setLoading(false);
+  }
+
+  async function fetchAvailableProfiles() {
+    const res = await fetch('/api/admin/users/available-profiles');
+    if (res.ok) {
+      const data = await res.json();
+      setAvailableProfiles(data);
+    }
   }
 
   function generatePassword() {
@@ -68,6 +113,12 @@ export default function AdminUsersPage() {
     setShowPassword(true);
   }
 
+  function openCreate() {
+    setShowCreate(true);
+    generatePassword();
+    fetchAvailableProfiles();
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setCreateError('');
@@ -76,13 +127,19 @@ export default function AdminUsersPage() {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: newEmail, name: newName, role: newRole, password: newPassword }),
+        body: JSON.stringify({
+          email: newEmail,
+          name: newName,
+          role: newRole,
+          password: newPassword,
+          team_profile_id: newProfileId || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setCreateError(data.error); return; }
-      setUsers(prev => [...prev, data]);
       setShowCreate(false);
-      setNewName(''); setNewEmail(''); setNewPassword(''); setNewRole('advisor');
+      setNewName(''); setNewEmail(''); setNewPassword(''); setNewRole('advisor'); setNewProfileId('');
+      await fetchUsers();
     } finally {
       setCreating(false);
     }
@@ -106,6 +163,7 @@ export default function AdminUsersPage() {
   async function toggleStatus(user: User) {
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
     setTogglingId(user.id);
+    setConfirmDeactivate(null);
     try {
       const res = await fetch(`/api/admin/users/${user.id}`, {
         method: 'PUT',
@@ -114,10 +172,56 @@ export default function AdminUsersPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setUsers(prev => prev.map(u => u.id === user.id ? data : u));
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, ...data } : u));
       }
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  function handleStatusClick(user: User) {
+    if (user.status === 'active') {
+      setConfirmDeactivate(user);
+    } else {
+      toggleStatus(user);
+    }
+  }
+
+  function openEdit(user: User) {
+    setEditTarget(user);
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditRole(user.role);
+    setEditError('');
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditError('');
+    setSaving(true);
+    try {
+      const updates: Record<string, string> = {};
+      if (editName.trim() !== editTarget.name) updates.name = editName.trim();
+      if (editEmail.trim().toLowerCase() !== editTarget.email) updates.email = editEmail.trim().toLowerCase();
+      if (editRole !== editTarget.role) updates.role = editRole;
+
+      if (Object.keys(updates).length === 0) {
+        setEditTarget(null);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/users/${editTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditError(data.error); return; }
+      setUsers(prev => prev.map(u => u.id === editTarget.id ? { ...u, ...data } : u));
+      setEditTarget(null);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -150,7 +254,7 @@ export default function AdminUsersPage() {
           <p className="text-base text-text-muted mt-1">Creez et gerez les comptes des conseillers</p>
         </div>
         <button
-          onClick={() => { setShowCreate(true); generatePassword(); }}
+          onClick={openCreate}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
           style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}
         >
@@ -197,14 +301,36 @@ export default function AdminUsersPage() {
                     MDP temporaire
                   </span>
                 )}
+                {user.team_profile && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1" style={{ backgroundColor: `${DUO.purple}15`, color: DUO.purpleDark }}>
+                    <Link2 className="h-2.5 w-2.5" />
+                    {user.team_profile.display_name}
+                  </span>
+                )}
               </div>
-              <p className="text-sm text-text-muted truncate">{user.email}</p>
+              <div className="flex items-center gap-3 mt-0.5">
+                <p className="text-sm text-text-muted truncate">{user.email}</p>
+                <span className="text-[11px] text-text-light flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {timeAgo(user.last_login_at)}
+                </span>
+              </div>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => toggleStatus(user)}
+                onClick={() => openEdit(user)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blueDark }}
+                title="Modifier"
+              >
+                <Pencil className="h-3 w-3" />
+                Modifier
+              </button>
+
+              <button
+                onClick={() => handleStatusClick(user)}
                 disabled={togglingId === user.id}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
                   user.status === 'active'
@@ -286,6 +412,30 @@ export default function AdminUsersPage() {
                   <option value="admin">Administrateur</option>
                 </select>
               </div>
+
+              {/* Link team profile */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1.5">
+                  <Link2 className="h-3 w-3" style={{ color: DUO.purple }} />
+                  Lier a un profil equipe
+                </label>
+                <select
+                  value={newProfileId}
+                  onChange={(e) => setNewProfileId(e.target.value)}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#CE82FF]/20 focus:border-[#CE82FF] transition-all"
+                >
+                  <option value="">Aucun profil (lier plus tard)</option>
+                  {availableProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name}{p.role_title ? ` — ${p.role_title}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-text-muted mt-1">
+                  Seuls les profils non lies sont affiches.
+                </p>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-extrabold text-text-main">Mot de passe temporaire</label>
@@ -341,6 +491,118 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit user modal */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditTarget(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="px-6 py-4" style={{ background: `linear-gradient(135deg, ${DUO.blue}, ${DUO.blueDark})` }}>
+              <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+                <Pencil className="h-5 w-5" /> Modifier l&apos;utilisateur
+              </h2>
+            </div>
+            <form onSubmit={handleEdit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5">Nom complet</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/20 focus:border-[#1CB0F6] transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5">Courriel</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  required
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/20 focus:border-[#1CB0F6] transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5">Role</label>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as 'advisor' | 'admin')}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/20 focus:border-[#1CB0F6] transition-all"
+                >
+                  <option value="advisor">Conseiller</option>
+                  <option value="admin">Administrateur</option>
+                </select>
+              </div>
+
+              {editError && (
+                <div className="bg-red-50 text-red-700 text-sm px-4 py-2.5 rounded-lg flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {editError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
+                  style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Sauvegarder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm deactivation modal */}
+      {confirmDeactivate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setConfirmDeactivate(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+            <div className="px-6 py-4 bg-red-500">
+              <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" /> Confirmer la desactivation
+              </h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-text-main">
+                Vous etes sur le point de desactiver le compte de <strong>{confirmDeactivate.name}</strong> ({confirmDeactivate.email}).
+              </p>
+              <p className="text-xs text-text-muted">
+                L&apos;utilisateur ne pourra plus se connecter. Vous pourrez reactiver le compte a tout moment.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeactivate(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => toggleStatus(confirmDeactivate)}
+                  disabled={togglingId === confirmDeactivate.id}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] active:shadow-none bg-red-500 hover:bg-red-600 disabled:opacity-60"
+                  style={{ boxShadow: '0 3px 0 0 #b91c1c' }}
+                >
+                  {togglingId === confirmDeactivate.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Desactiver
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

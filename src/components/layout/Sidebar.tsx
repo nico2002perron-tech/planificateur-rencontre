@@ -10,16 +10,14 @@ import {
   PieChart,
   FileText,
   Settings,
-  LogOut,
   ChevronLeft,
   TrendingUp,
   BarChart2,
   BookOpen,
   ClipboardList,
-  UserCircle,
+  CalendarDays,
 } from 'lucide-react';
 import { useState } from 'react';
-import { signOut } from 'next-auth/react';
 
 const navItems = [
   { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -31,7 +29,7 @@ const navItems = [
   { href: '/meeting-notes', label: 'Notes de réunion', icon: ClipboardList },
   { href: '/reports', label: 'Rapports', icon: FileText },
   { href: '/fund-reports', label: 'Rapports de fonds', icon: BookOpen },
-  { href: '/profile', label: 'Profil', icon: UserCircle },
+  { href: '/events', label: 'Événements', icon: CalendarDays },
   { href: '/admin', label: 'Administration', icon: Settings },
 ];
 
@@ -89,15 +87,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-3 py-4 border-t border-white/10 space-y-1">
-        <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-all duration-200 w-full"
-        >
-          <LogOut className="h-5 w-5 flex-shrink-0" />
-          {!collapsed && <span className="text-sm font-medium">Déconnexion</span>}
-        </button>
+      {/* Footer — collapse toggle only */}
+      <div className="px-3 py-4 border-t border-white/10">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/40 hover:text-white/60 transition-all duration-200 w-full"

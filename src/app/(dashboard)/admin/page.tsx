@@ -8,14 +8,14 @@ export default function AdminPage() {
     <div>
       <PageHeader
         title="Administration"
-        description="Gestion des utilisateurs et paramètres système"
+        description="Gestion de l'équipe et paramètres système"
       />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link href="/admin/users">
+        <Link href="/admin/team">
           <Card hover className="text-center py-8">
             <Users className="h-10 w-10 text-brand-primary mx-auto mb-3" />
-            <h3 className="font-semibold">Utilisateurs</h3>
-            <p className="text-sm text-text-muted mt-1">Gérer les conseillers et accès</p>
+            <h3 className="font-semibold">Gestion de l&apos;équipe</h3>
+            <p className="text-sm text-text-muted mt-1">Profils, comptes et accès</p>
           </Card>
         </Link>
         <Link href="/admin/settings">
