@@ -161,6 +161,9 @@ export async function POST(req: NextRequest) {
     const holdings: HoldingInput[] = body.holdings;
     const benchmarkSymbol: string = body.benchmark ?? 'XIU.TO';
     const portfolioName: string = body.name ?? 'Portefeuille Modèle';
+    const portfolioValue: number | undefined = body.portfolioValue && Number(body.portfolioValue) > 0
+      ? Number(body.portfolioValue)
+      : undefined;
 
     if (!holdings || holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
@@ -405,8 +408,9 @@ export async function POST(req: NextRequest) {
     }, 0);
 
     // ── NEW: Monte Carlo ────────────────────────────────────────────────
+    const mcInitial = portfolioValue ?? 10000;
     const monteCarlo = portfolioReturns.length >= 12
-      ? calculateMonteCarlo(portfolioReturns, 5, 1000)
+      ? calculateMonteCarlo(portfolioReturns, 5, 1000, mcInitial)
       : null;
 
     // ── NEW: Stress Tests ───────────────────────────────────────────────
@@ -438,8 +442,9 @@ export async function POST(req: NextRequest) {
     );
 
     // ── NEW: Dividend Projection ────────────────────────────────────────
+    const divBase = portfolioValue ?? 100000;
     const dividendProjection = totalDivYield > 0
-      ? calculateDividendProjection(totalDivYield, 100000)
+      ? calculateDividendProjection(totalDivYield, divBase)
       : [];
 
     // ── NEW: Risk Profile ───────────────────────────────────────────────
@@ -562,7 +567,7 @@ export async function POST(req: NextRequest) {
       sources,
       holdingsCount: analysisHoldings.length,
       dataMonths: portfolioReturns.length,
-      // NEW fields
+      portfolioValue: portfolioValue ?? null,
       monteCarlo,
       stressTests,
       correlationMatrix,

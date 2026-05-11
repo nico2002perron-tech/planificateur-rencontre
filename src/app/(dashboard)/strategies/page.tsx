@@ -5,7 +5,7 @@ import { PortfolioBuilder } from '@/components/strategies/PortfolioBuilder';
 import { PortfolioAnalysis } from '@/components/strategies/PortfolioAnalysis';
 import {
   ArrowLeft, Compass, Sparkles, Search, PieChart,
-  BarChart3, TrendingUp, Shield, FileText,
+  BarChart3, TrendingUp, Shield, FileText, Pencil,
 } from 'lucide-react';
 
 const DUO = {
@@ -21,6 +21,37 @@ type AnalysisData = any;
 export default function StrategiesPage() {
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [editHoldings, setEditHoldings] = useState<Array<{ symbol: string; name: string; weight: number }> | undefined>();
+  const [editName, setEditName] = useState<string | undefined>();
+  const [editBenchmark, setEditBenchmark] = useState<string | undefined>();
+  const [editPortfolioValue, setEditPortfolioValue] = useState<number | undefined>();
+
+  // Start editing from analysis results
+  const handleEdit = () => {
+    if (!analysisData) return;
+    setEditHoldings(
+      analysisData.holdings.map((h: { symbol: string; name: string; weight: number }) => ({
+        symbol: h.symbol,
+        name: h.name,
+        weight: h.weight,
+      }))
+    );
+    setEditName(analysisData.name);
+    setEditBenchmark(analysisData.benchmark);
+    setEditPortfolioValue(analysisData.portfolioValue);
+    setAnalysisData(null);
+    setIsBuilding(true);
+  };
+
+  // Start fresh
+  const handleNew = () => {
+    setEditHoldings(undefined);
+    setEditName(undefined);
+    setEditBenchmark(undefined);
+    setEditPortfolioValue(undefined);
+    setAnalysisData(null);
+    setIsBuilding(true);
+  };
 
   // Landing page when no analysis is loaded
   if (!isBuilding && !analysisData) {
@@ -43,7 +74,7 @@ export default function StrategiesPage() {
         {/* Main CTA */}
         <div className="max-w-2xl mx-auto mb-8">
           <button
-            onClick={() => setIsBuilding(true)}
+            onClick={handleNew}
             className="w-full text-left rounded-2xl bg-white p-8 transition-all duration-200 hover:scale-[1.01] active:translate-y-[2px] active:shadow-none group"
             style={{ border: `2px solid ${DUO.blue}30`, borderBottom: `5px solid ${DUO.blueDark}30` }}
           >
@@ -59,7 +90,7 @@ export default function StrategiesPage() {
                   Créer un portefeuille modèle
                 </h2>
                 <p className="text-sm text-text-muted">
-                  Recherchez des titres, assignez des pondérations et générez une analyse complète avec rapport PDF.
+                  Recherchez des titres, importez un relevé (Excel, CSV, photo) et générez une analyse complète avec rapport PDF.
                 </p>
               </div>
             </div>
@@ -132,7 +163,7 @@ export default function StrategiesPage() {
       <div>
         <div className="flex items-center gap-3 mb-6">
           <button
-            onClick={() => { setAnalysisData(null); setIsBuilding(true); }}
+            onClick={handleNew}
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-white transition-all hover:bg-gray-50 active:translate-y-[1px]"
             style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
           >
@@ -142,10 +173,19 @@ export default function StrategiesPage() {
             <h1 className="text-xl font-extrabold text-text-main">{analysisData.name}</h1>
             <p className="text-xs text-text-muted">
               {analysisData.holdingsCount} positions · {analysisData.dataMonths} mois d&apos;historique · Benchmark: {analysisData.benchmark}
+              {analysisData.portfolioValue ? ` · $${Number(analysisData.portfolioValue).toLocaleString('fr-CA')}` : ''}
             </p>
           </div>
           <button
-            onClick={() => { setAnalysisData(null); setIsBuilding(true); }}
+            onClick={handleEdit}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all text-white"
+            style={{ backgroundColor: DUO.orange, boxShadow: `0 3px 0 0 ${DUO.orangeDark}` }}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Modifier
+          </button>
+          <button
+            onClick={handleNew}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all text-white"
             style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}
           >
@@ -163,7 +203,7 @@ export default function StrategiesPage() {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => setIsBuilding(false)}
+          onClick={() => { setIsBuilding(false); setEditHoldings(undefined); }}
           className="flex items-center justify-center w-9 h-9 rounded-xl bg-white transition-all hover:bg-gray-50 active:translate-y-[1px]"
           style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
         >
@@ -172,11 +212,17 @@ export default function StrategiesPage() {
         <div>
           <h1 className="text-xl font-extrabold text-text-main">Constructeur de stratégie</h1>
           <p className="text-xs text-text-muted">
-            Ajoutez des titres, définissez les pondérations et lancez l&apos;analyse complète.
+            Ajoutez des titres, importez un relevé ou lancez l&apos;analyse complète.
           </p>
         </div>
       </div>
-      <PortfolioBuilder onAnalysisComplete={(data) => setAnalysisData(data)} />
+      <PortfolioBuilder
+        onAnalysisComplete={(data) => setAnalysisData(data)}
+        initialHoldings={editHoldings}
+        initialName={editName}
+        initialBenchmark={editBenchmark}
+        initialPortfolioValue={editPortfolioValue}
+      />
     </div>
   );
 }

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/features/auth/config';
 import Groq from 'groq-sdk';
 
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const TEXT_MODEL = 'llama-3.3-70b-versatile';
+const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 const SYSTEM_PROMPT = `Tu es un expert en analyse de données financières. On te donne un texte brut contenant des positions de portefeuille d'investissement. Le format peut varier (Excel copié, CSV, relevé bancaire, liste de titres, etc.).
 
@@ -26,6 +25,7 @@ Règles:
 - Les obligations/GIC sont de type FIXED_INCOME
 - Les actions sont de type EQUITY
 - Utilise le contexte des en-têtes de colonnes pour identifier les données
+- IGNORE les lignes de solde total, sous-totaux, encaisse ou données non-investissement
 
 Retourne un JSON avec cette structure exacte:
 {
@@ -37,48 +37,87 @@ Retourne un JSON avec cette structure exacte:
 
 Si tu ne peux extraire aucune position valide, retourne: { "holdings": [], "detectedColumns": [] }`;
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+const VISION_PROMPT = `Analyse cette image d'un relevé de portefeuille / relevé de placement / statement. Extrais toutes les positions (titres, actions, ETF, fonds) que tu peux identifier.
 
+${SYSTEM_PROMPT}`;
+
+export async function POST(req: NextRequest) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ holdings: [], detectedColumns: [], error: 'Groq API key not configured' });
   }
 
   try {
-    const { rawText } = (await req.json()) as { rawText: string };
-    if (!rawText || rawText.trim().length === 0) {
+    const body = await req.json();
+    const { rawText, image, mimeType } = body as {
+      rawText?: string;
+      image?: string; // base64 encoded
+      mimeType?: string;
+    };
+
+    if (!rawText && !image) {
       return NextResponse.json({ holdings: [], detectedColumns: [] });
     }
 
-    // Limit input to first 100 lines to avoid token overflow
-    const truncated = rawText.split('\n').slice(0, 100).join('\n');
-
     const groq = new Groq({ apiKey });
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const timeout = setTimeout(() => controller.abort(), 30_000);
 
-    const completion = await groq.chat.completions.create(
-      {
-        model: GROQ_MODEL,
-        temperature: 0.1,
-        max_tokens: 4000,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: `Voici les données brutes du portefeuille à analyser:\n\n${truncated}` },
-        ],
-        response_format: { type: 'json_object' },
-      },
-      { signal: controller.signal }
-    );
+    let completion;
+
+    if (image) {
+      // ── Vision mode: parse image ──────────────────────────────────────
+      const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${image}`;
+
+      completion = await groq.chat.completions.create(
+        {
+          model: VISION_MODEL,
+          temperature: 0.1,
+          max_tokens: 4000,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: dataUrl } },
+                { type: 'text', text: VISION_PROMPT },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+        },
+        { signal: controller.signal },
+      );
+    } else {
+      // ── Text mode: parse raw text ─────────────────────────────────────
+      const truncated = (rawText ?? '').split('\n').slice(0, 100).join('\n');
+
+      completion = await groq.chat.completions.create(
+        {
+          model: TEXT_MODEL,
+          temperature: 0.1,
+          max_tokens: 4000,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: `Voici les données brutes du portefeuille à analyser:\n\n${truncated}` },
+          ],
+          response_format: { type: 'json_object' },
+        },
+        { signal: controller.signal },
+      );
+    }
 
     clearTimeout(timeout);
 
     const content = completion.choices?.[0]?.message?.content;
     if (!content) return NextResponse.json({ holdings: [], detectedColumns: [] });
 
-    const parsed = JSON.parse(content) as {
+    // Parse response — handle cases where model wraps JSON in markdown
+    let jsonStr = content.trim();
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const parsed = JSON.parse(jsonStr) as {
       holdings: Array<{
         symbol: string;
         name?: string;
@@ -106,6 +145,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.warn('[AI parse-portfolio] Failed:', err);
-    return NextResponse.json({ holdings: [], detectedColumns: [], error: 'AI parsing failed' });
+    return NextResponse.json({
+      holdings: [],
+      detectedColumns: [],
+      error: "L'IA n'a pas pu analyser les données. Réessayez ou utilisez un format différent.",
+    });
   }
 }

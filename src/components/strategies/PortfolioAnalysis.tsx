@@ -138,6 +138,7 @@ export function PortfolioAnalysis({ data }: Props) {
   const ai = data.aiNarrative;
   const riskProfile = data.riskProfile;
   const concentration = data.concentration;
+  const pv: number | null = data.portfolioValue ?? null;
 
   // Recharts data prep
   const growthChartData = useMemo(() => {
@@ -816,6 +817,7 @@ export function PortfolioAnalysis({ data }: Props) {
                   {[
                     { key: 'symbol', label: 'Titre', align: 'left' as const },
                     { key: 'weight', label: 'Poids', align: 'right' as const },
+                    ...(pv ? [{ key: 'value', label: 'Valeur $', align: 'right' as const }] : []),
                     { key: 'price', label: 'Prix', align: 'right' as const },
                     { key: 'targetPrice', label: 'Cible', align: 'right' as const },
                     { key: 'upside', label: 'Potentiel', align: 'right' as const },
@@ -846,6 +848,11 @@ export function PortfolioAnalysis({ data }: Props) {
                       <div className="text-[10px] text-text-muted truncate max-w-[150px]">{h.name}</div>
                     </td>
                     <td className="py-3 px-3 text-right font-bold text-text-main">{h.weight.toFixed(1)}%</td>
+                    {pv && (
+                      <td className="py-3 px-3 text-right font-bold text-[#1CB0F6]">
+                        {fmt(pv * h.weight / 100)}
+                      </td>
+                    )}
                     <td className="py-3 px-3 text-right font-bold text-text-main">{h.price > 0 ? `$${h.price.toFixed(2)}` : '—'}</td>
                     <td className="py-3 px-3 text-right font-bold text-text-main">{h.targetPrice ? `$${h.targetPrice.toFixed(2)}` : '—'}</td>
                     <td className={`py-3 px-3 text-right font-bold ${
