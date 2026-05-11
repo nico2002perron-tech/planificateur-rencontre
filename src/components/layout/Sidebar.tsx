@@ -27,7 +27,7 @@ const navItems = [
   { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/valuation', label: 'Valorisation', icon: BarChart2 },
   { href: '/meeting-notes', label: 'Notes de réunion', icon: ClipboardList },
-  { href: '/reports', label: 'Rapports', icon: FileText },
+  { href: '/reports', label: 'Cours Cibles', icon: FileText },
   { href: '/fund-reports', label: 'Rapports de fonds', icon: BookOpen },
   { href: '/events', label: 'Événements', icon: CalendarDays },
   { href: '/admin', label: 'Administration', icon: Settings },
