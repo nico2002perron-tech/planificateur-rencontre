@@ -269,8 +269,12 @@ function ManualAddSection({
 
 function SmartInputZone({
   onResult,
+  clientName,
+  onClientNameChange,
 }: {
   onResult: (result: ParseResult) => void;
+  clientName: string;
+  onClientNameChange: (name: string) => void;
 }) {
   const { toast } = useToast();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -476,6 +480,25 @@ function SmartInputZone({
         </button>
       </div>
 
+      {/* Client name input */}
+      {activeMode === 'paste' && (
+        <div className="rounded-2xl bg-white border-2 border-gray-200 p-4">
+          <label className="block text-sm font-bold text-text-main mb-2">
+            Nom du prospect (apparaîtra sur le PDF)
+          </label>
+          <input
+            type="text"
+            value={clientName}
+            onChange={(e) => onClientNameChange(e.target.value)}
+            placeholder="Ex: Jean Dupont"
+            className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm
+              text-text-main placeholder-text-muted/40
+              focus:outline-none focus:ring-2 focus:ring-[#CE82FF]/30 focus:border-[#CE82FF]
+              transition-all duration-200"
+          />
+        </div>
+      )}
+
       {/* Paste / Import zone */}
       {activeMode === 'paste' && (
         <>
@@ -624,6 +647,7 @@ function SmartInputZone({
 
 export function ProspectReport() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [clientName, setClientName] = useState('');
 
   const handleResult = useCallback((result: ParseResult) => {
     if (result.holdings.length > 0) {
@@ -636,12 +660,12 @@ export function ProspectReport() {
   }, []);
 
   if (parseResult && parseResult.holdings.length > 0) {
-    return <ResultsView result={parseResult} onReset={handleReset} />;
+    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} />;
   }
 
   return (
     <div>
-      <SmartInputZone onResult={handleResult} />
+      <SmartInputZone onResult={handleResult} clientName={clientName} onClientNameChange={setClientName} />
       {parseResult && parseResult.holdings.length === 0 && parseResult.warnings.length > 0 && (
         <div className="mt-4 flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
           <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />

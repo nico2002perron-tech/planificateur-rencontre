@@ -8,8 +8,8 @@ import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fundCodes, options, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
-    const reportData: PriceTargetReportData = { ...rest, options };
+    const { fundCodes, options, clientName, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
+    const reportData: PriceTargetReportData = { ...rest, options, clientName };
 
     if (!reportData.holdings || reportData.holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
@@ -38,11 +38,13 @@ export async function POST(req: NextRequest) {
     }
 
     const date = new Date().toISOString().split('T')[0];
+    const namePart = clientName ? clientName.trim().replace(/[^a-zA-Z\u00C0-\u00FF0-9 -]/g, '').replace(/\s+/g, '-') : '';
+    const filename = `cours-cibles${namePart ? `-${namePart}` : ''}-${date}.pdf`;
 
     return new NextResponse(Buffer.from(finalPdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="cours-cibles-${date}.pdf"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     });
   } catch (err) {

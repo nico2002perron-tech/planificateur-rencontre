@@ -64,6 +64,8 @@ export interface PdfRenderOptions {
 export interface PriceTargetReportData {
   holdings: PriceTargetHolding[];
   generatedAt: string;
+  /** Client name displayed on the cover page. */
+  clientName?: string;
   options?: PdfRenderOptions;
   /** Optional map of symbol → base64 PNG data URI for company logos. */
   logos?: Record<string, string>;
@@ -291,6 +293,11 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 3 }}>
           Analyse des cours cibles
         </Text>
+        {data.clientName ? (
+          <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+            {data.clientName}
+          </Text>
+        ) : null}
         <View style={{ width: 36, height: 2.5, backgroundColor: C.cyan, borderRadius: 1, marginBottom: 14 }} />
         <Text style={{ fontSize: 8, color: '#64748b', lineHeight: 1.4 }}>
           {s.equityCount > 0 ? `${s.equityCount} actions/FNB` : ''}

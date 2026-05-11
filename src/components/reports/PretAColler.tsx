@@ -195,7 +195,7 @@ function useYahooPrices(symbols: string[]) {
 
 // ─── Paste Zone ──────────────────────────────────────────────────────────────
 
-function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
+function PasteZone({ onPaste, clientName, onClientNameChange }: { onPaste: (text: string) => void; clientName: string; onClientNameChange: (name: string) => void }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [textValue, setTextValue] = useState('');
@@ -245,6 +245,24 @@ function PasteZone({ onPaste }: { onPaste: (text: string) => void }) {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Client name input */}
+      <div className="rounded-2xl bg-white border-2 border-gray-200 p-4">
+        <label className="block text-sm font-bold text-text-main mb-2">
+          Nom du client (apparaîtra sur le PDF)
+        </label>
+        <input
+          type="text"
+          value={clientName}
+          onChange={(e) => onClientNameChange(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          placeholder="Ex: Jean Dupont"
+          className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm
+            text-text-main placeholder-text-muted/40
+            focus:outline-none focus:ring-2 focus:ring-[#1CB0F6]/30 focus:border-[#1CB0F6]
+            transition-all duration-200"
+        />
       </div>
 
       {/* Drop zone */}
@@ -423,7 +441,7 @@ interface AICorrection {
   reason?: string;
 }
 
-export function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => void }) {
+export function ResultsView({ result, onReset, clientName = '' }: { result: ParseResult; onReset: () => void; clientName?: string }) {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -1099,6 +1117,7 @@ export function ResultsView({ result, onReset }: { result: ParseResult; onReset:
       const payload = {
         holdings: pdfHoldings,
         generatedAt: new Date().toISOString(),
+        clientName: clientName.trim() || undefined,
         usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : null,
         fundCodes: pdfOptions.fundCodesToInclude,
         options: {
@@ -1163,7 +1182,8 @@ export function ResultsView({ result, onReset }: { result: ParseResult; onReset:
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.pdf`;
+      const namePart = clientName.trim() ? clientName.trim().replace(/[^a-zA-ZÀ-ÿ0-9 -]/g, '').replace(/\s+/g, '-') : '';
+      a.download = `cours-cibles${namePart ? `-${namePart}` : ''}-${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1174,7 +1194,7 @@ export function ResultsView({ result, onReset }: { result: ParseResult; onReset:
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -1268,7 +1288,8 @@ export function ResultsView({ result, onReset }: { result: ParseResult; onReset:
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.csv`;
+    const csvNamePart = clientName.trim() ? clientName.trim().replace(/[^a-zA-ZÀ-ÿ0-9 -]/g, '').replace(/\s+/g, '-') : '';
+    a.download = `cours-cibles${csvNamePart ? `-${csvNamePart}` : ''}-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2930,6 +2951,7 @@ export function ResultsView({ result, onReset }: { result: ParseResult; onReset:
 
 export function PretAColler() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [clientName, setClientName] = useState('');
 
   const handlePaste = useCallback((text: string) => {
     const result = parseCroesusData(text);
@@ -2941,12 +2963,12 @@ export function PretAColler() {
   }, []);
 
   if (parseResult && parseResult.holdings.length > 0) {
-    return <ResultsView result={parseResult} onReset={handleReset} />;
+    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} />;
   }
 
   return (
     <div>
-      <PasteZone onPaste={handlePaste} />
+      <PasteZone onPaste={handlePaste} clientName={clientName} onClientNameChange={setClientName} />
       {parseResult && parseResult.holdings.length === 0 && parseResult.warnings.length > 0 && (
         <div className="mt-4 flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
           <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
