@@ -1,21 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Modal } from '@/components/ui/Modal';
-import { Spinner } from '@/components/ui/Spinner';
-import { useToast } from '@/components/ui/Toast';
-import { useReports, type Report } from '@/lib/hooks/useReports';
 import { PretAColler } from '@/components/reports/PretAColler';
 import { ProspectReport } from '@/components/reports/ProspectReport';
 import {
-  FileText, Plus, Download, Trash2, Calendar, ClipboardPaste,
-  ArrowLeft, TrendingUp, BarChart3, Target, Sparkles, Shield, BookOpen,
-  PieChart, Zap, CheckCircle2, UserPlus, FileSpreadsheet, Search,
+  ClipboardPaste, ArrowLeft, Target, Sparkles, BookOpen,
+  Zap, CheckCircle2, UserPlus, FileSpreadsheet, Search,
 } from 'lucide-react';
 
 // Duolingo palette
@@ -26,66 +16,10 @@ const DUO = {
   orange: '#FF9600', orangeDark: '#e08600',
 } as const;
 
-const statusMap: Record<string, { label: string; variant: 'info' | 'success' | 'warning' | 'danger' }> = {
-  ready: { label: 'Prêt', variant: 'success' },
-  generating: { label: 'En cours', variant: 'warning' },
-  draft: { label: 'Brouillon', variant: 'info' },
-  error: { label: 'Erreur', variant: 'danger' },
-};
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '—';
-  return new Intl.DateTimeFormat('fr-CA', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(dateStr));
-}
-
-type Tab = 'reports' | 'paste' | 'prospect';
+type Tab = 'paste' | 'prospect';
 
 export default function ReportsPage() {
-  const { reports, isLoading, mutate } = useReports();
-  const { toast } = useToast();
-  const [deleteTarget, setDeleteTarget] = useState<Report | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab | null>(null);
-
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/reports/${deleteTarget.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      toast('success', 'Rapport supprimé');
-      mutate();
-    } catch {
-      toast('error', 'Erreur lors de la suppression');
-    } finally {
-      setDeleting(false);
-      setDeleteTarget(null);
-    }
-  }
-
-  async function handleDownload(report: Report) {
-    try {
-      const res = await fetch(`/api/reports/${report.id}/download`);
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${report.title}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch {
-      toast('error', 'Erreur lors du téléchargement');
-    }
-  }
 
   // Hub view (no tab selected yet)
   if (!activeTab) {
@@ -218,13 +152,11 @@ export default function ReportsPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-extrabold text-text-main">
-            {activeTab === 'prospect' ? 'Rapport Prospect' : activeTab === 'reports' ? 'Mes rapports' : 'Prêt à coller'}
+            {activeTab === 'prospect' ? 'Rapport Prospect' : 'Prêt à coller'}
           </h1>
           <p className="text-xs text-text-muted">
             {activeTab === 'prospect'
               ? 'Import flexible pour les clients potentiels — cours cibles Yahoo Finance'
-              : activeTab === 'reports'
-              ? 'Rapports PDF détaillés avec narratif IA'
               : 'Analyse rapide des cours cibles depuis Croesus'}
           </p>
         </div>
@@ -249,141 +181,14 @@ export default function ReportsPage() {
             <ClipboardPaste className="h-3.5 w-3.5" />
             Prêt à coller
           </button>
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'reports' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
-            }`}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Rapports
-          </button>
         </div>
-
-        {activeTab === 'reports' && (
-          <Link href="/reports/new">
-            <button
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
-              style={{ backgroundColor: DUO.purple, boxShadow: `0 3px 0 0 ${DUO.purpleDark}` }}
-            >
-              <Plus className="h-4 w-4" />
-              Nouveau
-            </button>
-          </Link>
-        )}
       </div>
-
-      {/* Tab: Mes rapports */}
-      {activeTab === 'reports' && (
-        <>
-          {isLoading ? (
-            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-          ) : !reports || reports.length === 0 ? (
-            <div className="text-center py-16">
-              <div
-                className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5"
-                style={{ backgroundColor: `${DUO.purple}12`, boxShadow: `0 4px 0 0 ${DUO.purpleDark}15` }}
-              >
-                <FileText className="h-10 w-10" style={{ color: DUO.purple }} />
-              </div>
-              <h3 className="text-lg font-extrabold text-text-main mb-2">Aucun rapport pour l&apos;instant</h3>
-              <p className="text-sm text-text-muted max-w-md mx-auto mb-6">
-                Créez votre premier rapport PDF de 8 pages : composition, allocations, risque, narratif IA et stress tests.
-              </p>
-              <Link href="/reports/new">
-                <button
-                  className="inline-flex items-center gap-2 px-7 py-3 rounded-2xl text-white font-extrabold text-sm transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
-                  style={{ backgroundColor: DUO.purple, boxShadow: `0 4px 0 0 ${DUO.purpleDark}` }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Créer un rapport
-                </button>
-              </Link>
-            </div>
-          ) : (
-            <Card>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-text-muted">
-                      <th className="text-left py-3 px-4 font-semibold">Titre</th>
-                      <th className="text-left py-3 px-4 font-semibold">Client</th>
-                      <th className="text-left py-3 px-4 font-semibold">Portefeuille</th>
-                      <th className="text-left py-3 px-4 font-semibold">Date</th>
-                      <th className="text-center py-3 px-4 font-semibold">Statut</th>
-                      <th className="text-right py-3 px-4 font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reports.map((report) => {
-                      const status = statusMap[report.status] || statusMap.draft;
-                      return (
-                        <tr key={report.id} className="border-b border-gray-50 hover:bg-bg-light/50">
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-text-muted flex-shrink-0" />
-                              <span className="font-semibold text-text-main">{report.title}</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-text-muted">{report.client_name}</td>
-                          <td className="py-3 px-4 text-text-muted">{report.portfolio_name}</td>
-                          <td className="py-3 px-4 text-text-muted">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3.5 w-3.5" />
-                              {formatDate(report.generated_at || report.created_at)}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <Badge variant={status.variant}>{status.label}</Badge>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDownload(report)}
-                                icon={<Download className="h-3.5 w-3.5" />}
-                              >
-                                Télécharger
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteTarget(report)}
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                icon={<Trash2 className="h-3.5 w-3.5" />}
-                              >
-                                Supprimer
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-        </>
-      )}
 
       {/* Tab: Prospect */}
       {activeTab === 'prospect' && <ProspectReport />}
 
       {/* Tab: Prêt à coller */}
       {activeTab === 'paste' && <PretAColler />}
-
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Supprimer le rapport" size="sm">
-        <p className="text-sm text-text-muted mb-6">
-          Êtes-vous sûr de vouloir supprimer le rapport <strong>{deleteTarget?.title}</strong> ?
-          Cette action est irréversible.
-        </p>
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Annuler</Button>
-          <Button variant="danger" loading={deleting} onClick={handleDelete}>Supprimer</Button>
-        </div>
-      </Modal>
     </div>
   );
 }
