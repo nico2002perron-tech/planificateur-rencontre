@@ -92,6 +92,9 @@ export default function AdminUsersPage() {
     const res = await fetch('/api/admin/users');
     if (res.ok) {
       const data = await res.json();
+      // Show pending users first, then active, then inactive
+      const order = { pending: 0, active: 1, inactive: 2 };
+      data.sort((a: User, b: User) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
       setUsers(data);
     }
     setLoading(false);
