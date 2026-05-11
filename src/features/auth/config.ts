@@ -18,7 +18,7 @@ export const authOptions: NextAuthOptions = {
         const { data: user, error } = await supabase
           .from('users')
           .select('id, email, name, role, password_hash, status, must_change_password')
-          .eq('email', credentials.email)
+          .eq('email', credentials.email.toLowerCase().trim())
           .single();
 
         if (error || !user || user.status !== 'active') return null;
