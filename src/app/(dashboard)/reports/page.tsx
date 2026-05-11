@@ -11,10 +11,11 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useReports, type Report } from '@/lib/hooks/useReports';
 import { PretAColler } from '@/components/reports/PretAColler';
+import { ProspectReport } from '@/components/reports/ProspectReport';
 import {
   FileText, Plus, Download, Trash2, Calendar, ClipboardPaste,
   ArrowLeft, TrendingUp, BarChart3, Target, Sparkles, Shield, BookOpen,
-  PieChart, Zap, CheckCircle2,
+  PieChart, Zap, CheckCircle2, UserPlus, FileSpreadsheet, Search,
 } from 'lucide-react';
 
 // Duolingo palette
@@ -43,7 +44,7 @@ function formatDate(dateStr: string): string {
   }).format(new Date(dateStr));
 }
 
-type Tab = 'reports' | 'paste';
+type Tab = 'reports' | 'paste' | 'prospect';
 
 export default function ReportsPage() {
   const { reports, isLoading, mutate } = useReports();
@@ -98,9 +99,9 @@ export default function ReportsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          {/* Card: Rapport PDF complet */}
+          {/* Card: Rapport Prospect */}
           <button
-            onClick={() => setActiveTab('reports')}
+            onClick={() => setActiveTab('prospect')}
             className="text-left rounded-2xl bg-white p-6 transition-all duration-200 hover:scale-[1.02] active:translate-y-[2px] active:shadow-none group"
             style={{ border: `2px solid ${DUO.purple}30`, borderBottom: `5px solid ${DUO.purpleDark}30` }}
           >
@@ -108,20 +109,20 @@ export default function ReportsPage() {
               className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5 transition-transform group-hover:scale-110"
               style={{ backgroundColor: `${DUO.purple}15`, boxShadow: `0 3px 0 0 ${DUO.purpleDark}20` }}
             >
-              <FileText className="h-7 w-7" style={{ color: DUO.purple }} />
+              <UserPlus className="h-7 w-7" style={{ color: DUO.purple }} />
             </div>
 
-            <h2 className="text-xl font-extrabold text-text-main mb-1">Rapport PDF complet</h2>
+            <h2 className="text-xl font-extrabold text-text-main mb-1">Rapport Prospect</h2>
             <p className="text-sm text-text-muted mb-5">
-              Générez un document professionnel de 8-9 pages avec narratif IA, prêt à remettre en rencontre client.
+              Pour les clients potentiels — importez leur portefeuille depuis n&apos;importe quelle source et générez les cours cibles.
             </p>
 
             <div className="space-y-2.5 mb-6">
               {[
-                { icon: PieChart, text: 'Allocations et répartition sectorielle', color: DUO.purple },
-                { icon: BarChart3, text: 'Métriques de risque et rendement', color: DUO.blue },
-                { icon: Sparkles, text: 'Narratif IA personnalisé (Groq)', color: DUO.orange },
-                { icon: Shield, text: 'Scénarios de stress test', color: DUO.green },
+                { icon: FileSpreadsheet, text: 'Import flexible (Excel, CSV, liste de symboles)', color: DUO.purple },
+                { icon: Sparkles, text: 'Détection IA des colonnes et des titres', color: DUO.orange },
+                { icon: Search, text: 'Ajout manuel avec recherche de symboles', color: DUO.blue },
+                { icon: Target, text: 'Cours cibles Yahoo Finance + PDF', color: DUO.green },
               ].map((f, i) => (
                 <div key={i} className="flex items-center gap-2.5">
                   <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${f.color}15` }}>
@@ -136,10 +137,7 @@ export default function ReportsPage() {
               className="flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-sm text-white transition-all"
               style={{ backgroundColor: DUO.purple, boxShadow: `0 3px 0 0 ${DUO.purpleDark}` }}
             >
-              Mes rapports
-              <span className="text-xs font-bold opacity-70">
-                ({reports?.length || 0})
-              </span>
+              Analyser un prospect
             </div>
           </button>
 
@@ -192,7 +190,7 @@ export default function ReportsPage() {
             <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-gray-50">
               <CheckCircle2 className="h-4 w-4" style={{ color: DUO.purple }} />
               <span className="text-xs text-text-muted">
-                <strong className="text-text-main">Rapport PDF</strong> — À partir d&apos;un portefeuille enregistré
+                <strong className="text-text-main">Rapport Prospect</strong> — Import flexible pour les non-clients
               </span>
             </div>
             <div className="flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-gray-50">
@@ -220,10 +218,12 @@ export default function ReportsPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-xl font-extrabold text-text-main">
-            {activeTab === 'reports' ? 'Mes rapports' : 'Prêt à coller'}
+            {activeTab === 'prospect' ? 'Rapport Prospect' : activeTab === 'reports' ? 'Mes rapports' : 'Prêt à coller'}
           </h1>
           <p className="text-xs text-text-muted">
-            {activeTab === 'reports'
+            {activeTab === 'prospect'
+              ? 'Import flexible pour les clients potentiels — cours cibles Yahoo Finance'
+              : activeTab === 'reports'
               ? 'Rapports PDF détaillés avec narratif IA'
               : 'Analyse rapide des cours cibles depuis Croesus'}
           </p>
@@ -232,13 +232,13 @@ export default function ReportsPage() {
         {/* Tab switcher (compact) */}
         <div className="flex items-center gap-1 bg-gray-100/80 rounded-xl p-1">
           <button
-            onClick={() => setActiveTab('reports')}
+            onClick={() => setActiveTab('prospect')}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-              activeTab === 'reports' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+              activeTab === 'prospect' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
             }`}
           >
-            <FileText className="h-3.5 w-3.5" />
-            Rapports
+            <UserPlus className="h-3.5 w-3.5" />
+            Prospect
           </button>
           <button
             onClick={() => setActiveTab('paste')}
@@ -248,6 +248,15 @@ export default function ReportsPage() {
           >
             <ClipboardPaste className="h-3.5 w-3.5" />
             Prêt à coller
+          </button>
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'reports' ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Rapports
           </button>
         </div>
 
@@ -358,6 +367,9 @@ export default function ReportsPage() {
           )}
         </>
       )}
+
+      {/* Tab: Prospect */}
+      {activeTab === 'prospect' && <ProspectReport />}
 
       {/* Tab: Prêt à coller */}
       {activeTab === 'paste' && <PretAColler />}

@@ -423,7 +423,7 @@ interface AICorrection {
   reason?: string;
 }
 
-function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => void }) {
+export function ResultsView({ result, onReset }: { result: ParseResult; onReset: () => void }) {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
