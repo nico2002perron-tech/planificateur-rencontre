@@ -1,6 +1,12 @@
+'use client';
+
+import { useState } from 'react';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { RegisterForm } from '@/components/auth/RegisterForm';
 
 export default function LoginPage() {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-dark via-brand-accent to-brand-primary p-4">
       <div className="w-full max-w-md">
@@ -14,15 +20,24 @@ export default function LoginPage() {
               Groupe Financier Ste-Foy
             </h1>
             <p className="text-sm text-text-muted mt-2">
-              Planificateur de rencontre
+              {mode === 'login' ? 'Planificateur de rencontre' : 'Creer un compte conseiller'}
             </p>
           </div>
 
-          <LoginForm />
+          {mode === 'login' ? (
+            <LoginForm onToggle={() => setMode('register')} />
+          ) : (
+            <RegisterForm onToggle={() => setMode('login')} />
+          )}
 
-          <p className="text-xs text-text-light text-center mt-6">
-            Accès réservé aux conseillers autorisés
-          </p>
+          {mode === 'login' && (
+            <p className="text-xs text-text-light text-center mt-6">
+              Pas encore de compte?{' '}
+              <button onClick={() => setMode('register')} className="text-brand-primary font-semibold hover:underline">
+                Creer un compte
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>

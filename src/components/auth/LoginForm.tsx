@@ -7,7 +7,11 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Lock, Mail } from 'lucide-react';
 
-export function LoginForm() {
+interface LoginFormProps {
+  onToggle?: () => void;
+}
+
+export function LoginForm({ onToggle }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
