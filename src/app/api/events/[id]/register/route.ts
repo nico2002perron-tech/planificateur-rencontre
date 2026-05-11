@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { sendRegistrationConfirmation, sendRegistrationNotification } from '@/lib/email';
 
 function corsJson(body: unknown, status: number) {
   const response = NextResponse.json(body, { status });
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Validate event exists and is open
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, status, is_registration_open, max_attendees, registration_deadline, registration_mode, team_size')
+    .select('id, title, date, time, location, contact_email, contact_phone, created_by, status, is_registration_open, max_attendees, registration_deadline, registration_mode, team_size')
     .eq('id', id)
     .single();
 
@@ -94,6 +95,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .single();
 
   if (error) return corsJson({ error: error.message }, 500);
+
+  // Send emails (non-blocking — don't fail registration if email fails)
+  const eventInfo = { title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
+  const regInfo = { first_name: body.first_name.trim(), last_name: body.last_name.trim(), email: body.email.toLowerCase().trim(), phone: body.phone.trim(), registration_type: regType, team_name: body.team_name || '', pricing_option: body.pricing_option || '' };
+
+  // 1. Confirmation to participant
+  sendRegistrationConfirmation(eventInfo, regInfo);
+
+  // 2. Notification to event creator
+  if (event.created_by) {
+    supabase.from('users').select('email').eq('id', event.created_by).single().then(({ data: creator }) => {
+      if (creator?.email) sendRegistrationNotification(creator.email, eventInfo, regInfo);
+    });
+  }
 
   return corsJson({ ok: true, registration: data }, 201);
 }
