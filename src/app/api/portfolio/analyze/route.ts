@@ -294,6 +294,10 @@ export async function POST(req: NextRequest) {
 
     const benchmarkPriceMap = new Map(benchmarkHistory.map(p => [p.date, p.adjClose]));
 
+    // ── Individual holding returns (aligned with portfolio returns) ────
+    const holdingReturnsMap = new Map<string, number[]>();
+    for (const sym of symbols) holdingReturnsMap.set(sym, []);
+
     // Calculate weighted portfolio returns for each month
     for (let i = 1; i < allDates.length; i++) {
       const prevDate = allDates[i - 1];
@@ -325,24 +329,15 @@ export async function POST(req: NextRequest) {
         portfolioReturns.push(portfolioReturn);
         benchmarkReturns.push((benchCurr - benchPrev) / benchPrev);
         returnDates.push(currDate);
-      }
-    }
 
-    // ── Individual holding returns (for correlation & contribution) ────
-    const holdingReturnsMap = new Map<string, number[]>();
-    for (let j = 0; j < symbols.length; j++) {
-      const priceMap = holdingPriceMaps[j];
-      const returns: number[] = [];
-      for (let i = 1; i < allDates.length; i++) {
-        const prev = priceMap.get(allDates[i - 1]);
-        const curr = priceMap.get(allDates[i]);
-        if (prev && curr && prev > 0) {
-          returns.push((curr - prev) / prev);
-        } else {
-          returns.push(0);
+        // Record individual holding returns for this date (same alignment as portfolioReturns)
+        for (let j = 0; j < symbols.length; j++) {
+          const prev = holdingPriceMaps[j].get(prevDate);
+          const curr = holdingPriceMaps[j].get(currDate);
+          const ret = (prev && curr && prev > 0) ? (curr - prev) / prev : 0;
+          holdingReturnsMap.get(symbols[j])!.push(ret);
         }
       }
-      holdingReturnsMap.set(symbols[j], returns);
     }
 
     // ── Risk Stats ──────────────────────────────────────────────────────
@@ -448,8 +443,15 @@ export async function POST(req: NextRequest) {
       : [];
 
     // ── NEW: Risk Profile ───────────────────────────────────────────────
-    // Estimate equity weight from sectors (non-bond)
-    const equityWeight = 1; // Conservative: assume all equity unless we can detect bonds
+    // Estimate equity weight (detect bond/fixed income holdings)
+    const bondPattern = /\b(bond|obligation|fixed.income|aggregate|treasury|income|revenu)/i;
+    let fixedIncomeWeight = 0;
+    for (const h of analysisHoldings) {
+      if (bondPattern.test(h.name) || bondPattern.test(h.sector) || bondPattern.test(h.industry)) {
+        fixedIncomeWeight += h.weight / 100;
+      }
+    }
+    const equityWeight = Math.max(0, Math.min(1, 1 - fixedIncomeWeight));
     const riskProfile = classifyRiskProfile(
       riskStats.stdDev3Y,
       riskStats.beta3Y,

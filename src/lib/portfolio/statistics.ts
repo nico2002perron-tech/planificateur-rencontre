@@ -80,6 +80,7 @@ export function calculateMonthlyReturns(prices: number[]): number[] {
 function annualizeReturn(monthlyReturns: number[]): number {
   if (monthlyReturns.length === 0) return 0;
   const cumulative = monthlyReturns.reduce((acc, r) => acc * (1 + r), 1);
+  if (cumulative <= 0) return -1; // Total loss guard
   const years = monthlyReturns.length / 12;
   if (years <= 0) return cumulative - 1;
   return Math.pow(cumulative, 1 / years) - 1;
@@ -233,11 +234,13 @@ function captureRatio(
     }
   }
 
-  if (pFiltered.length < 2) return null;
+  if (pFiltered.length < 6) return null; // Need enough months for reliable annualization
   const pAnn = annualizeReturn(pFiltered);
   const bAnn = annualizeReturn(bFiltered);
   if (bAnn === 0) return null;
-  return (pAnn / bAnn) * 100;
+  const ratio = (pAnn / bAnn) * 100;
+  // Clamp to reasonable range to avoid extreme values
+  return Math.max(-500, Math.min(500, ratio));
 }
 
 // ── Max Drawdown ────────────────────────────────────────────────────────
@@ -281,9 +284,10 @@ function bestWorstMonth(returns: number[], dates: string[]): {
   best: number; bestDate: string;
   worst: number; worstDate: string;
 } {
-  let best = -Infinity, worst = Infinity;
-  let bestDate = '', worstDate = '';
-  for (let i = 0; i < returns.length; i++) {
+  if (returns.length === 0) return { best: 0, bestDate: '', worst: 0, worstDate: '' };
+  let best = returns[0], worst = returns[0];
+  let bestDate = dates[0] ?? '', worstDate = dates[0] ?? '';
+  for (let i = 1; i < returns.length; i++) {
     if (returns[i] > best) { best = returns[i]; bestDate = dates[i]; }
     if (returns[i] < worst) { worst = returns[i]; worstDate = dates[i]; }
   }
