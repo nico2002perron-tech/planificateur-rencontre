@@ -41,6 +41,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (body.booking_url !== undefined) updates.booking_url = body.booking_url;
   if (body.phone !== undefined) updates.phone = body.phone;
   if (body.education !== undefined) updates.education = body.education;
+  if (body.user_id !== undefined) updates.user_id = body.user_id || null;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'Aucune modification' }, { status: 400 });

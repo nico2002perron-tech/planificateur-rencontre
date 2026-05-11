@@ -45,5 +45,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Auto-link team profile when activating a user (match by name)
+  if (updates.status === 'active' && data) {
+    const { data: unlinkedProfile } = await supabase
+      .from('team_profiles')
+      .select('id')
+      .is('user_id', null)
+      .ilike('display_name', data.name)
+      .limit(1)
+      .single();
+
+    if (unlinkedProfile) {
+      await supabase
+        .from('team_profiles')
+        .update({ user_id: id })
+        .eq('id', unlinkedProfile.id);
+    }
+  }
+
   return NextResponse.json(data);
 }
