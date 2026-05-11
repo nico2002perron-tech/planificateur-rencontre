@@ -537,3 +537,392 @@ export function calculateWeightedFundamentals(
     avgMarketCapB: totalWeight > 0 ? mcSum / totalWeight / 1_000_000_000 : 0,
   };
 }
+
+// ── Monte Carlo Simulation ──────────────────────────────────────────
+
+export interface MonteCarloResult {
+  percentile5: number[];   // Growth path at 5th percentile
+  percentile25: number[];  // 25th
+  percentile50: number[];  // Median
+  percentile75: number[];  // 75th
+  percentile95: number[];  // 95th
+  months: number;
+  probPositive: number;    // Probability of positive return
+  probDoubling: number;    // Probability of doubling
+  medianFinal: number;     // Median final value
+  worstCase: number;       // 5th percentile final
+  bestCase: number;        // 95th percentile final
+}
+
+export function calculateMonteCarlo(
+  monthlyReturns: number[],
+  horizonYears = 5,
+  numSimulations = 1000,
+  initialValue = 10000,
+): MonteCarloResult {
+  const months = horizonYears * 12;
+  const mean = monthlyReturns.reduce((s, r) => s + r, 0) / monthlyReturns.length;
+  const sd = stdDev(monthlyReturns);
+
+  // Run simulations
+  const finalValues: number[] = [];
+  const allPaths: number[][] = [];
+
+  for (let sim = 0; sim < numSimulations; sim++) {
+    const path = [initialValue];
+    let value = initialValue;
+    for (let m = 0; m < months; m++) {
+      // Box-Muller transform for normal random (clamp u1 away from 0)
+      const u1 = Math.max(1e-10, Math.random());
+      const u2 = Math.random();
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      const ret = mean + sd * z;
+      value = Math.max(0, value * (1 + ret)); // Portfolio value can't go negative
+      path.push(value);
+    }
+    finalValues.push(value);
+    allPaths.push(path);
+  }
+
+  // Extract percentile paths
+  const getPercentilePath = (pct: number): number[] => {
+    const result: number[] = [];
+    for (let m = 0; m <= months; m++) {
+      const values = allPaths.map(p => p[m]).sort((a, b) => a - b);
+      const idx = Math.floor(values.length * pct / 100);
+      result.push(Math.round(values[Math.min(idx, values.length - 1)]));
+    }
+    return result;
+  };
+
+  finalValues.sort((a, b) => a - b);
+  const probPositive = finalValues.filter(v => v > initialValue).length / numSimulations;
+  const probDoubling = finalValues.filter(v => v > initialValue * 2).length / numSimulations;
+
+  return {
+    percentile5: getPercentilePath(5),
+    percentile25: getPercentilePath(25),
+    percentile50: getPercentilePath(50),
+    percentile75: getPercentilePath(75),
+    percentile95: getPercentilePath(95),
+    months,
+    probPositive,
+    probDoubling,
+    medianFinal: Math.round(finalValues[Math.floor(numSimulations / 2)]),
+    worstCase: Math.round(finalValues[Math.floor(numSimulations * 0.05)]),
+    bestCase: Math.round(finalValues[Math.floor(numSimulations * 0.95)]),
+  };
+}
+
+// ── Stress Tests ────────────────────────────────────────────────────
+
+export interface StressTestResult {
+  name: string;
+  period: string;
+  portfolioReturn: number;
+  benchmarkReturn: number;
+  maxDrawdown: number;
+}
+
+export function calculateStressTests(
+  portfolioReturns: number[],
+  benchmarkReturns: number[],
+  dates: string[],
+): StressTestResult[] {
+  const stressEvents = [
+    { name: 'COVID-19 (Mars 2020)', start: '2020-02', end: '2020-04' },
+    { name: 'Marché baissier 2022', start: '2022-01', end: '2022-10' },
+    { name: 'Hausse des taux 2022-2023', start: '2022-01', end: '2023-06' },
+    { name: 'Correction 2018 (Q4)', start: '2018-10', end: '2018-12' },
+  ];
+
+  const results: StressTestResult[] = [];
+
+  for (const event of stressEvents) {
+    const indices: number[] = [];
+    for (let i = 0; i < dates.length; i++) {
+      const ym = dates[i].slice(0, 7); // YYYY-MM
+      if (ym >= event.start && ym <= event.end) {
+        indices.push(i);
+      }
+    }
+
+    if (indices.length < 1) continue;
+
+    const pReturns = indices.map(i => portfolioReturns[i]);
+    const bReturns = indices.map(i => benchmarkReturns[i]);
+
+    const pCum = pReturns.reduce((acc, r) => acc * (1 + r), 1) - 1;
+    const bCum = bReturns.reduce((acc, r) => acc * (1 + r), 1) - 1;
+
+    // Max drawdown during stress period
+    let peak = 1, cumVal = 1, maxDD = 0;
+    for (const r of pReturns) {
+      cumVal *= (1 + r);
+      if (cumVal > peak) peak = cumVal;
+      const dd = (peak - cumVal) / peak;
+      if (dd > maxDD) maxDD = dd;
+    }
+
+    results.push({
+      name: event.name,
+      period: `${event.start} → ${event.end}`,
+      portfolioReturn: pCum,
+      benchmarkReturn: bCum,
+      maxDrawdown: -maxDD,
+    });
+  }
+
+  return results;
+}
+
+// ── Correlation Matrix ──────────────────────────────────────────────
+
+export interface CorrelationMatrix {
+  symbols: string[];
+  matrix: number[][];
+}
+
+export function calculateCorrelationMatrix(
+  holdingReturns: Map<string, number[]>,
+  symbols: string[],
+): CorrelationMatrix {
+  const n = symbols.length;
+  const matrix: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i; j < n; j++) {
+      const ri = holdingReturns.get(symbols[i]) ?? [];
+      const rj = holdingReturns.get(symbols[j]) ?? [];
+      if (ri.length > 0 && rj.length > 0) {
+        const minLen = Math.min(ri.length, rj.length);
+        const corr = correlation(ri.slice(-minLen), rj.slice(-minLen));
+        matrix[i][j] = Math.round(corr * 100) / 100;
+        matrix[j][i] = matrix[i][j];
+      }
+    }
+  }
+
+  return { symbols, matrix };
+}
+
+// ── Risk Contribution ───────────────────────────────────────────────
+
+export interface RiskContribution {
+  symbol: string;
+  weight: number;
+  volatility: number;      // Individual annualized vol
+  riskContribution: number; // % of total portfolio risk
+  returnContribution: number; // Weighted return contribution
+}
+
+export function calculateRiskContributions(
+  holdingReturns: Map<string, number[]>,
+  symbols: string[],
+  weights: number[], // normalized 0-1
+  portfolioReturns: number[],
+): RiskContribution[] {
+  const portVol = annualizeStdDev(portfolioReturns);
+  if (portVol === 0) return [];
+
+  const contributions: RiskContribution[] = [];
+
+  for (let i = 0; i < symbols.length; i++) {
+    const returns = holdingReturns.get(symbols[i]) ?? [];
+    if (returns.length < 2) {
+      contributions.push({
+        symbol: symbols[i],
+        weight: weights[i],
+        volatility: 0,
+        riskContribution: 0,
+        returnContribution: 0,
+      });
+      continue;
+    }
+
+    const holdingVol = annualizeStdDev(returns);
+
+    // Marginal contribution = w_i * cov(r_i, r_p) / sigma_p
+    const minLen = Math.min(returns.length, portfolioReturns.length);
+    const cov = covariance(
+      returns.slice(-minLen),
+      portfolioReturns.slice(-minLen),
+    );
+    const marginal = (weights[i] * cov * 12) / portVol; // Annualized
+    const riskPct = portVol > 0 ? (marginal / portVol) * 100 : 0;
+
+    // Return contribution
+    const holdingAnnReturn = annualizeReturn(returns);
+    const returnContrib = weights[i] * holdingAnnReturn;
+
+    contributions.push({
+      symbol: symbols[i],
+      weight: weights[i],
+      volatility: holdingVol,
+      riskContribution: riskPct,
+      returnContribution: returnContrib,
+    });
+  }
+
+  return contributions;
+}
+
+// ── Concentration (Herfindahl Index) ────────────────────────────────
+
+export interface ConcentrationStats {
+  herfindahl: number;       // 0-10000 (sum of squared weights)
+  effectivePositions: number; // 1/HHI * 100
+  top5Weight: number;       // Weight of top 5 holdings
+  top10Weight: number;      // Weight of top 10 holdings
+  level: 'Faible' | 'Modéré' | 'Élevé' | 'Très élevé';
+}
+
+export function calculateConcentration(weights: number[]): ConcentrationStats {
+  const sorted = [...weights].sort((a, b) => b - a);
+  const hhi = sorted.reduce((sum, w) => sum + (w * 100) ** 2, 0);
+  const effective = hhi > 0 ? 10000 / hhi : weights.length;
+  const top5 = sorted.slice(0, 5).reduce((s, w) => s + w, 0);
+  const top10 = sorted.slice(0, 10).reduce((s, w) => s + w, 0);
+
+  let level: ConcentrationStats['level'];
+  if (hhi < 1000) level = 'Faible';
+  else if (hhi < 1800) level = 'Modéré';
+  else if (hhi < 2500) level = 'Élevé';
+  else level = 'Très élevé';
+
+  return {
+    herfindahl: Math.round(hhi),
+    effectivePositions: Math.round(effective * 10) / 10,
+    top5Weight: top5,
+    top10Weight: top10,
+    level,
+  };
+}
+
+// ── Currency Exposure ───────────────────────────────────────────────
+
+export interface CurrencyExposure {
+  currency: string;
+  weight: number; // 0-1
+  label: string;
+}
+
+export function calculateCurrencyExposure(
+  holdings: Array<{ weight: number; currency: string }>,
+): CurrencyExposure[] {
+  const map = new Map<string, number>();
+  for (const h of holdings) {
+    const cur = h.currency || 'CAD';
+    map.set(cur, (map.get(cur) ?? 0) + h.weight);
+  }
+
+  const labels: Record<string, string> = {
+    CAD: 'Dollar canadien',
+    USD: 'Dollar américain',
+    EUR: 'Euro',
+    GBP: 'Livre sterling',
+    JPY: 'Yen japonais',
+  };
+
+  return [...map.entries()]
+    .map(([currency, weight]) => ({
+      currency,
+      weight,
+      label: labels[currency] ?? currency,
+    }))
+    .sort((a, b) => b.weight - a.weight);
+}
+
+// ── Dividend Projection (5 years) ──────────────────────────────────
+
+export interface DividendProjection {
+  year: number;
+  income: number;
+  yieldOnCost: number;
+}
+
+export function calculateDividendProjection(
+  totalDivYield: number,
+  portfolioValue: number,
+  growthRate = 0.05, // 5% dividend growth assumption
+  years = 5,
+): DividendProjection[] {
+  const projections: DividendProjection[] = [];
+  let currentYield = totalDivYield;
+
+  for (let y = 0; y < years; y++) {
+    const income = portfolioValue * currentYield;
+    projections.push({
+      year: new Date().getFullYear() + y,
+      income: Math.round(income),
+      yieldOnCost: currentYield,
+    });
+    currentYield *= (1 + growthRate);
+  }
+
+  return projections;
+}
+
+// ── Risk Profile Classification ────────────────────────────────────
+
+export interface RiskProfile {
+  level: 'Conservateur' | 'Modéré' | 'Croissance' | 'Audacieux';
+  score: number; // 0-100
+  description: string;
+}
+
+export function classifyRiskProfile(
+  stdDev3Y: number | null,
+  beta3Y: number | null,
+  maxDrawdown: number,
+  equityWeight: number, // 0-1
+): RiskProfile {
+  let score = 50;
+
+  // Volatility component (0-30 pts)
+  if (stdDev3Y !== null) {
+    if (stdDev3Y < 0.08) score -= 15;
+    else if (stdDev3Y < 0.12) score -= 5;
+    else if (stdDev3Y > 0.18) score += 15;
+    else if (stdDev3Y > 0.14) score += 5;
+  }
+
+  // Beta component (0-20 pts)
+  if (beta3Y !== null) {
+    if (beta3Y < 0.7) score -= 10;
+    else if (beta3Y > 1.2) score += 10;
+    else if (beta3Y > 1.0) score += 5;
+  }
+
+  // Max drawdown component (0-20 pts)
+  const absMD = Math.abs(maxDrawdown);
+  if (absMD < 0.1) score -= 10;
+  else if (absMD < 0.2) score -= 5;
+  else if (absMD > 0.35) score += 10;
+  else if (absMD > 0.25) score += 5;
+
+  // Equity weight component
+  if (equityWeight < 0.4) score -= 10;
+  else if (equityWeight > 0.8) score += 10;
+
+  score = Math.max(0, Math.min(100, score));
+
+  let level: RiskProfile['level'];
+  let description: string;
+
+  if (score < 30) {
+    level = 'Conservateur';
+    description = 'Ce portefeuille présente un profil de risque faible, adapté aux investisseurs prudents qui privilégient la préservation du capital.';
+  } else if (score < 55) {
+    level = 'Modéré';
+    description = 'Ce portefeuille offre un équilibre entre croissance et protection du capital, adapté aux investisseurs ayant une tolérance au risque moyenne.';
+  } else if (score < 75) {
+    level = 'Croissance';
+    description = 'Ce portefeuille est orienté vers la croissance avec une volatilité plus élevée, adapté aux investisseurs ayant un horizon de placement long terme.';
+  } else {
+    level = 'Audacieux';
+    description = 'Ce portefeuille présente un profil de risque élevé avec un potentiel de rendement supérieur, adapté aux investisseurs agressifs.';
+  }
+
+  return { level, score, description };
+}
