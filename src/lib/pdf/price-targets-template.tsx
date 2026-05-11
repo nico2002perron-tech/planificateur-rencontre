@@ -287,7 +287,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         borderStyle: 'solid' as const,
       }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <Image src={LOGO_PATH} style={{ width: 110, height: 32, objectFit: 'contain' }} />
+          <Image src={LOGO_PATH} style={{ width: 160, height: 50, objectFit: 'contain' }} />
           <Text style={{ fontSize: 8.5, color: '#64748b' }}>{dateStr}</Text>
         </View>
         <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 3 }}>

@@ -395,7 +395,7 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
               Gestion discretionnaire
             </Text>
           </View>
-          <Image src={LOGO_PATH} style={{ width: 120, height: 40, objectFit: 'contain' as const }} />
+          <Image src={LOGO_PATH} style={{ width: 160, height: 50, objectFit: 'contain' as const }} />
         </View>
 
         {/* Client info bar */}
@@ -886,7 +886,7 @@ export function TransitionDocument({ data }: { data: TransitionPDFData }) {
         </View>
 
         <View style={{ marginTop: 20, alignItems: 'center' }}>
-          <Image src={LOGO_PATH} style={{ width: 100, height: 33, objectFit: 'contain' as const, marginBottom: 8 }} />
+          <Image src={LOGO_PATH} style={{ width: 140, height: 44, objectFit: 'contain' as const, marginBottom: 8 }} />
           <Text style={{ fontSize: 8, color: C.textTer }}>Groupe Financier Ste-Foy</Text>
           <Text style={{ fontSize: 7, color: C.textMuted, marginTop: 2 }}>
             Rapport genere le {data.date}

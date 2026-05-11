@@ -445,7 +445,7 @@ function CoverPage({ data }: { data: D }) {
       <View style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 5, backgroundColor: C.cyan }} />
 
       <View style={{ position: 'absolute', top: 40, left: 50 }}>
-        <Image src={LOGO_PATH} style={{ width: 40, height: 40 }} />
+        <Image src={LOGO_PATH} style={{ width: 60, height: 50, objectFit: 'contain' }} />
       </View>
 
       <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 60 }}>
@@ -1447,7 +1447,7 @@ function DisclaimerPage({ data }: { data: D }) {
       </View>
 
       <View style={{ marginTop: 20, alignItems: 'center' }}>
-        <Image src={LOGO_PATH} style={{ width: 30, height: 30, marginBottom: 8 }} />
+        <Image src={LOGO_PATH} style={{ width: 50, height: 42, objectFit: 'contain', marginBottom: 8 }} />
         <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Groupe Financier Ste-Foy</Text>
         <Text style={{ fontSize: 7, color: C.textTer, marginTop: 4 }}>Document confidentiel — Usage interne seulement</Text>
       </View>

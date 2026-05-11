@@ -53,6 +53,10 @@ export interface ReportData {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.substring(0, max - 1) + '…' : text;
+}
+
 function fmt(value: number, currency = 'CAD'): string {
   return new Intl.NumberFormat('fr-CA', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 }
@@ -234,7 +238,7 @@ function DonutChart({ slices, size = 90, title, labelMap, centerLabel, centerVal
               <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: s.color, marginRight: 5, flexShrink: 0 }} />
               <View style={{ flex: 1, marginRight: 4 }}>
                 <Text style={{ fontSize: 7, color: C.text }}>
-                  {(labelMap ? labelMap[s.label] || s.label : s.label).substring(0, 18)}
+                  {truncate(labelMap ? labelMap[s.label] || s.label : s.label, 18)}
                 </Text>
               </View>
               <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, flexShrink: 0 }}>
@@ -941,7 +945,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
 
         {/* ── Logo — top left ── */}
         <View style={{ paddingLeft: 60, paddingTop: 36 }}>
-          <Image src={LOGO_PATH} style={{ width: 190, height: 40 }} />
+          <Image src={LOGO_PATH} style={{ width: 200, height: 62, objectFit: 'contain' }} />
         </View>
 
         {/* ── Main title block — left aligned, editorial ── */}
@@ -1338,14 +1342,14 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           {data.portfolio.holdings.map((h: ReportHolding, i: number) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
               <Text style={{ ...styles.tdBold, width: '7%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '13%' }}>{h.name.substring(0, 18)}</Text>
+              <Text style={{ ...styles.td, width: '13%' }}>{truncate(h.name, 18)}</Text>
               <Text style={{ ...styles.td, width: '5%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
               <Text style={{ ...styles.td, width: '8%', textAlign: 'right', color: C.textSec }}>{h.avgCost > 0 ? fmtFull(h.avgCost, ccy) : '—'}</Text>
               <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
               <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
               <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
-                {ASSET_LABELS[h.assetClass]?.substring(0, 8) || h.assetClass}
+                {truncate(ASSET_LABELS[h.assetClass] || h.assetClass, 8)}
               </Text>
               <View style={{ width: '19%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 {(() => {
@@ -1520,7 +1524,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 return (
                   <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                     <Text style={{ ...styles.td, width: '5%' }}>{fmtNum(hp.quantity)}</Text>
-                    <Text style={{ ...styles.td, width: '11%', fontSize: 7.5 }}>{hp.companyName.substring(0, 20)}</Text>
+                    <Text style={{ ...styles.td, width: '11%', fontSize: 7.5 }}>{truncate(hp.companyName, 20)}</Text>
                     <Text style={{ ...styles.tdBold, width: '6%' }}>{hp.symbol}</Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
                     <View style={{ width: '7%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
@@ -1733,7 +1737,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                     <View style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                       <Text style={{ ...styles.tdBold, width: '4%', textAlign: 'center', color: C.navy }}>{sc.rank}</Text>
                       <Text style={{ ...styles.tdBold, width: '7%', fontSize: 8 }}>{sc.symbol}</Text>
-                      <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{sc.companyName.substring(0, 22)}</Text>
+                      <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{truncate(sc.companyName, 22)}</Text>
 
                       {/* Safety score + bar */}
                       <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.safety.color, fontSize: 9 }}>
@@ -2200,7 +2204,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               return (
                 <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
                   <Text style={{ ...styles.tdBold, width: '20%' }}>{v.symbol}</Text>
-                  <Text style={{ ...styles.td, width: '30%' }}>{v.name.substring(0, 28)}</Text>
+                  <Text style={{ ...styles.td, width: '30%' }}>{truncate(v.name, 28)}</Text>
                   <Text style={{ ...styles.tdBold, width: '25%', textAlign: 'right' }}>
                     {noData ? 'N/D' : v.reverseDcfGrowth !== 0 ? `${(v.reverseDcfGrowth * 100).toFixed(1)}%` : 'N/D'}
                   </Text>
@@ -2452,7 +2456,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
       <Page size="LETTER" orientation="landscape" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: C.white }}>
         <AccentBar />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 40, paddingTop: 24 }}>
-          <Image src={LOGO_PATH} style={{ width: 200, height: 42 }} />
+          <Image src={LOGO_PATH} style={{ width: 200, height: 62, objectFit: 'contain' }} />
           <Text style={{ fontSize: 8, color: C.textTer }}>{data.generatedAt}</Text>
         </View>
         <View style={{ alignItems: 'center', paddingTop: 30, paddingBottom: 20 }}>
@@ -2539,7 +2543,7 @@ export function ReportDocument({ data }: { data: ReportData }) {
           {data.portfolio.holdings.map((h, i) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
               <Text style={{ ...styles.tdBold, width: '10%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '25%' }}>{h.name.substring(0, 28)}</Text>
+              <Text style={{ ...styles.td, width: '25%' }}>{truncate(h.name, 28)}</Text>
               <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{h.quantity}</Text>
               <Text style={{ ...styles.td, width: '15%', textAlign: 'right' }}>{fmtFull(h.avgCost, data.portfolio.currency)}</Text>
               <Text style={{ ...styles.td, width: '15%', textAlign: 'right' }}>{fmtFull(h.currentPrice, data.portfolio.currency)}</Text>

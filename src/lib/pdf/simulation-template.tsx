@@ -125,7 +125,7 @@ export function SimulationPDFDocument({ data }: { data: SimulationPDFData }) {
             </Text>
             <Text style={{ fontSize: 10, color: C.textSec, marginTop: 4 }}>{data.modelName} — {data.profileName}</Text>
           </View>
-          <Image src={logoPath} style={{ width: 100, height: 40, objectFit: 'contain' }} />
+          <Image src={logoPath} style={{ width: 150, height: 48, objectFit: 'contain' }} />
         </View>
 
         {/* Date range */}
