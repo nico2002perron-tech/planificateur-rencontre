@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/features/auth/config';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { StrategyReport } from '@/lib/pdf/strategy-template';
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
-  }
-
   try {
     const data = await req.json();
 
