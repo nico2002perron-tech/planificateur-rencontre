@@ -9,18 +9,21 @@ import { Lock, Mail } from 'lucide-react';
 
 interface LoginFormProps {
   onToggle?: () => void;
+  pendingMessage?: boolean;
 }
 
-export function LoginForm({ onToggle }: LoginFormProps) {
+export function LoginForm({ onToggle, pendingMessage }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState(pendingMessage ? 'Votre compte a ete cree. Un administrateur doit l\'approuver avant que vous puissiez vous connecter.' : '');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setInfo('');
     setLoading(true);
 
     const result = await signIn('credentials', {
@@ -29,24 +32,42 @@ export function LoginForm({ onToggle }: LoginFormProps) {
       redirect: false,
     });
 
-    setLoading(false);
-
     if (result?.error) {
-      if (result.error.includes('PENDING_APPROVAL')) {
-        setError('Votre compte est en attente d\'approbation par un administrateur.');
-      } else if (result.error.includes('ACCOUNT_DISABLED')) {
-        setError('Votre compte a ete desactive. Contactez un administrateur.');
-      } else {
+      // Login failed — check WHY (pending? disabled? bad credentials?)
+      try {
+        const res = await fetch('/api/auth/check-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (data.status === 'pending') {
+          setError('Votre compte est en attente d\'approbation par un administrateur.');
+        } else if (data.status === 'inactive') {
+          setError('Votre compte a ete desactive. Contactez un administrateur.');
+        } else {
+          setError('Courriel ou mot de passe invalide');
+        }
+      } catch {
         setError('Courriel ou mot de passe invalide');
       }
     } else {
       router.push('/');
       router.refresh();
     }
+
+    setLoading(false);
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {info && (
+        <div className="bg-amber-50 text-amber-800 text-sm px-4 py-3 rounded-lg border border-amber-200">
+          {info}
+        </div>
+      )}
+
       <div className="relative">
         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted z-10" />
         <Input

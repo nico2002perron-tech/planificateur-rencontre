@@ -6,11 +6,21 @@ import { RegisterForm } from '@/components/auth/RegisterForm';
 
 export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [justRegistered, setJustRegistered] = useState(false);
+
+  function handleBackToLogin() {
+    setJustRegistered(true);
+    setMode('login');
+  }
+
+  function handleGoToRegister() {
+    setJustRegistered(false);
+    setMode('register');
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-dark via-brand-accent to-brand-primary p-4">
       <div className="w-full max-w-md">
-        {/* Logo Card */}
         <div className="bg-white rounded-[var(--radius-lg)] shadow-[var(--shadow-modal)] p-8">
           <div className="text-center mb-8">
             <div className="w-16 h-16 rounded-2xl bg-brand-dark mx-auto mb-4 flex items-center justify-center">
@@ -25,15 +35,15 @@ export default function LoginPage() {
           </div>
 
           {mode === 'login' ? (
-            <LoginForm onToggle={() => setMode('register')} />
+            <LoginForm onToggle={handleGoToRegister} pendingMessage={justRegistered} />
           ) : (
-            <RegisterForm onToggle={() => setMode('login')} />
+            <RegisterForm onToggle={handleBackToLogin} />
           )}
 
-          {mode === 'login' && (
+          {mode === 'login' && !justRegistered && (
             <p className="text-xs text-text-light text-center mt-6">
               Pas encore de compte?{' '}
-              <button onClick={() => setMode('register')} className="text-brand-primary font-semibold hover:underline">
+              <button onClick={handleGoToRegister} className="text-brand-primary font-semibold hover:underline">
                 Creer un compte
               </button>
             </p>
