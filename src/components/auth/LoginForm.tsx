@@ -32,7 +32,13 @@ export function LoginForm({ onToggle }: LoginFormProps) {
     setLoading(false);
 
     if (result?.error) {
-      setError('Courriel ou mot de passe invalide');
+      if (result.error.includes('PENDING_APPROVAL')) {
+        setError('Votre compte est en attente d\'approbation par un administrateur.');
+      } else if (result.error.includes('ACCOUNT_DISABLED')) {
+        setError('Votre compte a ete desactive. Contactez un administrateur.');
+      } else {
+        setError('Courriel ou mot de passe invalide');
+      }
     } else {
       router.push('/');
       router.refresh();

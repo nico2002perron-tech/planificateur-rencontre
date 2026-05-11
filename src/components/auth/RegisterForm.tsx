@@ -1,18 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Lock, Mail, UserCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, UserCircle, Eye, EyeOff, CheckCircle, Clock } from 'lucide-react';
 
 interface RegisterFormProps {
   onToggle: () => void;
 }
 
 export function RegisterForm({ onToggle }: RegisterFormProps) {
-  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,13 +17,14 @@ export function RegisterForm({ onToggle }: RegisterFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const hasUpper = /[A-Z]/.test(password);
   const hasLower = /[a-z]/.test(password);
   const hasDigit = /[0-9]/.test(password);
   const hasLength = password.length >= 8;
   const passwordsMatch = password === confirmPassword && password.length > 0;
-  const allValid = hasUpper && hasLower && hasDigit && hasLength && passwordsMatch;
+  const allValid = hasUpper && hasLower && hasDigit && hasLength && passwordsMatch && name.trim().length > 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,24 +44,30 @@ export function RegisterForm({ onToggle }: RegisterFormProps) {
         return;
       }
 
-      // Auto-login after successful registration
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError('Compte cree, mais erreur de connexion. Veuillez vous connecter manuellement.');
-        onToggle();
-        return;
-      }
-
-      router.push('/');
-      router.refresh();
+      setSuccess(true);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (success) {
+    return (
+      <div className="text-center py-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-50 mx-auto mb-4 flex items-center justify-center">
+          <Clock className="h-7 w-7 text-amber-500" />
+        </div>
+        <h2 className="text-lg font-bold text-text-main mb-2">Compte cree avec succes!</h2>
+        <p className="text-sm text-text-muted mb-6">
+          Votre demande a ete envoyee. Un administrateur doit approuver votre compte avant que vous puissiez vous connecter.
+        </p>
+        <button
+          onClick={onToggle}
+          className="text-brand-primary font-semibold text-sm hover:underline"
+        >
+          Retour a la connexion
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -151,7 +155,7 @@ export function RegisterForm({ onToggle }: RegisterFormProps) {
       )}
 
       <Button type="submit" loading={loading} disabled={!allValid} className="w-full">
-        Creer mon compte
+        Demander un compte
       </Button>
 
       <p className="text-xs text-text-muted text-center">

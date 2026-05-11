@@ -183,6 +183,23 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function approveUser(user: User) {
+    setTogglingId(user.id);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, ...data } : u));
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   function handleStatusClick(user: User) {
     if (user.status === 'active') {
       setConfirmDeactivate(user);
@@ -300,6 +317,11 @@ export default function AdminUsersPage() {
                 >
                   {user.role === 'admin' ? 'Admin' : 'Conseiller'}
                 </span>
+                {user.status === 'pending' && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700">
+                    En attente
+                  </span>
+                )}
                 {user.must_change_password && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
                     MDP temporaire
@@ -333,24 +355,40 @@ export default function AdminUsersPage() {
                 Modifier
               </button>
 
-              <button
-                onClick={() => handleStatusClick(user)}
-                disabled={togglingId === user.id}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
-                  user.status === 'active'
-                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'bg-red-50 text-red-600 hover:bg-red-100'
-                }`}
-              >
-                {togglingId === user.id ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : user.status === 'active' ? (
-                  <CheckCircle className="h-3 w-3" />
-                ) : (
-                  <XCircle className="h-3 w-3" />
-                )}
-                {user.status === 'active' ? 'Actif' : 'Desactive'}
-              </button>
+              {user.status === 'pending' ? (
+                <button
+                  onClick={() => approveUser(user)}
+                  disabled={togglingId === user.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all text-white active:translate-y-[1px]"
+                  style={{ backgroundColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` }}
+                >
+                  {togglingId === user.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3 w-3" />
+                  )}
+                  Approuver
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleStatusClick(user)}
+                  disabled={togglingId === user.id}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
+                    user.status === 'active'
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-red-50 text-red-600 hover:bg-red-100'
+                  }`}
+                >
+                  {togglingId === user.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : user.status === 'active' ? (
+                    <CheckCircle className="h-3 w-3" />
+                  ) : (
+                    <XCircle className="h-3 w-3" />
+                  )}
+                  {user.status === 'active' ? 'Actif' : 'Desactive'}
+                </button>
+              )}
 
               <button
                 onClick={() => setResetTarget(user)}

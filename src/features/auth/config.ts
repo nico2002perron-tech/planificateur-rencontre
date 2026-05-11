@@ -21,10 +21,19 @@ export const authOptions: NextAuthOptions = {
           .eq('email', credentials.email.toLowerCase().trim())
           .single();
 
-        if (error || !user || user.status !== 'active') return null;
+        if (error || !user) return null;
 
+        // Check password first
         const valid = await compare(credentials.password, user.password_hash);
         if (!valid) return null;
+
+        // Check status after password (so we can give specific error)
+        if (user.status === 'pending') {
+          throw new Error('PENDING_APPROVAL');
+        }
+        if (user.status !== 'active') {
+          throw new Error('ACCOUNT_DISABLED');
+        }
 
         // Track last login
         await supabase

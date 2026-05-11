@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hash } from 'bcryptjs';
 import { createClient } from '@/lib/supabase/server';
 
-// POST /api/auth/register — Public self-registration for conseillers
+// POST /api/auth/register — Public self-registration (requires admin approval)
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { name, email, password, confirmPassword } = body;
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       name: name.trim(),
       role: 'advisor',
       password_hash,
-      status: 'active',
+      status: 'pending',
       must_change_password: false,
     })
     .select('id, email, name, role, status, created_at')
