@@ -127,6 +127,32 @@ async function eodhFetch(endpoint: string): Promise<unknown> {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+export interface EODHDSearchResult {
+  Code: string;
+  Exchange: string;
+  Name: string;
+  Type: string;
+  Country: string;
+  Currency: string;
+  ISIN: string;
+}
+
+/**
+ * Search for symbols via EODHD search API.
+ * Returns up to 10 results matching the query.
+ */
+export async function searchEODHD(query: string): Promise<EODHDSearchResult[]> {
+  try {
+    const url = `${BASE}/search/${encodeURIComponent(query)}?api_token=${apiKey()}&fmt=json&limit=10`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Fetch stock fundamentals from EODHD.
  * Symbol format: "AAPL.US", "RY.TO", etc.
