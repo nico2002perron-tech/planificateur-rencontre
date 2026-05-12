@@ -10,6 +10,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { CurrencyToggle } from '@/components/ui/CurrencyToggle';
 import { Spinner } from '@/components/ui/Spinner';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { Modal } from '@/components/ui/Modal';
+import { Input } from '@/components/ui/Input';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { useSymbolsNews } from '@/lib/hooks/useNews';
 import { useSymbolLogos } from '@/lib/hooks/useLogos';
@@ -20,7 +22,7 @@ import { FundamentalData } from '@/components/tradingview/FundamentalData';
 import { SymbolInfo } from '@/components/tradingview/SymbolInfo';
 import { NewsBadge } from '@/components/portfolios/NewsBadge';
 import { NewsModal } from '@/components/portfolios/NewsModal';
-import { GitCompare, FileText, Plus } from 'lucide-react';
+import { GitCompare, FileText, Plus, Trash2 } from 'lucide-react';
 
 const tabs = [
   { id: 'holdings', label: 'Positions' },
@@ -38,7 +40,7 @@ function toTVSymbol(symbol: string): string {
 
 export default function PortfolioDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { portfolio, holdings, isLoading } = usePortfolio(id);
+  const { portfolio, holdings, isLoading, mutate } = usePortfolio(id);
   const [currency, setCurrency] = useState<'CAD' | 'USD'>('CAD');
 
   // News system
@@ -47,6 +49,62 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
   const { logos } = useSymbolLogos(symbols);
   const [newsModalSymbol, setNewsModalSymbol] = useState<string | null>(null);
   const selectedNews = newsModalSymbol ? newsMap[newsModalSymbol] : null;
+
+  // Add holding modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({ symbol: '', name: '', quantity: '', average_cost: '', asset_class: 'EQUITY', sector: '', region: 'CA' });
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState('');
+
+  async function handleAddHolding(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addForm.symbol || !addForm.quantity || !addForm.average_cost) {
+      setAddError('Symbole, quantité et coût moyen requis');
+      return;
+    }
+    setAddLoading(true);
+    setAddError('');
+    try {
+      const res = await fetch(`/api/portfolios/${id}/holdings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: addForm.symbol.toUpperCase().trim(),
+          name: addForm.name.trim() || addForm.symbol.toUpperCase().trim(),
+          quantity: parseFloat(addForm.quantity),
+          average_cost: parseFloat(addForm.average_cost),
+          asset_class: addForm.asset_class || null,
+          sector: addForm.sector || null,
+          region: addForm.region || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erreur lors de l\'ajout');
+      }
+      setShowAddModal(false);
+      setAddForm({ symbol: '', name: '', quantity: '', average_cost: '', asset_class: 'EQUITY', sector: '', region: 'CA' });
+      mutate();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setAddLoading(false);
+    }
+  }
+
+  async function handleDeleteHolding(holdingId: string, symbol: string) {
+    if (!confirm(`Supprimer ${symbol} du portefeuille ?`)) return;
+    try {
+      await fetch(`/api/portfolios/${id}/holdings`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holding_id: holdingId }),
+      });
+      mutate();
+    } catch {
+      // silent
+    }
+  }
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
   if (!portfolio) return <p className="text-text-muted p-6">Portefeuille introuvable</p>;
@@ -97,7 +155,7 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                 <div>
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-semibold">Positions</h3>
-                    <Button variant="ghost" size="sm" icon={<Plus className="h-4 w-4" />}>Ajouter</Button>
+                    <Button variant="ghost" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowAddModal(true)}>Ajouter</Button>
                   </div>
                   {!holdings || holdings.length === 0 ? (
                     <p className="text-sm text-text-muted text-center py-8">Aucune position. Ajoutez des titres à ce portefeuille.</p>
@@ -113,6 +171,7 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                           <TableHead className="text-right">Valeur</TableHead>
                           <TableHead className="text-right">Gain/Perte</TableHead>
                           <TableHead className="text-right">Poids</TableHead>
+                          <TableHead className="w-10"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -148,6 +207,15 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
                               {formatPercent(h.gain_loss_pct || 0)}
                             </TableCell>
                             <TableCell className="text-right">{(h.weight || 0).toFixed(1)}%</TableCell>
+                            <TableCell>
+                              <button
+                                onClick={() => handleDeleteHolding(h.id, h.symbol)}
+                                className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -228,8 +296,90 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
         onClose={() => setNewsModalSymbol(null)}
         symbol={newsModalSymbol || ''}
         articles={selectedNews?.articles || []}
-
       />
+
+      {/* Add Holding Modal */}
+      <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Ajouter un titre">
+        <form onSubmit={handleAddHolding} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Symbole"
+              placeholder="ex: RY.TO"
+              value={addForm.symbol}
+              onChange={(e) => setAddForm(f => ({ ...f, symbol: e.target.value }))}
+              required
+            />
+            <Input
+              label="Nom"
+              placeholder="ex: Banque Royale"
+              value={addForm.name}
+              onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Quantité"
+              type="number"
+              step="any"
+              placeholder="100"
+              value={addForm.quantity}
+              onChange={(e) => setAddForm(f => ({ ...f, quantity: e.target.value }))}
+              required
+            />
+            <Input
+              label="Coût moyen ($)"
+              type="number"
+              step="0.01"
+              placeholder="50.00"
+              value={addForm.average_cost}
+              onChange={(e) => setAddForm(f => ({ ...f, average_cost: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-text-main">Classe d&apos;actif</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-[var(--radius-sm)] border border-gray-200 bg-white text-sm"
+                value={addForm.asset_class}
+                onChange={(e) => setAddForm(f => ({ ...f, asset_class: e.target.value }))}
+              >
+                <option value="EQUITY">Actions</option>
+                <option value="FIXED_INCOME">Revenu fixe</option>
+                <option value="CASH">Liquidités</option>
+                <option value="ALTERNATIVE">Alternatifs</option>
+                <option value="REAL_ESTATE">Immobilier</option>
+              </select>
+            </div>
+            <Input
+              label="Secteur"
+              placeholder="Technology"
+              value={addForm.sector}
+              onChange={(e) => setAddForm(f => ({ ...f, sector: e.target.value }))}
+            />
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-text-main">Région</label>
+              <select
+                className="w-full px-4 py-2.5 rounded-[var(--radius-sm)] border border-gray-200 bg-white text-sm"
+                value={addForm.region}
+                onChange={(e) => setAddForm(f => ({ ...f, region: e.target.value }))}
+              >
+                <option value="CA">Canada</option>
+                <option value="US">États-Unis</option>
+                <option value="INTL">International</option>
+                <option value="EM">Marchés émergents</option>
+              </select>
+            </div>
+          </div>
+          {addError && <p className="text-sm text-red-500">{addError}</p>}
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>Annuler</Button>
+            <Button type="submit" disabled={addLoading}>
+              {addLoading ? 'Ajout...' : 'Ajouter'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
