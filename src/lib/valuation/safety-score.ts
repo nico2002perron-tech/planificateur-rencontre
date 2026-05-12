@@ -1023,8 +1023,10 @@ export function calculateDualScores(
 
 export function rankStocks(scores: StockDualScore[]): StockDualScore[] {
   const sorted = [...scores].sort((a, b) => {
-    const compositeA = a.safety.total * 0.5 + a.upside.total * 0.5;
-    const compositeB = b.safety.total * 0.5 + b.upside.total * 0.5;
+    const compositeA = (isFinite(a.safety.total) ? a.safety.total : 0) * 0.5
+                     + (isFinite(a.upside.total) ? a.upside.total : 0) * 0.5;
+    const compositeB = (isFinite(b.safety.total) ? b.safety.total : 0) * 0.5
+                     + (isFinite(b.upside.total) ? b.upside.total : 0) * 0.5;
     return compositeB - compositeA;
   });
 

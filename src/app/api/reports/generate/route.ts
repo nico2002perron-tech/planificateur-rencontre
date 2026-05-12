@@ -314,6 +314,14 @@ export async function POST(request: NextRequest) {
       etfSectorData
     );
 
+    // ── Step 4b: Advisor recommendation (if provided) ──
+    if (config?.advisor_recommendation) {
+      reportData.advisorRecommendation = {
+        text: config.advisor_recommendation,
+        nextMeetingDate: config?.next_meeting_date,
+      };
+    }
+
     // ── Step 5: Compute valuation data (if enabled) ──
     // Fetches financialData directly from Yahoo Finance (no internal API call)
     let valuationData: ValuationDataItem[] | null = null;

@@ -113,7 +113,7 @@ function NewReportWizard() {
   }, [portfolios, selectedClientId]);
 
   // Auto-select client if portfolio is preselected
-  useMemo(() => {
+  useEffect(() => {
     if (preselectedPortfolio && portfolios) {
       const p = portfolios.find((p) => p.id === preselectedPortfolio);
       if (p) {
@@ -122,7 +122,6 @@ function NewReportWizard() {
         setStep(2); // Jump to verification
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portfolios, preselectedPortfolio]);
 
   const selectedClient = clients?.find((c) => c.id === selectedClientId);

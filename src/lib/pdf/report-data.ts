@@ -147,6 +147,38 @@ export interface SectorBreakdownItem {
   weight: number;
 }
 
+// ─── Morningstar & Differentiation Types ────────────────────────
+
+export interface MorningstarSuperSector {
+  name: 'cyclique' | 'sensible' | 'defensif';
+  label: string;
+  pct: number;
+  sectors: { name: string; pct: number }[];
+}
+
+export interface MorningstarRegionGroup {
+  name: string;
+  pct: number;
+  details: { name: string; pct: number }[];
+}
+
+export interface MorningstarData {
+  superSectors: MorningstarSuperSector[];
+  regions: MorningstarRegionGroup[];
+}
+
+export interface DividendCalendarItem {
+  month: number;
+  monthLabel: string;
+  income: number;
+  holdings: { symbol: string; amount: number }[];
+}
+
+export interface AdvisorRecommendation {
+  text: string;
+  nextMeetingDate?: string;
+}
+
 // ─── FMP Data Inputs ─────────────────────────────────────────────
 
 export interface FMPProfileData {
@@ -247,6 +279,10 @@ export interface FullReportData {
     aiEnabled?: boolean;
     includeValuation?: boolean;
   };
+  morningstarData: MorningstarData;
+  dividendCalendar: DividendCalendarItem[];
+  hhi: number;
+  advisorRecommendation?: AdvisorRecommendation;
   aiContent?: AIReportContent | null;
   valuationData?: ValuationDataItem[] | null;
   benchmarkComparison?: BenchmarkComparisonData | null;
@@ -303,6 +339,138 @@ const ASSET_CLASS_RETURN: Record<string, number> = {
   REAL_ESTATE: 7,
   COMMODITY: 4,
 };
+
+// ─── Morningstar Super-Sector Mapping ────────────────────────────
+
+const MORNINGSTAR_SUPER_MAP: Record<string, 'cyclique' | 'sensible' | 'defensif'> = {
+  'Financial Services': 'cyclique',
+  'Financials': 'cyclique',
+  'Real Estate': 'cyclique',
+  'Consumer Cyclical': 'cyclique',
+  'Basic Materials': 'cyclique',
+  'Communication Services': 'sensible',
+  'Energy': 'sensible',
+  'Industrials': 'sensible',
+  'Technology': 'sensible',
+  'Consumer Defensive': 'defensif',
+  'Consumer Staples': 'defensif',
+  'Healthcare': 'defensif',
+  'Utilities': 'defensif',
+  'Military': 'sensible',
+  'Defense': 'sensible',
+  'Aerospace & Defense': 'sensible',
+};
+
+const SUPER_SECTOR_LABELS: Record<string, string> = {
+  cyclique: 'Cyclique',
+  sensible: 'Sensible',
+  defensif: 'Defensif',
+};
+
+const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aou', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// ─── Morningstar Computation ─────────────────────────────────────
+
+function computeMorningstarData(
+  sectorBreakdown: SectorBreakdownItem[],
+  allocRegions: AllocationSlice[]
+): MorningstarData {
+  const superMap: Record<'cyclique' | 'sensible' | 'defensif', { pct: number; sectors: { name: string; pct: number }[] }> = {
+    cyclique: { pct: 0, sectors: [] },
+    sensible: { pct: 0, sectors: [] },
+    defensif: { pct: 0, sectors: [] },
+  };
+
+  for (const sb of sectorBreakdown) {
+    const superSector = MORNINGSTAR_SUPER_MAP[sb.sector] || MORNINGSTAR_SUPER_MAP[sb.sectorLabel] || 'sensible';
+    superMap[superSector].pct += sb.weight;
+    superMap[superSector].sectors.push({ name: sb.sectorLabel, pct: sb.weight });
+  }
+
+  const superSectors: MorningstarSuperSector[] = (['cyclique', 'sensible', 'defensif'] as const).map(key => ({
+    name: key,
+    label: SUPER_SECTOR_LABELS[key],
+    pct: Math.round(superMap[key].pct * 100) / 100,
+    sectors: superMap[key].sectors.sort((a, b) => b.pct - a.pct),
+  }));
+
+  const regionMap: Record<string, { pct: number; details: { name: string; pct: number }[] }> = {
+    'Ameriques': { pct: 0, details: [] },
+    'Grande Europe': { pct: 0, details: [] },
+    'Grande Asie': { pct: 0, details: [] },
+  };
+
+  for (const r of allocRegions) {
+    const region = r.label;
+    if (region === 'CA' || region === 'Canada') {
+      regionMap['Ameriques'].pct += r.percentage;
+      regionMap['Ameriques'].details.push({ name: 'Canada', pct: r.percentage });
+    } else if (region === 'US' || region === 'United States') {
+      regionMap['Ameriques'].pct += r.percentage;
+      regionMap['Ameriques'].details.push({ name: 'Etats-Unis', pct: r.percentage });
+    } else if (region === 'INTL') {
+      const euroShare = Math.round(r.percentage * 0.6 * 100) / 100;
+      const asiaShare = Math.round(r.percentage * 0.4 * 100) / 100;
+      regionMap['Grande Europe'].pct += euroShare;
+      regionMap['Grande Europe'].details.push({ name: 'International (Europe)', pct: euroShare });
+      regionMap['Grande Asie'].pct += asiaShare;
+      regionMap['Grande Asie'].details.push({ name: 'International (Asie)', pct: asiaShare });
+    } else if (region === 'EM') {
+      regionMap['Grande Asie'].pct += r.percentage;
+      regionMap['Grande Asie'].details.push({ name: 'Marches emergents', pct: r.percentage });
+    } else {
+      regionMap['Ameriques'].pct += r.percentage;
+      regionMap['Ameriques'].details.push({ name: region, pct: r.percentage });
+    }
+  }
+
+  const regions: MorningstarRegionGroup[] = Object.entries(regionMap)
+    .filter(([, data]) => data.pct > 0)
+    .map(([name, data]) => ({
+      name,
+      pct: Math.round(data.pct * 100) / 100,
+      details: data.details.sort((a, b) => b.pct - a.pct),
+    }))
+    .sort((a, b) => b.pct - a.pct);
+
+  return { superSectors, regions };
+}
+
+function computeDividendCalendar(
+  holdings: ReportHolding[],
+  profiles: HoldingProfile[]
+): DividendCalendarItem[] {
+  const calendar: DividendCalendarItem[] = MONTH_LABELS.map((label, i) => ({
+    month: i + 1,
+    monthLabel: label,
+    income: 0,
+    holdings: [],
+  }));
+
+  for (const h of holdings) {
+    const profile = profiles.find(p => p.symbol === h.symbol);
+    const annualDiv = (profile?.lastDiv || 0) * h.quantity;
+    if (annualDiv <= 0) continue;
+
+    const hash = h.symbol.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    const pattern = hash % 3;
+    const quarterlyAmount = annualDiv / 4;
+
+    for (let q = 0; q < 4; q++) {
+      const monthIndex = pattern + q * 3;
+      if (monthIndex < 12) {
+        calendar[monthIndex].income += quarterlyAmount;
+        calendar[monthIndex].holdings.push({ symbol: h.symbol, amount: quarterlyAmount });
+      }
+    }
+  }
+
+  return calendar;
+}
+
+function computeHHI(holdings: ReportHolding[]): number {
+  return Math.round(holdings.reduce((sum, h) => sum + Math.pow(h.weight, 2), 0));
+}
 
 // ─── Helper: Truncate description ────────────────────────────────
 
@@ -434,7 +602,7 @@ export function buildFullReportData(
         return SECTOR_LABELS_FR[rawSector] || rawSector || '';
       })(),
       dividendAnnual: (profile?.lastDiv || 0) * h.quantity,
-      region: h.region || (profile?.country === 'CA' || profile?.country === 'Canada' ? 'CA' : profile?.country === 'US' || profile?.country === 'United States' ? 'US' : h.region || 'CA'),
+      region: h.region || (profile?.country === 'CA' || profile?.country === 'Canada' ? 'CA' : profile?.country === 'US' || profile?.country === 'United States' ? 'US' : 'CA'),
     };
   });
 
@@ -531,9 +699,12 @@ export function buildFullReportData(
       : 0;
 
     // Determine target source
+    // Note: 'estimated' is assigned later in the generate route (Step 5b) for holdings
+    // that have no analyst consensus but get a valuation-based estimated target.
     let targetSource: 'consensus' | 'estimated' | 'manual' | 'none' = 'none';
     if (customTarget != null && customTarget > 0) targetSource = 'manual';
     else if (target?.targetConsensus && target.targetConsensus > 0) targetSource = 'consensus';
+    // 'estimated' is set dynamically in /api/reports/generate when valuation data fills gaps
 
     return {
       symbol: h.symbol,
@@ -677,6 +848,9 @@ export function buildFullReportData(
     annualReturns,
     priceTargetSummary,
     sectorBreakdown,
+    morningstarData: computeMorningstarData(sectorBreakdown, byRegion),
+    dividendCalendar: computeDividendCalendar(holdings, holdingProfiles),
+    hhi: computeHHI(holdings),
     generatedAt: new Intl.DateTimeFormat('fr-CA', {
       year: 'numeric',
       month: 'long',

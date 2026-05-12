@@ -6,13 +6,21 @@
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+const FETCH_TIMEOUT_MS = 15_000; // 15s timeout for all Yahoo fetches
+
+function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 // ── Crumb cache module-level ──────────────────────────────────────────────────
 let crumbCache: { crumb: string; cookie: string; ts: number } | null = null;
 
 export async function getYahooCrumb(): Promise<{ crumb: string; cookie: string }> {
   if (crumbCache && Date.now() - crumbCache.ts < 3_600_000) return crumbCache;
 
-  const cookieRes = await fetch('https://fc.yahoo.com', {
+  const cookieRes = await fetchWithTimeout('https://fc.yahoo.com', {
     headers: { 'User-Agent': UA, Accept: '*/*' },
     redirect: 'follow',
   });
@@ -22,7 +30,7 @@ export async function getYahooCrumb(): Promise<{ crumb: string; cookie: string }
   });
   const cookie = rawCookies.join('; ');
 
-  const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+  const crumbRes = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
     headers: { 'User-Agent': UA, Cookie: cookie },
   });
   if (!crumbRes.ok) throw new Error(`Yahoo crumb: ${crumbRes.status}`);
@@ -36,13 +44,13 @@ export async function getYahooCrumb(): Promise<{ crumb: string; cookie: string }
 export async function yahooFetch(url: string): Promise<Response> {
   const { crumb, cookie } = await getYahooCrumb();
   const sep = url.includes('?') ? '&' : '?';
-  const res = await fetch(`${url}${sep}crumb=${encodeURIComponent(crumb)}`, {
+  const res = await fetchWithTimeout(`${url}${sep}crumb=${encodeURIComponent(crumb)}`, {
     headers: { 'User-Agent': UA, Cookie: cookie, Accept: 'application/json' },
   });
   if (res.status === 401) {
     crumbCache = null;
     const { crumb: c2, cookie: ck2 } = await getYahooCrumb();
-    return fetch(`${url}${sep}crumb=${encodeURIComponent(c2)}`, {
+    return fetchWithTimeout(`${url}${sep}crumb=${encodeURIComponent(c2)}`, {
       headers: { 'User-Agent': UA, Cookie: ck2, Accept: 'application/json' },
     });
   }
@@ -194,7 +202,7 @@ export async function getYahooPriceTargets(symbols: string[]): Promise<Map<strin
 async function resolveCompanyName(symbol: string): Promise<string | null> {
   try {
     const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=0&quotesCount=1&enableFuzzyQuery=false`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
     });
     if (!res.ok) return null;
@@ -228,7 +236,7 @@ export async function getYahooNews(symbol: string, count = 8): Promise<YahooNews
 
     // Step 2: search news by company name (much more relevant than ticker search)
     const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(searchQuery)}&newsCount=${count}&quotesCount=0&enableFuzzyQuery=false`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
     });
     if (!res.ok) return [];

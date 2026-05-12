@@ -77,6 +77,13 @@ CREATE TABLE holdings (
   sector TEXT,
   region TEXT CHECK (region IN ('CA', 'US', 'INTL', 'EM')),
   notes TEXT,
+  -- Fixed income fields (NULL for equities)
+  cusip TEXT,
+  coupon NUMERIC(8,4),             -- annual coupon rate (e.g. 5.82 = 5.82%)
+  maturity DATE,                    -- maturity date
+  yield_to_maturity NUMERIC(8,4),  -- YTM (%)
+  par_value NUMERIC(18,4) DEFAULT 100, -- face value per unit
+  rating TEXT,                      -- credit rating (S&P or DBRS)
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -664,3 +671,18 @@ CREATE TABLE event_team_members (
 
 CREATE INDEX idx_event_team_members_team ON event_team_members(team_id);
 CREATE UNIQUE INDEX idx_event_team_members_unique_email ON event_team_members(team_id, email) WHERE status = 'confirmed';
+
+-- ============================================
+-- 30. GOVERNMENT_YIELDS (courbe des taux Banque du Canada)
+-- Refreshed daily via /api/cron/refresh-yields
+-- ============================================
+CREATE TABLE government_yields (
+  series TEXT PRIMARY KEY,
+  term TEXT NOT NULL,                   -- 'OVERNIGHT', '2Y', '5Y', '10Y', '30Y'
+  term_years NUMERIC(5,2) NOT NULL,     -- 0, 2, 5, 10, 30
+  yield_pct NUMERIC(8,4) NOT NULL,      -- yield in percent (e.g. 3.47)
+  observation_date DATE NOT NULL,        -- date of the observation from BoC
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_government_yields_term ON government_yields(term_years);

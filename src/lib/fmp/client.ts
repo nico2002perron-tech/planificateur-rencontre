@@ -11,6 +11,7 @@ import type {
 
 const API_KEY = process.env.FMP_API_KEY;
 const BASE_URL = 'https://financialmodelingprep.com/stable';
+const FETCH_TIMEOUT_MS = 15_000; // 15s timeout for all FMP fetches
 
 // ─── Generic fetch helper for /stable/ API ──────────────────────
 
@@ -21,7 +22,9 @@ async function fmpFetch<T>(endpoint: string, params: Record<string, string> = {}
   url.searchParams.set('apikey', API_KEY);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
-  const res = await fetch(url.toString(), { next: { revalidate: 0 } });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const res = await fetch(url.toString(), { next: { revalidate: 0 }, signal: controller.signal }).finally(() => clearTimeout(timer));
 
   if (!res.ok) {
     throw new Error(`FMP API error: ${res.status} ${res.statusText}`);
@@ -93,7 +96,9 @@ async function getQuoteFromProfile(symbol: string): Promise<FMPQuote | null> {
     symbol: profile.symbol,
     name: profile.companyName,
     price: profile.price,
-    changesPercentage: profile.changes ? (profile.changes / (profile.price - profile.changes)) * 100 : 0,
+    changesPercentage: profile.changes && (profile.price - profile.changes) !== 0
+      ? (profile.changes / (profile.price - profile.changes)) * 100
+      : 0,
     change: profile.changes || 0,
     dayLow: 0,
     dayHigh: 0,

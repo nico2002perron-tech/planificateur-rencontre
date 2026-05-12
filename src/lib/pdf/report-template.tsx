@@ -34,7 +34,6 @@ import type {
   SectorBreakdownItem,
   ValuationDataItem,
   BenchmarkComparisonData,
-  StockDualScore,
 } from './report-data';
 
 // ─── Backward compat: keep old interface exported ───────────────
@@ -863,6 +862,187 @@ function BenchmarkComparisonChart({ data }: { data: BenchmarkComparisonData }) {
 }
 
 
+// ─── New Sub-Components ─────────────────────────────────────────
+
+/** Morningstar Style Triangle — barycentric positioning of portfolio */
+function MorningstarTriangle({ data }: { data: import('./report-data').MorningstarData }) {
+  const size = 120;
+  const cx = size / 2;
+  const pad = 12;
+  // Triangle vertices: top = Sensible, bottom-left = Cyclique, bottom-right = Defensif
+  const topX = cx, topY = pad;
+  const blX = pad, blY = size - pad;
+  const brX = size - pad, brY = size - pad;
+
+  const cyclique = data.superSectors.find(s => s.name === 'cyclique')?.pct || 0;
+  const sensible = data.superSectors.find(s => s.name === 'sensible')?.pct || 0;
+  const defensif = data.superSectors.find(s => s.name === 'defensif')?.pct || 0;
+  const total = cyclique + sensible + defensif || 1;
+
+  // Barycentric coordinates
+  const wC = cyclique / total;
+  const wS = sensible / total;
+  const wD = defensif / total;
+  const dotX = wC * blX + wS * topX + wD * brX;
+  const dotY = wC * blY + wS * topY + wD * brY;
+
+  const SUPER_COLORS: Record<string, string> = {
+    cyclique: '#f59e0b',
+    sensible: '#0077b6',
+    defensif: '#10b981',
+  };
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 6 }}>
+        Style Morningstar
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          {/* Triangle outline */}
+          <Path
+            d={`M ${topX} ${topY} L ${blX} ${blY} L ${brX} ${brY} Z`}
+            fill="#f1f5f9"
+            stroke={C.cardBorder}
+            strokeWidth={1}
+          />
+          {/* Grid lines (inner triangle at 33% and 66%) */}
+          {[0.33, 0.66].map((t, i) => {
+            const m1x = topX + (blX - topX) * t, m1y = topY + (blY - topY) * t;
+            const m2x = topX + (brX - topX) * t, m2y = topY + (brY - topY) * t;
+            return <Path key={i} d={`M ${m1x} ${m1y} L ${m2x} ${m2y}`} stroke={C.cardBorder} strokeWidth={0.5} fill="none" />;
+          })}
+          {/* Portfolio position dot */}
+          <Circle cx={dotX} cy={dotY} r={6} fill={C.cyan} />
+          <Circle cx={dotX} cy={dotY} r={3} fill={C.white} />
+        </Svg>
+        {/* Legend */}
+        <View style={{ gap: 4 }}>
+          {data.superSectors.map((ss, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: SUPER_COLORS[ss.name] || C.textTer }} />
+              <Text style={{ fontSize: 7, color: C.text, width: 50 }}>{ss.label}</Text>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{ss.pct.toFixed(1)}%</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Morningstar Regions — horizontal bars for Ameriques/Europe/Asie */
+function MorningstarRegions({ regions }: { regions: import('./report-data').MorningstarRegionGroup[] }) {
+  const maxPct = Math.max(...regions.map(r => r.pct), 1);
+  const REGION_COLORS: Record<string, string> = {
+    'Ameriques': '#03045e',
+    'Grande Europe': '#0077b6',
+    'Grande Asie': '#00b4d8',
+  };
+  return (
+    <View>
+      <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 6 }}>
+        Repartition regionale Morningstar
+      </Text>
+      {regions.map((r, i) => (
+        <View key={i} style={{ marginBottom: 6 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{r.name}</Text>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{r.pct.toFixed(1)}%</Text>
+          </View>
+          <View style={{ height: 10, backgroundColor: '#e2e8f0', borderRadius: 5, overflow: 'hidden' as const }}>
+            <View style={{
+              height: '100%',
+              width: `${Math.max((r.pct / maxPct) * 100, 3)}%`,
+              backgroundColor: REGION_COLORS[r.name] || C.cyan,
+              borderRadius: 5,
+            }} />
+          </View>
+          {r.details.length > 1 && (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+              {r.details.map((d, j) => (
+                <Text key={j} style={{ fontSize: 6, color: C.textTer }}>{d.name}: {d.pct.toFixed(1)}%</Text>
+              ))}
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Dividend Calendar Chart — 12 vertical bars (Jan-Dec) */
+function DividendCalendarChart({ calendar, ccy }: {
+  calendar: import('./report-data').DividendCalendarItem[];
+  ccy: string;
+}) {
+  const maxIncome = Math.max(...calendar.map(c => c.income), 1);
+  const barMaxH = 80;
+  const totalAnnual = calendar.reduce((s, c) => s + c.income, 0);
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+        <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+          Calendrier des dividendes estimes
+        </Text>
+        <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.up }}>
+          Total: {fmt(totalAnnual, ccy)} / an
+        </Text>
+      </View>
+      <View style={{
+        flexDirection: 'row', alignItems: 'flex-end', height: barMaxH + 20,
+        borderBottomWidth: 1, borderBottomColor: C.cardBorder, borderBottomStyle: 'solid' as const,
+        paddingBottom: 0,
+      }}>
+        {calendar.map((m, i) => {
+          const h = m.income > 0 ? Math.max((m.income / maxIncome) * barMaxH, 4) : 0;
+          return (
+            <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
+              {m.income > 0 && (
+                <Text style={{ fontSize: 5.5, color: C.up, fontFamily: 'Open Sans', fontWeight: 600, marginBottom: 2 }}>
+                  {fmt(m.income, ccy)}
+                </Text>
+              )}
+              <View style={{
+                width: 28, height: h, borderTopLeftRadius: 4, borderTopRightRadius: 4,
+                backgroundColor: m.income > 0 ? C.up : '#e2e8f0',
+              }} />
+            </View>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', marginTop: 3 }}>
+        {calendar.map((m, i) => (
+          <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 6.5, color: C.textTer }}>{m.monthLabel}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** GainLossIndicator — small green/red visual for gain/loss columns */
+function GainLossIndicator({ value, pct }: { value: number; pct: number }) {
+  const isUp = value >= 0;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+      <Svg width={8} height={8} viewBox="0 0 8 8">
+        {isUp ? (
+          <Path d="M 4 1 L 7 6 L 1 6 Z" fill={C.up} />
+        ) : (
+          <Path d="M 4 7 L 7 2 L 1 2 Z" fill={C.down} />
+        )}
+      </Svg>
+      <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: isUp ? C.up : C.down }}>
+        {fmtPct(pct)}
+      </Text>
+    </View>
+  );
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 // ██ FULL REPORT DOCUMENT — Modern Fintech Dashboard Style        ██
 // ═══════════════════════════════════════════════════════════════════
@@ -876,37 +1056,61 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
   const benchData = data.benchmarkComparison;
   const hasBenchmark = !!benchData;
   const hasAI = !!ai;
-  const stockScores = data.stockScores;
-  const hasScores = stockScores && stockScores.length > 0;
   const profilePageCount = Math.max(1, Math.ceil(data.holdingProfiles.length / 4));
-  const totalPages = 6 + profilePageCount + (hasValuation ? 3 : 0) + (hasBenchmark ? 1 : 0) + (hasScores ? 1 : 0);
   const hasTargets = data.holdingProfiles.some((hp) => hp.targetPrice > 0);
   const hasReturns = data.annualReturns.length > 0;
   const estimatedDividend = data.holdingProfiles.reduce((sum, hp) => sum + (hp.lastDiv * hp.quantity), 0);
   const totalGainWithDiv = data.priceTargetSummary.totalEstimatedGainDollar + estimatedDividend;
   const totalGainPctWithDiv = data.priceTargetSummary.totalCurrentValue > 0
     ? (totalGainWithDiv / data.priceTargetSummary.totalCurrentValue) * 100 : 0;
-  const coveredCount = data.holdingProfiles.filter((hp) => hp.targetPrice > 0).length;
-  const consensusCount = data.holdingProfiles.filter((hp) => hp.targetSource === 'consensus').length;
-  const estimatedCount = data.holdingProfiles.filter((hp) => hp.targetSource === 'estimated').length;
-  const totalAnalysts = data.holdingProfiles.reduce((sum, hp) => sum + hp.numberOfAnalysts, 0);
-  const weightedBeta = data.holdingProfiles.reduce((sum, hp) => {
-    const w = data.portfolio.totalValue > 0 ? (hp.currentPrice * hp.quantity) / data.portfolio.totalValue : 0;
-    return sum + w * hp.beta;
-  }, 0);
-  const scoreOffset = hasScores ? 1 : 0;
-  const valOffset = hasValuation ? 3 : 0;
-  const benchOffset = hasBenchmark ? 1 : 0;
+  const hasFixedIncome = data.portfolio.holdings.some(h => h.assetClass === 'FIXED_INCOME');
+  const hasAdvisorRec = !!data.advisorRecommendation?.text;
+  const hasDividends = estimatedDividend > 0;
   const gainLoss = data.portfolio.totalGainLoss;
   const gainLossPct = data.portfolio.totalGainLossPercent;
+
+  // ── Total pages: 1 cover + 2 TDM + 3 overview + 4 composition + 5 dividends (cond)
+  //    + 6 perspectives + 7 advisor (cond) + 8 fixed income (cond)
+  //    + A profiles + B valuation (cond, 2pg) + C benchmark (cond)
+  //    + D stress/risk + E disclaimers
+  const corePages = 6; // cover + TDM + overview + composition + perspectives + disclaimers
+  const condPages =
+    (hasDividends ? 1 : 0) +
+    (hasAdvisorRec ? 1 : 0) +
+    (hasFixedIncome ? 1 : 0) +
+    profilePageCount +
+    (hasValuation ? 2 : 0) +
+    (hasBenchmark ? 1 : 0) +
+    1; // stress/risk always present
+  const totalPages = corePages + condPages;
+
+  // Page counter helper
+  let pageNum = 0;
+  const nextPage = () => ++pageNum;
+
+  // Pre-assign page numbers for table of contents
+  const pgCover = nextPage();
+  const pgTDM = nextPage();
+  const pgOverview = nextPage();
+  const pgComposition = nextPage();
+  const pgDividends = hasDividends ? nextPage() : 0;
+  const pgPerspectives = nextPage();
+  const pgAdvisor = hasAdvisorRec ? nextPage() : 0;
+  const pgFixedIncome = hasFixedIncome ? nextPage() : 0;
+  const pgProfileStart = nextPage();
+  for (let i = 1; i < profilePageCount; i++) nextPage();
+  const pgValStart = hasValuation ? nextPage() : 0;
+  if (hasValuation) nextPage(); // DCF inverse page
+  const pgBenchmark = hasBenchmark ? nextPage() : 0;
+  const pgRisk = nextPage();
+  const pgDisclaimers = nextPage();
 
   return (
     <Document>
 
-      {/* ═══ PAGE 1: COVER PAGE — Canva layout, white background ════ */}
+      {/* ═══ PAGE 1: COVER PAGE ═════════════════════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={{ fontFamily: 'Open Sans', padding: 0, backgroundColor: C.white }}>
 
-        {/* ── Background: white with geometric SVG artwork ── */}
         <Svg width={792} height={612} style={{ position: 'absolute', top: 0, left: 0 }}>
           <Defs>
             <LinearGradient id="topBar" x1="0" y1="0" x2="792" y2="0">
@@ -915,15 +1119,11 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               <Stop offset="100%" stopColor={C.blue} />
             </LinearGradient>
           </Defs>
-
-          {/* Large decorative circles — soft on white */}
           <Circle cx={680} cy={100} r={120} fill={C.blue} opacity={0.04} />
           <Circle cx={720} cy={160} r={80} fill={C.cyan} opacity={0.05} />
           <Circle cx={100} cy={500} r={100} fill={C.blue} opacity={0.03} />
           <Circle cx={50} cy={450} r={60} fill={C.cyan} opacity={0.04} />
           <Circle cx={400} cy={580} r={140} fill={C.blue} opacity={0.02} />
-
-          {/* Abstract rising bar chart silhouette (bottom-right) */}
           <Rect x={580} y={440} width={22} height={120} rx={4} fill={C.cyan} opacity={0.05} />
           <Rect x={610} y={400} width={22} height={160} rx={4} fill={C.cyan} opacity={0.06} />
           <Rect x={640} y={360} width={22} height={200} rx={4} fill={C.cyan} opacity={0.07} />
@@ -931,24 +1131,16 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           <Rect x={700} y={260} width={22} height={300} rx={4} fill={C.blue} opacity={0.07} />
           <Rect x={730} y={220} width={22} height={340} rx={4} fill={C.blue} opacity={0.06} />
           <Rect x={760} y={180} width={22} height={380} rx={4} fill={C.blue} opacity={0.05} />
-
-          {/* Subtle horizontal line accents */}
           <Rect x={60} y={195} width={110} height={0.5} fill={C.cyan} opacity={0.25} />
           <Rect x={60} y={350} width={80} height={0.5} fill={C.blue} opacity={0.15} />
-
-          {/* Top gradient accent bar */}
           <Rect x={0} y={0} width={792} height={3} fill="url(#topBar)" />
-
-          {/* Bottom thin line */}
           <Rect x={60} y={570} width={672} height={0.5} fill={C.cardBorder} />
         </Svg>
 
-        {/* ── Logo — top left ── */}
         <View style={{ paddingLeft: 60, paddingTop: 36 }}>
           <Image src={LOGO_PATH} style={{ width: 200, height: 62, objectFit: 'contain' }} />
         </View>
 
-        {/* ── Main title block — left aligned, editorial ── */}
         <View style={{ paddingLeft: 60, paddingTop: 40 }}>
           <Text style={{ fontSize: 13, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan, letterSpacing: 4, textTransform: 'uppercase' as const, marginBottom: 10 }}>
             Rapport confidentiel
@@ -970,9 +1162,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           )}
         </View>
 
-        {/* ── Three KPI cards — light glass style ── */}
+        {/* Three KPI cards */}
         <View style={{ flexDirection: 'row', gap: 14, paddingHorizontal: 60, marginTop: 32 }}>
-          {/* Total Value */}
           <View style={{
             flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 18,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
@@ -985,28 +1176,21 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </Text>
           </View>
 
-          {/* Potential Gain — cyan accent, never red */}
           <View style={{
             flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 18,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
           }}>
             <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
-              Gain potentiel total (12 mois)
+              Gain / Perte non realise
             </Text>
-            <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.blue, lineHeight: 1.1 }}>
-              {fmt(totalGainWithDiv, ccy)}
+            <Text style={{ fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: gainLoss >= 0 ? C.up : C.down, lineHeight: 1.1 }}>
+              {fmt(gainLoss, ccy)}
             </Text>
-            <Text style={{ fontSize: 10, color: C.cyan, fontFamily: 'Open Sans', fontWeight: 600, marginTop: 5 }}>
-              soit {fmtPct(totalGainPctWithDiv)}
+            <Text style={{ fontSize: 10, color: gainLossPct >= 0 ? C.up : C.down, fontFamily: 'Open Sans', fontWeight: 600, marginTop: 5 }}>
+              soit {fmtPct(gainLossPct)}
             </Text>
-            {estimatedDividend > 0 && (
-              <Text style={{ fontSize: 7, color: C.textSec, marginTop: 3 }}>
-                incl. {fmt(estimatedDividend, ccy)} en dividendes
-              </Text>
-            )}
           </View>
 
-          {/* Number of Positions */}
           <View style={{
             flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 18,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
@@ -1023,7 +1207,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         </View>
 
-        {/* ── Prepared For / Prepared By ── */}
+        {/* Prepared For / By */}
         <View style={{ flexDirection: 'row', gap: 14, paddingHorizontal: 60, marginTop: 20 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan, textTransform: 'uppercase' as const, letterSpacing: 2, marginBottom: 6 }}>
@@ -1051,7 +1235,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         </View>
 
-        {/* ── Bottom branding ── */}
         <View style={{
           position: 'absolute', bottom: 18, left: 60, right: 60,
           flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -1063,26 +1246,111 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             {data.generatedAt}
           </Text>
         </View>
-
       </Page>
 
 
-      {/* ═══ PAGE 2: ALLOCATION DASHBOARD ═══════════════════════════ */}
+      {/* ═══ PAGE 2: TABLE DES MATIERES ══════════════════════════ */}
+      <Page size="LETTER" orientation="landscape" style={styles.page}>
+        <AccentBar />
+        <Text style={styles.sectionTitle}>Table des matieres</Text>
+
+        <View style={{ flexDirection: 'row', gap: 30, marginTop: 10 }}>
+          {/* Column 1 — Core pages */}
+          <View style={{ flex: 1 }}>
+            {[
+              { num: pgOverview, label: 'Vue d\'ensemble du portefeuille' },
+              { num: pgComposition, label: 'Composition et gain/perte' },
+              ...(pgDividends ? [{ num: pgDividends, label: 'Revenus et dividendes' }] : []),
+              { num: pgPerspectives, label: 'Perspectives et cours cibles' },
+              ...(pgAdvisor ? [{ num: pgAdvisor, label: 'Recommandation du conseiller' }] : []),
+              ...(pgFixedIncome ? [{ num: pgFixedIncome, label: 'Revenus fixes' }] : []),
+            ].map((item, i) => (
+              <View key={i} style={{
+                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: C.cardBorder, borderBottomStyle: 'solid' as const,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{
+                    width: 22, height: 22, borderRadius: 11, backgroundColor: C.cyan,
+                    justifyContent: 'center', alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>{item.num}</Text>
+                  </View>
+                  <Text style={{ fontSize: 10, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{item.label}</Text>
+                </View>
+                <Text style={{ fontSize: 9, color: C.textTer }}>p. {item.num}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Column 2 — Annexes */}
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 8 }}>
+              Annexes
+            </Text>
+            {[
+              { num: pgProfileStart, label: 'A — Fiches descriptives des titres' },
+              ...(pgValStart ? [{ num: pgValStart, label: 'B — Valorisation intrinseque et DCF inverse' }] : []),
+              ...(pgBenchmark ? [{ num: pgBenchmark, label: 'C — Comparaison de performance' }] : []),
+              { num: pgRisk, label: 'D — Stress tests et risque' },
+              { num: pgDisclaimers, label: 'E — Avertissements importants' },
+            ].map((item, i) => (
+              <View key={i} style={{
+                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: C.cardBorder, borderBottomStyle: 'solid' as const,
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{
+                    width: 22, height: 22, borderRadius: 4, backgroundColor: C.navy,
+                    justifyContent: 'center', alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>{item.label.charAt(0)}</Text>
+                  </View>
+                  <Text style={{ fontSize: 10, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{item.label}</Text>
+                </View>
+                <Text style={{ fontSize: 9, color: C.textTer }}>p. {item.num}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* AI Executive Summary */}
+        {ai?.executiveSummary && (
+          <View style={{
+            backgroundColor: '#f0f9ff', borderRadius: 12, padding: 14, marginTop: 20,
+            borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
+            borderLeftWidth: 4, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <View style={{ width: 20, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginRight: 6 }} />
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+                Sommaire executif — Analyse IA
+              </Text>
+            </View>
+            <Text style={{ fontSize: 8.5, color: C.text, lineHeight: 1.5 }}>{ai.executiveSummary}</Text>
+          </View>
+        )}
+
+        <PageFooter num={pgTDM} total={totalPages} />
+      </Page>
+
+
+      {/* ═══ PAGE 3: VUE D'ENSEMBLE (allocation + Morningstar + top 5) ═══ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
 
-        {/* ── Header row: Title + 5 KPI stats ── */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
-          <Text style={styles.sectionTitle}>Allocation du portefeuille</Text>
+          <Text style={styles.sectionTitle}>Vue d&apos;ensemble du portefeuille</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {[
               { label: 'Valeur totale', value: fmt(data.portfolio.totalValue, ccy), color: C.navy },
+              { label: 'G/P', value: `${fmtPct(gainLossPct)}`, color: gainLoss >= 0 ? C.up : C.down },
               { label: 'Positions', value: String(data.portfolio.holdings.length), color: C.cyan },
             ].map((kpi, i) => (
               <View key={i} style={{
                 backgroundColor: '#f3f6fa', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7,
                 borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
-                alignItems: 'center', minWidth: 85,
+                alignItems: 'center', minWidth: 80,
               }}>
                 <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 2 }}>
                   {kpi.label}
@@ -1095,36 +1363,28 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         </View>
 
-        {/* ── Main dashboard: 3 columns ── */}
         <View style={{ flexDirection: 'row', gap: 14, marginBottom: 12 }}>
 
-          {/* ▌ COL 1: Large donut (asset class) + allocation bar ▌ */}
+          {/* COL 1: Asset class donut + allocation bar */}
           <View style={{
-            width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
+            width: '30%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginRight: 8 }} />
-              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
-                Classes d&apos;actif
-              </Text>
+              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>Classes d&apos;actif</Text>
             </View>
             <DonutChart
               slices={data.allocations.byAssetClass.map((a) => ({
-                label: a.label,
-                percentage: a.percentage,
-                color: a.color,
-                value: a.value,
+                label: a.label, percentage: a.percentage, color: a.color, value: a.value,
               }))}
-              size={120}
+              size={110}
               centerValue={fmt(data.portfolio.totalValue, ccy)}
               centerLabel="Total"
               labelMap={ASSET_LABELS}
             />
-            {/* Stacked allocation bar */}
-            <View style={{ marginTop: 12 }}>
+            <View style={{ marginTop: 10 }}>
               <AllocationBar slices={data.allocations.byAssetClass} />
-              {/* Asset class detail rows */}
               {data.allocations.byAssetClass.map((a, i) => (
                 <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -1138,81 +1398,48 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             </View>
           </View>
 
-          {/* ▌ COL 2: Sector Donut + Geographic ▌ */}
-          <View style={{ width: '36%', gap: 10 }}>
-            {/* Sector donut chart */}
+          {/* COL 2: Sector donut + Morningstar triangle + regions */}
+          <View style={{ width: '38%', gap: 10 }}>
+            {/* Sector donut */}
             <View style={{
               backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
               borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                 <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.gold, marginRight: 8 }} />
-                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
-                  Exposition sectorielle
-                </Text>
+                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>Exposition sectorielle</Text>
               </View>
               <DonutChart
                 slices={data.sectorBreakdown.map((s) => ({
-                  label: s.sectorLabel,
-                  percentage: s.weight,
+                  label: s.sectorLabel, percentage: s.weight,
                   color: SECTOR_COLOR_MAP[s.sectorLabel] || '#94a3b8',
                 }))}
-                size={110}
+                size={100}
                 centerValue={`${data.sectorBreakdown.length}`}
                 centerLabel="Secteurs"
               />
-              <View style={{ marginTop: 10 }}>
-                {data.sectorBreakdown.slice(0, 10).map((s, i) => {
-                  const sColor = SECTOR_COLOR_MAP[s.sectorLabel] || '#94a3b8';
-                  return (
-                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5, paddingVertical: 2 }}>
-                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: sColor, marginRight: 7, flexShrink: 0 }} />
-                      <Text style={{ fontSize: 7.5, color: C.text, flex: 1 }}>{s.sectorLabel}</Text>
-                      <Text style={{ fontSize: 7, color: C.textSec, marginRight: 6 }}>{s.holdings.length} titre{s.holdings.length > 1 ? 's' : ''}</Text>
-                      <View style={{
-                        backgroundColor: sColor,
-                        paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
-                      }}>
-                        <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.white }}>
-                          {s.weight.toFixed(1)}%
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
             </View>
 
-            {/* Region progress bars */}
+            {/* Morningstar Triangle + Regions side by side */}
             <View style={{
-              backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
-              borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+              flexDirection: 'row', gap: 10,
             }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                <View style={{ width: 24, height: 3, borderRadius: 2, backgroundColor: C.blue, marginRight: 8 }} />
-                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
-                  Exposition geographique
-                </Text>
+              <View style={{
+                flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 12,
+                borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+              }}>
+                <MorningstarTriangle data={data.morningstarData} />
               </View>
-              {data.allocations.byRegion.map((r, i) => (
-                <View key={i} style={{ marginBottom: i < data.allocations.byRegion.length - 1 ? 6 : 0 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
-                      {REGION_LABELS[r.label] || r.label}
-                    </Text>
-                    <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
-                      {r.percentage.toFixed(1)}% — {fmt(r.value, ccy)}
-                    </Text>
-                  </View>
-                  <View style={{ height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' as const }}>
-                    <View style={{ height: '100%', width: `${Math.max(r.percentage, 2)}%`, backgroundColor: r.color, borderRadius: 4 }} />
-                  </View>
-                </View>
-              ))}
+              <View style={{
+                flex: 1, backgroundColor: '#f3f6fa', borderRadius: 14, padding: 12,
+                borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+              }}>
+                <MorningstarRegions regions={data.morningstarData.regions} />
+              </View>
             </View>
           </View>
 
-          {/* ▌ COL 3: Top 5 positions ranking ▌ */}
+          {/* COL 3: Top 5 positions */}
           <View style={{
             width: '32%', backgroundColor: '#f3f6fa', borderRadius: 14, padding: 14,
             borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
@@ -1237,9 +1464,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                         backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
                         justifyContent: 'center', alignItems: 'center', marginRight: 7,
                       }}>
-                        <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>
-                          {i + 1}
-                        </Text>
+                        <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 700, color: C.white }}>{i + 1}</Text>
                       </View>
                       <View>
                         <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{pos.symbol}</Text>
@@ -1255,8 +1480,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 </View>
               ));
             })()}
-
-            {/* Concentration indicator */}
             {data.topPositions.length > 0 && (() => {
               const top5Weight = data.topPositions.slice(0, 5).reduce((s, p) => s + p.weight, 0);
               return (
@@ -1274,135 +1497,88 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         </View>
 
-        {/* AI Executive Summary — enhanced dashboard integration */}
-        {ai?.executiveSummary && (
-          <View style={{
-            backgroundColor: '#f0f9ff', borderRadius: 12, padding: 14, marginTop: 2,
-            borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
-            borderLeftWidth: 4, borderLeftColor: C.cyan, borderLeftStyle: 'solid' as const,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-              <View style={{ width: 20, height: 3, borderRadius: 2, backgroundColor: C.cyan, marginRight: 6 }} />
-              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.cyan, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
-                Sommaire executif — Analyse IA
-              </Text>
-            </View>
-            <Text style={{ fontSize: 8.5, color: C.text, lineHeight: 1.5 }}>{ai.executiveSummary}</Text>
-          </View>
-        )}
-
-        <PageFooter num={2} total={totalPages} />
+        <PageFooter num={pgOverview} total={totalPages} />
       </Page>
 
 
-      {/* ═══ PAGE 3: PERFORMANCE & HOLDINGS ═══════════════════════ */}
+      {/* ═══ PAGE 4: COMPOSITION + GAIN/PERTE ═══════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
         <Text style={styles.sectionTitle}>Composition du portefeuille</Text>
 
         {hasReturns && (
-          <View style={{ marginBottom: 14 }}>
+          <View style={{ marginBottom: 10 }}>
             <PerformanceBarChart returns={data.annualReturns} />
-            {/* Compact returns summary */}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-              {data.annualReturns.map((r, i) => (
-                <View key={i} style={{
-                  flex: 1, backgroundColor: C.card, borderRadius: 8, padding: 8, alignItems: 'center',
-                  borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-                }}>
-                  <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>{r.year}</Text>
-                  <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: r.portfolioReturn >= 0 ? C.up : C.down }}>
-                    {fmtPct(r.portfolioReturn)}
-                  </Text>
-                  <Text style={{ fontSize: 7, color: r.difference >= 0 ? C.up : C.down }}>
-                    vs indice: {fmtPct(r.difference)}
-                  </Text>
-                </View>
-              ))}
-            </View>
           </View>
         )}
 
-        {/* Holdings table */}
-        <Text style={styles.subsectionTitle}>Composition detaillee</Text>
         <View style={styles.table}>
           <View style={styles.th}>
             <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
-            <Text style={{ ...styles.thCell, width: '13%' }}>Nom</Text>
+            <Text style={{ ...styles.thCell, width: '12%' }}>Nom</Text>
             <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Qte</Text>
             <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>PBR</Text>
             <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>Prix</Text>
             <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Valeur</Text>
             <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Poids</Text>
+            <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>G/P $</Text>
+            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>G/P %</Text>
             <Text style={{ ...styles.thCell, width: '7%' }}>Classe</Text>
-            <Text style={{ ...styles.thCell, width: '19%' }}>Secteur</Text>
-            <Text style={{ ...styles.thCell, width: '8%', textAlign: 'right' }}>Div. $</Text>
-            <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Div. %</Text>
+            <Text style={{ ...styles.thCell, width: '12%' }}>Secteur</Text>
+            <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Signal</Text>
           </View>
           {data.portfolio.holdings.map((h: ReportHolding, i: number) => (
             <View key={i} style={i % 2 === 1 ? styles.trAlt : styles.tr}>
               <Text style={{ ...styles.tdBold, width: '7%' }}>{h.symbol}</Text>
-              <Text style={{ ...styles.td, width: '13%' }}>{truncate(h.name, 18)}</Text>
+              <Text style={{ ...styles.td, width: '12%' }}>{truncate(h.name, 16)}</Text>
               <Text style={{ ...styles.td, width: '5%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
               <Text style={{ ...styles.td, width: '8%', textAlign: 'right', color: C.textSec }}>{h.avgCost > 0 ? fmtFull(h.avgCost, ccy) : '—'}</Text>
               <Text style={{ ...styles.td, width: '8%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
               <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
               <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>{h.weight.toFixed(1)}%</Text>
+              <Text style={{ ...styles.td, width: '10%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600, color: h.gainLoss >= 0 ? C.up : C.down }}>
+                {h.avgCost > 0 ? fmt(h.gainLoss, ccy) : '—'}
+              </Text>
+              <View style={{ width: '8%', justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: 4 }}>
+                {h.avgCost > 0 ? <GainLossIndicator value={h.gainLoss} pct={h.gainLossPercent} /> : <Text style={{ fontSize: 7.5, color: C.textTer }}>—</Text>}
+              </View>
               <Text style={{ ...styles.td, width: '7%', fontSize: 7 }}>
                 {truncate(ASSET_LABELS[h.assetClass] || h.assetClass, 8)}
               </Text>
-              <View style={{ width: '19%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
-                {(() => {
-                  if (!h.sectorDisplay) return <Text style={{ fontSize: 7.5, color: C.textTer }}>—</Text>;
-                  const sectors = h.sectorDisplay.split(', ');
-                  return (
-                    <>
-                      <View style={{ flexDirection: 'row', marginRight: 4, flexShrink: 0 }}>
-                        {sectors.map((s: string, j: number) => (
-                          <View key={j} style={{
-                            width: 6, height: 6, borderRadius: 3,
-                            backgroundColor: SECTOR_COLOR_MAP[s.trim()] || '#94a3b8',
-                            marginRight: 2,
-                          }} />
-                        ))}
-                      </View>
-                      <Text style={{ fontSize: 7, color: C.text, flex: 1 }}>{h.sectorDisplay}</Text>
-                    </>
-                  );
-                })()}
+              <View style={{ width: '12%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
+                {h.sectorDisplay ? (
+                  <>
+                    <View style={{
+                      width: 6, height: 6, borderRadius: 3,
+                      backgroundColor: SECTOR_COLOR_MAP[h.sectorDisplay.split(', ')[0]?.trim()] || '#94a3b8',
+                      marginRight: 3, flexShrink: 0,
+                    }} />
+                    <Text style={{ fontSize: 6.5, color: C.text, flex: 1 }}>{truncate(h.sectorDisplay, 14)}</Text>
+                  </>
+                ) : (
+                  <Text style={{ fontSize: 7, color: C.textTer }}>—</Text>
+                )}
               </View>
-              <Text style={{ ...styles.td, width: '8%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
-                {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
-              </Text>
-              <Text style={{ ...styles.td, width: '9%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
-                {h.marketValue > 0 && h.dividendAnnual > 0 ? `${(h.dividendAnnual / h.marketValue * 100).toFixed(2)}%` : '—'}
-              </Text>
+              <View style={{ width: '7%', alignItems: 'center', justifyContent: 'center' }}>
+                {h.avgCost > 0 && <GainLossIndicator value={h.gainLoss} pct={h.gainLossPercent} />}
+              </View>
             </View>
           ))}
           {/* Total row */}
           <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const }}>
-            <Text style={{ ...styles.tdBold, width: '20%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
+            <Text style={{ ...styles.tdBold, width: '19%' }}>Total ({data.portfolio.holdings.length} positions)</Text>
             <Text style={{ ...styles.td, width: '5%' }}></Text>
             <Text style={{ ...styles.td, width: '8%' }}></Text>
             <Text style={{ ...styles.td, width: '8%' }}></Text>
             <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right' }}>{fmtFull(data.portfolio.totalValue, ccy)}</Text>
             <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>100%</Text>
-            <Text style={{ ...styles.td, width: '7%' }}></Text>
-            <Text style={{ ...styles.td, width: '19%' }}></Text>
-            {(() => {
-              const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
-              const totalYield = data.portfolio.totalValue > 0 ? (totalDiv / data.portfolio.totalValue) * 100 : 0;
-              return (
-                <>
-                  <Text style={{ ...styles.tdBold, width: '8%', textAlign: 'right', color: C.up }}>
-                    {totalDiv > 0 ? fmt(totalDiv, ccy) : '—'}
-                  </Text>
-                  <Text style={{ ...styles.tdBold, width: '9%', textAlign: 'right', color: C.up }}>
-                    {totalYield > 0 ? `${totalYield.toFixed(2)}%` : '—'}
-                  </Text>
-                </>
-              );
-            })()}
+            <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', color: gainLoss >= 0 ? C.up : C.down }}>
+              {fmt(gainLoss, ccy)}
+            </Text>
+            <Text style={{ ...styles.tdBold, width: '8%', textAlign: 'right', color: gainLossPct >= 0 ? C.up : C.down }}>
+              {fmtPct(gainLossPct)}
+            </Text>
+            <Text style={{ ...styles.td, width: '26%' }}></Text>
           </View>
         </View>
 
@@ -1411,9 +1587,15 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           const totalDiv = data.portfolio.holdings.reduce((s, h) => s + h.dividendAnnual, 0);
           const divYield = data.portfolio.totalValue > 0 ? (totalDiv / data.portfolio.totalValue) * 100 : 0;
           const uniqueSectors = new Set(data.portfolio.holdings.map(h => h.sectorDisplay).filter(Boolean)).size;
-          const etfCount = data.portfolio.holdings.filter(h => h.assetClass === 'FIXED_INCOME' || h.symbol.includes('.')).length;
           return (
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <View style={{ ...styles.statCard }}>
+                <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Gain/Perte total</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: gainLoss >= 0 ? C.up : C.down }}>
+                  {fmt(gainLoss, ccy)}
+                </Text>
+                <Text style={{ fontSize: 7, color: C.textTer }}>soit {fmtPct(gainLossPct)}</Text>
+              </View>
               {totalDiv > 0 && (
                 <View style={{ ...styles.statCard }}>
                   <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Revenu de dividendes</Text>
@@ -1428,103 +1610,132 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
                   {uniqueSectors} secteurs
                 </Text>
-                <Text style={{ fontSize: 7, color: C.textTer }}>{data.portfolio.holdings.length} positions</Text>
               </View>
               <View style={{ ...styles.statCard }}>
                 <Text style={{ fontSize: 7, color: C.textTer, fontFamily: 'Open Sans', fontWeight: 600 }}>Beta pondere</Text>
                 <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
                   {data.riskMetrics.beta.toFixed(2)}
                 </Text>
-                <Text style={{ fontSize: 7, color: C.textTer }}>Sensibilite au marche</Text>
               </View>
             </View>
           );
         })()}
 
-        <PageFooter num={3} total={totalPages} />
+        <PageFooter num={pgComposition} total={totalPages} />
       </Page>
 
 
-      {/* ═══ PAGE 4: ANALYST PRICE TARGETS ════════════════════════ */}
+      {/* ═══ PAGE 5 (conditional): REVENUS / DIVIDENDES ═══════════ */}
+      {hasDividends && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          <AccentBar />
+          <Text style={styles.sectionTitle}>Revenus et dividendes</Text>
+
+          {/* KPI row */}
+          <View style={{ flexDirection: 'row', gap: 14, marginBottom: 14 }}>
+            <KPICard label="Revenu annuel estime" value={fmt(estimatedDividend, ccy)} accent={C.up} />
+            <KPICard
+              label="Rendement moyen"
+              value={data.portfolio.totalValue > 0 ? `${((estimatedDividend / data.portfolio.totalValue) * 100).toFixed(2)}%` : '—'}
+              accent={C.cyan}
+            />
+            <KPICard
+              label="Revenu mensuel moyen"
+              value={fmt(estimatedDividend / 12, ccy)}
+              accent={C.gold}
+            />
+          </View>
+
+          {/* Calendar chart */}
+          <View style={{
+            backgroundColor: '#f3f6fa', borderRadius: 14, padding: 16,
+            borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+            marginBottom: 14,
+          }}>
+            <DividendCalendarChart calendar={data.dividendCalendar} ccy={ccy} />
+          </View>
+
+          {/* Dividend detail table — top payers */}
+          <Text style={styles.subsectionTitle}>Principaux payeurs de dividendes</Text>
+          <View style={styles.table}>
+            <View style={styles.th}>
+              <Text style={{ ...styles.thCell, width: '10%' }}>Symb.</Text>
+              <Text style={{ ...styles.thCell, width: '20%' }}>Nom</Text>
+              <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Div./action</Text>
+              <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Qte</Text>
+              <Text style={{ ...styles.thCell, width: '15%', textAlign: 'right' }}>Revenu annuel</Text>
+              <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Rendement</Text>
+              <Text style={{ ...styles.thCell, width: '15%', textAlign: 'right' }}>Poids div.</Text>
+            </View>
+            {data.holdingProfiles
+              .filter(hp => hp.lastDiv > 0)
+              .sort((a, b) => (b.lastDiv * b.quantity) - (a.lastDiv * a.quantity))
+              .map((hp, i) => {
+                const divIncome = hp.lastDiv * hp.quantity;
+                const divYield = hp.currentPrice > 0 ? (hp.lastDiv / hp.currentPrice) * 100 : 0;
+                const divWeight = estimatedDividend > 0 ? (divIncome / estimatedDividend) * 100 : 0;
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.tdBold, width: '10%' }}>{hp.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '20%' }}>{truncate(hp.companyName, 22)}</Text>
+                    <Text style={{ ...styles.td, width: '12%', textAlign: 'right' }}>{fmtFull(hp.lastDiv, ccy)}</Text>
+                    <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmtNum(hp.quantity)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '15%', textAlign: 'right', color: C.up }}>{fmt(divIncome, ccy)}</Text>
+                    <Text style={{ ...styles.td, width: '12%', textAlign: 'right', color: C.up }}>{divYield.toFixed(2)}%</Text>
+                    <Text style={{ ...styles.td, width: '15%', textAlign: 'right' }}>{divWeight.toFixed(1)}%</Text>
+                  </View>
+                );
+              })}
+          </View>
+
+          <Text style={styles.noteText}>
+            Les revenus de dividendes sont estimes sur la base du dernier dividende annuel declare. Les montants reels peuvent varier.
+          </Text>
+
+          <PageFooter num={pgDividends} total={totalPages} />
+        </Page>
+      )}
+
+
+      {/* ═══ PAGE 6: PERSPECTIVES (cours cibles + scenarios + projection) ═══ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
-        <Text style={styles.sectionTitle}>Cours cibles (12 mois)</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <Text style={{ fontSize: 8, color: C.textSec }}>
-            Sources: Yahoo Finance / Financial Modeling Prep / Valorisation interne
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: C.up }} />
-              <Text style={{ fontSize: 6.5, color: C.textSec }}>Consensus analystes</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: C.cyan }} />
-              <Text style={{ fontSize: 6.5, color: C.textSec }}>Estime (valorisation)</Text>
-            </View>
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>Perspectives (12 mois)</Text>
 
         {hasTargets ? (
           <>
-            {/* Summary row */}
-            <View style={{
-              flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 8, paddingHorizontal: 6,
-              borderRadius: 6, marginBottom: 8,
-            }}>
-              <Text style={{ ...styles.tdBold, width: '5%' }}></Text>
-              <Text style={{ ...styles.tdBold, width: '11%', fontSize: 9 }}>TOTAL</Text>
-              <Text style={{ ...styles.td, width: '6%' }}></Text>
-              <Text style={{ ...styles.td, width: '7%' }}></Text>
-              <Text style={{ ...styles.td, width: '7%' }}></Text>
-              <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8 }}>{fmt(data.priceTargetSummary.totalCurrentValue, ccy)}</Text>
-              <Text style={{ ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8 }}>{fmt(data.priceTargetSummary.totalTargetValue, ccy)}</Text>
-              <Text style={{ ...styles.td, width: '5%' }}></Text>
-              <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'right', fontSize: 8, color: C.up }}>
-                {estimatedDividend > 0 ? fmt(estimatedDividend, ccy) : '—'}
-              </Text>
-              <Text style={{ ...styles.td, width: '5%' }}></Text>
-              <Text style={{
-                ...styles.tdBold, width: '10%', textAlign: 'right', fontSize: 8,
-                color: totalGainWithDiv >= 0 ? C.up : C.down,
-              }}>
-                {fmt(totalGainWithDiv, ccy)}
-              </Text>
-              <Text style={{
-                ...styles.tdBold, width: '7%', textAlign: 'right', fontSize: 8,
-                color: totalGainPctWithDiv >= 0 ? C.up : C.down,
-              }}>
-                {fmtPct(totalGainPctWithDiv)}
-              </Text>
+            {/* Compact price target summary */}
+            <View style={{ flexDirection: 'row', gap: 14, marginBottom: 10 }}>
+              <KPICard label="Valeur actuelle" value={fmt(data.priceTargetSummary.totalCurrentValue, ccy)} accent={C.navy} />
+              <KPICard label="Valeur cible" value={fmt(data.priceTargetSummary.totalTargetValue, ccy)} accent={C.cyan} />
+              <KPICard
+                label="Gain potentiel total"
+                value={fmt(totalGainWithDiv, ccy)}
+                sub={`soit ${fmtPct(totalGainPctWithDiv)} (incl. dividendes)`}
+                accent={totalGainWithDiv >= 0 ? C.up : C.down}
+              />
             </View>
 
             {/* Table */}
             <View style={styles.table}>
               <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '5%' }}>Qte</Text>
-                <Text style={{ ...styles.thCell, width: '11%' }}>Description</Text>
                 <Text style={{ ...styles.thCell, width: '6%' }}>Symb.</Text>
                 <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Prix</Text>
                 <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Cible</Text>
                 <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Val. act.</Text>
                 <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Val. cible</Text>
-                <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Div./act</Text>
-                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Rev. div $</Text>
-                <Text style={{ ...styles.thCell, width: '5%', textAlign: 'right' }}>Rend.</Text>
-                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Gain total $</Text>
-                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Rend. tot.</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Div. $</Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Gain total</Text>
+                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'right' }}>Rend.</Text>
               </View>
               {data.holdingProfiles.map((hp: HoldingProfile, i: number) => {
                 const divIncome = hp.lastDiv * hp.quantity;
-                const divYield = hp.currentPrice > 0 ? (hp.lastDiv / hp.currentPrice) * 100 : 0;
                 const priceGain = hp.targetPrice > 0 ? hp.estimatedGainDollar : 0;
                 const totalGain = priceGain + divIncome;
                 const currentVal = hp.currentPrice * hp.quantity;
                 const totalReturnPct = currentVal > 0 ? (totalGain / currentVal) * 100 : 0;
                 return (
                   <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                    <Text style={{ ...styles.td, width: '5%' }}>{fmtNum(hp.quantity)}</Text>
-                    <Text style={{ ...styles.td, width: '11%', fontSize: 7.5 }}>{truncate(hp.companyName, 20)}</Text>
                     <Text style={{ ...styles.tdBold, width: '6%' }}>{hp.symbol}</Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right' }}>{fmtFull(hp.currentPrice, ccy)}</Text>
                     <View style={{ width: '7%', flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
@@ -1542,14 +1753,8 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                     <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>
                       {hp.targetPrice > 0 ? fmt(hp.quantity * hp.targetPrice, ccy) : 'N/D'}
                     </Text>
-                    <Text style={{ ...styles.td, width: '5%', textAlign: 'right', color: hp.lastDiv > 0 ? C.up : C.textTer }}>
-                      {hp.lastDiv > 0 ? fmtFull(hp.lastDiv, ccy) : '—'}
-                    </Text>
                     <Text style={{ ...styles.td, width: '7%', textAlign: 'right', color: divIncome > 0 ? C.up : C.textTer }}>
                       {divIncome > 0 ? fmt(divIncome, ccy) : '—'}
-                    </Text>
-                    <Text style={{ ...styles.td, width: '5%', textAlign: 'right', fontSize: 7, color: divYield > 0 ? C.up : C.textTer }}>
-                      {divYield > 0 ? `${divYield.toFixed(1)}%` : '—'}
                     </Text>
                     <Text style={{
                       ...styles.td, width: '10%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
@@ -1567,60 +1772,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
                 );
               })}
             </View>
-
-            {/* Gain summary — 3 lines: appreciation, dividends, total */}
-            {(() => {
-              const priceGainDollar = data.priceTargetSummary.totalEstimatedGainDollar;
-              const currentVal = data.priceTargetSummary.totalCurrentValue;
-              const priceGainPct = currentVal > 0 ? (priceGainDollar / currentVal) * 100 : 0;
-              const divPct = currentVal > 0 ? (estimatedDividend / currentVal) * 100 : 0;
-              return (
-                <View style={{
-                  backgroundColor: C.card, borderRadius: 10, padding: 12, marginTop: 8,
-                  borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-                }}>
-                  {/* Row 1: Price appreciation */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 8, color: C.textSec }}>Gains esperes en $ (sans dividende)</Text>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: priceGainDollar >= 0 ? C.up : C.down }}>
-                        {fmt(priceGainDollar, ccy)}
-                      </Text>
-                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: priceGainPct >= 0 ? C.up : C.down }}>
-                        {fmtPct(priceGainPct)}
-                      </Text>
-                    </View>
-                  </View>
-                  {/* Row 2: Dividends only */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 8, color: C.textSec }}>Gains esperes (seulement en dividendes)</Text>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: estimatedDividend > 0 ? C.up : C.textTer }}>
-                        {estimatedDividend > 0 ? fmt(estimatedDividend, ccy) : '—'}
-                      </Text>
-                      <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: divPct > 0 ? C.up : C.textTer }}>
-                        {divPct > 0 ? fmtPct(divPct) : '—'}
-                      </Text>
-                    </View>
-                  </View>
-                  {/* Row 3: Total — bold, with top border */}
-                  <View style={{
-                    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                    borderTopWidth: 1.5, borderTopColor: C.navy, borderTopStyle: 'solid' as const, paddingTop: 6,
-                  }}>
-                    <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Gains esperes total</Text>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: totalGainWithDiv >= 0 ? C.up : C.down }}>
-                        {fmt(totalGainWithDiv, ccy)}
-                      </Text>
-                      <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 700, color: totalGainPctWithDiv >= 0 ? C.up : C.down }}>
-                        {fmtPct(totalGainPctWithDiv)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              );
-            })()}
           </>
         ) : (
           <View style={styles.card}>
@@ -1630,224 +1781,137 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </View>
         )}
 
+        {/* Scenario cards */}
+        <View style={{ flexDirection: 'row', gap: 14, marginTop: 12 }}>
+          {data.scenarios.map((s) => {
+            const variant: 'bear' | 'base' | 'bull' =
+              ('type' in s && (s as { type: string }).type) ? (s as { type: 'bear' | 'base' | 'bull' }).type :
+              s.name.toLowerCase().includes('pessim') ? 'bear' :
+              s.name.toLowerCase().includes('optim') ? 'bull' : 'base';
+            return (
+              <ScenarioCard
+                key={s.name} name={s.name} value={s.projectedValue}
+                returnPct={s.annualizedReturn} totalValue={data.portfolio.totalValue}
+                ccy={ccy} variant={variant}
+              />
+            );
+          })}
+        </View>
+
+        {/* Projection Chart */}
+        <Text style={{ ...styles.subsectionTitle, marginTop: 10 }}>Projection — {data.config.projectionYears} ans</Text>
+        <ProjectionChart projections={data.projectionYears} totalValue={data.portfolio.totalValue} ccy={ccy} />
+
         <Text style={styles.noteText}>
           Les cours cibles consensus proviennent des analystes (Yahoo Finance / FMP). Les cours cibles estimes sont calcules par valorisation interne (DCF, P/S, P/E). Aucun cours cible ne constitue une garantie de rendement futur.
         </Text>
         <AINarrativeBlock label="Analyse des cours cibles — IA" content={ai?.targetAnalysis} />
 
-        <PageFooter num={4} total={totalPages} />
+        <PageFooter num={pgPerspectives} total={totalPages} />
       </Page>
 
 
-      {/* ═══ PAGE 5 (conditional): STOCK SCORING — Safety & Upside ═══ */}
-      {hasScores && stockScores && (() => {
-        const QUADRANT_CONFIG = {
-          star: { label: 'Etoile', bg: '#ecfdf5', color: '#065f46', border: '#a7f3d0' },
-          safe: { label: 'Sur', bg: '#eff6ff', color: '#1e40af', border: '#bfdbfe' },
-          growth: { label: 'Croissance', bg: '#ecfeff', color: '#155e75', border: '#a5f3fc' },
-          watch: { label: 'Veille', bg: '#fef2f2', color: '#991b1b', border: '#fecaca' },
-        };
+      {/* ═══ PAGE 7 (conditional): RECOMMANDATION DU CONSEILLER ═══ */}
+      {hasAdvisorRec && data.advisorRecommendation && (
+        <Page size="LETTER" orientation="landscape" style={styles.page}>
+          <AccentBar />
+          <Text style={styles.sectionTitle}>Recommandation du conseiller</Text>
 
-        const starSymbols = stockScores.filter(s => s.quadrant === 'star').map(s => s.symbol);
-        const safeSymbols = stockScores.filter(s => s.quadrant === 'safe').map(s => s.symbol);
-        const growthSymbols = stockScores.filter(s => s.quadrant === 'growth').map(s => s.symbol);
-        const watchSymbols = stockScores.filter(s => s.quadrant === 'watch').map(s => s.symbol);
+          <View style={{
+            backgroundColor: '#f3f6fa', borderRadius: 14, padding: 24,
+            borderWidth: 1, borderColor: '#e0e8f0', borderStyle: 'solid' as const,
+            borderLeftWidth: 4, borderLeftColor: C.gold, borderLeftStyle: 'solid' as const,
+            marginBottom: 20,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ width: 28, height: 3, borderRadius: 2, backgroundColor: C.gold, marginRight: 8 }} />
+              <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.gold, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
+                Recommandation personnalisee
+              </Text>
+            </View>
+            <Text style={{ fontSize: 10, color: C.text, lineHeight: 1.6 }}>
+              {data.advisorRecommendation.text}
+            </Text>
+            {data.advisorRecommendation.nextMeetingDate && (
+              <View style={{
+                marginTop: 16, borderTopWidth: 1, borderTopColor: C.cardBorder, borderTopStyle: 'solid' as const, paddingTop: 12,
+              }}>
+                <Text style={{ fontSize: 8, color: C.textSec }}>
+                  Prochaine rencontre prevue: {data.advisorRecommendation.nextMeetingDate}
+                </Text>
+              </View>
+            )}
+          </View>
 
-        // Weighted averages
-        const totalWeight = stockScores.reduce((s, sc) => s + sc.weight, 0);
-        const avgSafety = totalWeight > 0
-          ? stockScores.reduce((s, sc) => s + sc.safety.total * sc.weight, 0) / totalWeight : 0;
-        const avgUpside = totalWeight > 0
-          ? stockScores.reduce((s, sc) => s + sc.upside.total * sc.weight, 0) / totalWeight : 0;
+          {/* Quick portfolio recap */}
+          <View style={{ flexDirection: 'row', gap: 14 }}>
+            <KPICard label="Valeur du portefeuille" value={fmt(data.portfolio.totalValue, ccy)} accent={C.navy} />
+            <KPICard label="Gain/Perte" value={fmt(gainLoss, ccy)} accent={gainLoss >= 0 ? C.up : C.down} />
+            <KPICard label="Gain potentiel (12m)" value={fmt(totalGainWithDiv, ccy)} accent={C.cyan} />
+          </View>
 
-        function scoreBarColor(score: number, type: 'safety' | 'upside'): string {
-          if (type === 'safety') {
-            if (score >= 7) return '#10b981';
-            if (score >= 5) return '#f59e0b';
-            return '#ef4444';
-          }
-          if (score >= 7) return '#00b4d8';
-          if (score >= 5) return '#c5a365';
-          return '#ef4444';
-        }
+          <PageFooter num={pgAdvisor} total={totalPages} />
+        </Page>
+      )}
+
+
+      {/* ═══ PAGE 8 (conditional): REVENUS FIXES ═══════════════════ */}
+      {hasFixedIncome && (() => {
+        const fiHoldings = data.portfolio.holdings.filter(h => h.assetClass === 'FIXED_INCOME');
+        const fiTotal = fiHoldings.reduce((s, h) => s + h.marketValue, 0);
+        const fiWeight = data.portfolio.totalValue > 0 ? (fiTotal / data.portfolio.totalValue) * 100 : 0;
+        const fiDiv = fiHoldings.reduce((s, h) => s + h.dividendAnnual, 0);
+        const fiYield = fiTotal > 0 ? (fiDiv / fiTotal) * 100 : 0;
 
         return (
           <Page size="LETTER" orientation="landscape" style={styles.page}>
             <AccentBar />
+            <Text style={styles.sectionTitle}>Revenus fixes</Text>
 
-            {/* Header row */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-              <View>
-                <Text style={styles.sectionTitle}>Classement des titres</Text>
-                <Text style={{ fontSize: 8, color: C.textSec, marginTop: -10 }}>
-                  Score de securite et potentiel de gains — Classement composite (50% securite + 50% potentiel)
-                </Text>
-              </View>
-
-              {/* Mini Quadrant Grid */}
-              <View style={{ ...styles.quadrantGrid, width: 170 }}>
-                <View style={{ flexDirection: 'row' }}>
-                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.safe.bg, borderRightWidth: 0.5, borderRightColor: '#e2e8f0', borderRightStyle: 'solid' as const, borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', borderBottomStyle: 'solid' as const }}>
-                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.safe.color }}>Sur</Text>
-                    <Text style={styles.quadrantSymbols}>{safeSymbols.length > 0 ? safeSymbols.join(', ') : '—'}</Text>
-                  </View>
-                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.star.bg, borderBottomWidth: 0.5, borderBottomColor: '#e2e8f0', borderBottomStyle: 'solid' as const }}>
-                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.star.color }}>Etoile</Text>
-                    <Text style={styles.quadrantSymbols}>{starSymbols.length > 0 ? starSymbols.join(', ') : '—'}</Text>
-                  </View>
-                </View>
-                <View style={{ flexDirection: 'row' }}>
-                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.watch.bg, borderRightWidth: 0.5, borderRightColor: '#e2e8f0', borderRightStyle: 'solid' as const }}>
-                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.watch.color }}>Veille</Text>
-                    <Text style={styles.quadrantSymbols}>{watchSymbols.length > 0 ? watchSymbols.join(', ') : '—'}</Text>
-                  </View>
-                  <View style={{ ...styles.quadrantCell, backgroundColor: QUADRANT_CONFIG.growth.bg }}>
-                    <Text style={{ ...styles.quadrantLabel, color: QUADRANT_CONFIG.growth.color }}>Croissance</Text>
-                    <Text style={styles.quadrantSymbols}>{growthSymbols.length > 0 ? growthSymbols.join(', ') : '—'}</Text>
-                  </View>
-                </View>
-              </View>
+            <View style={{ flexDirection: 'row', gap: 14, marginBottom: 14 }}>
+              <KPICard label="Valeur totale RF" value={fmt(fiTotal, ccy)} accent={C.navy} />
+              <KPICard label="Poids dans le portefeuille" value={`${fiWeight.toFixed(1)}%`} accent={C.cyan} />
+              <KPICard label="Revenu annuel" value={fiDiv > 0 ? fmt(fiDiv, ccy) : 'N/D'} accent={C.up} />
+              <KPICard label="Rendement moyen" value={fiYield > 0 ? `${fiYield.toFixed(2)}%` : 'N/D'} accent={C.gold} />
             </View>
 
-            {/* Table */}
             <View style={styles.table}>
               <View style={styles.th}>
-                <Text style={{ ...styles.thCell, width: '4%', textAlign: 'center' }}>#</Text>
-                <Text style={{ ...styles.thCell, width: '7%' }}>Symb.</Text>
-                <Text style={{ ...styles.thCell, width: '15%' }}>Description</Text>
-                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Securite</Text>
-                <Text style={{ ...styles.thCell, width: '10%' }}></Text>
-                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Potentiel</Text>
-                <Text style={{ ...styles.thCell, width: '10%' }}></Text>
-                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'center' }}>Quadrant</Text>
-                <Text style={{ ...styles.thCell, width: '9%', textAlign: 'right' }}>Rend. est.</Text>
-                <Text style={{ ...styles.thCell, width: '6%', textAlign: 'right' }}>Poids</Text>
-                <Text style={{ ...styles.thCell, width: '7%', textAlign: 'center' }}>Conf.</Text>
+                <Text style={{ ...styles.thCell, width: '12%' }}>Symb.</Text>
+                <Text style={{ ...styles.thCell, width: '25%' }}>Nom</Text>
+                <Text style={{ ...styles.thCell, width: '10%', textAlign: 'right' }}>Qte</Text>
+                <Text style={{ ...styles.thCell, width: '13%', textAlign: 'right' }}>Prix</Text>
+                <Text style={{ ...styles.thCell, width: '15%', textAlign: 'right' }}>Valeur</Text>
+                <Text style={{ ...styles.thCell, width: '12%', textAlign: 'right' }}>Rev. annuel</Text>
+                <Text style={{ ...styles.thCell, width: '13%', textAlign: 'right' }}>Rendement</Text>
               </View>
-
-              {stockScores.map((sc: StockDualScore, i: number) => {
-                const qCfg = QUADRANT_CONFIG[sc.quadrant];
-                const holding = data.holdingProfiles.find(hp => hp.symbol === sc.symbol);
-                const divYield = holding ? holding.dividendYield * 100 : 0;
-                const totalReturnPct = (holding?.estimatedGainPercent ?? 0) + divYield;
-                const rowBg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
-
+              {fiHoldings.map((h, i) => {
+                const yld = h.marketValue > 0 && h.dividendAnnual > 0 ? (h.dividendAnnual / h.marketValue * 100) : 0;
                 return (
-                  <View key={i} wrap={false}>
-                    <View style={i % 2 === 0 ? styles.tr : styles.trAlt}>
-                      <Text style={{ ...styles.tdBold, width: '4%', textAlign: 'center', color: C.navy }}>{sc.rank}</Text>
-                      <Text style={{ ...styles.tdBold, width: '7%', fontSize: 8 }}>{sc.symbol}</Text>
-                      <Text style={{ ...styles.td, width: '15%', fontSize: 7 }}>{truncate(sc.companyName, 22)}</Text>
-
-                      {/* Safety score + bar */}
-                      <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.safety.color, fontSize: 9 }}>
-                        {sc.confidence === 'low' ? 'N/D' : sc.safety.total.toFixed(1)}
-                      </Text>
-                      <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                        {sc.confidence !== 'low' && (
-                          <View style={styles.dualScoreBarOuter}>
-                            <View style={{ ...styles.dualScoreBarInner, width: `${sc.safety.total * 10}%`, backgroundColor: scoreBarColor(sc.safety.total, 'safety') }} />
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Upside score + bar */}
-                      <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: sc.upside.color, fontSize: 9 }}>
-                        {sc.confidence === 'low' ? 'N/D' : sc.upside.total.toFixed(1)}
-                      </Text>
-                      <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                        {sc.confidence !== 'low' && (
-                          <View style={styles.dualScoreBarOuter}>
-                            <View style={{ ...styles.dualScoreBarInner, width: `${sc.upside.total * 10}%`, backgroundColor: scoreBarColor(sc.upside.total, 'upside') }} />
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Quadrant badge */}
-                      <View style={{ width: '10%', alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ ...styles.quadrantBadge, backgroundColor: qCfg.bg, color: qCfg.color }}>
-                          {qCfg.label}
-                        </Text>
-                      </View>
-
-                      {/* Total return % */}
-                      <Text style={{
-                        ...styles.td, width: '9%', textAlign: 'right', fontFamily: 'Open Sans', fontWeight: 600,
-                        color: totalReturnPct >= 0 ? C.up : C.down,
-                      }}>
-                        {holding?.targetPrice && holding.targetPrice > 0 ? fmtPct(totalReturnPct) : '—'}
-                      </Text>
-
-                      {/* Weight */}
-                      <Text style={{ ...styles.td, width: '6%', textAlign: 'right' }}>
-                        {sc.weight.toFixed(1)}%
-                      </Text>
-
-                      {/* Confidence */}
-                      <Text style={{ ...styles.td, width: '7%', textAlign: 'center', fontSize: 7, color: sc.confidence === 'high' ? C.up : sc.confidence === 'medium' ? C.warn : C.textTer }}>
-                        {sc.confidence === 'high' ? 'Eleve' : sc.confidence === 'medium' ? 'Moyen' : 'Faible'}
-                      </Text>
-                    </View>
-
-                    {/* Narrative row */}
-                    {sc.narrative && sc.confidence !== 'low' && (
-                      <View style={{ backgroundColor: rowBg, paddingHorizontal: 10, paddingTop: 0, paddingBottom: 5 }}>
-                        <Text style={{ fontSize: 6.5, color: C.textSec, fontStyle: 'italic', lineHeight: 1.4, paddingLeft: 26 }}>
-                          {sc.narrative}
-                        </Text>
-                      </View>
-                    )}
+                  <View key={i} style={i % 2 === 0 ? styles.tr : styles.trAlt}>
+                    <Text style={{ ...styles.tdBold, width: '12%' }}>{h.symbol}</Text>
+                    <Text style={{ ...styles.td, width: '25%' }}>{truncate(h.name, 28)}</Text>
+                    <Text style={{ ...styles.td, width: '10%', textAlign: 'right' }}>{fmtNum(h.quantity)}</Text>
+                    <Text style={{ ...styles.td, width: '13%', textAlign: 'right' }}>{fmtFull(h.currentPrice, ccy)}</Text>
+                    <Text style={{ ...styles.tdBold, width: '15%', textAlign: 'right' }}>{fmtFull(h.marketValue, ccy)}</Text>
+                    <Text style={{ ...styles.td, width: '12%', textAlign: 'right', color: h.dividendAnnual > 0 ? C.up : C.textTer }}>
+                      {h.dividendAnnual > 0 ? fmt(h.dividendAnnual, ccy) : '—'}
+                    </Text>
+                    <Text style={{ ...styles.td, width: '13%', textAlign: 'right', color: yld > 0 ? C.up : C.textTer }}>
+                      {yld > 0 ? `${yld.toFixed(2)}%` : '—'}
+                    </Text>
                   </View>
                 );
               })}
-
-              {/* Weighted total row */}
-              <View style={{ flexDirection: 'row', backgroundColor: C.panel, paddingVertical: 7, paddingHorizontal: 6, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 }}>
-                <Text style={{ ...styles.tdBold, width: '4%' }}></Text>
-                <Text style={{ ...styles.tdBold, width: '7%' }}></Text>
-                <Text style={{ ...styles.tdBold, width: '15%', fontSize: 8 }}>Moyenne ponderee</Text>
-                <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: C.navy, fontSize: 9 }}>{avgSafety.toFixed(1)}</Text>
-                <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                  <View style={styles.dualScoreBarOuter}>
-                    <View style={{ ...styles.dualScoreBarInner, width: `${avgSafety * 10}%`, backgroundColor: scoreBarColor(avgSafety, 'safety') }} />
-                  </View>
-                </View>
-                <Text style={{ ...styles.tdBold, width: '7%', textAlign: 'center', color: C.navy, fontSize: 9 }}>{avgUpside.toFixed(1)}</Text>
-                <View style={{ width: '10%', justifyContent: 'center', paddingHorizontal: 2 }}>
-                  <View style={styles.dualScoreBarOuter}>
-                    <View style={{ ...styles.dualScoreBarInner, width: `${avgUpside * 10}%`, backgroundColor: scoreBarColor(avgUpside, 'upside') }} />
-                  </View>
-                </View>
-                <Text style={{ ...styles.tdBold, width: '10%' }}></Text>
-                <Text style={{ ...styles.tdBold, width: '9%' }}></Text>
-                <Text style={{ ...styles.tdBold, width: '6%', textAlign: 'right' }}>100%</Text>
-                <Text style={{ ...styles.tdBold, width: '7%' }}></Text>
-              </View>
             </View>
 
-            {/* Legend */}
-            <View style={{ flexDirection: 'row', gap: 14, marginTop: 4 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#10b981' }} />
-                <Text style={{ fontSize: 6.5, color: C.textSec }}>Securite: vert = sur, jaune = modere, rouge = risque</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: '#00b4d8' }} />
-                <Text style={{ fontSize: 6.5, color: C.textSec }}>Potentiel: cyan = eleve, or = modere, rouge = faible</Text>
-              </View>
-            </View>
-
-            <Text style={{ ...styles.noteText, marginTop: 6 }}>
-              Securite (6 facteurs) : sante financiere, stabilite du prix (52 sem. + beta), rentabilite (ROE + marges), valorisation (PE raisonnable), taille et solidite, rendement de dividende. Potentiel (6 facteurs) : croissance des benefices, cible analystes, sous-evaluation (DCF/PE sectoriel), efficacite du capital (FCF yield), revenu de dividende, ROE et qualite. Les ETF et fonds sans donnees fondamentales affichent &quot;N/D&quot;.
-            </Text>
-
-            <PageFooter num={5} total={totalPages} />
+            <PageFooter num={pgFixedIncome} total={totalPages} />
           </Page>
         );
       })()}
 
 
-      {/* ═══ PAGE 6 (conditional): BENCHMARK COMPARISON ═══════════ */}
+      {/* ═══ ANNEXE C (conditional): BENCHMARK COMPARISON ═══════════ */}
       {hasBenchmark && benchData && (() => {
         const allBenchSeries = [benchData.portfolio, ...benchData.indices];
         const bestIndex = benchData.indices.reduce((best, idx) =>
@@ -2009,12 +2073,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </Text>
             </View>
 
-            <PageFooter num={5 + scoreOffset} total={totalPages} />
+            <PageFooter num={pgBenchmark} total={totalPages} />
           </Page>
         );
       })()}
 
-      {/* ═══ PAGE 5+bench (conditional): VALUATION ══════════════════════ */}
+      {/* ═══ ANNEXE B: VALUATION ══════════════════════════════════════ */}
       {hasValuation && valData && (() => {
         const holdingMap = new Map(data.portfolio.holdings.map((h) => [h.symbol, h]));
         const totalPortfolioValue = data.portfolio.totalValue;
@@ -2178,12 +2242,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               Les valorisations sont des estimations basees sur des modeles financiers. Elles ne constituent pas des recommandations d&apos;investissement.
             </Text>
 
-            <PageFooter num={5 + scoreOffset + benchOffset} total={totalPages} />
+            <PageFooter num={pgValStart} total={totalPages} />
           </Page>
         );
       })()}
 
-      {/* ═══ PAGE 6: DCF INVERSE (seul) ══════════════════════════════ */}
+      {/* ═══ ANNEXE B (suite): DCF INVERSE ═══════════════════════════ */}
       {hasValuation && valData && (
         <Page size="LETTER" orientation="landscape" style={styles.page}>
           <AccentBar />
@@ -2220,44 +2284,12 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
             Le DCF inverse calcule le taux de croissance du FCF implicitement anticipe par le marche au prix actuel du titre.
           </Text>
 
-          <PageFooter num={6 + scoreOffset + benchOffset} total={totalPages} />
+          <PageFooter num={pgValStart + 1} total={totalPages} />
         </Page>
       )}
 
-      {/* ═══ PAGE 7: SCORES + SENSIBILITE + IA ═══════════════════════ */}
-      {hasValuation && valData && (
-        <Page size="LETTER" orientation="landscape" style={styles.page}>
-          <AccentBar />
-          <Text style={styles.sectionTitle}>Tableau de bord — Scores (0-10)</Text>
-          <Text style={{ fontSize: 8, color: C.textSec, marginBottom: 8 }}>
-            Evaluation multi-criteres: sante financiere, croissance et valorisation
-          </Text>
-
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {valData.slice(0, 6).map((v: ValuationDataItem, i: number) => (
-              <View key={i} style={{
-                width: '31%', backgroundColor: C.card, borderRadius: 10, padding: 10,
-                borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const,
-              }}>
-                <Text style={{ fontSize: 9, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy, marginBottom: 4 }}>
-                  {v.symbol} — {v.scores.overall.toFixed(1)}/10
-                </Text>
-                <ScoreBar label="Sante" score={v.scores.health} />
-                <ScoreBar label="Croissance" score={v.scores.growth} />
-                <ScoreBar label="Valorisation" score={v.scores.valuation} />
-              </View>
-            ))}
-          </View>
-
-
-          <AINarrativeBlock label="Commentaire de valorisation — IA" content={ai?.valuationComment} />
-
-          <PageFooter num={7 + scoreOffset + benchOffset} total={totalPages} />
-        </Page>
-      )}
-
-
-      {/* ═══ COMPANY PROFILES — 4 per page, dynamic pagination ═══ */}
+      {/* ═══ (REMOVED: old Scores 0-10 page) ═══════════════════════ */}
+      {/* ═══ ANNEXE A: COMPANY PROFILES — 4 per page ═══════════════ */}
       {Array.from({ length: profilePageCount }, (_, pi) => {
         const chunk = data.holdingProfiles.slice(pi * 4, pi * 4 + 4).map((hp) => ({
           ...hp,
@@ -2275,16 +2307,16 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
               </Text>
             )}
             <HoldingCards profiles={chunk} currency={ccy} />
-            <PageFooter num={5 + scoreOffset + valOffset + benchOffset + pi} total={totalPages} />
+            <PageFooter num={pgProfileStart + pi} total={totalPages} />
           </Page>
         );
       })}
 
 
-      {/* ═══ PAGE 7+offset: SCENARIOS & RISK DASHBOARD ════════════ */}
+      {/* ═══ ANNEXE D: STRESS TESTS & RISK DASHBOARD ═══════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
-        <Text style={styles.sectionTitle}>Scenarios & Risque</Text>
+        <Text style={styles.sectionTitle}>Stress tests et risque</Text>
 
         {/* Risk metric cards with explanations */}
         <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
@@ -2311,31 +2343,6 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           />
         </View>
 
-        {/* Scenario cards — mapped by name for correct colors */}
-        <View style={{ flexDirection: 'row', gap: 14, marginBottom: 16 }}>
-          {data.scenarios.map((s) => {
-            const variant: 'bear' | 'base' | 'bull' =
-              ('type' in s && (s as { type: string }).type) ? (s as { type: 'bear' | 'base' | 'bull' }).type :
-              s.name.toLowerCase().includes('pessim') ? 'bear' :
-              s.name.toLowerCase().includes('optim') ? 'bull' : 'base';
-            return (
-              <ScenarioCard
-                key={s.name}
-                name={s.name}
-                value={s.projectedValue}
-                returnPct={s.annualizedReturn}
-                totalValue={data.portfolio.totalValue}
-                ccy={ccy}
-                variant={variant}
-              />
-            );
-          })}
-        </View>
-
-        {/* Projection Area Chart */}
-        <Text style={styles.subsectionTitle}>Projection — {data.config.projectionYears} ans</Text>
-        <ProjectionChart projections={data.projectionYears} totalValue={data.portfolio.totalValue} ccy={ccy} />
-
         {/* Stress Tests */}
         <Text style={styles.subsectionTitle}>Tests de resistance</Text>
         <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
@@ -2358,11 +2365,11 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
         )}
         <AINarrativeBlock label="Interpretation des risques — IA" content={ai?.riskInterpretation} />
 
-        <PageFooter num={5 + scoreOffset + valOffset + benchOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={pgRisk} total={totalPages} />
       </Page>
 
 
-      {/* ═══ PAGE 8+offset: DISCLAIMERS ═══════════════════════════ */}
+      {/* ═══ ANNEXE E: DISCLAIMERS ═══════════════════════════════ */}
       <Page size="LETTER" orientation="landscape" style={styles.page}>
         <AccentBar />
         <Text style={styles.sectionTitle}>Avertissements importants</Text>
@@ -2437,7 +2444,7 @@ export function FullReportDocument({ data }: { data: FullReportData }) {
           </Text>
         </View>
 
-        <PageFooter num={6 + scoreOffset + valOffset + benchOffset + profilePageCount} total={totalPages} />
+        <PageFooter num={pgDisclaimers} total={totalPages} />
       </Page>
 
     </Document>
