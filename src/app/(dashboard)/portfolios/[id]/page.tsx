@@ -22,6 +22,7 @@ import { FundamentalData } from '@/components/tradingview/FundamentalData';
 import { SymbolInfo } from '@/components/tradingview/SymbolInfo';
 import { NewsBadge } from '@/components/portfolios/NewsBadge';
 import { NewsModal } from '@/components/portfolios/NewsModal';
+import { SymbolSearch } from '@/components/portfolios/SymbolSearch';
 import { GitCompare, FileText, Plus, Trash2 } from 'lucide-react';
 
 const tabs = [
@@ -301,20 +302,17 @@ export default function PortfolioDetailPage({ params }: { params: Promise<{ id: 
       {/* Add Holding Modal */}
       <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Ajouter un titre">
         <form onSubmit={handleAddHolding} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Symbole"
-              placeholder="ex: RY.TO"
-              value={addForm.symbol}
-              onChange={(e) => setAddForm(f => ({ ...f, symbol: e.target.value }))}
-              required
-            />
-            <Input
-              label="Nom"
-              placeholder="ex: Banque Royale"
-              value={addForm.name}
-              onChange={(e) => setAddForm(f => ({ ...f, name: e.target.value }))}
-            />
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-text-main">Titre</label>
+            {addForm.symbol ? (
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius-sm)] border border-gray-200 bg-bg-light text-sm">
+                <span className="font-semibold">{addForm.symbol}</span>
+                <span className="text-text-muted">{addForm.name}</span>
+                <button type="button" className="ml-auto text-text-muted hover:text-red-500 text-xs" onClick={() => setAddForm(f => ({ ...f, symbol: '', name: '' }))}>Changer</button>
+              </div>
+            ) : (
+              <SymbolSearch onSelect={(symbol, name) => setAddForm(f => ({ ...f, symbol, name }))} placeholder="Rechercher un titre (ex: AAPL, RY.TO)..." />
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input
