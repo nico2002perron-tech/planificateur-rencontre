@@ -1,13 +1,22 @@
 import React from 'react';
 import path from 'path';
+import fs from 'fs';
 import {
   Document, Page, Text, View, Image, Font,
   Svg, Defs, LinearGradient, Stop, Rect,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 
-const LOGO_PATH = path.join(process.cwd(), 'public', 'logo.png');
 const FONTS_DIR = path.join(process.cwd(), 'public', 'fonts');
+
+// Load images as base64 data URIs to avoid path issues with spaces/OneDrive
+function loadImageAsDataUri(filename: string): string {
+  const filePath = path.join(process.cwd(), 'public', filename);
+  const buffer = fs.readFileSync(filePath);
+  return `data:image/png;base64,${buffer.toString('base64')}`;
+}
+const LOGO_SRC = loadImageAsDataUri('logo.png');
+const ICON_G_SRC = loadImageAsDataUri('icon-g.png');
 
 Font.register({
   family: 'Montserrat',
@@ -184,7 +193,13 @@ function PageFooter() {
   return (
     <View style={styles.footer} fixed>
       <Text style={styles.footerText}>Groupe Financier Ste-Foy — Analyse des cours cibles</Text>
-      <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+      <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4 }}>
+        <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        <View style={{ opacity: 0.2 }}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={ICON_G_SRC} style={{ width: 12, height: 12 }} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -276,35 +291,77 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
 
   return (
     <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#f8fafc' }]}>
-      {/* White header card */}
+      {/* ── Header with misty blue gradient ── */}
       <View style={{
-        backgroundColor: '#ffffff',
-        borderRadius: 12,
-        padding: 20,
+        position: 'relative' as const, borderRadius: 10, overflow: 'hidden' as const,
         marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        borderStyle: 'solid' as const,
       }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <Image src={LOGO_PATH} style={{ width: 160, height: 50, objectFit: 'contain' }} />
-          <Text style={{ fontSize: 8.5, color: '#64748b' }}>{dateStr}</Text>
-        </View>
-        <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 3 }}>
-          Analyse des cours cibles
-        </Text>
-        {data.clientName ? (
-          <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 700, color: '#334155', marginBottom: 6 }}>
-            {data.clientName}
+        {/* Gradient background: soft blue mist → white */}
+        <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 600 200" preserveAspectRatio="none">
+          <Defs>
+            <LinearGradient id="headerMist" x1="0" y1="0" x2="600" y2="200" gradientUnits="userSpaceOnUse">
+              <Stop offset="0" stopColor="#dbeafe" />
+              <Stop offset="0.3" stopColor="#e8f2fc" />
+              <Stop offset="0.65" stopColor="#f4f8fd" />
+              <Stop offset="1" stopColor="#ffffff" />
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={600} height={200} fill="url(#headerMist)" />
+        </Svg>
+        {/* Subtle top accent line */}
+        <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 600 3" preserveAspectRatio="none">
+          <Defs>
+            <LinearGradient id="headerAccent" x1="0" y1="0" x2="600" y2="0" gradientUnits="userSpaceOnUse">
+              <Stop offset="0" stopColor="#00b4d8" />
+              <Stop offset="0.5" stopColor="#38bdf8" />
+              <Stop offset="1" stopColor="#93c5fd" />
+            </LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={600} height={3} fill="url(#headerAccent)" />
+        </Svg>
+
+        <View style={{ paddingHorizontal: 24, paddingTop: 22, paddingBottom: 20 }}>
+          <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: '#8faabe', position: 'absolute' as const, top: 22, right: 24 }}>{dateStr}</Text>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <Image src={LOGO_SRC} style={{ width: 90, height: 36, marginBottom: 10 }} />
+          {/* Title block */}
+          <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, marginBottom: 3 }}>
+            Analyse des cours cibles
           </Text>
-        ) : null}
-        <View style={{ width: 36, height: 2.5, backgroundColor: C.cyan, borderRadius: 1, marginBottom: 14 }} />
-        <Text style={{ fontSize: 8, color: '#64748b', lineHeight: 1.4 }}>
-          {s.equityCount > 0 ? `${s.equityCount} actions/FNB` : ''}
-          {s.fixedIncomeCount > 0 ? `  |  ${s.fixedIncomeCount} revenus fixes` : ''}
-          {s.cashCount > 0 ? `  |  ${s.cashCount} liquidités` : ''}
-          {s.pricesFound > 0 ? `  |  ${s.pricesFound} prix temps réel — ${s.targetsFound} cours cibles` : ''}
-        </Text>
+          {data.clientName ? (
+            <Text style={{ fontSize: 14, fontFamily: 'Montserrat', fontWeight: 700, color: '#334155', marginBottom: 6 }}>
+              {data.clientName}
+            </Text>
+          ) : null}
+          <View style={{ height: 1, backgroundColor: '#c7ddf0', marginBottom: 12, opacity: 0.6 }} />
+          {/* Stats pills */}
+          <View style={{ flexDirection: 'row' as const, gap: 6, flexWrap: 'wrap' as const }}>
+            {s.equityCount > 0 && (
+              <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.cyan }} />
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#334155' }}>{s.equityCount} actions/FNB</Text>
+              </View>
+            )}
+            {s.fixedIncomeCount > 0 && (
+              <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#c5a365' }} />
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#334155' }}>{s.fixedIncomeCount} revenus fixes</Text>
+              </View>
+            )}
+            {s.cashCount > 0 && (
+              <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#64748b' }} />
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#334155' }}>{s.cashCount} liquidités</Text>
+              </View>
+            )}
+            {s.targetsFound > 0 && (
+              <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#10b981' }} />
+                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#334155' }}>{s.targetsFound} cours cibles</Text>
+              </View>
+            )}
+          </View>
+        </View>
       </View>
 
       {/* Portfolio value: today vs projected */}
@@ -316,11 +373,20 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         return (
           <View style={{
             flexDirection: 'row', gap: 0, marginBottom: 14,
-            borderRadius: 12, overflow: 'hidden' as const,
-            borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
+            borderRadius: 10, overflow: 'hidden' as const,
           }}>
             {/* Today */}
-            <View style={{ flex: 1, backgroundColor: '#ffffff', padding: 16 }}>
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16 }}>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 300 100" preserveAspectRatio="none">
+                <Defs>
+                  <LinearGradient id="todayGrad" x1="0" y1="0" x2="300" y2="100" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor="#e0eefb" />
+                    <Stop offset="0.5" stopColor="#eef5fc" />
+                    <Stop offset="1" stopColor="#f8fbff" />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={300} height={100} fill="url(#todayGrad)" />
+              </Svg>
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
                 Portefeuille aujourd&apos;hui
               </Text>
@@ -345,7 +411,17 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               <Text style={{ fontSize: 6, color: '#94a3b8', marginTop: 2 }}>12 mois</Text>
             </View>
             {/* Projected */}
-            <View style={{ flex: 1, backgroundColor: totalEst >= 0 ? '#f0fdf4' : '#fef2f2', padding: 16 }}>
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16 }}>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 300 100" preserveAspectRatio="none">
+                <Defs>
+                  <LinearGradient id="projGrad" x1="0" y1="0" x2="300" y2="100" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor={totalEst >= 0 ? '#d5f5e3' : '#fde8e8'} />
+                    <Stop offset="0.5" stopColor={totalEst >= 0 ? '#e8faf0' : '#fef2f2'} />
+                    <Stop offset="1" stopColor={totalEst >= 0 ? '#f5fdf8' : '#fffafa'} />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={300} height={100} fill="url(#projGrad)" />
+              </Svg>
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
                 Portefeuille projeté 12 mois
               </Text>
@@ -384,12 +460,21 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             return (
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
             {/* Dividendes projetés */}
-            <View style={{
-              flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
-              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
-              borderLeftWidth: 3, borderLeftColor: C.duoGreen, borderLeftStyle: 'solid' as const,
-              padding: 12,
-            }}>
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
+                <Defs>
+                  <LinearGradient id="divGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor="#d5f5e3" />
+                    <Stop offset="0.5" stopColor="#eafaf1" />
+                    <Stop offset="1" stopColor="#f8fdfb" />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={200} height={120} fill="url(#divGrad)" />
+              </Svg>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
+                <Defs><LinearGradient id="divTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoGreen} /><Stop offset="1" stopColor="#6ee7b7" /></LinearGradient></Defs>
+                <Rect x={0} y={0} width={200} height={3} fill="url(#divTop)" />
+              </Svg>
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Dividendes projetés
               </Text>
@@ -403,7 +488,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 sur {fmt(eqMv)} en actions
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
                   <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#065f46' }}>
                     {fmtPct(eqDivYieldPct)}
                   </Text>
@@ -413,12 +498,21 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             </View>
 
             {/* Revenus fixes */}
-            <View style={{
-              flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
-              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
-              borderLeftWidth: 3, borderLeftColor: C.duoBlue, borderLeftStyle: 'solid' as const,
-              padding: 12,
-            }}>
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
+                <Defs>
+                  <LinearGradient id="fiGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor="#dbeafe" />
+                    <Stop offset="0.5" stopColor="#eff6ff" />
+                    <Stop offset="1" stopColor="#f8fbff" />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={200} height={120} fill="url(#fiGrad)" />
+              </Svg>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
+                <Defs><LinearGradient id="fiTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoBlue} /><Stop offset="1" stopColor="#93c5fd" /></LinearGradient></Defs>
+                <Rect x={0} y={0} width={200} height={3} fill="url(#fiTop)" />
+              </Svg>
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Revenus fixes
               </Text>
@@ -432,7 +526,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 sur {fmt(fiMv)} en obligations
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ backgroundColor: C.upBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
                   <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#065f46' }}>
                     {fmtPct(fiYieldPct)}
                   </Text>
@@ -442,12 +536,21 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             </View>
 
             {/* Gains en capital */}
-            <View style={{
-              flex: 1, backgroundColor: '#ffffff', borderRadius: 10,
-              borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
-              borderLeftWidth: 3, borderLeftColor: C.duoPurple, borderLeftStyle: 'solid' as const,
-              padding: 12,
-            }}>
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
+                <Defs>
+                  <LinearGradient id="capGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
+                    <Stop offset="0" stopColor="#ede9fe" />
+                    <Stop offset="0.5" stopColor="#f5f3ff" />
+                    <Stop offset="1" stopColor="#fbfaff" />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width={200} height={120} fill="url(#capGrad)" />
+              </Svg>
+              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
+                <Defs><LinearGradient id="capTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoPurple} /><Stop offset="1" stopColor="#c4b5fd" /></LinearGradient></Defs>
+                <Rect x={0} y={0} width={200} height={3} fill="url(#capTop)" />
+              </Svg>
               <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 4 }}>
                 Gain en capital
               </Text>
@@ -461,7 +564,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 sur {fmt(eqMv)} en actions
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <View style={{ backgroundColor: eqGainPct >= 0 ? C.upBg : C.downBg, paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
                   <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: eqGainPct >= 0 ? '#065f46' : '#991b1b' }}>
                     {fmtPct(eqGainPct)}
                   </Text>
@@ -474,7 +577,28 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
           })()}
 
           {/* Total + detailed breakdown recap */}
-          <PaleGradientBox gradientId="coverTotalGrad" style={{ marginBottom: 14 }}>
+          <View style={{ position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 10, marginBottom: 14 }}>
+            <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 600 300" preserveAspectRatio="none">
+              <Defs>
+                <LinearGradient id="totalGrad" x1="0" y1="0" x2="600" y2="300" gradientUnits="userSpaceOnUse">
+                  <Stop offset="0" stopColor="#dbeafe" />
+                  <Stop offset="0.35" stopColor="#e8f2fc" />
+                  <Stop offset="0.7" stopColor="#f4f8fd" />
+                  <Stop offset="1" stopColor="#ffffff" />
+                </LinearGradient>
+              </Defs>
+              <Rect x={0} y={0} width={600} height={300} fill="url(#totalGrad)" />
+            </Svg>
+            <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 600 3" preserveAspectRatio="none">
+              <Defs>
+                <LinearGradient id="totalTop" x1="0" y1="0" x2="600" y2="0" gradientUnits="userSpaceOnUse">
+                  <Stop offset="0" stopColor="#00b4d8" />
+                  <Stop offset="0.5" stopColor="#38bdf8" />
+                  <Stop offset="1" stopColor="#93c5fd" />
+                </LinearGradient>
+              </Defs>
+              <Rect x={0} y={0} width={600} height={3} fill="url(#totalTop)" />
+            </Svg>
             <View style={{ padding: 16 }}>
               {/* Header: total + rendement pill */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -568,7 +692,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 </Text>
               </View>
             </View>
-          </PaleGradientBox>
+          </View>
         </>
       )}
 
