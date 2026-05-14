@@ -1,95 +1,93 @@
 'use client';
 
-import { PageHeader } from '@/components/layout/PageHeader';
+import { useSession } from 'next-auth/react';
 import { TickerTape } from '@/components/tradingview/TickerTape';
 import { MiniChart } from '@/components/tradingview/MiniChart';
+import {
+  GreetingHeader,
+  FearGreedGauge,
+  SectorHeatmap,
+  YieldCurveWidget,
+  MorningBriefing,
+  EconomicCalendar,
+  NewsRadar,
+  MarketQuickStats,
+} from '@/components/dashboard';
+
+const INDICES = [
+  { label: 'S&P/TSX', symbol: 'TSX:TX60', flag: '🇨🇦' },
+  { label: 'S&P 500', symbol: 'FOREXCOM:SPXUSD', flag: '🇺🇸' },
+  { label: 'NASDAQ 100', symbol: 'NASDAQ:NDX', flag: '🇺🇸' },
+  { label: 'Dow Jones', symbol: 'DJ:DJI', flag: '🇺🇸' },
+];
 
 export default function DashboardPage() {
-  return (
-    <div>
-      <PageHeader
-        title="Tableau de bord"
-        description="Vue d'ensemble de votre activité"
-      />
+  const { data: session } = useSession();
+  const firstName = (session?.user?.name || 'Conseiller').split(' ')[0];
 
-      {/* Ticker Tape */}
-      <div className="mb-6 rounded-xl overflow-hidden border border-gray-100">
+  return (
+    <div className="space-y-6">
+      {/* News Ticker Tape */}
+      <div className="rounded-2xl overflow-hidden border border-gray-100">
         <TickerTape />
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <DashboardStatCard label="Clients actifs" value="--" change={null} />
-        <DashboardStatCard label="Portefeuilles" value="--" change={null} />
-        <DashboardStatCard label="Actifs sous gestion" value="--" change={null} />
-        <DashboardStatCard label="Rapports ce mois" value="--" change={null} />
+      {/* Greeting */}
+      <GreetingHeader userName={firstName} />
+
+      {/* Indices Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {INDICES.map((idx, i) => (
+          <div
+            key={idx.symbol}
+            className="bg-white rounded-2xl shadow-[var(--shadow-card)] overflow-hidden hover:-translate-y-0.5 hover:shadow-[var(--shadow-hover)] transition-all duration-300"
+            style={{ animation: `fadeSlideUp 0.4s ease-out ${0.08 * i}s both` }}
+          >
+            <div className="px-4 pt-3 flex items-center gap-2">
+              <span className="text-base">{idx.flag}</span>
+              <span className="text-xs font-bold text-text-main">{idx.label}</span>
+            </div>
+            <MiniChart symbol={idx.symbol} height={140} dateRange="3M" />
+          </div>
+        ))}
       </div>
 
-      {/* Market Mini Charts + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="lg:col-span-2 bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
-          <h3 className="text-lg font-bold font-[family-name:var(--font-heading)] mb-4">
-            Marchés
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="border border-gray-100 rounded-xl overflow-hidden">
-              <div className="px-3 pt-2 text-xs font-semibold text-text-muted">S&P/TSX 60</div>
-              <MiniChart symbol="TSX:TX60" height={180} />
-            </div>
-            <div className="border border-gray-100 rounded-xl overflow-hidden">
-              <div className="px-3 pt-2 text-xs font-semibold text-text-muted">S&P 500</div>
-              <MiniChart symbol="FOREXCOM:SPXUSD" height={180} />
-            </div>
-            <div className="border border-gray-100 rounded-xl overflow-hidden">
-              <div className="px-3 pt-2 text-xs font-semibold text-text-muted">USD/CAD</div>
-              <MiniChart symbol="FX_IDC:USDCAD" height={180} />
-            </div>
-            <div className="border border-gray-100 rounded-xl overflow-hidden">
-              <div className="px-3 pt-2 text-xs font-semibold text-text-muted">Or</div>
-              <MiniChart symbol="AMEX:GLD" height={180} />
-            </div>
-          </div>
+      {/* Row: Fear & Greed + Sector Heatmap */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-2">
+          <FearGreedGauge />
         </div>
-
-        <div className="bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-6">
-          <h3 className="text-lg font-bold font-[family-name:var(--font-heading)] mb-4">
-            Actions rapides
-          </h3>
-          <div className="space-y-3">
-            <QuickActionLink href="/clients/new" label="Nouveau client" />
-            <QuickActionLink href="/portfolios/new" label="Nouveau portefeuille" />
-            <QuickActionLink href="/models/new" label="Nouveau modèle" />
-            <QuickActionLink href="/markets" label="Analyser un titre" />
-            <QuickActionLink href="/reports/new" label="Générer un rapport" />
-          </div>
+        <div className="lg:col-span-3">
+          <SectorHeatmap />
         </div>
       </div>
-    </div>
-  );
-}
 
-function DashboardStatCard({ label, value, change }: { label: string; value: string; change: number | null }) {
-  return (
-    <div className="bg-white rounded-[var(--radius-card)] shadow-[var(--shadow-card)] p-5">
-      <p className="text-sm text-text-muted mb-1">{label}</p>
-      <p className="text-2xl font-bold font-[family-name:var(--font-heading)] text-text-main">{value}</p>
-      {change !== null && (
-        <p className={`text-xs mt-1 ${change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-          {change >= 0 ? '+' : ''}{change}%
-        </p>
-      )}
-    </div>
-  );
-}
+      {/* Row: Yield Curve + Quick Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <YieldCurveWidget />
+        <MarketQuickStats />
+      </div>
 
-function QuickActionLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-100 hover:border-brand-primary hover:bg-brand-primary/5 transition-all duration-200 text-sm font-medium text-text-main"
-    >
-      {label}
-      <span className="text-brand-primary">&rarr;</span>
-    </a>
+      {/* Row: Morning Briefing + Economic Calendar */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="lg:col-span-3">
+          <MorningBriefing />
+        </div>
+        <div className="lg:col-span-2">
+          <EconomicCalendar />
+        </div>
+      </div>
+
+      {/* Full width: News Radar */}
+      <NewsRadar />
+
+      {/* Global animation keyframes */}
+      <style>{`
+        @keyframes fadeSlideUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
   );
 }
