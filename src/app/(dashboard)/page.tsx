@@ -83,8 +83,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Full width: News Radar */}
+      {/* Full width: News Radar - the main news feed */}
       <NewsRadar />
+
+      {/* Quick Stats at the bottom */}
 
       {/* Global animation keyframes */}
       <style>{`

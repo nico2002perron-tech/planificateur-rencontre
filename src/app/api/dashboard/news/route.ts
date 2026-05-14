@@ -18,7 +18,7 @@ const ALL_FEEDS = [
 
 const SECTORS = ['health', 'tech', 'crypto', 'industrial', 'energy', 'finance', 'defensive'] as const;
 const MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000;
-const MAX_ARTICLES = 25;
+const MAX_ARTICLES = 40;
 const FETCH_TIMEOUT = 6000;
 
 let cache: { data: unknown; timestamp: number } = { data: null, timestamp: 0 };
@@ -103,6 +103,20 @@ function looksEnglish(text: string): boolean {
   let hits = 0;
   for (const m of markers) { if (lower.includes(m)) hits++; if (hits >= 2) return true; }
   return false;
+}
+
+// ── Keyword fallback classification (when Groq is unavailable) ──
+function classifyByKeywords(title: string, description: string): string[] {
+  const text = (title + ' ' + description).toLowerCase();
+  const sectors: string[] = [];
+  if (/banqu|financ|taux|int[eé]r[eê]t|bourse|cr[eé]dit|bank|rate|fed |bce|inflation|devise|dollar|monétaire|obligat/.test(text)) sectors.push('finance');
+  if (/tech|ia |ai |intel|apple|google|microsoft|robot|cyber|num[eé]rique|openai|startup|logiciel|software/.test(text)) sectors.push('tech');
+  if (/bitcoin|crypto|blockchain|ethereum|btc|nft|token|defi|stablecoin/.test(text)) sectors.push('crypto');
+  if (/p[eé]trol|oil|gaz |énergi|pipeline|opep|opec|renouvel|solaire|éolien|carbone/.test(text)) sectors.push('energy');
+  if (/sant[eé]|pharma|m[eé]dic|vaccin|health|drug|hospital|biotech/.test(text)) sectors.push('health');
+  if (/industri|manufactur|usine|construc|immobili|real estate|transport|logisti|a[eé]ro/.test(text)) sectors.push('industrial');
+  if (/aliment|grocer|walmart|costco|consomm|retail|agricol|d[eé]fensif/.test(text)) sectors.push('defensive');
+  return sectors.slice(0, 2);
 }
 
 // ── Groq classification ──
@@ -193,6 +207,11 @@ async function buildNews() {
       if (aiItem.summary) summary = aiItem.summary;
     }
 
+    // Keyword fallback when AI didn't classify or is unavailable
+    if (sectors.length === 0) {
+      sectors = classifyByKeywords(article.title, article.description);
+    }
+
     const isFrench = article.lang === 'fr' || (!!aiItem?.titleFr && !looksEnglish(finalTitle));
 
     return {
@@ -212,14 +231,14 @@ async function buildNews() {
   // Build sector map
   const classified: Record<string, EnrichedArticle[]> = {};
   for (const sec of SECTORS) {
-    classified[sec] = enriched.filter((a) => a.sectors.includes(sec)).sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 4);
+    classified[sec] = enriched.filter((a) => a.sectors.includes(sec)).sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 6);
   }
-  const globalArticles = enriched.filter((a) => a.sectors.length > 0);
-  classified.all = globalArticles.slice(0, 5);
+  // "all" shows all articles sorted by recency, regardless of sector
+  classified.all = enriched.slice(0, 12);
 
   // Ticker
-  const ticker = globalArticles
-    .filter((a) => a.isFrench)
+  const tickerArticles = enriched.filter((a) => a.isFrench || a.sectors.length > 0);
+  const ticker = tickerArticles
     .sort((a, b) => (b.impact - a.impact) || (new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()))
     .slice(0, 15)
     .map((a) => ({ title: a.title, link: a.link, source: a.source, sector: a.sectors[0] || 'all', time: a.time }));

@@ -18,7 +18,7 @@ async function callGroq(prompt: string): Promise<string> {
       model: 'llama-3.1-8b-instant',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
-      max_tokens: 2000,
+      max_tokens: 2500,
     }),
     signal: AbortSignal.timeout(30000),
   });
@@ -35,7 +35,7 @@ export async function GET() {
       return NextResponse.json(cache.data);
     }
 
-    // Fetch market data in parallel
+    // Fetch market data
     let sectorData: { sector?: string; changesPercentage?: number | string }[] = [];
     try {
       sectorData = await getSectorPerformance() as { sector?: string; changesPercentage?: number | string }[];
@@ -60,42 +60,47 @@ Performance sectorielle du jour: ${sectorSummary || 'Données non disponibles'}
 
 INSTRUCTIONS:
 1. Rédige un briefing de 3-4 paragraphes courts en français québécois professionnel mais accessible.
-2. Couvre: tendances des marchés, secteurs en mouvement, ce que ça signifie pour les portefeuilles clients.
-3. Sois concret et actionnable. Pas de jargon inutile.
-4. Termine par une phrase motivante pour commencer la journée.
+2. Couvre: tendances macro-économiques, décisions de banques centrales, données économiques clés, mouvements majeurs des marchés.
+3. Sois concret et factuel. Explique les CAUSES et CONSÉQUENCES pour les investisseurs canadiens.
+4. Termine par une perspective pour la semaine.
 
-Ensuite, génère exactement 4 "points de conversation" — des phrases prêtes à utiliser si un client appelle aujourd'hui. Chaque point doit être naturel, rassurant et professionnel.
+Ensuite, génère exactement 5 "faits saillants économiques" — les événements/données économiques les plus importants en ce moment. Chaque fait doit avoir un titre court, un détail explicatif, et un indicateur d'impact.
 
 FORMAT DE RÉPONSE (JSON strict):
 {
   "briefing": "Le texte du briefing ici...",
-  "talkingPoints": [
-    "Point 1...",
-    "Point 2...",
-    "Point 3...",
-    "Point 4..."
+  "highlights": [
+    { "title": "Titre court", "detail": "Explication en 1-2 phrases", "impact": "positif" },
+    { "title": "Titre court", "detail": "Explication en 1-2 phrases", "impact": "negatif" },
+    { "title": "Titre court", "detail": "Explication en 1-2 phrases", "impact": "neutre" }
   ]
 }
+
+Les valeurs possibles pour "impact": "positif", "negatif", "neutre"
 
 Réponds UNIQUEMENT avec le JSON, rien d'autre.`;
 
     const raw = await callGroq(prompt);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    let parsed = { briefing: '', talkingPoints: [] as string[] };
+    let parsed = { briefing: '', highlights: [] as { title: string; detail: string; impact: string }[] };
 
     if (jsonMatch) {
       try {
         parsed = JSON.parse(jsonMatch[0]);
       } catch {
-        parsed = { briefing: raw.replace(/```json?|```/g, '').trim(), talkingPoints: [] };
+        parsed = { briefing: raw.replace(/```json?|```/g, '').trim(), highlights: [] };
       }
     } else {
-      parsed = { briefing: raw, talkingPoints: [] };
+      parsed = { briefing: raw, highlights: [] };
     }
 
     const result = {
       briefing: parsed.briefing || 'Briefing en cours de génération...',
-      talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints.slice(0, 4) : [],
+      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.slice(0, 5).map(h => ({
+        title: h.title || '',
+        detail: h.detail || '',
+        impact: ['positif', 'negatif', 'neutre'].includes(h.impact) ? h.impact : 'neutre',
+      })) : [],
       generatedAt: new Date().toISOString(),
     };
 
@@ -106,7 +111,7 @@ Réponds UNIQUEMENT avec le JSON, rien d'autre.`;
     if (cache.data) return NextResponse.json(cache.data);
     return NextResponse.json({
       briefing: 'Le briefing est temporairement indisponible. Les marchés continuent de fonctionner normalement.',
-      talkingPoints: [],
+      highlights: [],
       generatedAt: new Date().toISOString(),
     });
   }
