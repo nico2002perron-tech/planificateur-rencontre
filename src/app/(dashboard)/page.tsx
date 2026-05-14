@@ -2,7 +2,6 @@
 
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
-import { TickerTape } from '@/components/tradingview/TickerTape';
 import { MiniChart } from '@/components/tradingview/MiniChart';
 import {
   GreetingHeader,
@@ -11,12 +10,13 @@ import {
   MorningBriefing,
   EconomicCalendar,
   NewsRadar,
+  NewsTicker,
   MarketQuickStats,
 } from '@/components/dashboard';
 
-const YieldCurveWidget = dynamic(
-  () => import('@/components/dashboard/YieldCurveWidget').then((m) => m.YieldCurveWidget),
-  { ssr: false, loading: () => <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] p-6 h-[340px] animate-pulse" /> }
+const RateIntelligence = dynamic(
+  () => import('@/components/dashboard/RateIntelligence').then((m) => m.RateIntelligence),
+  { ssr: false, loading: () => <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] p-6 h-[380px] animate-pulse" /> }
 );
 
 const INDICES = [
@@ -32,13 +32,16 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* News Ticker Tape */}
+      {/* Live News Ticker */}
       <div className="rounded-2xl overflow-hidden border border-gray-100">
-        <TickerTape />
+        <NewsTicker />
       </div>
 
       {/* Greeting */}
       <GreetingHeader userName={firstName} />
+
+      {/* Morning Briefing - full width, the main attraction */}
+      <MorningBriefing />
 
       {/* Indices Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -67,26 +70,17 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Row: Yield Curve + Quick Stats */}
+      {/* Row: Rate Intelligence + Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <YieldCurveWidget />
+        <RateIntelligence />
         <MarketQuickStats />
       </div>
 
-      {/* Row: Morning Briefing + Economic Calendar */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3">
-          <MorningBriefing />
-        </div>
-        <div className="lg:col-span-2">
-          <EconomicCalendar />
-        </div>
-      </div>
+      {/* Row: Economic Calendar (standalone, tighter) */}
+      <EconomicCalendar />
 
-      {/* Full width: News Radar - the main news feed */}
+      {/* Full width: News Radar */}
       <NewsRadar />
-
-      {/* Quick Stats at the bottom */}
 
       {/* Global animation keyframes */}
       <style>{`

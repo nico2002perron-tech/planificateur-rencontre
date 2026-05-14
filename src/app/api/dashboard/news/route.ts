@@ -126,16 +126,20 @@ async function classifyArticles(articles: RawArticle[]) {
 
   const list = articles.map((a, i) => `${i + 1}. [${a.lang.toUpperCase()}] "${a.title}" — ${a.description.substring(0, 180)}`).join('\n');
 
-  const prompt = `Classe ces articles par secteur économique pour une firme de gestion de patrimoine québécoise.
+  const prompt = `Tu es un éditeur de salle de nouvelles financières au Québec. Analyse ces articles et retourne les résultats en JSON.
 
-Pour chaque article, retourne un objet JSON :
-- "index" : numéro de l'article
-- "sectors" : liste de 0 à 2 secteurs parmi: health, tech, crypto, industrial, energy, finance, defensive. Vide [] si non pertinent.
-- "titleFr" : titre EN FRANÇAIS. Si [EN], traduis intégralement. Si [FR], recopie tel quel.
-- "summary" : résumé 1 phrase EN FRANÇAIS
-- "impact" : 1 à 5 (importance macro-financière)
+POUR CHAQUE ARTICLE:
+- "index": numéro de l'article
+- "sectors": 0 à 2 secteurs parmi: health, tech, crypto, industrial, energy, finance, defensive. [] si hors sujet.
+- "titleFr": OBLIGATOIRE. Titre traduit en français clair et naturel. Pour [EN] → traduis complètement. Pour [FR] → recopie tel quel. Le titre doit être accrocheur et informatif (style journal québécois).
+- "summary": résumé de 1-2 phrases EN FRANÇAIS. Explique pourquoi c'est important.
+- "impact": 1 à 5 (importance pour les marchés/investisseurs)
 
-RÈGLES: MACRO UNIQUEMENT. Rejeter résultats trimestriels individuels, upgrades d'analystes, mouvements de cours d'UNE action. Accepter: banques centrales, politiques gouvernementales, crises, régulations, données économiques. Dans le doute → [].
+RÈGLES DE CLASSIFICATION:
+- Impact 4-5: banques centrales, crises, données économiques majeures (PIB, emploi, inflation), guerres commerciales, régulations majeures
+- Impact 2-3: mouvements sectoriels, fusions/acquisitions, politiques gouvernementales, tendances marché
+- Impact 1: nouvelles individuelles d'entreprises, lancements de produits
+- Attribue au moins 1 secteur à chaque article pertinent
 
 Articles :
 ${list}
@@ -146,7 +150,7 @@ Réponds UNIQUEMENT avec un tableau JSON valide.`;
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 3500 }),
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 6000 }),
       signal: AbortSignal.timeout(35000),
     });
     const data = await res.json();
@@ -213,6 +217,11 @@ async function buildNews() {
     }
 
     const isFrench = article.lang === 'fr' || (!!aiItem?.titleFr && !looksEnglish(finalTitle));
+
+    // If still in English and no AI translation, tag it
+    if (!isFrench && looksEnglish(finalTitle)) {
+      finalTitle = `🇬🇧 ${finalTitle}`;
+    }
 
     return {
       title: finalTitle,
