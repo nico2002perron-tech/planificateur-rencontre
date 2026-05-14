@@ -1,18 +1,23 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import { TickerTape } from '@/components/tradingview/TickerTape';
 import { MiniChart } from '@/components/tradingview/MiniChart';
 import {
   GreetingHeader,
   FearGreedGauge,
   SectorHeatmap,
-  YieldCurveWidget,
   MorningBriefing,
   EconomicCalendar,
   NewsRadar,
   MarketQuickStats,
 } from '@/components/dashboard';
+
+const YieldCurveWidget = dynamic(
+  () => import('@/components/dashboard/YieldCurveWidget').then((m) => m.YieldCurveWidget),
+  { ssr: false, loading: () => <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] p-6 h-[340px] animate-pulse" /> }
+);
 
 const INDICES = [
   { label: 'S&P/TSX', symbol: 'TSX:TX60', flag: '🇨🇦' },

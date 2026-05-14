@@ -37,17 +37,19 @@ function formatDateFr(date: Date) {
 
 export function GreetingHeader({ userName }: GreetingHeaderProps) {
   const [mounted, setMounted] = useState(false);
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    setNow(new Date());
     const interval = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
-  const greeting = getGreeting(now.getHours());
-  const market = getMarketStatus(now);
-  const dateStr = formatDateFr(now);
+  const displayNow = now ?? new Date(2000, 0, 1);
+  const greeting = getGreeting(displayNow.getHours());
+  const market = now ? getMarketStatus(displayNow) : { label: '', color: 'bg-gray-400', pulse: false };
+  const dateStr = now ? formatDateFr(displayNow) : '';
 
   return (
     <div

@@ -6,7 +6,7 @@ import useSWR from 'swr';
 interface FearGreedData {
   value: number;
   label: string;
-  previousClose: number;
+  previous: { value: number; label: string } | null;
   timestamp: string;
 }
 
@@ -48,8 +48,8 @@ export function FearGreedGauge() {
   const frameRef = useRef<number | null>(null);
 
   const value = data?.value ?? 50;
-  const previousClose = data?.previousClose ?? value;
-  const change = value - previousClose;
+  const previousValue = data?.previous?.value ?? value;
+  const change = value - previousValue;
 
   useEffect(() => {
     setMounted(true);
