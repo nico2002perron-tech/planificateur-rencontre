@@ -88,7 +88,7 @@ export function SectorHeatmap() {
     );
   }
 
-  const sectors = data ?? [];
+  const sectors = Array.isArray(data) ? data : [];
 
   return (
     <div
