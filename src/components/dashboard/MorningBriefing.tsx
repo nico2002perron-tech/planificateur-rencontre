@@ -1,72 +1,36 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, ExternalLink, ChevronDown, ChevronUp, Newspaper } from 'lucide-react';
 
 interface TopStory {
-  emoji: string;
-  headline: string;
-  summary: string;
-  impact: 'positif' | 'negatif' | 'neutre';
-  tag: string;
-}
-
-interface KeyData {
-  label: string;
-  value: string;
-  trend: 'up' | 'down' | 'stable';
-  context: string;
+  title: string;
+  source: string;
+  link: string;
+  time: string;
+  lang: string;
+  description: string;
 }
 
 interface BriefingData {
   topStories: TopStory[];
-  briefing: string;
-  keyData: KeyData[];
+  synthesis: string | null;
+  sectorSummary: { sector: string; change: number | string }[];
+  articleCount: number;
   generatedAt: string;
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function TypewriterText({ text, speed = 8 }: { text: string; speed?: number }) {
-  const [displayText, setDisplayText] = useState('');
-  const [isDone, setIsDone] = useState(false);
-  const indexRef = useRef(0);
-
-  useEffect(() => {
-    setDisplayText('');
-    indexRef.current = 0;
-    setIsDone(false);
-    const interval = setInterval(() => {
-      if (indexRef.current < text.length) {
-        setDisplayText(text.slice(0, indexRef.current + 1));
-        indexRef.current++;
-      } else {
-        setIsDone(true);
-        clearInterval(interval);
-      }
-    }, speed);
-    return () => clearInterval(interval);
-  }, [text, speed]);
-
-  return (
-    <span>
-      {displayText}
-      {!isDone && <span className="inline-block w-0.5 h-4 bg-brand-primary ml-0.5 animate-pulse" />}
-    </span>
-  );
-}
-
-const impactStyles = {
-  positif: { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', accent: 'text-emerald-700' },
-  negatif: { bg: 'bg-red-50', border: 'border-red-200', badge: 'bg-red-100 text-red-700', accent: 'text-red-700' },
-  neutre: { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-700' },
-};
-
-const trendConfig = {
-  up: { icon: TrendingUp, color: 'text-emerald-600', label: '↑' },
-  down: { icon: TrendingDown, color: 'text-red-600', label: '↓' },
-  stable: { icon: Minus, color: 'text-amber-600', label: '→' },
+const sourceColors: Record<string, string> = {
+  'Radio-Canada': 'bg-blue-100 text-blue-800',
+  'La Presse': 'bg-purple-100 text-purple-800',
+  'Les Affaires': 'bg-emerald-100 text-emerald-800',
+  'Le Devoir': 'bg-amber-100 text-amber-800',
+  'CNBC': 'bg-sky-100 text-sky-800',
+  'MarketWatch': 'bg-green-100 text-green-800',
+  'BBC': 'bg-red-100 text-red-800',
 };
 
 export function MorningBriefing() {
@@ -78,7 +42,7 @@ export function MorningBriefing() {
 
   const [mounted, setMounted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showFullBriefing, setShowFullBriefing] = useState(false);
+  const [showSynthesis, setShowSynthesis] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -97,40 +61,29 @@ export function MorningBriefing() {
             100% { background-position: 200% 0; }
           }
         `}</style>
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-5">
           <div className="h-10 w-10 rounded-xl bg-gray-200 animate-pulse" />
           <div className="space-y-2">
-            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
-            <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+            <div className="h-4 w-40 bg-gray-200 rounded animate-pulse" />
+            <div className="h-3 w-24 bg-gray-100 rounded animate-pulse" />
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-28 rounded-xl" style={{
-              background: 'linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)',
-              backgroundSize: '200% 100%',
-              animation: `shimmer 1.5s ease-in-out infinite`,
-              animationDelay: `${i * 0.15}s`,
-            }} />
-          ))}
-        </div>
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => <div key={i} className="h-3 bg-gray-100 rounded" style={{ width: `${100 - i * 12}%` }} />)}
-        </div>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-16 rounded-xl mb-2" style={{
+            background: 'linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)',
+            backgroundSize: '200% 100%',
+            animation: `shimmer 1.5s ease-in-out infinite`,
+            animationDelay: `${i * 0.1}s`,
+          }} />
+        ))}
       </div>
     );
   }
 
   const topStories = data?.topStories ?? [];
-  const briefing = data?.briefing ?? 'Aucun briefing disponible.';
-  const keyData = data?.keyData ?? [];
+  const synthesis = data?.synthesis;
   const generatedAt = data?.generatedAt;
-
-  // Show first 2 paragraphs or full
-  const briefingParagraphs = briefing.split('\n').filter(p => p.trim());
-  const previewText = briefingParagraphs.slice(0, 2).join('\n\n');
-  const hasMore = briefingParagraphs.length > 2;
-  const displayBriefing = showFullBriefing ? briefing : previewText;
+  const articleCount = data?.articleCount ?? 0;
 
   return (
     <div
@@ -142,32 +95,27 @@ export function MorningBriefing() {
       `}
     >
       <style>{`
-        @keyframes storyPop {
-          from { opacity: 0; transform: scale(0.92) translateY(8px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-        @keyframes dataSlide {
-          from { opacity: 0; transform: translateX(-10px); }
+        @keyframes storySlide {
+          from { opacity: 0; transform: translateX(-8px); }
           to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
 
-      {/* Header with gradient */}
+      {/* Header */}
       <div className="bg-gradient-to-r from-[var(--brand-dark)] via-[var(--brand-accent)] to-[var(--brand-primary)] p-5 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-white/20 backdrop-blur-sm p-2 rounded-xl">
-              <span className="text-xl">☀️</span>
+              <Newspaper className="h-5 w-5 text-white" />
             </div>
             <div>
               <h3 className="text-base font-extrabold text-white font-[family-name:var(--font-heading)]">
-                Journal du matin
+                À la une aujourd&apos;hui
               </h3>
-              {generatedAt && (
-                <p className="text-[10px] text-white/60">
-                  Mis à jour à {new Date(generatedAt).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              )}
+              <p className="text-[10px] text-white/60">
+                {articleCount} articles analysés
+                {generatedAt && ` · ${new Date(generatedAt).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}`}
+              </p>
             </div>
           </div>
           <button
@@ -182,93 +130,88 @@ export function MorningBriefing() {
       </div>
 
       <div className="p-5">
-        {/* Top Stories — "À la une" */}
-        {topStories.length > 0 && (
-          <div className="mb-5">
-            <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">
-              🔥 À la une aujourd&apos;hui
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {topStories.map((story, i) => {
-                const styles = impactStyles[story.impact] || impactStyles.neutre;
-                return (
-                  <div
-                    key={i}
-                    className={`${styles.bg} border ${styles.border} rounded-xl p-3.5 transition-all duration-200 hover:scale-[1.02] hover:shadow-md cursor-default`}
-                    style={{ animation: mounted ? `storyPop 0.4s ease-out ${0.1 + i * 0.12}s both` : 'none' }}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">{story.emoji}</span>
-                      <span className={`text-[9px] font-bold ${styles.badge} px-1.5 py-0.5 rounded-full uppercase`}>
-                        {story.tag}
-                      </span>
+        {/* Top stories - REAL articles with REAL links */}
+        {topStories.length > 0 ? (
+          <div className="space-y-2">
+            {topStories.map((story, i) => {
+              const colorClass = sourceColors[story.source] || 'bg-gray-100 text-gray-700';
+              const isFirst = i === 0;
+              return (
+                <a
+                  key={`${story.link}-${i}`}
+                  href={story.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`
+                    block rounded-xl border transition-all duration-200 group
+                    ${isFirst
+                      ? 'border-brand-primary/20 bg-blue-50/30 p-4 hover:bg-blue-50/60 hover:border-brand-primary/40'
+                      : 'border-gray-100 p-3 hover:bg-gray-50 hover:border-gray-200'
+                    }
+                  `}
+                  style={{ animation: mounted ? `storySlide 0.3s ease-out ${0.1 + i * 0.08}s both` : 'none' }}
+                >
+                  <div className="flex items-start gap-3">
+                    {isFirst && (
+                      <span className="text-2xl flex-shrink-0 mt-0.5">📰</span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${colorClass}`}>
+                          {story.source}
+                        </span>
+                        {story.time && (
+                          <span className="text-[10px] text-text-light">il y a {story.time}</span>
+                        )}
+                        {story.lang === 'en' && (
+                          <span className="text-[10px] text-text-light">🇬🇧</span>
+                        )}
+                      </div>
+                      <p className={`font-semibold text-text-main leading-snug group-hover:text-brand-accent transition-colors ${isFirst ? 'text-sm' : 'text-xs'}`}>
+                        {story.title}
+                      </p>
+                      {isFirst && story.description && (
+                        <p className="text-xs text-text-muted mt-1.5 line-clamp-2 leading-relaxed">
+                          {story.description}
+                        </p>
+                      )}
                     </div>
-                    <p className={`text-sm font-bold ${styles.accent} leading-snug mb-1.5`}>
-                      {story.headline}
-                    </p>
-                    <p className="text-xs text-text-main leading-relaxed">
-                      {story.summary}
-                    </p>
+                    <ExternalLink className="h-3.5 w-3.5 text-text-light flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
-                );
-              })}
-            </div>
+                </a>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-2xl mb-2">📭</p>
+            <p className="text-sm text-text-muted">Aucune nouvelle disponible</p>
           </div>
         )}
 
-        {/* Key economic data */}
-        {keyData.length > 0 && (
-          <div className="mb-5">
-            <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">
-              📊 Données clés
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {keyData.map((d, i) => {
-                const trend = trendConfig[d.trend] || trendConfig.stable;
-                const TrendIcon = trend.icon;
-                return (
-                  <div
-                    key={i}
-                    className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors group"
-                    style={{ animation: mounted ? `dataSlide 0.3s ease-out ${0.5 + i * 0.08}s both` : 'none' }}
-                    title={d.context}
-                  >
-                    <p className="text-[10px] font-semibold text-text-muted mb-1 truncate">{d.label}</p>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-base font-extrabold text-text-main">{d.value}</span>
-                      <TrendIcon className={`h-3.5 w-3.5 ${trend.color}`} />
-                    </div>
-                    <p className="text-[10px] text-text-light mt-1 line-clamp-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {d.context}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Briefing text */}
-        <div>
-          <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">
-            📝 Le briefing complet
-          </p>
-          <div className="text-sm text-text-main leading-relaxed whitespace-pre-line">
-            {mounted ? <TypewriterText text={displayBriefing} speed={6} /> : displayBriefing}
-          </div>
-          {hasMore && (
+        {/* AI Synthesis (expandable, clearly labeled as AI) */}
+        {synthesis && (
+          <div className="mt-4 border-t border-gray-100 pt-4">
             <button
-              onClick={() => setShowFullBriefing(!showFullBriefing)}
-              className="flex items-center gap-1 mt-3 text-xs font-semibold text-brand-primary hover:text-brand-accent transition-colors"
+              onClick={() => setShowSynthesis(!showSynthesis)}
+              className="flex items-center gap-2 text-xs font-semibold text-text-muted hover:text-brand-primary transition-colors w-full"
             >
-              {showFullBriefing ? (
-                <>Réduire <ChevronUp className="h-3 w-3" /></>
-              ) : (
-                <>Lire la suite <ChevronDown className="h-3 w-3" /></>
-              )}
+              <span>🤖</span>
+              <span>Synthèse IA des manchettes</span>
+              <span className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded-full">généré par IA</span>
+              <span className="flex-1" />
+              {showSynthesis ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
-          )}
-        </div>
+            {showSynthesis && (
+              <div className="mt-3 text-sm text-text-main leading-relaxed whitespace-pre-line bg-gray-50 rounded-xl p-4 border border-gray-100">
+                {synthesis}
+                <p className="text-[10px] text-text-light mt-3 italic">
+                  Cette synthèse est générée par IA à partir des manchettes réelles ci-dessus. Vérifiez toujours les sources originales.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
