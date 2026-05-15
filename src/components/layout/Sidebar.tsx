@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils/cn';
 import {
   LayoutDashboard,
   Users,
-  Briefcase,
+  PhoneCall,
   PieChart,
   FileText,
   Settings,
@@ -23,7 +23,7 @@ import { useState } from 'react';
 const navItems = [
   { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
-  { href: '/portfolios', label: 'Portefeuilles', icon: Briefcase },
+  { href: '/prospection', label: 'Prospection', icon: PhoneCall },
   { href: '/models', label: 'Modèles', icon: PieChart },
   { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/valuation', label: 'Valorisation', icon: BarChart2 },
