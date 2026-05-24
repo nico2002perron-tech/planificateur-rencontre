@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
       captain_email: body.email.toLowerCase().trim(),
       manage_token: manageToken,
       max_members: maxMembers,
+      logo_url: body.logo_url || null,
     })
     .select()
     .single();

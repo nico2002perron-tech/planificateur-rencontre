@@ -16,7 +16,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: team, error } = await supabase
     .from('event_teams')
-    .select('id, event_id, team_name, team_code, max_members, created_at')
+    .select('id, event_id, team_name, team_code, logo_url, max_members, created_at')
     .eq('team_code', code.toUpperCase())
     .single();
 
@@ -40,6 +40,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   return corsJson({
     team_name: team.team_name,
     team_code: team.team_code,
+    logo_url: team.logo_url || null,
     event: event || null,
     members: (members || []).map(m => ({
       name: `${m.first_name} ${m.last_name}`,

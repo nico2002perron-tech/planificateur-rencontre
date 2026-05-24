@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     'title', 'description', 'event_type', 'date', 'time', 'end_date',
     'location', 'location_url', 'cover_image', 'images', 'collab_logos',
     'max_attendees', 'registration_deadline', 'is_registration_open',
-    'registration_mode', 'team_size', 'team_label', 'pricing', 'form_options',
+    'registration_mode', 'team_size', 'team_label', 'allow_team_logo', 'pricing', 'form_options',
     'contact_email', 'contact_phone', 'status',
   ];
   for (const f of fields) {

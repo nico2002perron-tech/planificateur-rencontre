@@ -50,6 +50,7 @@ interface EventData {
   registration_mode: 'individual' | 'team' | 'both';
   team_size: number;
   team_label: string;
+  allow_team_logo: boolean;
   pricing: { label: string; price: string }[];
   form_options: {
     show_company: boolean;
@@ -106,6 +107,7 @@ const emptyForm = () => ({
   registration_mode: 'individual' as 'individual' | 'team' | 'both',
   team_size: 4,
   team_label: 'Equipe',
+  allow_team_logo: false,
   pricing: [] as { label: string; price: string }[],
   form_options: {
     show_company: true,
@@ -199,6 +201,7 @@ export default function EventsPage() {
       registration_mode: e.registration_mode,
       team_size: e.team_size,
       team_label: e.team_label,
+      allow_team_logo: e.allow_team_logo ?? false,
       pricing: e.pricing || [],
       form_options: e.form_options || emptyForm().form_options,
       contact_email: e.contact_email,
@@ -679,6 +682,12 @@ export default function EventsPage() {
                       <div>
                         <label className="block text-xs font-extrabold text-text-main mb-1.5">Label</label>
                         <input type="text" value={form.team_label} onChange={e => updateForm('team_label', e.target.value)} placeholder="Equipe" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#58CC02]" />
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label className="flex items-center gap-2 text-xs font-extrabold text-text-main cursor-pointer">
+                          <input type="checkbox" checked={form.allow_team_logo} onChange={e => updateForm('allow_team_logo', e.target.checked)} />
+                          Permettre un logo d&apos;equipe (le capitaine peut televerser un logo)
+                        </label>
                       </div>
                     </>
                   )}

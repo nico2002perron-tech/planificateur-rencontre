@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   // Public: only published events, upcoming first
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, description, event_type, date, time, end_date, location, location_url, cover_image, images, collab_logos, max_attendees, registration_deadline, is_registration_open, registration_mode, team_size, team_label, pricing, form_options, contact_email, contact_phone, status')
+    .select('id, title, description, event_type, date, time, end_date, location, location_url, cover_image, images, collab_logos, max_attendees, registration_deadline, is_registration_open, registration_mode, team_size, team_label, allow_team_logo, pricing, form_options, contact_email, contact_phone, status')
     .eq('status', 'published')
     .eq('is_registration_open', true)
     .gte('date', new Date().toISOString().split('T')[0])
@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
       registration_mode: body.registration_mode || 'individual',
       team_size: body.team_size || 4,
       team_label: body.team_label || 'Equipe',
+      allow_team_logo: body.allow_team_logo ?? false,
       pricing: body.pricing || [],
       form_options: body.form_options || { show_company: true, show_dietary: false, show_skill_level: false, show_shirt_size: false, show_is_client: false },
       contact_email: body.contact_email || '',
