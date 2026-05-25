@@ -2,12 +2,12 @@ import 'server-only';
 import { yahooFetch, toYahooSymbol } from '@/lib/yahoo/client';
 
 /**
- * Batch sector resolver for the price-targets PDF.
+ * Batch holding-metadata resolver for the price-targets PDF.
  *
- * Mirrors /api/models/stock-sector: pulls the GICS-style sector from Yahoo
- * Finance assetProfile and maps it to the app's internal sector codes. Used
- * server-side to enrich equity/ETF holdings before rendering the sector donut.
- * Failures are silent — a symbol with no sector is simply omitted.
+ * One Yahoo Finance `assetProfile` call returns BOTH the GICS-style sector
+ * (mapped to the app's internal codes, as in /api/models/stock-sector) and the
+ * company's business summary (English) — reused for the sector donut and the
+ * "Descriptions des titres" section. Failures are silent.
  */
 
 const YAHOO_SECTOR_MAP: Record<string, string> = {
@@ -24,8 +24,13 @@ const YAHOO_SECTOR_MAP: Record<string, string> = {
   'Communication Services':  'TELECOM',
 };
 
-// Process-level cache: sectors rarely change, so reuse across requests.
-const cache = new Map<string, string | null>();
+export interface HoldingMeta {
+  sector: string | null;   // internal sector code, or null
+  summary: string | null;  // English business summary, or null
+}
+
+// Process-level cache: this metadata rarely changes.
+const cache = new Map<string, HoldingMeta>();
 
 /** Strip a Canadian exchange suffix to reach the underlying US ticker. */
 function toUnderlyingUS(symbol: string): string | null {
@@ -33,42 +38,42 @@ function toUnderlyingUS(symbol: string): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-async function fetchProfileSector(ySym: string): Promise<string | null> {
+async function fetchProfile(ySym: string): Promise<{ sectorRaw: string | null; summary: string | null }> {
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ySym)}?modules=assetProfile`;
   const res = await yahooFetch(url);
-  if (!res.ok) return null;
+  if (!res.ok) return { sectorRaw: null, summary: null };
   const json = await res.json();
-  return json?.quoteSummary?.result?.[0]?.assetProfile?.sector ?? null;
+  const p = json?.quoteSummary?.result?.[0]?.assetProfile;
+  return { sectorRaw: p?.sector ?? null, summary: p?.longBusinessSummary ?? null };
 }
 
-async function resolveSector(symbol: string): Promise<string | null> {
-  if (cache.has(symbol)) return cache.get(symbol) ?? null;
-  let sector: string | null = null;
+async function resolveMeta(symbol: string): Promise<HoldingMeta> {
+  if (cache.has(symbol)) return cache.get(symbol)!;
+  let meta: HoldingMeta = { sector: null, summary: null };
   try {
-    let raw = await fetchProfileSector(toYahooSymbol(symbol));
-    if (!raw) {
+    let p = await fetchProfile(toYahooSymbol(symbol));
+    if (!p.sectorRaw && !p.summary) {
       const us = toUnderlyingUS(symbol);
-      if (us) raw = await fetchProfileSector(us);
+      if (us) p = await fetchProfile(us);
     }
-    sector = raw ? (YAHOO_SECTOR_MAP[raw] ?? null) : null;
+    meta = {
+      sector: p.sectorRaw ? (YAHOO_SECTOR_MAP[p.sectorRaw] ?? null) : null,
+      summary: p.summary,
+    };
   } catch {
-    sector = null;
+    meta = { sector: null, summary: null };
   }
-  cache.set(symbol, sector);
-  return sector;
+  cache.set(symbol, meta);
+  return meta;
 }
 
-/**
- * Resolve sectors for a list of symbols in parallel.
- * Returns a map of symbol → internal sector code (only entries that resolved).
- */
-export async function fetchSectors(symbols: string[]): Promise<Record<string, string>> {
+/** Resolve sector + summary for a list of symbols in parallel. */
+export async function fetchHoldingMeta(symbols: string[]): Promise<Record<string, HoldingMeta>> {
   const unique = Array.from(new Set(symbols.filter(Boolean)));
-  const out: Record<string, string> = {};
+  const out: Record<string, HoldingMeta> = {};
   await Promise.all(
     unique.map(async (sym) => {
-      const s = await resolveSector(sym);
-      if (s) out[sym] = s;
+      out[sym] = await resolveMeta(sym);
     })
   );
   return out;

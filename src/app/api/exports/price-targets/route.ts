@@ -4,7 +4,8 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
-import { fetchSectors } from '@/lib/pdf/fetch-sectors';
+import { fetchHoldingMeta } from '@/lib/pdf/fetch-sectors';
+import { describeHoldings } from '@/lib/pdf/describe-holdings';
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,23 +27,35 @@ export async function POST(req: NextRequest) {
     ));
     reportData.logos = await fetchLogoDataUris(logoSymbols);
 
-    // Enrich equity/ETF holdings with their sector for the cover sector donut.
-    // Best-effort: any lookup failure leaves the holding without a sector
-    // (it falls into the "Autres"/"FNB diversifiés" bucket, PDF still renders).
+    // Enrich equity/ETF holdings with sector (cover donut) + a short French
+    // business description (Descriptions section). One Yahoo call per symbol
+    // returns both sector and English summary; Groq condenses it to French.
+    // Best-effort: any failure leaves the PDF renderable without the extra data.
     try {
-      const sectorSymbols = reportData.holdings
-        .filter(h => h.assetType === 'EQUITY' || h.assetType === 'ETF')
-        .map(h => h.symbol);
-      if (sectorSymbols.length > 0) {
-        const sectorMap = await fetchSectors(sectorSymbols);
-        reportData.holdings = reportData.holdings.map(h =>
-          (h.assetType === 'EQUITY' || h.assetType === 'ETF') && sectorMap[h.symbol]
-            ? { ...h, sector: sectorMap[h.symbol] }
-            : h
-        );
+      const eqEtf = reportData.holdings.filter(h => h.assetType === 'EQUITY' || h.assetType === 'ETF');
+      if (eqEtf.length > 0) {
+        const meta = await fetchHoldingMeta(eqEtf.map(h => h.symbol));
+        reportData.holdings = reportData.holdings.map(h => {
+          const m = meta[h.symbol];
+          return (h.assetType === 'EQUITY' || h.assetType === 'ETF') && m?.sector
+            ? { ...h, sector: m.sector }
+            : h;
+        });
+        // French descriptions only when the Descriptions section is included.
+        if (options?.includeDescriptions !== false) {
+          const desc = await describeHoldings(eqEtf.map(h => ({
+            symbol: h.symbol,
+            name: h.name,
+            sector: meta[h.symbol]?.sector ?? undefined,
+            summary: meta[h.symbol]?.summary ?? undefined,
+          })));
+          reportData.holdings = reportData.holdings.map(h =>
+            desc[h.symbol] ? { ...h, description: desc[h.symbol] } : h
+          );
+        }
       }
     } catch (e) {
-      console.error('Sector enrichment failed (non-fatal):', e);
+      console.error('Holding enrichment failed (non-fatal):', e);
     }
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });

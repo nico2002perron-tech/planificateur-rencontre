@@ -63,13 +63,16 @@ export interface PriceTargetHolding {
   /** GICS-style sector code (TECHNOLOGY, FINANCIALS, …) for equity/ETF holdings.
    *  Enriched server-side at PDF generation; absent for bonds/cash. */
   sector?: string;
+  /** Short French business description (equity/ETF), enriched server-side. */
+  description?: string;
 }
 
 export interface PdfRenderOptions {
   includeCover?: boolean;
   includeEquities?: boolean;
   includeFixedIncome?: boolean;
-  includeCashOther?: boolean;
+  /** "Descriptions des titres" section (replaces the old cash/other table). */
+  includeDescriptions?: boolean;
   /** Page orientation — defaults to 'portrait'. */
   orientation?: 'portrait' | 'landscape';
 }
@@ -361,6 +364,24 @@ function SectorIcon({ code, size = 11, color }: { code: string; size?: number; c
         <Rect x={4} y={4} width={7} height={7} rx={1} {...fl} /><Rect x={13} y={4} width={7} height={7} rx={1} {...fl} />
         <Rect x={4} y={13} width={7} height={7} rx={1} {...fl} /><Rect x={13} y={13} width={7} height={7} rx={1} {...fl} />
       </>); break;
+    case 'FIXED_INCOME': // bond certificate
+      body = (<>
+        <Rect x={4} y={5} width={16} height={14} rx={1.5} {...st} />
+        <Line x1={7} y1={9} x2={17} y2={9} {...st} /><Line x1={7} y1={12} x2={17} y2={12} {...st} /><Line x1={7} y1={15} x2={13} y2={15} {...st} />
+      </>); break;
+    case 'CASH': // banknote
+      body = (<>
+        <Rect x={3} y={7} width={18} height={10} rx={2} {...st} />
+        <Circle cx={12} cy={12} r={2.4} {...st} />
+      </>); break;
+    case 'FUND': // stacked layers
+      body = (<>
+        <Polygon points="12,3 21,8 12,13 3,8" {...st} />
+        <Polyline points="3,12 12,17 21,12" {...st} />
+        <Polyline points="3,16 12,21 21,16" {...st} />
+      </>); break;
+    case 'PREFERRED': // sparkle
+      body = (<Polygon points="12,2 14,10 22,12 14,14 12,22 10,14 2,12 10,10" {...fl} />); break;
     default: // OTHER — dot
       body = (<Circle cx={12} cy={12} r={5} {...fl} />); break;
   }
@@ -1475,74 +1496,71 @@ function FixedIncomeTablePage({ holdings, orientation }: {
   );
 }
 
-// ─── Cash / Other Table Page ─────────────────────────────────────────────────
+// ─── Descriptions des titres ─────────────────────────────────────────────────
 
-function CashTablePage({ holdings, orientation }: {
+// Icon code + colour + label for a holding: the sector (same icon as the donut)
+// for equities/ETFs, otherwise the asset class (revenu fixe, liquidités, …).
+function holdingBadge(h: PriceTargetHolding): { code: string; color: string; label: string } {
+  if ((h.assetType === 'EQUITY' || h.assetType === 'ETF') && h.sector && SECTOR_META[h.sector]) {
+    return { code: h.sector, color: SECTOR_META[h.sector].color, label: SECTOR_META[h.sector].label };
+  }
+  const ac = ASSET_CLASS_META[h.assetType] || ASSET_CLASS_META.OTHER;
+  return { code: h.assetType, color: ac.color, label: ac.label };
+}
+
+function DescriptionsPage({ holdings, orientation }: {
   holdings: PriceTargetHolding[];
   orientation: 'portrait' | 'landscape';
 }) {
+  const sorted = [...holdings].sort((a, b) => Math.abs(b.marketValue) - Math.abs(a.marketValue));
   const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
-  const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
 
   return (
     <Page size="A4" orientation={orientation} style={styles.page}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.cyan, borderBottomStyle: 'solid' as const }}>
-        <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Liquidités et autres</Text>
-        <Text style={{ fontSize: 7.5, color: '#64748b' }}>Total: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
+        <View>
+          <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Descriptions des titres</Text>
+          <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 2 }}>Activité de chaque position — le secteur est indiqué par l&apos;icône et l&apos;étiquette</Text>
+        </View>
+        <Text style={{ fontSize: 7.5, color: '#64748b' }}>{holdings.length} titres · <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
       </View>
 
-      <View style={styles.tablePremium}>
-        <View style={styles.thPremium}>
-          <Text style={[styles.thCellPremium, { width: '8%' }]}>Cpte</Text>
-          <Text style={[styles.thCellPremium, { width: '14%' }]}>Symbole</Text>
-          <Text style={[styles.thCellPremium, { width: '33%' }]}>Description</Text>
-          <Text style={[styles.thCellPremium, { width: '10%' }]}>Type</Text>
-          <Text style={[styles.thCellPremium, { width: '17%', textAlign: 'right' }]}>Valeur</Text>
-          <Text style={[styles.thCellPremium, { width: '18%', textAlign: 'right' }]}>Revenu annuel</Text>
-        </View>
-
-        {holdings.map((h, i) => {
-          const row = getRowStyle(i, holdings.length);
-          const typeLabel = h.assetType === 'CASH' ? 'Liquidité' : h.assetType === 'FUND' ? 'Fonds' : 'Autre';
-          const dotColor = getAssetColor(h.assetType);
-          return (
-            <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
-              flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 8,
-              backgroundColor: row.bg,
-              borderBottomWidth: row.borderBottomWidth,
-              borderBottomColor: row.borderBottomColor,
-              borderBottomStyle: 'solid' as const,
-              alignItems: 'center',
-            }} wrap={false}>
-              <Text style={[styles.td, { width: '8%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
-              <View style={{ width: '14%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
-                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
-                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
-              </View>
-              <Text style={[styles.td, { width: '33%' }]}>{h.name}</Text>
-              <Text style={[styles.td, { width: '10%', color: '#64748b', fontSize: 7.5 }]}>{typeLabel}</Text>
-              <Text style={[styles.tdBold, { width: '17%', textAlign: 'right', color: h.marketValue < 0 ? '#ef4444' : C.text }]}>{fmt(h.marketValue)}</Text>
-              <Text style={[styles.td, { width: '18%', textAlign: 'right', color: h.annualIncome > 0 ? '#10b981' : '#94a3b8' }]}>
-                {h.annualIncome > 0 ? fmt(h.annualIncome) : '—'}
-              </Text>
+      {sorted.map((h, i) => {
+        const badge = holdingBadge(h);
+        let sub = h.description || '';
+        if (!sub && h.assetType === 'FIXED_INCOME') {
+          const parts = ['Titre à revenu fixe'];
+          if (h.couponRate) parts.push(`coupon ${h.couponRate.toFixed(2)} %`);
+          if (h.maturityDate) parts.push(`échéance ${h.maturityDate}`);
+          sub = parts.join(' · ');
+        } else if (!sub && h.assetType === 'CASH') {
+          sub = 'Encaisse / solde du compte.';
+        }
+        return (
+          <View key={`${h.symbol}-${h.accountType}-${i}`} style={{
+            flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+            paddingVertical: 5,
+            borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' as const,
+          }} wrap={false}>
+            <View style={{ width: 16, alignItems: 'center', paddingTop: 1 }}>
+              <SectorIcon code={badge.code} size={13} color={badge.color} />
             </View>
-          );
-        })}
-
-        {/* Total row — premium navy-topped */}
-        <View style={{
-          flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
-          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
-          alignItems: 'center',
-        }}>
-          <Text style={{ width: '8%' }}>{''}</Text>
-          <Text style={{ width: '14%' }}>{''}</Text>
-          <Text style={{ width: '33%', fontSize: 8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, paddingHorizontal: 4 }}>Total</Text>
-          <Text style={{ width: '10%' }}>{''}</Text>
-          <Text style={{ width: '17%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
-          <Text style={{ width: '18%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalIncome > 0 ? '#10b981' : C.navy, textAlign: 'right', paddingHorizontal: 4 }}>{totalIncome > 0 ? fmt(totalIncome) : '—'}</Text>
-        </View>
-      </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{h.symbol}</Text>
+                <Text style={{ fontSize: 8, color: C.text, flex: 1 }}>{h.name}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#f8fafc', borderWidth: 0.5, borderColor: '#e2e8f0', borderStyle: 'solid' as const, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1.5 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 1.5, backgroundColor: badge.color }} />
+                  <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: badge.color }}>{badge.label}</Text>
+                </View>
+              </View>
+              {sub ? (
+                <Text style={{ fontSize: 7, color: '#64748b', marginTop: 2, lineHeight: 1.35 }}>{sub}</Text>
+              ) : null}
+            </View>
+          </View>
+        );
+      })}
 
       <PageFooter />
     </Page>
@@ -1556,7 +1574,7 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const showCover = opts.includeCover !== false;
   const showEquities = opts.includeEquities !== false;
   const showFixedIncome = opts.includeFixedIncome !== false;
-  const showCashOther = opts.includeCashOther !== false;
+  const showDescriptions = opts.includeDescriptions !== false;
   const orientation: 'portrait' | 'landscape' = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
 
   const equities = showEquities
@@ -1565,8 +1583,10 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const fixedIncome = showFixedIncome
     ? data.holdings.filter(h => h.assetType === 'FIXED_INCOME')
     : [];
-  const cashOther = showCashOther
-    ? data.holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType))
+  // "Descriptions des titres" — every position with a value (remplace l'ancienne
+  // section Liquidités & autres).
+  const descriptionHoldings = showDescriptions
+    ? data.holdings.filter(h => Math.abs(h.marketValue) > 0)
     : [];
 
   const logos: Record<string, string> = data.logos ?? {};
@@ -1588,8 +1608,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
         <FixedIncomeTablePage holdings={fixedIncome} orientation={orientation} />
       )}
 
-      {cashOther.length > 0 && (
-        <CashTablePage holdings={cashOther} orientation={orientation} />
+      {descriptionHoldings.length > 0 && (
+        <DescriptionsPage holdings={descriptionHoldings} orientation={orientation} />
       )}
     </Document>
   );

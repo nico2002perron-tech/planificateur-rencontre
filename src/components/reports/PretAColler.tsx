@@ -464,7 +464,7 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
     includeCover: true,
     includeEquities: true,
     includeFixedIncome: true,
-    includeCashOther: true,
+    includeDescriptions: true,
     fundCodesToInclude: [] as string[],
     orientation: 'portrait' as 'portrait' | 'landscape',
   });
@@ -1124,7 +1124,7 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
           includeCover: pdfOptions.includeCover,
           includeEquities: pdfOptions.includeEquities,
           includeFixedIncome: pdfOptions.includeFixedIncome,
-          includeCashOther: pdfOptions.includeCashOther,
+          includeDescriptions: pdfOptions.includeDescriptions,
           orientation: pdfOptions.orientation,
         },
         summary: (() => {
@@ -2540,34 +2540,34 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
 
               {/* Cash & other */}
               {(() => {
-                const count = holdings.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
+                const count = holdings.length;
                 if (count === 0) return null;
                 return (
                   <button
-                    onClick={() => setPdfOptions(p => ({ ...p, includeCashOther: !p.includeCashOther }))}
+                    onClick={() => setPdfOptions(p => ({ ...p, includeDescriptions: !p.includeDescriptions }))}
                     className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
                     style={{
-                      border: `2px solid ${pdfOptions.includeCashOther ? DUO.green : '#e5e7eb'}`,
-                      borderBottom: `4px solid ${pdfOptions.includeCashOther ? DUO.greenDark : '#d1d5db'}`,
-                      backgroundColor: pdfOptions.includeCashOther ? `${DUO.green}08` : '#fafafa',
+                      border: `2px solid ${pdfOptions.includeDescriptions ? DUO.green : '#e5e7eb'}`,
+                      borderBottom: `4px solid ${pdfOptions.includeDescriptions ? DUO.greenDark : '#d1d5db'}`,
+                      backgroundColor: pdfOptions.includeDescriptions ? `${DUO.green}08` : '#fafafa',
                     }}
                   >
                     <div
                       className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
-                      style={{ backgroundColor: pdfOptions.includeCashOther ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeCashOther ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                      style={{ backgroundColor: pdfOptions.includeDescriptions ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeDescriptions ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
                     >
                       <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
                     </div>
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
-                      style={{ backgroundColor: pdfOptions.includeCashOther ? `${DUO.green}20` : '#f3f4f6' }}
+                      style={{ backgroundColor: pdfOptions.includeDescriptions ? `${DUO.green}20` : '#f3f4f6' }}
                     >
-                      <Wallet className="h-5 w-5" style={{ color: pdfOptions.includeCashOther ? DUO.green : '#9ca3af' }} />
+                      <FileText className="h-5 w-5" style={{ color: pdfOptions.includeDescriptions ? DUO.green : '#9ca3af' }} />
                     </div>
-                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeCashOther ? '#1f2937' : '#9ca3af' }}>
-                      Liquidités & autres
+                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeDescriptions ? '#1f2937' : '#9ca3af' }}>
+                      Descriptions des titres
                     </p>
-                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeCashOther ? '#6b7280' : '#d1d5db' }}>
+                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeDescriptions ? '#6b7280' : '#d1d5db' }}>
                       {count} position{count > 1 ? 's' : ''}
                     </p>
                   </button>
@@ -2851,13 +2851,12 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
                   const incl = holdings.filter(h => !excludedRows.has(h._key));
                   const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
                   const fiCount = incl.filter(h => h.assetType === 'FIXED_INCOME').length;
-                  const coCount = incl.filter(h => ['CASH', 'FUND', 'OTHER'].includes(h.assetType)).length;
                   const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 22 : 28;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
                   if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
-                  if (pdfOptions.includeCashOther && coCount > 0) pages += 1;
+                  if (pdfOptions.includeDescriptions && incl.length > 0) pages += Math.ceil(incl.length / 24);
                   pages += pdfOptions.fundCodesToInclude.length * 2;
                   return (
                     <span className="font-semibold">
@@ -2876,7 +2875,7 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
                 </button>
                 <button
                   onClick={handleDownloadPdf}
-                  disabled={generatingPdf || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeCashOther && pdfOptions.fundCodesToInclude.length === 0)}
+                  disabled={generatingPdf || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
                   className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
                     transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
