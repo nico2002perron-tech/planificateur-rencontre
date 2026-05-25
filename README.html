@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planificateur de Rencontre — Documentation</title>
+<style>
+  :root {
+    --primary: #00b4d8;
+    --dark: #03045e;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --code-bg: #f1f5f9;
+    --accent-green: #10b981;
+    --accent-purple: #8b5cf6;
+    --accent-orange: #f59e0b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, var(--dark) 0%, #0077b6 50%, var(--primary) 100%);
+    color: #fff;
+    text-align: center;
+    padding: 60px 20px 50px;
+  }
+  .hero h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 1.15rem;
+    opacity: 0.9;
+    max-width: 650px;
+    margin: 0 auto 28px;
+  }
+  .badges {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.25);
+  }
+
+  /* ── Container ── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 48px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .toc h2 {
+    font-size: 1.3rem;
+    color: var(--dark);
+    margin-bottom: 16px;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 6px 24px;
+  }
+  .toc a {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 0.95rem;
+    padding: 4px 0;
+    display: block;
+    transition: color 0.15s;
+  }
+  .toc a:hover { color: var(--dark); text-decoration: underline; }
+
+  /* ── Sections ── */
+  section { margin-bottom: 48px; }
+
+  h2 {
+    font-size: 1.6rem;
+    color: var(--dark);
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+  }
+  h3 {
+    font-size: 1.15rem;
+    color: var(--dark);
+    margin: 24px 0 12px;
+  }
+
+  p { margin-bottom: 12px; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 0.92rem;
+    background: var(--card);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  thead {
+    background: var(--dark);
+    color: #fff;
+  }
+  th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #f0f9ff; }
+
+  /* ── Code ── */
+  code {
+    background: var(--code-bg);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    color: #be185d;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 20px 24px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 12px 0 20px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+  pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+  }
+
+  /* ── Tags ── */
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 16px;
+  }
+  .tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    color: var(--dark);
+  }
+
+  /* ── Cards grid ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .card h4 {
+    font-size: 1rem;
+    color: var(--dark);
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* ── Stats bar ── */
+  .stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin: 20px 0 32px;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 24px;
+    text-align: center;
+    flex: 1;
+    min-width: 140px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .stat .number {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--primary);
+    display: block;
+  }
+  .stat .label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ── Lists ── */
+  ul { padding-left: 20px; margin: 8px 0 16px; }
+  li { margin-bottom: 6px; font-size: 0.95rem; }
+
+  /* ── Design colors ── */
+  .color-swatch {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    vertical-align: middle;
+    margin-right: 6px;
+    border: 1px solid rgba(0,0,0,0.1);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 32px 20px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* ── Pipeline diagram ── */
+  .pipeline {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 16px 0 20px;
+    align-items: stretch;
+  }
+  .pipeline-step {
+    flex: 1;
+    min-width: 200px;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+    text-align: center;
+  }
+  .pipeline-step .step-num {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .pipeline-step h4 {
+    font-size: 0.9rem;
+    color: var(--dark);
+    margin-bottom: 4px;
+  }
+  .pipeline-step p {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 1.8rem; }
+    .toc-grid { grid-template-columns: 1fr; }
+    .stats { flex-direction: column; }
+    .pipeline { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════ HERO ════════════════════ -->
+<header class="hero">
+  <h1>Planificateur de Rencontre</h1>
+  <p class="subtitle">
+    Plateforme interne de gestion de portefeuilles, clients et rapports financiers
+    pour le Groupe Financier Ste-Foy
+  </p>
+  <div class="badges">
+    <span class="badge">Next.js 16.1</span>
+    <span class="badge">React 19</span>
+    <span class="badge">TypeScript 5</span>
+    <span class="badge">Tailwind CSS 4</span>
+    <span class="badge">Supabase</span>
+    <span class="badge">NextAuth v4</span>
+    <span class="badge">Groq IA</span>
+    <span class="badge">@react-pdf/renderer</span>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- ════════════════════ STATS ════════════════════ -->
+<div class="stats">
+  <div class="stat"><span class="number">342</span><span class="label">Fichiers source</span></div>
+  <div class="stat"><span class="number">45</span><span class="label">Pages</span></div>
+  <div class="stat"><span class="number">107</span><span class="label">Routes API</span></div>
+  <div class="stat"><span class="number">68</span><span class="label">Composants</span></div>
+  <div class="stat"><span class="number">18+</span><span class="label">Pages PDF</span></div>
+</div>
+
+<!-- ════════════════════ TOC ════════════════════ -->
+<nav class="toc">
+  <h2>Table des matieres</h2>
+  <div class="toc-grid">
+    <a href="#apercu">Apercu</a>
+    <a href="#stack">Stack technique</a>
+    <a href="#architecture">Architecture du projet</a>
+    <a href="#pages">Pages (45)</a>
+    <a href="#api">Routes API (107)</a>
+    <a href="#composants">Composants</a>
+    <a href="#analytics">Moteur analytique</a>
+    <a href="#pdf">Rapports PDF (V2)</a>
+    <a href="#ia">Intelligence artificielle</a>
+    <a href="#valuation">Valorisation</a>
+    <a href="#donnees">Sources de donnees</a>
+    <a href="#bdd">Base de donnees</a>
+    <a href="#install">Installation</a>
+    <a href="#env">Variables d'environnement</a>
+    <a href="#scripts">Scripts</a>
+  </div>
+</nav>
+
+<!-- ════════════════════ APERCU ════════════════════ -->
+<section id="apercu">
+  <h2>Apercu</h2>
+  <p>
+    Application web interne destinee aux conseillers financiers du <strong>Groupe Financier Ste-Foy</strong>.
+    Elle centralise la gestion de clients, portefeuilles, modeles d'investissement, rapports PDF avances,
+    notes de rencontres, prospection, evenements et analyse de marche au sein d'un tableau de bord unifie.
+  </p>
+  <h3>Design</h3>
+  <table>
+    <thead><tr><th>Element</th><th>Valeur</th></tr></thead>
+    <tbody>
+      <tr><td>Typographie</td><td><strong>Montserrat</strong> (titres) + <strong>Open Sans</strong> (corps)</td></tr>
+      <tr><td>Couleur primaire</td><td><span class="color-swatch" style="background:#00b4d8"></span><code>#00b4d8</code></td></tr>
+      <tr><td>Couleur sombre</td><td><span class="color-swatch" style="background:#03045e"></span><code>#03045e</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ STACK ════════════════════ -->
+<section id="stack">
+  <h2>Stack technique</h2>
+  <table>
+    <thead><tr><th>Categorie</th><th>Technologies</th></tr></thead>
+    <tbody>
+      <tr><td>Framework</td><td>Next.js 16.1 (App Router)</td></tr>
+      <tr><td>UI</td><td>React 19, Tailwind CSS 4, Lucide React, Recharts 3</td></tr>
+      <tr><td>Auth</td><td>NextAuth v4 (credentials provider, JWT, middleware)</td></tr>
+      <tr><td>Base de donnees</td><td>Supabase PostgreSQL (13+ tables)</td></tr>
+      <tr><td>PDF</td><td>@react-pdf/renderer (rapport 18+ pages), pdf-lib</td></tr>
+      <tr><td>IA</td><td>Groq SDK (LLaMA 3.3 70B), Gemini</td></tr>
+      <tr><td>Donnees marche</td><td>EODHD (fondamentaux + recherche), Yahoo Finance (prix), TradingView (widgets)</td></tr>
+      <tr><td>Email</td><td>Resend</td></tr>
+      <tr><td>Validation</td><td>Zod</td></tr>
+      <tr><td>Fetching</td><td>SWR</td></tr>
+      <tr><td>Parsers</td><td>xlsx (Excel), Croesus, smart-parser</td></tr>
+      <tr><td>Utilitaires</td><td>clsx, tailwind-merge, bcryptjs</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ ARCHITECTURE ════════════════════ -->
+<section id="architecture">
+  <h2>Architecture du projet</h2>
+  <pre><code>planificateur-rencontre/
+├── src/
+│   ├── app/
+│   │   ├── (auth)/                # Pages login, change-password
+│   │   ├── (dashboard)/           # 43 pages protegees
+│   │   │   ├── admin/             # Settings, team, users
+│   │   │   ├── clients/           # CRUD clients
+│   │   │   ├── events/            # Evenements
+│   │   │   ├── fund-reports/      # Rapports de fonds
+│   │   │   ├── markets/           # Vue marche (TradingView)
+│   │   │   ├── meeting-notes/     # Notes de rencontres
+│   │   │   ├── models/            # 13 sous-pages (backtest, scoring, simulation...)
+│   │   │   ├── portfolios/        # Portefeuilles + comparaison + simulation
+│   │   │   ├── profile/           # Profil utilisateur
+│   │   │   ├── prospection/       # CRM prospection + stats
+│   │   │   ├── reports/           # Rapports PDF
+│   │   │   ├── strategies/        # Strategies d'investissement
+│   │   │   └── valuation/         # Valorisation d'actions
+│   │   ├── api/                   # 107 routes API
+│   │   ├── globals.css
+│   │   └── layout.tsx
+│   ├── components/
+│   │   ├── auth/                  # LoginForm, RegisterForm, SessionProvider
+│   │   ├── dashboard/             # 12 widgets (briefing, fear-greed, heatmap...)
+│   │   ├── layout/                # Header, Sidebar, Breadcrumbs, PageHeader
+│   │   ├── meeting-notes/         # AudioWaveform
+│   │   ├── models/                # Simulation components, StepNav
+│   │   ├── performance/           # Charts (allocation, drawdown, performance)
+│   │   ├── portfolios/            # SymbolSearch, NewsBadge, NewsModal
+│   │   ├── prospection/           # CallModal, ImportModal, LeadCard, LeadDetailModal
+│   │   ├── reports/               # PretAColler, ProspectReport
+│   │   ├── strategies/            # ImportModal, PortfolioAnalysis, PortfolioBuilder
+│   │   ├── tradingview/           # 10 widgets TradingView
+│   │   └── ui/                    # 15 composants generiques
+│   ├── features/
+│   │   ├── auth/                  # Config + types NextAuth
+│   │   └── benchmarks/            # Constantes benchmarks
+│   └── lib/
+│       ├── ai/                    # Groq/Gemini clients, prompts V1 + V2, cache
+│       ├── analytics/             # 13 fichiers (pipeline, risk, monte-carlo...)
+│       ├── hooks/                 # 13 hooks SWR
+│       ├── models/                # Backtester, portfolio-generator, stock-scorer
+│       ├── parsers/               # Croesus, bonds-excel, smart-parser
+│       ├── pdf/                   # Rapport V2 (19 pages, 9 charts SVG)
+│       ├── portfolio/             # Statistiques de portefeuille
+│       ├── prospection/           # Scraper + types
+│       ├── providers/             # Fund document fetcher + registry
+│       ├── supabase/              # Client, server, admin
+│       ├── utils/                 # cn, format, constants
+│       ├── valuation/             # DCF, scoring, safety-score, fixed-income
+│       └── yahoo/                 # Client Yahoo Finance + types
+├── supabase/
+│   ├── schema.sql                 # Schema complet
+│   ├── models-only.sql
+│   ├── migration_teams.sql
+│   └── setup-complete.sql
+├── middleware.ts                   # Protection des routes (NextAuth)
+├── scripts/
+├── public/
+├── package.json
+├── tsconfig.json
+├── next.config.ts
+├── vercel.json
+└── postcss.config.mjs</code></pre>
+</section>
+
+<!-- ════════════════════ PAGES ════════════════════ -->
+<section id="pages">
+  <h2>Pages (45)</h2>
+
+  <h3>Authentification</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/login</code></td><td>Connexion (credentials)</td></tr>
+      <tr><td><code>/change-password</code></td><td>Changement de mot de passe</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Tableau de bord</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/</code></td><td>Dashboard principal (briefing, marches, news, fear-greed, yield curve, heatmap)</td></tr>
+      <tr><td><code>/profile</code></td><td>Profil utilisateur</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Administration</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/admin</code></td><td>Panel admin</td></tr>
+      <tr><td><code>/admin/settings</code></td><td>Parametres</td></tr>
+      <tr><td><code>/admin/team</code></td><td>Gestion de l'equipe</td></tr>
+      <tr><td><code>/admin/users</code></td><td>Gestion des utilisateurs</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Clients</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/clients</code></td><td>Liste des clients</td></tr>
+      <tr><td><code>/clients/new</code></td><td>Nouveau client</td></tr>
+      <tr><td><code>/clients/[id]</code></td><td>Detail client</td></tr>
+      <tr><td><code>/clients/[id]/edit</code></td><td>Modifier client</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Portefeuilles</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/portfolios</code></td><td>Liste des portefeuilles</td></tr>
+      <tr><td><code>/portfolios/new</code></td><td>Nouveau portefeuille</td></tr>
+      <tr><td><code>/portfolios/[id]</code></td><td>Detail portefeuille</td></tr>
+      <tr><td><code>/portfolios/[id]/compare</code></td><td>Comparaison</td></tr>
+      <tr><td><code>/portfolios/[id]/simulation</code></td><td>Simulation</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Modeles d'investissement</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/models</code></td><td>Liste des modeles</td></tr>
+      <tr><td><code>/models/new</code></td><td>Nouveau modele</td></tr>
+      <tr><td><code>/models/[id]</code></td><td>Detail modele</td></tr>
+      <tr><td><code>/models/[id]/apply</code></td><td>Appliquer a un client</td></tr>
+      <tr><td><code>/models/[id]/simulation</code></td><td>Simulation modele</td></tr>
+      <tr><td><code>/models/backtest</code></td><td>Backtesting</td></tr>
+      <tr><td><code>/models/compare</code></td><td>Comparaison de modeles</td></tr>
+      <tr><td><code>/models/email</code></td><td>Envoi par email</td></tr>
+      <tr><td><code>/models/generate</code></td><td>Generation automatique (IA)</td></tr>
+      <tr><td><code>/models/profiles</code></td><td>Profils d'investisseur</td></tr>
+      <tr><td><code>/models/rebalance</code></td><td>Reequilibrage</td></tr>
+      <tr><td><code>/models/scoring</code></td><td>Scoring de titres</td></tr>
+      <tr><td><code>/models/simulation</code></td><td>Simulation globale</td></tr>
+      <tr><td><code>/models/transition</code></td><td>Plan de transition</td></tr>
+      <tr><td><code>/models/universe</code></td><td>Univers d'investissement</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Autres sections</h3>
+  <table>
+    <thead><tr><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>/reports</code></td><td>Liste des rapports PDF</td></tr>
+      <tr><td><code>/reports/new</code></td><td>Generer un rapport</td></tr>
+      <tr><td><code>/meeting-notes</code></td><td>Notes de rencontres</td></tr>
+      <tr><td><code>/meeting-notes/new</code></td><td>Nouvelle note (transcription audio)</td></tr>
+      <tr><td><code>/meeting-notes/[id]</code></td><td>Detail d'une note</td></tr>
+      <tr><td><code>/markets</code></td><td>Vue marche (TradingView)</td></tr>
+      <tr><td><code>/valuation</code></td><td>Valorisation d'actions (DCF, P/E, P/S)</td></tr>
+      <tr><td><code>/strategies</code></td><td>Strategies d'investissement</td></tr>
+      <tr><td><code>/events</code></td><td>Evenements</td></tr>
+      <tr><td><code>/fund-reports</code></td><td>Rapports de fonds</td></tr>
+      <tr><td><code>/prospection</code></td><td>CRM de prospection</td></tr>
+      <tr><td><code>/prospection/search</code></td><td>Recherche de prospects</td></tr>
+      <tr><td><code>/prospection/stats</code></td><td>Statistiques prospection</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ API ════════════════════ -->
+<section id="api">
+  <h2>Routes API (107)</h2>
+  <table>
+    <thead><tr><th>Domaine</th><th>Endpoints</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><strong>admin</strong></td><td>team-logos, team-profiles (CRUD + photo), users (CRUD + reset-password + available-profiles)</td><td>Gestion equipe et utilisateurs</td></tr>
+      <tr><td><strong>ai</strong></td><td>classify-holdings, extract-maturities, meeting-summary, parse-portfolio, transcribe</td><td>5 endpoints IA (Groq/Gemini)</td></tr>
+      <tr><td><strong>auth</strong></td><td>[...nextauth], register, change-password, check-status</td><td>Authentification NextAuth</td></tr>
+      <tr><td><strong>clients</strong></td><td>CRUD + [id]</td><td>Gestion clients</td></tr>
+      <tr><td><strong>cron</strong></td><td>refresh-prices, refresh-yields, refresh-fund-docs</td><td>Taches planifiees (Vercel cron)</td></tr>
+      <tr><td><strong>dashboard</strong></td><td>briefing, economic-calendar, fear-greed, news</td><td>Widgets tableau de bord</td></tr>
+      <tr><td><strong>events</strong></td><td>CRUD, images, teams (manage/[token], [code]), [id] (register, registrations)</td><td>Evenements + inscriptions</td></tr>
+      <tr><td><strong>fmp</strong></td><td>search, quote, profile, historical, price-target, price-target-consensus, sector-performance</td><td>Donnees de marche (via EODHD/Yahoo)</td></tr>
+      <tr><td><strong>fund-reports</strong></td><td>CRUD, auto-fetch, check, [id]/download</td><td>Documents de fonds</td></tr>
+      <tr><td><strong>models</strong></td><td>CRUD, backtest, bonds (import), email, etf-sectors, generate, profiles, scoring, score-universe, stock-sector, universe (import), [id] (apply, simulation, export)</td><td>Modeles d'investissement</td></tr>
+      <tr><td><strong>portfolio</strong></td><td>analyze, pdf</td><td>Analyse + generation PDF</td></tr>
+      <tr><td><strong>portfolios</strong></td><td>CRUD</td><td>Gestion portefeuilles</td></tr>
+      <tr><td><strong>meeting-notes</strong></td><td>CRUD + [id]</td><td>Notes de rencontres</td></tr>
+      <tr><td><strong>autres</strong></td><td>exchange-rate, exports/price-targets, logos, news, portfolio-history</td><td>Utilitaires divers</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ COMPOSANTS ════════════════════ -->
+<section id="composants">
+  <h2>Composants</h2>
+
+  <h3>UI generique (15)</h3>
+  <div class="tag-list">
+    <span class="tag">Badge</span><span class="tag">Button</span><span class="tag">Card</span>
+    <span class="tag">CurrencyToggle</span><span class="tag">DataTable</span><span class="tag">Input</span>
+    <span class="tag">Modal</span><span class="tag">SearchInput</span><span class="tag">Select</span>
+    <span class="tag">Skeleton</span><span class="tag">Spinner</span><span class="tag">Table</span>
+    <span class="tag">Tabs</span><span class="tag">Toast</span>
+  </div>
+
+  <h3>Dashboard (12 widgets)</h3>
+  <div class="tag-list">
+    <span class="tag">GreetingHeader</span><span class="tag">MorningBriefing</span>
+    <span class="tag">MarketQuickStats</span><span class="tag">NewsTicker</span>
+    <span class="tag">NewsRadar</span><span class="tag">FearGreedGauge</span>
+    <span class="tag">YieldCurveWidget</span><span class="tag">SectorHeatmap</span>
+    <span class="tag">EconomicCalendar</span><span class="tag">RateIntelligence</span>
+  </div>
+
+  <h3>TradingView (10 widgets)</h3>
+  <div class="tag-list">
+    <span class="tag">AdvancedChart</span><span class="tag">CompanyProfile</span>
+    <span class="tag">EconomicCalendar</span><span class="tag">FundamentalData</span>
+    <span class="tag">MiniChart</span><span class="tag">StockScreener</span>
+    <span class="tag">SymbolInfo</span><span class="tag">TechnicalAnalysis</span>
+    <span class="tag">TickerTape</span><span class="tag">TradingViewWidget</span>
+  </div>
+
+  <h3>Layout</h3>
+  <div class="tag-list">
+    <span class="tag">Header</span><span class="tag">Sidebar</span>
+    <span class="tag">Breadcrumbs</span><span class="tag">PageHeader</span>
+  </div>
+
+  <h3>Hooks SWR (16)</h3>
+  <div class="tag-list">
+    <span class="tag">useClients</span><span class="tag">useEvents</span>
+    <span class="tag">useFundReports</span><span class="tag">useLogos</span>
+    <span class="tag">useMeetingNotes</span><span class="tag">useModels</span>
+    <span class="tag">useNews</span><span class="tag">usePerformance</span>
+    <span class="tag">usePortfolio</span><span class="tag">usePriceTargets</span>
+    <span class="tag">useQuotes</span><span class="tag">useReports</span>
+    <span class="tag">useSimulation</span><span class="tag">useStockScores</span>
+    <span class="tag">useStockUniverse</span><span class="tag">useYieldCurve</span>
+  </div>
+</section>
+
+<!-- ════════════════════ ANALYTICS ════════════════════ -->
+<section id="analytics">
+  <h2>Moteur analytique</h2>
+  <p>Pipeline unifie dans <code>src/lib/analytics/</code> &mdash; 13 fichiers.</p>
+
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <span class="step-num">1</span>
+      <h4>Data Preparation</h4>
+      <p>Nettoyage, normalisation des positions</p>
+    </div>
+    <div class="pipeline-step">
+      <span class="step-num">2</span>
+      <h4>Parallel Engines</h4>
+      <p>Risk, Monte Carlo, Correlation, DNA, Stress, Behavioral, Bonds</p>
+    </div>
+    <div class="pipeline-step">
+      <span class="step-num">3</span>
+      <h4>Dependent Analytics</h4>
+      <p>Portfolio Intelligence (recommandations)</p>
+    </div>
+    <div class="pipeline-step">
+      <span class="step-num">4</span>
+      <h4>Derived Metrics</h4>
+      <p>Transformations pures pour le PDF</p>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Module</th><th>Fonctionnalite</th></tr></thead>
+    <tbody>
+      <tr><td><code>pipeline.ts</code></td><td>Orchestrateur 4 etapes</td></tr>
+      <tr><td><code>types.ts</code></td><td>Interfaces (~350 lignes)</td></tr>
+      <tr><td><code>schemas.ts</code></td><td>Validation Zod aux frontieres</td></tr>
+      <tr><td><code>derived-metrics.ts</code></td><td>Transformations pures</td></tr>
+      <tr><td><code>risk-metrics.ts</code></td><td>Sharpe, Sortino, VaR, max drawdown</td></tr>
+      <tr><td><code>monte-carlo.ts</code></td><td>Simulations Monte Carlo</td></tr>
+      <tr><td><code>correlation.ts</code></td><td>Matrice de correlation</td></tr>
+      <tr><td><code>portfolio-dna.ts</code></td><td>ADN du portefeuille (style, facteurs)</td></tr>
+      <tr><td><code>stress-radar.ts</code></td><td>Scenarios de stress</td></tr>
+      <tr><td><code>behavioral.ts</code></td><td>Analyse comportementale</td></tr>
+      <tr><td><code>bond-analytics.ts</code></td><td>Analyse obligataire (duration, YTM)</td></tr>
+      <tr><td><code>portfolio-intelligence.ts</code></td><td>Recommandations intelligentes</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ PDF ════════════════════ -->
+<section id="pdf">
+  <h2>Systeme de rapports PDF (V2)</h2>
+  <p>Orchestrateur : <code>src/lib/pdf/report-v2.tsx</code> &mdash; rapport modulaire de <strong>18+ pages</strong>.</p>
+
+  <h3>Pages du rapport (19)</h3>
+  <table>
+    <thead><tr><th>#</th><th>Page</th><th>Contenu</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Cover</td><td>Page de couverture personnalisee</td></tr>
+      <tr><td>2</td><td>Table of Contents</td><td>Table des matieres auto-generee</td></tr>
+      <tr><td>3</td><td>Executive Summary</td><td>Resume executif</td></tr>
+      <tr><td>4</td><td>Portfolio DNA</td><td>ADN du portefeuille (radar chart)</td></tr>
+      <tr><td>5</td><td>Allocation</td><td>Repartition d'actifs</td></tr>
+      <tr><td>6</td><td>Projection</td><td>Projections (cone chart Monte Carlo)</td></tr>
+      <tr><td>7</td><td>Fundamentals</td><td>Analyse fondamentale</td></tr>
+      <tr><td>8</td><td>Valuation</td><td>Valorisation (DCF, multiples)</td></tr>
+      <tr><td>9</td><td>Income</td><td>Revenus et dividendes</td></tr>
+      <tr><td>10</td><td>Bonds</td><td>Analyse obligataire</td></tr>
+      <tr><td>11</td><td>Risk</td><td>Metriques de risque</td></tr>
+      <tr><td>12</td><td>Stress Radar</td><td>Scenarios de stress</td></tr>
+      <tr><td>13</td><td>Correlation</td><td>Matrice de correlation (heatmap)</td></tr>
+      <tr><td>14</td><td>Behavioral</td><td>Biais comportementaux</td></tr>
+      <tr><td>15</td><td>Market Intel</td><td>Intelligence de marche</td></tr>
+      <tr><td>16</td><td>Recommendations</td><td>Recommandations</td></tr>
+      <tr><td>17</td><td>Comparisons</td><td>Comparaison de periodes</td></tr>
+      <tr><td>18</td><td>Asset Sheets</td><td>Fiches par titre</td></tr>
+      <tr><td>19</td><td>Shared</td><td>Composants partages (header, footer)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Charts SVG (9)</h3>
+  <div class="tag-list">
+    <span class="tag">RadarChart</span><span class="tag">Heatmap</span>
+    <span class="tag">GaugeChart</span><span class="tag">DrawdownChart</span>
+    <span class="tag">ScatterPlot</span><span class="tag">ConeProjection</span>
+    <span class="tag">WaterfallChart</span><span class="tag">StackedBar</span>
+    <span class="tag">SvgText</span>
+  </div>
+
+  <h3>Autres templates PDF</h3>
+  <div class="tag-list">
+    <span class="tag">report-template.tsx (V1)</span>
+    <span class="tag">simulation-template.tsx</span>
+    <span class="tag">strategy-template.tsx</span>
+    <span class="tag">transition-template.tsx</span>
+    <span class="tag">price-targets-template.tsx</span>
+  </div>
+</section>
+
+<!-- ════════════════════ IA ════════════════════ -->
+<section id="ia">
+  <h2>Intelligence artificielle</h2>
+  <table>
+    <thead><tr><th>Fichier</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>groq-client.ts</code></td><td>Client Groq V1</td></tr>
+      <tr><td><code>groq-client-v2.ts</code></td><td>Client Groq V2 &mdash; LLaMA 3.3 70B Versatile, 15 blocs narratifs</td></tr>
+      <tr><td><code>gemini-client.ts</code></td><td>Client Google Gemini</td></tr>
+      <tr><td><code>prompts.ts / prompts-v2.ts</code></td><td>Prompts V1 + V2 pour rapports</td></tr>
+      <tr><td><code>types.ts / types-v2.ts</code></td><td>Types IA V1 + V2</td></tr>
+      <tr><td><code>cache.ts</code></td><td>Cache Supabase 24h (<code>ai_content_cache</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Endpoints IA</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>parse-portfolio</h4>
+      <p>Extraction de portefeuille depuis texte/fichier</p>
+    </div>
+    <div class="card">
+      <h4>classify-holdings</h4>
+      <p>Classification automatique des titres</p>
+    </div>
+    <div class="card">
+      <h4>extract-maturities</h4>
+      <p>Extraction de maturites obligataires</p>
+    </div>
+    <div class="card">
+      <h4>meeting-summary</h4>
+      <p>Resume de notes de rencontre</p>
+    </div>
+    <div class="card">
+      <h4>transcribe</h4>
+      <p>Transcription audio</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ VALUATION ════════════════════ -->
+<section id="valuation">
+  <h2>Valorisation</h2>
+  <p>Module dans <code>src/lib/valuation/</code> :</p>
+  <div class="card-grid">
+    <div class="card">
+      <h4>DCF</h4>
+      <p>Discounted Cash Flow + reverse DCF + matrice de sensibilite</p>
+    </div>
+    <div class="card">
+      <h4>Multiples</h4>
+      <p>P/E et P/S relatifs</p>
+    </div>
+    <div class="card">
+      <h4>Scoring</h4>
+      <p>Score composite de valorisation</p>
+    </div>
+    <div class="card">
+      <h4>Safety Score</h4>
+      <p>Score de securite du dividende</p>
+    </div>
+    <div class="card">
+      <h4>Fixed Income</h4>
+      <p>Analyse obligataire (YTM, duration, convexite)</p>
+    </div>
+    <div class="card">
+      <h4>Benchmarks</h4>
+      <p>Comparaison sectorielle</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ DONNEES ════════════════════ -->
+<section id="donnees">
+  <h2>Sources de donnees</h2>
+  <table>
+    <thead><tr><th>Source</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td><strong>EODHD</strong></td><td>Recherche de symboles, donnees fondamentales, profils d'entreprise, price targets</td></tr>
+      <tr><td><strong>Yahoo Finance</strong></td><td>Prix en temps reel, historique de prix, quotes</td></tr>
+      <tr><td><strong>TradingView</strong></td><td>Widgets integres (charts, screener, analyse technique)</td></tr>
+      <tr><td><strong>Supabase price_cache</strong></td><td>Cache de prix pour performance</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ BDD ════════════════════ -->
+<section id="bdd">
+  <h2>Base de donnees</h2>
+  <p>Supabase PostgreSQL &mdash; schema complet dans <code>supabase/schema.sql</code>.</p>
+  <table>
+    <thead><tr><th>Table(s)</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>users</code>, <code>team_profiles</code></td><td>Utilisateurs et equipe</td></tr>
+      <tr><td><code>clients</code>, <code>portfolios</code>, <code>holdings</code></td><td>Clients et portefeuilles</td></tr>
+      <tr><td><code>models</code>, <code>model_holdings</code>, <code>investor_profiles</code></td><td>Modeles d'investissement</td></tr>
+      <tr><td><code>meeting_notes</code></td><td>Notes de rencontres</td></tr>
+      <tr><td><code>events</code>, <code>event_registrations</code></td><td>Evenements</td></tr>
+      <tr><td><code>reports</code></td><td>Rapports generes</td></tr>
+      <tr><td><code>price_cache</code></td><td>Cache de prix</td></tr>
+      <tr><td><code>ai_content_cache</code></td><td>Cache IA (24h TTL)</td></tr>
+      <tr><td><code>fund_reports</code></td><td>Documents de fonds</td></tr>
+      <tr><td><code>prospects</code>, <code>prospect_interactions</code></td><td>CRM prospection</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════ INSTALL ════════════════════ -->
+<section id="install">
+  <h2>Installation</h2>
+  <pre><code># Cloner le projet
+git clone &lt;repo-url&gt;
+cd planificateur-rencontre
+
+# Installer les dependances
+npm install
+
+# Configurer les variables d'environnement
+cp .env.example .env.local
+# Remplir les cles (voir section ci-dessous)
+
+# Lancer en developpement
+npm run dev</code></pre>
+  <p>Ouvrir <a href="http://localhost:3000" style="color:var(--primary)">http://localhost:3000</a>.</p>
+</section>
+
+<!-- ════════════════════ ENV ════════════════════ -->
+<section id="env">
+  <h2>Variables d'environnement</h2>
+  <pre><code># Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=
+
+# Donnees de marche
+EODHD_API_KEY=
+
+# IA
+GROQ_API_KEY=
+
+# Email
+RESEND_API_KEY=
+
+# Cron
+CRON_SECRET=</code></pre>
+</section>
+
+<!-- ════════════════════ SCRIPTS ════════════════════ -->
+<section id="scripts">
+  <h2>Scripts</h2>
+  <table>
+    <thead><tr><th>Commande</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>npm run dev</code></td><td>Serveur de developpement (Next.js)</td></tr>
+      <tr><td><code>npm run build</code></td><td>Build de production</td></tr>
+      <tr><td><code>npm run start</code></td><td>Serveur de production</td></tr>
+      <tr><td><code>npm run lint</code></td><td>Linting ESLint</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</div>
+
+<!-- ════════════════════ FOOTER ════════════════════ -->
+<footer class="footer">
+  Planificateur de Rencontre &mdash; Groupe Financier Ste-Foy &mdash; 2025
+</footer>
+
+</body>
+</html>
