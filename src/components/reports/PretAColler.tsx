@@ -2106,7 +2106,19 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
                       </td>
                     )}
                     <td className="py-2.5 px-3 text-right tabular-nums text-xs text-text-muted">
-                      {h.averageCost > 0 && h.quantity !== 0 ? formatCurrency(h.quantity * h.averageCost) : '—'}
+                      {(() => {
+                        // Coût total = valeur comptable. Croesus la calcule déjà correctement
+                        // pour tous les actifs, y compris les obligations cotées par 100 $ de
+                        // nominal (où le PRU est un prix /100, pas un coût par unité).
+                        // Repli si la valeur comptable n'a pas été collée : reconstruire depuis
+                        // le PRU — diviser par 100 pour le revenu fixe (prix /100 nominal).
+                        const costTotal = h.bookValue !== 0
+                          ? h.bookValue
+                          : (h.averageCost > 0 && h.quantity !== 0
+                              ? h.quantity * h.averageCost / (h.assetType === 'FIXED_INCOME' ? 100 : 1)
+                              : 0);
+                        return costTotal !== 0 ? formatCurrency(costTotal) : '—';
+                      })()}
                     </td>
                     {(() => {
                       const effMv = getEffectiveMarketValue(h);
