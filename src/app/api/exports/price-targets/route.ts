@@ -4,6 +4,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
+import { fetchSectors } from '@/lib/pdf/fetch-sectors';
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,6 +25,25 @@ export async function POST(req: NextRequest) {
         .map(h => h.symbol)
     ));
     reportData.logos = await fetchLogoDataUris(logoSymbols);
+
+    // Enrich equity/ETF holdings with their sector for the cover sector donut.
+    // Best-effort: any lookup failure leaves the holding without a sector
+    // (it falls into the "Autres"/"FNB diversifiés" bucket, PDF still renders).
+    try {
+      const sectorSymbols = reportData.holdings
+        .filter(h => h.assetType === 'EQUITY' || h.assetType === 'ETF')
+        .map(h => h.symbol);
+      if (sectorSymbols.length > 0) {
+        const sectorMap = await fetchSectors(sectorSymbols);
+        reportData.holdings = reportData.holdings.map(h =>
+          (h.assetType === 'EQUITY' || h.assetType === 'ETF') && sectorMap[h.symbol]
+            ? { ...h, sector: sectorMap[h.symbol] }
+            : h
+        );
+      }
+    } catch (e) {
+      console.error('Sector enrichment failed (non-fatal):', e);
+    }
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
