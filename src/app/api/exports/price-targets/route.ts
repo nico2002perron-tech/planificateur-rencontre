@@ -27,9 +27,10 @@ export async function POST(req: NextRequest) {
     ));
     reportData.logos = await fetchLogoDataUris(logoSymbols);
 
-    // Enrich equity/ETF holdings with sector (cover donut) + a short French
+    // Enrich equity/ETF holdings with sector (cover donut) + the REAL official
     // business description (Descriptions section). One Yahoo call per symbol
-    // returns both sector and English summary; Groq condenses it to French.
+    // returns both the sector and the official English summary; Groq translates
+    // that summary faithfully to French (no rewriting/inventing).
     // Best-effort: any failure leaves the PDF renderable without the extra data.
     try {
       const eqEtf = reportData.holdings.filter(h => h.assetType === 'EQUITY' || h.assetType === 'ETF');
