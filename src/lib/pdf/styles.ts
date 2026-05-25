@@ -187,15 +187,16 @@ export const styles = StyleSheet.create({
   tablePremium: {
     width: '100%',
     marginBottom: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
+    borderRadius: 14,
+    borderWidth: 0.75,
+    borderColor: 'rgba(148,163,184,0.32)', // glass hairline edge
     borderStyle: 'solid' as const,
+    backgroundColor: 'rgba(255,255,255,0.55)', // frosted glass fill
     overflow: 'hidden' as const,
   },
   thPremium: {
     flexDirection: 'row' as const,
-    backgroundColor: C.navy,
+    backgroundColor: 'rgba(3,4,94,0.90)', // frosted-dark navy header
     paddingVertical: 9,
     paddingHorizontal: 8,
     borderBottomWidth: 2.5,

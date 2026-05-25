@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import {
   Document, Page, Text, View, Image, Font,
-  Svg, Defs, LinearGradient, Stop, Rect,
+  Svg, Defs, LinearGradient, RadialGradient, Stop, Rect, Ellipse,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 
@@ -134,14 +134,101 @@ function getAssetColor(assetType: string): string {
   }
 }
 
-// Pale cyan row stripe + thicker segment divider every 5 rows.
+// ─── Glass design system (Apple frosted look) ───────────────────────────────
+// react-pdf cannot do real backdrop-blur, so "frosted glass" is simulated with
+// translucent white panels + a bright hairline edge, floating over a soft
+// pastel backdrop with diffuse colour halos (the "wallpaper" behind the glass).
+
+const GLASS = {
+  fill: 'rgba(255,255,255,0.55)',        // frosted panel
+  fillStrong: 'rgba(255,255,255,0.74)',  // denser panel (tables, hero blocks)
+  edge: 'rgba(255,255,255,0.85)',        // bright glass border
+  edgeSoft: 'rgba(148,163,184,0.32)',    // subtle definition border
+  highlight: 'rgba(255,255,255,0.9)',    // top light-catch line
+  rowA: 'rgba(255,255,255,0.34)',        // table row (even)
+  rowB: 'rgba(224,242,254,0.5)',         // table row (odd, faint cyan)
+  dividerSoft: 'rgba(203,213,225,0.55)',
+  dividerStrong: 'rgba(125,211,252,0.7)',
+} as const;
+
+// Full-bleed pastel backdrop with soft colour halos — repeats on every printed
+// page via `fixed`. The negative insets cancel the page padding to bleed to the
+// sheet edges. `id` must be unique per Page so the SVG gradient ids don't clash.
+function PageBackdrop({ id }: { id: string }) {
+  return (
+    <View style={{ position: 'absolute' as const, top: -44, left: -36, right: -36, bottom: -50 }} fixed>
+      <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 100 141" preserveAspectRatio="none">
+        <Defs>
+          <LinearGradient id={`${id}Bg`} x1="0" y1="0" x2="100" y2="141" gradientUnits="userSpaceOnUse">
+            <Stop offset="0" stopColor="#e8f3fd" />
+            <Stop offset="0.5" stopColor="#eef3fb" />
+            <Stop offset="1" stopColor="#fbfdff" />
+          </LinearGradient>
+          <RadialGradient id={`${id}Cyan`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#7dd3fc" stopOpacity={0.34} />
+            <Stop offset="1" stopColor="#7dd3fc" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`${id}Violet`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#c4b5fd" stopOpacity={0.28} />
+            <Stop offset="1" stopColor="#c4b5fd" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`${id}Teal`} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#5eead4" stopOpacity={0.22} />
+            <Stop offset="1" stopColor="#5eead4" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={100} height={141} fill={`url(#${id}Bg)`} />
+        <Ellipse cx={86} cy={10} rx={48} ry={30} fill={`url(#${id}Cyan)`} />
+        <Ellipse cx={6} cy={66} rx={42} ry={42} fill={`url(#${id}Violet)`} />
+        <Ellipse cx={98} cy={124} rx={46} ry={34} fill={`url(#${id}Teal)`} />
+      </Svg>
+    </View>
+  );
+}
+
+// Reusable frosted-glass panel: translucent fill + hairline edge + top light line.
+function GlassPanel({
+  children, style, radius = 14, strong = false, accent,
+}: {
+  children: React.ReactNode;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  style?: any;
+  radius?: number;
+  strong?: boolean;
+  accent?: string;
+}) {
+  return (
+    <View
+      style={[
+        {
+          position: 'relative' as const,
+          borderRadius: radius,
+          borderWidth: 0.75,
+          borderColor: GLASS.edgeSoft,
+          borderStyle: 'solid' as const,
+          backgroundColor: strong ? GLASS.fillStrong : GLASS.fill,
+          overflow: 'hidden' as const,
+        },
+        accent ? { borderLeftWidth: 2.5, borderLeftColor: accent, borderLeftStyle: 'solid' as const } : null,
+        style,
+      ]}
+    >
+      {/* bright top edge — light catching the glass */}
+      <View style={{ position: 'absolute' as const, top: 0, left: 0, right: 0, height: 1.2, backgroundColor: GLASS.highlight }} />
+      {children}
+    </View>
+  );
+}
+
+// Pale cyan row stripe + thicker segment divider every 5 rows — now translucent
+// so the pastel backdrop reads faintly through the glass table.
 function getRowStyle(i: number, rowCount: number) {
   const isEven = i % 2 === 1;
   const isSegmentBoundary = (i + 1) % 5 === 0 && i < rowCount - 1;
   return {
-    bg: isEven ? '#f0f9ff' : '#ffffff', // pale cyan vs white
+    bg: isEven ? GLASS.rowB : GLASS.rowA,
     borderBottomWidth: isSegmentBoundary ? 1.2 : 0.5,
-    borderBottomColor: isSegmentBoundary ? '#bae6fd' : '#f1f5f9',
+    borderBottomColor: isSegmentBoundary ? GLASS.dividerStrong : GLASS.dividerSoft,
   };
 }
 
@@ -220,10 +307,11 @@ function PaleGradientBox({
   return (
     <View style={[{
       position: 'relative' as const,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: '#bae6fd',
+      borderRadius: 14,
+      borderWidth: 0.75,
+      borderColor: GLASS.edgeSoft,
       borderStyle: 'solid' as const,
+      backgroundColor: GLASS.fill, // frosted glass
       overflow: 'hidden' as const,
     }, style]}>
       {/* Top accent bar: cyan → emerald */}
@@ -240,21 +328,6 @@ function PaleGradientBox({
           </LinearGradient>
         </Defs>
         <Rect x={0} y={0} width={100} height={4} fill={`url(#${gradientId}Top)`} />
-      </Svg>
-      {/* Background wash: sky-50 → emerald-50 */}
-      <Svg
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        <Defs>
-          <LinearGradient id={gradientId} x1="0" y1="0" x2="100" y2="0" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor="#f0f9ff" />
-            <Stop offset="0.5" stopColor="#f0fdfa" />
-            <Stop offset="1" stopColor="#ecfdf5" />
-          </LinearGradient>
-        </Defs>
-        <Rect x={0} y={0} width={100} height={100} fill={`url(#${gradientId})`} />
       </Svg>
       {children}
     </View>
@@ -290,24 +363,17 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
   const pctCap = partsSum > 0 ? (capPart / partsSum) * 100 : 0;
 
   return (
-    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#f8fafc' }]}>
-      {/* ── Header with misty blue gradient ── */}
+    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#eef3fb' }]}>
+      <PageBackdrop id="cov" />
+      {/* ── Header — frosted glass panel ── */}
       <View style={{
-        position: 'relative' as const, borderRadius: 10, overflow: 'hidden' as const,
+        position: 'relative' as const, borderRadius: 14, overflow: 'hidden' as const,
         marginBottom: 16,
+        backgroundColor: GLASS.fillStrong,
+        borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const,
       }}>
-        {/* Gradient background: soft blue mist → white */}
-        <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 600 200" preserveAspectRatio="none">
-          <Defs>
-            <LinearGradient id="headerMist" x1="0" y1="0" x2="600" y2="200" gradientUnits="userSpaceOnUse">
-              <Stop offset="0" stopColor="#dbeafe" />
-              <Stop offset="0.3" stopColor="#e8f2fc" />
-              <Stop offset="0.65" stopColor="#f4f8fd" />
-              <Stop offset="1" stopColor="#ffffff" />
-            </LinearGradient>
-          </Defs>
-          <Rect x={0} y={0} width={600} height={200} fill="url(#headerMist)" />
-        </Svg>
+        {/* bright top edge — light catching the glass */}
+        <View style={{ position: 'absolute' as const, top: 0, left: 0, right: 0, height: 1.2, backgroundColor: GLASS.highlight }} />
         {/* Subtle top accent line */}
         <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 600 3" preserveAspectRatio="none">
           <Defs>
@@ -372,21 +438,11 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         const cashOther = portfolioToday - (s.totalCurrentValue || 0) - (s.fixedIncomeMarketValue ?? 0);
         return (
           <View style={{
-            flexDirection: 'row', gap: 0, marginBottom: 14,
-            borderRadius: 10, overflow: 'hidden' as const,
+            flexDirection: 'row', gap: 8, marginBottom: 14, alignItems: 'stretch' as const,
           }}>
-            {/* Today */}
-            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16 }}>
-              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 300 100" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="todayGrad" x1="0" y1="0" x2="300" y2="100" gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor="#e0eefb" />
-                    <Stop offset="0.5" stopColor="#eef5fc" />
-                    <Stop offset="1" stopColor="#f8fbff" />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width={300} height={100} fill="url(#todayGrad)" />
-              </Svg>
+            {/* Today — frosted glass */}
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16, borderRadius: 14, backgroundColor: GLASS.fill, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const }}>
+              <View style={{ position: 'absolute' as const, top: 0, left: 0, right: 0, height: 1.2, backgroundColor: GLASS.highlight }} />
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
                 Portefeuille aujourd&apos;hui
               </Text>
@@ -405,23 +461,14 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 )}
               </View>
             </View>
-            {/* Arrow */}
-            <View style={{ width: 40, backgroundColor: C.navy, justifyContent: 'center' as const, alignItems: 'center' as const }}>
+            {/* Arrow — navy glass divider */}
+            <View style={{ width: 40, borderRadius: 12, backgroundColor: 'rgba(3,4,94,0.92)', justifyContent: 'center' as const, alignItems: 'center' as const }}>
               <Text style={{ fontSize: 14, color: '#ffffff', fontFamily: 'Montserrat', fontWeight: 800 }}>→</Text>
               <Text style={{ fontSize: 6, color: '#94a3b8', marginTop: 2 }}>12 mois</Text>
             </View>
-            {/* Projected */}
-            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16 }}>
-              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 300 100" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="projGrad" x1="0" y1="0" x2="300" y2="100" gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor={totalEst >= 0 ? '#d5f5e3' : '#fde8e8'} />
-                    <Stop offset="0.5" stopColor={totalEst >= 0 ? '#e8faf0' : '#fef2f2'} />
-                    <Stop offset="1" stopColor={totalEst >= 0 ? '#f5fdf8' : '#fffafa'} />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width={300} height={100} fill="url(#projGrad)" />
-              </Svg>
+            {/* Projected — tinted frosted glass */}
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, padding: 16, borderRadius: 14, backgroundColor: totalEst >= 0 ? 'rgba(209,250,229,0.5)' : 'rgba(254,226,226,0.5)', borderWidth: 0.75, borderColor: totalEst >= 0 ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.32)', borderStyle: 'solid' as const }}>
+              <View style={{ position: 'absolute' as const, top: 0, left: 0, right: 0, height: 1.2, backgroundColor: GLASS.highlight }} />
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 6 }}>
                 Portefeuille projeté 12 mois
               </Text>
@@ -459,18 +506,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             const fiMv = s.fixedIncomeMarketValue ?? 0;
             return (
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-            {/* Dividendes projetés */}
-            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
-              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="divGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor="#d5f5e3" />
-                    <Stop offset="0.5" stopColor="#eafaf1" />
-                    <Stop offset="1" stopColor="#f8fdfb" />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width={200} height={120} fill="url(#divGrad)" />
-              </Svg>
+            {/* Dividendes projetés — frosted glass */}
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 12, padding: 12, backgroundColor: GLASS.fill, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const }}>
               <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
                 <Defs><LinearGradient id="divTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoGreen} /><Stop offset="1" stopColor="#6ee7b7" /></LinearGradient></Defs>
                 <Rect x={0} y={0} width={200} height={3} fill="url(#divTop)" />
@@ -497,18 +534,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               </View>
             </View>
 
-            {/* Revenus fixes */}
-            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
-              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="fiGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor="#dbeafe" />
-                    <Stop offset="0.5" stopColor="#eff6ff" />
-                    <Stop offset="1" stopColor="#f8fbff" />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width={200} height={120} fill="url(#fiGrad)" />
-              </Svg>
+            {/* Revenus fixes — frosted glass */}
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 12, padding: 12, backgroundColor: GLASS.fill, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const }}>
               <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
                 <Defs><LinearGradient id="fiTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoBlue} /><Stop offset="1" stopColor="#93c5fd" /></LinearGradient></Defs>
                 <Rect x={0} y={0} width={200} height={3} fill="url(#fiTop)" />
@@ -535,18 +562,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
               </View>
             </View>
 
-            {/* Gains en capital */}
-            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 8, padding: 12 }}>
-              <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 120" preserveAspectRatio="none">
-                <Defs>
-                  <LinearGradient id="capGrad" x1="0" y1="0" x2="200" y2="120" gradientUnits="userSpaceOnUse">
-                    <Stop offset="0" stopColor="#ede9fe" />
-                    <Stop offset="0.5" stopColor="#f5f3ff" />
-                    <Stop offset="1" stopColor="#fbfaff" />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width={200} height={120} fill="url(#capGrad)" />
-              </Svg>
+            {/* Gains en capital — frosted glass */}
+            <View style={{ flex: 1, position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 12, padding: 12, backgroundColor: GLASS.fill, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const }}>
               <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 200 3" preserveAspectRatio="none">
                 <Defs><LinearGradient id="capTop" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse"><Stop offset="0" stopColor={C.duoPurple} /><Stop offset="1" stopColor="#c4b5fd" /></LinearGradient></Defs>
                 <Rect x={0} y={0} width={200} height={3} fill="url(#capTop)" />
@@ -577,18 +594,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
           })()}
 
           {/* Total + detailed breakdown recap */}
-          <View style={{ position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 10, marginBottom: 14 }}>
-            <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 600 300" preserveAspectRatio="none">
-              <Defs>
-                <LinearGradient id="totalGrad" x1="0" y1="0" x2="600" y2="300" gradientUnits="userSpaceOnUse">
-                  <Stop offset="0" stopColor="#dbeafe" />
-                  <Stop offset="0.35" stopColor="#e8f2fc" />
-                  <Stop offset="0.7" stopColor="#f4f8fd" />
-                  <Stop offset="1" stopColor="#ffffff" />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={600} height={300} fill="url(#totalGrad)" />
-            </Svg>
+          <View style={{ position: 'relative' as const, overflow: 'hidden' as const, borderRadius: 14, marginBottom: 14, backgroundColor: GLASS.fillStrong, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const }}>
             <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 3 }} viewBox="0 0 600 3" preserveAspectRatio="none">
               <Defs>
                 <LinearGradient id="totalTop" x1="0" y1="0" x2="600" y2="0" gradientUnits="userSpaceOnUse">
@@ -733,7 +739,8 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
   const gc = (v: number) => v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8';
 
   return (
-    <Page size="A4" orientation={orientation} style={styles.page}>
+    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#eef3fb' }]}>
+      <PageBackdrop id="eq" />
       {/* Section header */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
         <View>
@@ -753,8 +760,8 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
         return (
           <View style={{
             flexDirection: 'row', alignItems: 'center', gap: 6,
-            marginBottom: 8, padding: 7, borderRadius: 8,
-            backgroundColor: '#f0f9ff', borderWidth: 1, borderColor: '#bae6fd', borderStyle: 'solid' as const,
+            marginBottom: 8, padding: 7, borderRadius: 12,
+            backgroundColor: GLASS.fill, borderWidth: 0.75, borderColor: GLASS.edgeSoft, borderStyle: 'solid' as const,
           }}>
             {/* Title accent */}
             <View style={{ width: 2.5, height: 20, backgroundColor: '#0891b2', borderRadius: 1.5 }} />
@@ -889,7 +896,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
         {/* Grand total row */}
         <View style={{
           flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8,
-          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+          backgroundColor: 'rgba(224,242,254,0.6)', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }} wrap={false}>
           <Text style={{ width: '5%' }}>{''}</Text>
@@ -933,7 +940,8 @@ function FixedIncomeTablePage({ holdings, orientation }: {
   const avgYieldPct = totalMv > 0 ? (totalIncome / totalMv) * 100 : 0;
 
   return (
-    <Page size="A4" orientation={orientation} style={styles.page}>
+    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#eef3fb' }]}>
+      <PageBackdrop id="fi" />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.gold, borderBottomStyle: 'solid' as const }}>
         <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Revenus fixes</Text>
         <View style={{ flexDirection: 'row', gap: 16 }}>
@@ -959,8 +967,8 @@ function FixedIncomeTablePage({ holdings, orientation }: {
 
         return totalBarValue > 0 ? (
           <View style={{
-            marginBottom: 8, padding: 8, borderRadius: 8,
-            backgroundColor: '#fefce8', borderWidth: 1, borderColor: '#fef08a', borderStyle: 'solid' as const,
+            marginBottom: 8, padding: 8, borderRadius: 12,
+            backgroundColor: 'rgba(254,252,232,0.62)', borderWidth: 0.75, borderColor: 'rgba(253,224,71,0.55)', borderStyle: 'solid' as const,
           }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
               <Text style={{ fontSize: 6.5, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
@@ -1075,7 +1083,7 @@ function FixedIncomeTablePage({ holdings, orientation }: {
         {/* Total row — premium navy-topped */}
         <View style={{
           flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
-          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+          backgroundColor: 'rgba(224,242,254,0.6)', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
           <Text style={{ width: '5%' }}>{''}</Text>
@@ -1219,9 +1227,9 @@ function FixedIncomeTablePage({ holdings, orientation }: {
 
         return (
           <View style={{
-            marginTop: 8, borderRadius: 8, padding: 10,
-            backgroundColor: '#fffbeb',
-            borderWidth: 1, borderColor: '#fde68a', borderStyle: 'solid' as const,
+            marginTop: 8, borderRadius: 12, padding: 10,
+            backgroundColor: 'rgba(255,251,235,0.66)',
+            borderWidth: 0.75, borderColor: 'rgba(253,230,138,0.6)', borderStyle: 'solid' as const,
             borderLeftWidth: 3, borderLeftColor: '#f59e0b', borderLeftStyle: 'solid' as const,
           }} wrap={false}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -1284,7 +1292,8 @@ function CashTablePage({ holdings, orientation }: {
   const totalIncome = holdings.reduce((s, h) => s + h.annualIncome, 0);
 
   return (
-    <Page size="A4" orientation={orientation} style={styles.page}>
+    <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#eef3fb' }]}>
+      <PageBackdrop id="cash" />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.cyan, borderBottomStyle: 'solid' as const }}>
         <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Liquidités et autres</Text>
         <Text style={{ fontSize: 7.5, color: '#64748b' }}>Total: <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(totalMv)}</Text></Text>
@@ -1331,7 +1340,7 @@ function CashTablePage({ holdings, orientation }: {
         {/* Total row — premium navy-topped */}
         <View style={{
           flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 8,
-          backgroundColor: '#f0f9ff', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
+          backgroundColor: 'rgba(224,242,254,0.6)', borderTopWidth: 2, borderTopColor: C.navy, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
           <Text style={{ width: '8%' }}>{''}</Text>
