@@ -269,21 +269,23 @@ function PaleGradientBox({
 // Sector codes match /api/models/stock-sector (Yahoo → internal codes).
 // Full French labels (never truncated) + a distinct colour per sector.
 
+// Highly-distinct categorical palette (max hue separation) so no two sectors
+// look alike in the donut. Common sectors get the most separated colours.
 const SECTOR_META: Record<string, { label: string; color: string }> = {
-  TECHNOLOGY:       { label: 'Technologie',                  color: '#00b4d8' },
-  FINANCIALS:       { label: 'Finance',                      color: '#3b82f6' },
-  HEALTHCARE:       { label: 'Santé',                        color: '#ef4444' },
-  ENERGY:           { label: 'Énergie',                      color: '#f59e0b' },
-  MATERIALS:        { label: 'Matériaux',                    color: '#b45309' },
-  INDUSTRIALS:      { label: 'Industrie',                    color: '#64748b' },
-  CONSUMER_DISC:    { label: 'Consommation discrétionnaire', color: '#8b5cf6' },
-  CONSUMER_STAPLES: { label: 'Consommation de base',         color: '#14b8a6' },
-  UTILITIES:        { label: 'Services publics',             color: '#0ea5e9' },
-  REAL_ESTATE:      { label: 'Immobilier',                   color: '#ec4899' },
-  TELECOM:          { label: 'Télécommunications',           color: '#6366f1' },
-  MILITARY:         { label: 'Défense',                      color: '#475569' },
-  ETF:              { label: 'FNB diversifiés',              color: '#22c55e' },
-  OTHER:            { label: 'Autres',                       color: '#94a3b8' },
+  TECHNOLOGY:       { label: 'Technologie',                  color: '#4363d8' }, // royal blue
+  HEALTHCARE:       { label: 'Santé',                        color: '#e6194b' }, // red
+  FINANCIALS:       { label: 'Finance',                      color: '#3cb44b' }, // green
+  ENERGY:           { label: 'Énergie',                      color: '#f58231' }, // orange
+  CONSUMER_DISC:    { label: 'Consommation discrétionnaire', color: '#911eb4' }, // purple
+  UTILITIES:        { label: 'Services publics',             color: '#42d4f4' }, // cyan
+  REAL_ESTATE:      { label: 'Immobilier',                   color: '#f032e6' }, // magenta
+  CONSUMER_STAPLES: { label: 'Consommation de base',         color: '#469990' }, // teal
+  MATERIALS:        { label: 'Matériaux',                    color: '#9a6324' }, // brown
+  INDUSTRIALS:      { label: 'Industrie',                    color: '#808000' }, // olive
+  TELECOM:          { label: 'Télécommunications',           color: '#000075' }, // navy
+  MILITARY:         { label: 'Défense',                      color: '#800000' }, // maroon
+  ETF:              { label: 'FNB diversifiés',              color: '#d4af37' }, // gold
+  OTHER:            { label: 'Autres',                       color: '#a9a9a9' }, // grey
 };
 
 interface SectorSlice { code: string; label: string; color: string; value: number; pct: number; }
@@ -393,6 +395,36 @@ function buildEquitySectorSlices(holdings: PriceTargetHolding[]): SectorSlice[] 
   return slices;
 }
 
+// Asset-class buckets (computed from existing data — no API needed).
+const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
+  EQUITY:       { label: 'Actions',      color: '#2563eb' },
+  ETF:          { label: 'FNB',          color: '#8b5cf6' },
+  FIXED_INCOME: { label: 'Revenu fixe',  color: '#c5a365' },
+  PREFERRED:    { label: 'Privilégiées', color: '#ec4899' },
+  FUND:         { label: 'Fonds',        color: '#14b8a6' },
+  CASH:         { label: 'Liquidités',   color: '#64748b' },
+  OTHER:        { label: 'Autre',        color: '#94a3b8' },
+};
+
+function buildAssetClassSlices(holdings: PriceTargetHolding[]): SectorSlice[] {
+  const buckets = new Map<string, number>();
+  for (const h of holdings) {
+    const mv = Math.abs(h.marketValue);
+    if (mv <= 0) continue;
+    const code = ASSET_CLASS_META[h.assetType] ? h.assetType : 'OTHER';
+    buckets.set(code, (buckets.get(code) || 0) + mv);
+  }
+  const total = Array.from(buckets.values()).reduce((a, b) => a + b, 0);
+  if (total <= 0) return [];
+  return Array.from(buckets.entries())
+    .map(([code, value]) => ({
+      code, value, pct: (value / total) * 100,
+      label: ASSET_CLASS_META[code]?.label || code,
+      color: ASSET_CLASS_META[code]?.color || ASSET_CLASS_META.OTHER.color,
+    }))
+    .sort((a, b) => b.value - a.value);
+}
+
 // Donut ring (no center text) built from sector slices.
 function SectorDonut({ slices, size = 92 }: { slices: SectorSlice[]; size?: number }) {
   const cx = size / 2, cy = size / 2, r = size / 2 - 2, innerR = r * 0.6;
@@ -415,34 +447,72 @@ function SectorDonut({ slices, size = 92 }: { slices: SectorSlice[]; size?: numb
   );
 }
 
-// "Répartition sectorielle" block: donut + single-column legend with icons and
-// FULL sector names (one line each — never wrapped or cut) + weight %.
-function SectorAllocationBlock({ slices }: { slices: SectorSlice[] }) {
+// "Répartition du portefeuille" block: a compact asset-class donut (left) +
+// the sector donut with icon legend (right). Sector names are shown in full,
+// one line each — never wrapped or cut.
+function RepartitionBlock({ assetClassSlices, sectorSlices }: {
+  assetClassSlices: SectorSlice[];
+  sectorSlices: SectorSlice[];
+}) {
+  const hasAsset = assetClassSlices.length > 0;
+  const hasSector = sectorSlices.length > 0;
   return (
     <View style={{ marginBottom: 12 }} wrap={false}>
       <View style={{ marginBottom: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ width: 3, height: 14, backgroundColor: C.cyan, borderRadius: 1.5 }} />
         <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-          Répartition sectorielle
+          Répartition du portefeuille
         </Text>
-        <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>Actions et FNB</Text>
       </View>
       <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 18,
+        flexDirection: 'row', alignItems: 'stretch', gap: 14,
         borderRadius: 10, padding: 12,
         backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
       }}>
-        <SectorDonut slices={slices} size={92} />
-        <View style={{ flex: 1 }}>
-          {slices.map((s, i) => (
-            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2.5 }}>
-              <SectorIcon code={s.code} size={11} color={s.color} />
-              <Text style={{ fontSize: 8, color: C.text }}>{s.label}</Text>
-              <View style={{ flex: 1, height: 1, marginHorizontal: 4, backgroundColor: '#f1f5f9' }} />
-              <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{s.pct.toFixed(1)} %</Text>
+        {/* Classes d'actifs — mini-donut + légende */}
+        {hasAsset && (
+          <View style={{ width: 140 }}>
+            <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 5 }}>
+              Classes d&apos;actifs
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <SectorDonut slices={assetClassSlices} size={56} />
+              <View style={{ flex: 1 }}>
+                {assetClassSlices.map((s, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 1.5 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 2, backgroundColor: s.color }} />
+                    <Text style={{ fontSize: 6.5, color: C.text, flex: 1 }}>{s.label}</Text>
+                    <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{s.pct.toFixed(0)} %</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-          ))}
-        </View>
+          </View>
+        )}
+
+        {hasAsset && hasSector && <View style={{ width: 1, backgroundColor: '#e2e8f0' }} />}
+
+        {/* Secteurs (actions + FNB) — donut + légende à icônes, noms complets */}
+        {hasSector && (
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.6, marginBottom: 5 }}>
+              Secteurs — actions et FNB
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <SectorDonut slices={sectorSlices} size={84} />
+              <View style={{ flex: 1 }}>
+                {sectorSlices.map((s, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
+                    <SectorIcon code={s.code} size={10} color={s.color} />
+                    <Text style={{ fontSize: 7.5, color: C.text }}>{s.label}</Text>
+                    <View style={{ flex: 1, height: 1, marginHorizontal: 4, backgroundColor: '#f1f5f9' }} />
+                    <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{s.pct.toFixed(1)} %</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -476,8 +546,9 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
   const pctFi = partsSum > 0 ? (fiPart / partsSum) * 100 : 0;
   const pctCap = partsSum > 0 ? (capPart / partsSum) * 100 : 0;
 
-  // Sector allocation of equities + ETFs (donut + legend on the cover)
+  // Allocation donuts on the cover: asset classes (all holdings) + sectors (equities/ETFs)
   const sectorSlices = buildEquitySectorSlices(data.holdings);
+  const assetClassSlices = buildAssetClassSlices(data.holdings);
 
   return (
     <Page size="A4" orientation={orientation} style={[styles.page, { backgroundColor: '#f8fafc' }]}>
@@ -633,8 +704,10 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         );
       })()}
 
-      {/* Répartition sectorielle (actions + FNB) — donut + légende à icônes */}
-      {sectorSlices.length > 0 && <SectorAllocationBlock slices={sectorSlices} />}
+      {/* Répartition — classes d'actifs (mini-donut) + secteurs (donut + légende à icônes) */}
+      {(assetClassSlices.length > 0 || sectorSlices.length > 0) && (
+        <RepartitionBlock assetClassSlices={assetClassSlices} sectorSlices={sectorSlices} />
+      )}
 
       {/* Projections 12 mois — section title */}
       {hasTargets && (
