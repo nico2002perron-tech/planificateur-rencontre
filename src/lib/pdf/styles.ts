@@ -188,9 +188,16 @@ export const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 14,
     borderRadius: 14,
-    borderWidth: 0.75,
-    borderColor: 'rgba(148,163,184,0.32)', // glass hairline edge
+    // Beveled glass edge → 3D relief (lit top/left, shaded bottom/right).
+    borderTopWidth: 1,
+    borderBottomWidth: 1.25,
+    borderLeftWidth: 1,
+    borderRightWidth: 1.25,
     borderStyle: 'solid' as const,
+    borderTopColor: 'rgba(255,255,255,0.96)',
+    borderLeftColor: 'rgba(255,255,255,0.78)',
+    borderRightColor: 'rgba(51,65,85,0.20)',
+    borderBottomColor: 'rgba(51,65,85,0.34)',
     backgroundColor: 'rgba(255,255,255,0.55)', // frosted glass fill
     overflow: 'hidden' as const,
   },
