@@ -441,7 +441,7 @@ interface AICorrection {
   reason?: string;
 }
 
-export function ResultsView({ result, onReset, clientName = '' }: { result: ParseResult; onReset: () => void; clientName?: string }) {
+export function ResultsView({ result, onReset, clientName = '', onClientNameChange }: { result: ParseResult; onReset: () => void; clientName?: string; onClientNameChange?: (name: string) => void }) {
   const { toast } = useToast();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -2882,6 +2882,20 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
               </div>
             )}
 
+            {/* Nom du client — OBLIGATOIRE : classe la capture dans le Journal des cibles */}
+            <div className="flex items-center gap-3 px-1 py-2 mb-1 rounded-2xl bg-blue-50/40 border border-blue-100">
+              <label className="text-xs font-bold text-gray-700 pl-2 whitespace-nowrap">Nom du client *</label>
+              <input
+                value={clientName}
+                onChange={(e) => onClientNameChange?.(e.target.value)}
+                placeholder="Obligatoire — classe ce lot dans le Journal des cibles"
+                className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm text-text-main"
+              />
+              {!clientName.trim() && (
+                <span className="text-xs font-semibold text-amber-700 pr-2 whitespace-nowrap">⚠ requis</span>
+              )}
+            </div>
+
             {/* Conviction (1-5) sur ce lot de cours cibles — optionnelle, enregistrée au journal */}
             <div className="flex items-center justify-between gap-4 px-1 py-2 mb-1 rounded-2xl bg-gray-50 border border-gray-100">
               <div className="flex flex-col pl-2">
@@ -2946,7 +2960,7 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
                 </button>
                 <button
                   onClick={handleDownloadPdf}
-                  disabled={generatingPdf || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
+                  disabled={generatingPdf || !clientName.trim() || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
                   className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
                     transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}
@@ -3045,7 +3059,7 @@ export function PretAColler() {
   }, []);
 
   if (parseResult && parseResult.holdings.length > 0) {
-    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} />;
+    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} onClientNameChange={setClientName} />;
   }
 
   return (
