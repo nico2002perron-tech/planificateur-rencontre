@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult, type ParsedHolding, type AssetType } from '@/lib/parsers/croesus-parser';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import { useSymbolLogos } from '@/lib/hooks/useLogos';
+import { useVault } from '@/components/security/VaultProvider';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
@@ -443,6 +444,7 @@ interface AICorrection {
 
 export function ResultsView({ result, onReset, clientName = '', onClientNameChange }: { result: ParseResult; onReset: () => void; clientName?: string; onClientNameChange?: (name: string) => void }) {
   const { toast } = useToast();
+  const vault = useVault();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
@@ -1212,13 +1214,18 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
             accountType: h.accountType,
             accountLabel: h.accountLabel,
           }));
-        if (snapshotRows.length > 0) {
+        if (snapshotRows.length > 0 && clientName.trim()) {
+          // Coffre client : le nom est chiffré DANS le navigateur. On n'envoie
+          // au serveur que le nom chiffré (name_enc) + l'index aveugle (name_idx).
+          const trimmed = clientName.trim();
+          const [nameEnc, nameIdx] = await Promise.all([vault.encrypt(trimmed), vault.index(trimmed)]);
           void fetch('/api/price-target-snapshots', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               source_kind: 'price_targets_pdf',
-              clientName: clientName.trim() || undefined,
+              nameEnc,
+              nameIdx,
               conviction,
               rows: snapshotRows,
             }),
@@ -1232,7 +1239,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {

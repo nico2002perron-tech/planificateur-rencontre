@@ -7,13 +7,17 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { Plus, Target, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight } from 'lucide-react';
+import { VaultGate } from '@/components/security/VaultGate';
+import { useVault } from '@/components/security/VaultProvider';
+import { Plus, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight, ShieldAlert, Lock } from 'lucide-react';
 
 type Snapshot = {
   id: string;
   batch_id: string;
   source_kind: 'price_targets_pdf' | 'manual';
   client_name: string;
+  name_enc: string | null;
+  name_idx: string | null;
   account_type: string;
   account_label: string;
   symbol: string;
@@ -36,6 +40,8 @@ type Snapshot = {
 
 const ACCOUNT_TYPES = ['', 'REER', 'CELI', 'REEE', 'NON_ENREGISTRE', 'FERR', 'CRI', 'FRV', 'REER_COLLECTIF'];
 const NO_NAME = '(Sans nom)';
+const PENDING = '⋯'; // affiché le temps que le nom soit déchiffré
+const UNREADABLE = '🔒 illisible';
 
 function fmtMoney(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -69,6 +75,16 @@ function gainColor(v: number | null | undefined): string {
   return v > 0 ? 'text-emerald-600' : v < 0 ? 'text-red-600' : 'text-text-muted';
 }
 
+// Clé de regroupement : l'index aveugle (déterministe) regroupe toutes les
+// captures d'un même client. Les anciennes lignes (avant chiffrement) sont
+// regroupées par leur nom en clair, en attendant la migration.
+function groupKeyOf(s: Snapshot): string {
+  return s.name_idx && s.name_idx.trim() ? `idx:${s.name_idx}` : `legacy:${(s.client_name || '').trim()}`;
+}
+function isLegacy(s: Snapshot): boolean {
+  return !(s.name_idx && s.name_idx.trim()) && Boolean((s.client_name || '').trim());
+}
+
 /** Petite barre de progression. */
 function Bar({ pct, color }: { pct: number; color: string }) {
   return (
@@ -79,12 +95,25 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 }
 
 export default function JournalPage() {
+  return (
+    <VaultGate>
+      <JournalInner />
+    </VaultGate>
+  );
+}
+
+function JournalInner() {
   const { toast } = useToast();
+  const vault = useVault();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Noms déchiffrés en mémoire : index aveugle → nom en clair (jamais persisté).
+  const [nameByIdx, setNameByIdx] = useState<Record<string, string>>({});
+
   const [search, setSearch] = useState('');
-  const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
 
   // Prix live (compteur) — symbole → prix actuel
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -117,22 +146,74 @@ export default function JournalPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Déchiffrage des noms (une fois par client) dès que les captures changent.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      const seen = new Set<string>();
+      for (const s of snapshots) {
+        if (s.name_idx && s.name_idx.trim() && s.name_enc && !seen.has(s.name_idx)) {
+          seen.add(s.name_idx);
+          try { next[s.name_idx] = await vault.decrypt(s.name_enc); }
+          catch { next[s.name_idx] = UNREADABLE; }
+        }
+      }
+      if (!cancelled) setNameByIdx(next);
+    })();
+    return () => { cancelled = true; };
+  }, [snapshots, vault]);
+
+  const displayNameOf = useCallback((s: Snapshot): string => {
+    if (s.name_idx && s.name_idx.trim()) return nameByIdx[s.name_idx] ?? PENDING;
+    return (s.client_name || '').trim() || NO_NAME;
+  }, [nameByIdx]);
+
+  // Anciennes captures à sécuriser (noms encore en clair).
+  const legacyRows = useMemo(() => snapshots.filter(isLegacy), [snapshots]);
+
+  async function handleMigrate() {
+    if (legacyRows.length === 0) return;
+    setMigrating(true);
+    try {
+      const updates = [];
+      for (const s of legacyRows) {
+        const name = (s.client_name || '').trim();
+        const [nameEnc, nameIdx] = await Promise.all([vault.encrypt(name), vault.index(name)]);
+        updates.push({ id: s.id, nameEnc, nameIdx });
+      }
+      const res = await fetch('/api/price-target-snapshots', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      });
+      if (!res.ok) throw new Error();
+      const { updated } = await res.json();
+      toast('success', `${updated} ancienne${updated > 1 ? 's' : ''} capture${updated > 1 ? 's' : ''} sécurisée${updated > 1 ? 's' : ''}`);
+      load();
+    } catch {
+      toast('error', 'Erreur lors de la sécurisation des anciennes captures');
+    } finally {
+      setMigrating(false);
+    }
+  }
+
   // Regroupement par client
   const clients = useMemo(() => {
     const map = new Map<string, Snapshot[]>();
     for (const s of snapshots) {
-      const key = (s.client_name || '').trim() || NO_NAME;
+      const key = groupKeyOf(s);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(s);
     }
-    return Array.from(map.entries()).map(([name, rows]) => {
+    return Array.from(map.entries()).map(([key, rows]) => {
       const symbols = new Set(rows.map(r => r.symbol));
       const gains = rows.map(r => r.expected_gain_pct).filter((g): g is number => g != null && Number.isFinite(g));
       const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null;
       const lastDate = rows.reduce((acc, r) => (r.predicted_at > acc ? r.predicted_at : acc), rows[0].predicted_at);
-      return { name, positions: symbols.size, predictions: rows.length, avgGain, lastDate };
+      return { key, name: displayNameOf(rows[0]), legacy: isLegacy(rows[0]), positions: symbols.size, predictions: rows.length, avgGain, lastDate };
     }).sort((a, b) => (a.lastDate < b.lastDate ? 1 : -1));
-  }, [snapshots]);
+  }, [snapshots, displayNameOf]);
 
   const filteredClients = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -141,8 +222,12 @@ export default function JournalPage() {
 
   // Lignes du client sélectionné, groupées par symbole (plus récent d'abord)
   const selectedRows = useMemo(
-    () => snapshots.filter(s => ((s.client_name || '').trim() || NO_NAME) === selectedClient),
-    [snapshots, selectedClient]
+    () => snapshots.filter(s => groupKeyOf(s) === selectedKey),
+    [snapshots, selectedKey]
+  );
+  const selectedName = useMemo(
+    () => (selectedRows[0] ? displayNameOf(selectedRows[0]) : ''),
+    [selectedRows, displayNameOf]
   );
   const bySymbol = useMemo(() => {
     const map = new Map<string, Snapshot[]>();
@@ -156,7 +241,7 @@ export default function JournalPage() {
 
   // Prix live à l'ouverture d'un client
   useEffect(() => {
-    if (!selectedClient) return;
+    if (!selectedKey) return;
     const syms = Array.from(new Set(selectedRows.map(r => r.symbol))).slice(0, 30);
     if (syms.length === 0) return;
     setPricesLoading(true);
@@ -170,10 +255,10 @@ export default function JournalPage() {
       .catch(() => {})
       .finally(() => setPricesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClient]);
+  }, [selectedKey]);
 
   function openForm(presetClient?: string) {
-    setFClient(presetClient ?? (selectedClient && selectedClient !== NO_NAME ? selectedClient : ''));
+    setFClient(presetClient && presetClient !== NO_NAME ? presetClient : '');
     setFAccount(''); setFSymbol(''); setFName(''); setFCurrent(''); setFTarget(''); setFConviction(null);
     setShowForm(true);
   }
@@ -183,12 +268,15 @@ export default function JournalPage() {
     if (!fSymbol.trim() || !fTarget.trim()) { toast('error', 'Symbole et cours cible sont requis'); return; }
     setSaving(true);
     try {
+      // Le nom est chiffré DANS le navigateur avant l'envoi.
+      const [nameEnc, nameIdx] = await Promise.all([vault.encrypt(fClient.trim()), vault.index(fClient.trim())]);
       const res = await fetch('/api/price-target-snapshots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           source_kind: 'manual',
-          clientName: fClient.trim(),
+          nameEnc,
+          nameIdx,
           conviction: fConviction,
           rows: [{
             symbol: fSymbol.trim().toUpperCase(),
@@ -230,16 +318,16 @@ export default function JournalPage() {
   // ─────────────────────────────────────────────────────────────────────
   // Vue détail d'un client
   // ─────────────────────────────────────────────────────────────────────
-  if (selectedClient) {
+  if (selectedKey) {
     return (
       <div>
-        <button onClick={() => setSelectedClient(null)} className="flex items-center gap-1 text-sm font-semibold text-text-muted hover:text-text-main mb-3">
+        <button onClick={() => setSelectedKey(null)} className="flex items-center gap-1 text-sm font-semibold text-text-muted hover:text-text-main mb-3">
           <ChevronLeft className="h-4 w-4" /> Tous les clients
         </button>
         <PageHeader
-          title={selectedClient}
+          title={selectedName || PENDING}
           description={`${bySymbol.length} position${bySymbol.length > 1 ? 's' : ''} suivie${bySymbol.length > 1 ? 's' : ''}${pricesLoading ? ' · chargement des prix…' : ''}`}
-          action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openForm(selectedClient)}>Ajouter une position</Button>}
+          action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openForm(selectedName)}>Ajouter une position</Button>}
         />
 
         {showForm && <ManualForm
@@ -352,6 +440,28 @@ export default function JournalPage() {
         action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openForm()}>Ajouter manuellement</Button>}
       />
 
+      {/* Bandeau confidentialité : les noms sont chiffrés côté navigateur */}
+      <div className="flex items-center gap-2 mb-4 text-xs text-text-muted">
+        <Lock className="h-3.5 w-3.5 text-emerald-600" />
+        Noms de clients chiffrés sur cet appareil — la base ne stocke que des données illisibles sans ta phrase de passe.
+      </div>
+
+      {/* Bandeau migration : anciennes captures encore en clair */}
+      {legacyRows.length > 0 && (
+        <Card className="mb-5 p-4 border border-amber-200 bg-amber-50">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-bold text-amber-900">{legacyRows.length} ancienne{legacyRows.length > 1 ? 's' : ''} capture{legacyRows.length > 1 ? 's' : ''} avec nom en clair</div>
+                <div className="text-xs text-amber-800">Sécurise-les : leurs noms seront chiffrés et retirés de la base, comme les nouvelles.</div>
+              </div>
+            </div>
+            <Button variant="primary" loading={migrating} onClick={handleMigrate}>Sécuriser maintenant</Button>
+          </div>
+        </Card>
+      )}
+
       <div className="relative mb-5">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
         <input
@@ -379,14 +489,17 @@ export default function JournalPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredClients.map(c => (
-            <Card key={c.name} hover onClick={() => setSelectedClient(c.name)} className="cursor-pointer">
+            <Card key={c.key} hover onClick={() => setSelectedKey(c.key)} className="cursor-pointer">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <div className="h-9 w-9 rounded-full bg-brand-primary/10 flex items-center justify-center">
                     <User className="h-4 w-4 text-brand-primary" />
                   </div>
                   <div>
-                    <div className="font-bold text-text-main">{c.name}</div>
+                    <div className="font-bold text-text-main flex items-center gap-1.5">
+                      {c.name}
+                      {c.legacy && <span title="Nom encore en clair — à sécuriser"><ShieldAlert className="h-3.5 w-3.5 text-amber-500" /></span>}
+                    </div>
                     <div className="text-xs text-text-muted">{c.positions} position{c.positions > 1 ? 's' : ''} · {c.predictions} prédiction{c.predictions > 1 ? 's' : ''}</div>
                   </div>
                 </div>

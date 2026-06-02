@@ -63,7 +63,16 @@ export async function POST(req: NextRequest) {
 
   const sourceKind: 'price_targets_pdf' | 'manual' =
     body.source_kind === 'manual' ? 'manual' : 'price_targets_pdf';
-  const clientName: string = (body.clientName ?? body.client_name ?? '').toString().trim();
+
+  // Coffre client : le nom n'arrive JAMAIS en clair. On reçoit seulement le nom
+  // chiffré (name_enc) et l'index aveugle déterministe (name_idx). L'index est
+  // obligatoire — c'est lui qui regroupe/dédoublonne les captures d'un client.
+  const nameEnc: string | null = typeof body.nameEnc === 'string' ? body.nameEnc : null;
+  const nameIdx: string = typeof body.nameIdx === 'string' ? body.nameIdx.trim() : '';
+  if (!nameIdx) {
+    return NextResponse.json({ error: 'Coffre verrouillé : nameIdx requis (nom chiffré).' }, { status: 400 });
+  }
+
   const conviction = clampConviction(body.conviction);
   const horizonMonths = Number.isFinite(Number(body.horizonMonths)) ? Math.round(Number(body.horizonMonths)) : 12;
 
@@ -107,13 +116,14 @@ export async function POST(req: NextRequest) {
   // Dédoublonnage des captures auto : régénérer le PDF du même client le même
   // jour remplace la capture précédente (on garde la plus récente), sans
   // toucher à l'historique des autres jours ni aux saisies manuelles.
+  // Le dédoublonnage se fait sur l'index aveugle (déterministe), pas sur le nom.
   if (sourceKind === 'price_targets_pdf') {
     await supabase
       .from('price_target_snapshots')
       .delete()
       .eq('advisor_id', advisorId)
       .eq('source_kind', 'price_targets_pdf')
-      .eq('client_name', clientName)
+      .eq('name_idx', nameIdx)
       .eq('predicted_at', today);
   }
 
@@ -121,7 +131,9 @@ export async function POST(req: NextRequest) {
     advisor_id: advisorId,
     batch_id: batchId,
     source_kind: sourceKind,
-    client_name: clientName,
+    client_name: '', // plus jamais de nom en clair
+    name_enc: nameEnc,
+    name_idx: nameIdx,
     conviction,
     horizon_months: horizonMonths,
     predicted_at: today,
@@ -160,4 +172,37 @@ export async function DELETE(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
+}
+
+/**
+ * Migration des anciennes captures : remplace les noms stockés en clair
+ * (client_name) par leur version chiffrée (name_enc) + index aveugle (name_idx),
+ * calculés dans le navigateur. Body : { updates: [{ id, nameEnc, nameIdx }] }.
+ * Chaque mise à jour est restreinte aux lignes du conseiller courant, et vide
+ * client_name au passage.
+ */
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const updates: { id?: string; nameEnc?: string; nameIdx?: string }[] = Array.isArray(body.updates) ? body.updates : [];
+  if (updates.length === 0) return NextResponse.json({ error: 'Aucune mise à jour' }, { status: 400 });
+  if (updates.length > 2000) return NextResponse.json({ error: 'Trop de lignes à la fois' }, { status: 400 });
+
+  const supabase = createClient();
+  const advisorId = session.user.id;
+  let updated = 0;
+
+  for (const u of updates) {
+    if (!u.id || typeof u.nameIdx !== 'string' || !u.nameIdx.trim()) continue;
+    const { error } = await supabase
+      .from('price_target_snapshots')
+      .update({ name_enc: u.nameEnc ?? null, name_idx: u.nameIdx.trim(), client_name: '' })
+      .eq('id', u.id)
+      .eq('advisor_id', advisorId);
+    if (!error) updated++;
+  }
+
+  return NextResponse.json({ updated });
 }

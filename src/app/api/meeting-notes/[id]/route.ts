@@ -31,8 +31,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { data, error } = await supabase
     .from('meeting_notes')
     .update({
-      client_name: body.client_name,
-      account_number: body.account_number,
+      // Coffre client : nom/compte chiffrés dans le navigateur. Plus de clair.
+      client_name: '',
+      account_number: '',
+      name_enc: body.name_enc ?? null,
+      name_idx: body.name_idx ?? null,
+      account_enc: body.account_enc ?? null,
       meeting_date: body.meeting_date,
       meeting_time: body.meeting_time,
       meeting_type: body.meeting_type,

@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/Badge';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { AudioWaveform } from '@/components/meeting-notes/AudioWaveform';
+import { useVault } from '@/components/security/VaultProvider';
+import { VaultGate } from '@/components/security/VaultGate';
 import { useMeetingNote, type MeetingTransaction } from '@/lib/hooks/useMeetingNotes';
 import {
   ArrowLeft, Save, CheckCircle2, Mic, Square,
@@ -85,9 +87,14 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── Main Page ──────────────────────────────────────────────────
 export default function MeetingNoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return <VaultGate><MeetingNoteDetailInner params={params} /></VaultGate>;
+}
+
+function MeetingNoteDetailInner({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { toast } = useToast();
+  const vault = useVault();
   const { note, isLoading, mutate } = useMeetingNote(id);
 
   const [saving, setSaving] = useState(false);
@@ -124,8 +131,16 @@ export default function MeetingNoteDetailPage({ params }: { params: Promise<{ id
   // Load note
   useEffect(() => {
     if (!note) return;
+    // Fallback legacy (clair) affiché tout de suite; le déchiffré l'écrase ensuite.
     setClientName(note.client_name || '');
     setAccountNumber(note.account_number || '');
+    // Coffre : déchiffrer nom/compte si chiffrés (dans le navigateur).
+    (async () => {
+      try {
+        if (note.name_enc) setClientName(await vault.decrypt(note.name_enc));
+        if (note.account_enc) setAccountNumber(await vault.decrypt(note.account_enc));
+      } catch { /* garder le fallback legacy si déchiffrage impossible */ }
+    })();
     setMeetingDate(note.meeting_date || '');
     setMeetingTime(note.meeting_time || '');
     setMeetingType(note.meeting_type || 'in_person');
@@ -140,7 +155,7 @@ export default function MeetingNoteDetailPage({ params }: { params: Promise<{ id
     setAiSummaryAdvisor(note.ai_summary_advisor || '');
     setAiSummaryClient(note.ai_summary_client || '');
     setStatus(note.status);
-  }, [note]);
+  }, [note, vault]);
 
   const filteredQuestions = getFilteredQuestions(subject);
   const complianceAnswered = filteredQuestions.filter((q) => compliance[q.id] && compliance[q.id] !== '').length;
@@ -213,8 +228,11 @@ export default function MeetingNoteDetailPage({ params }: { params: Promise<{ id
     if (!clientName.trim()) { toast('warning', 'Entrez le nom du client'); return; }
     setSaving(true);
     try {
+      // Coffre client : nom + numéro de compte chiffrés dans le navigateur.
+      const [name_enc, name_idx] = await Promise.all([vault.encrypt(clientName.trim()), vault.index(clientName.trim())]);
+      const account_enc = accountNumber.trim() ? await vault.encrypt(accountNumber.trim()) : null;
       const body = {
-        client_name: clientName, account_number: accountNumber, meeting_date: meetingDate, meeting_time: meetingTime,
+        name_enc, name_idx, account_enc, meeting_date: meetingDate, meeting_time: meetingTime,
         meeting_type: meetingType, subject, compliance, transaction: transactions.length > 0 ? transactions : null,
         notes: { topics, decisions, followups, nextMeeting }, transcription: transcription || null,
         ai_summary_advisor: aiSummaryAdvisor || null, ai_summary_client: aiSummaryClient || null, status: finalStatus,

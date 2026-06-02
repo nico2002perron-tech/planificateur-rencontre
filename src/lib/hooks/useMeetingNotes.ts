@@ -17,6 +17,10 @@ export interface MeetingNote {
   advisor_id: string;
   client_name: string;
   account_number: string;
+  // Coffre client : versions chiffrées (name_enc/account_enc) + index aveugle (name_idx).
+  name_enc?: string | null;
+  name_idx?: string | null;
+  account_enc?: string | null;
   meeting_date: string;
   meeting_time: string;
   meeting_type: 'phone' | 'in_person' | 'video';

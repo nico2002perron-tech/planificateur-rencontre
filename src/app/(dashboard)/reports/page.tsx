@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PretAColler } from '@/components/reports/PretAColler';
 import { ProspectReport } from '@/components/reports/ProspectReport';
+import { VaultGate } from '@/components/security/VaultGate';
 import {
   ClipboardPaste, ArrowLeft, Target, Sparkles, BookOpen,
   Zap, CheckCircle2, UserPlus, FileSpreadsheet, Search,
@@ -184,11 +185,14 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Tab: Prospect */}
-      {activeTab === 'prospect' && <ProspectReport />}
+      {/* Les deux outils manipulent des noms de clients → coffre déverrouillé requis */}
+      <VaultGate>
+        {/* Tab: Prospect */}
+        {activeTab === 'prospect' && <ProspectReport />}
 
-      {/* Tab: Prêt à coller */}
-      {activeTab === 'paste' && <PretAColler />}
+        {/* Tab: Prêt à coller */}
+        {activeTab === 'paste' && <PretAColler />}
+      </VaultGate>
     </div>
   );
 }

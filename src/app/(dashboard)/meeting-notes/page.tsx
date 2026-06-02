@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
@@ -9,11 +9,13 @@ import { Spinner } from '@/components/ui/Spinner';
 import { Badge } from '@/components/ui/Badge';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { useToast } from '@/components/ui/Toast';
-import { useMeetingNotes } from '@/lib/hooks/useMeetingNotes';
+import { useMeetingNotes, type MeetingNote } from '@/lib/hooks/useMeetingNotes';
+import { useVault } from '@/components/security/VaultProvider';
+import { VaultGate } from '@/components/security/VaultGate';
 import {
   Plus, Trash2, Phone, Monitor, Users as UsersIcon,
   Calendar, Clock, FileText, CheckCircle2, Edit3,
-  ClipboardList, Sparkles,
+  ClipboardList, Sparkles, ShieldAlert, Lock,
 } from 'lucide-react';
 
 const MEETING_TYPE_LABELS: Record<string, { label: string; icon: typeof Phone; color: string }> = {
@@ -29,13 +31,69 @@ const SUBJECT_LABELS: Record<string, string> = {
 };
 
 export default function MeetingNotesPage() {
+  return <VaultGate><MeetingNotesInner /></VaultGate>;
+}
+
+function MeetingNotesInner() {
   const { notes, isLoading, mutate } = useMeetingNotes();
   const { toast } = useToast();
+  const vault = useVault();
   const [search, setSearch] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [nameById, setNameById] = useState<Record<string, string>>({});
+
+  // Déchiffrer les noms pour l'affichage (dans le navigateur, jamais persisté).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      for (const n of notes) {
+        if (n.name_enc) {
+          try { next[n.id] = await vault.decrypt(n.name_enc); }
+          catch { next[n.id] = '🔒 illisible'; }
+        } else {
+          next[n.id] = n.client_name || '';
+        }
+      }
+      if (!cancelled) setNameById(next);
+    })();
+    return () => { cancelled = true; };
+  }, [notes, vault]);
+
+  const nameOf = (n: MeetingNote) => nameById[n.id] ?? (n.client_name || '');
+
+  // Anciennes notes à sécuriser (nom encore en clair).
+  const legacyNotes = useMemo(
+    () => notes.filter(n => !(n.name_idx && n.name_idx.trim()) && (n.client_name || '').trim()),
+    [notes]
+  );
+
+  async function handleMigrate() {
+    if (legacyNotes.length === 0) return;
+    setMigrating(true);
+    try {
+      const updates = [];
+      for (const n of legacyNotes) {
+        const nm = (n.client_name || '').trim();
+        const [nameEnc, nameIdx] = await Promise.all([vault.encrypt(nm), vault.index(nm)]);
+        const accountEnc = (n.account_number || '').trim() ? await vault.encrypt((n.account_number || '').trim()) : null;
+        updates.push({ id: n.id, nameEnc, nameIdx, accountEnc });
+      }
+      const res = await fetch('/api/meeting-notes', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updates }) });
+      if (!res.ok) throw new Error();
+      const { updated } = await res.json();
+      toast('success', `${updated} note${updated > 1 ? 's' : ''} sécurisée${updated > 1 ? 's' : ''}`);
+      mutate();
+    } catch {
+      toast('error', 'Erreur lors de la sécurisation');
+    } finally {
+      setMigrating(false);
+    }
+  }
 
   const filtered = notes.filter(n =>
-    !search || n.client_name.toLowerCase().includes(search.toLowerCase())
+    !search || nameOf(n).toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (id: string) => {
@@ -116,6 +174,28 @@ export default function MeetingNotesPage() {
         </Card>
       </div>
 
+      {/* Confidentialité : noms chiffrés côté navigateur */}
+      <div className="flex items-center gap-2 mb-3 text-xs text-text-muted">
+        <Lock className="h-3.5 w-3.5 text-emerald-600" />
+        Noms et numéros de compte chiffrés sur cet appareil — illisibles dans la base sans ta phrase de passe.
+      </div>
+
+      {/* Bandeau migration : anciennes notes encore en clair */}
+      {legacyNotes.length > 0 && (
+        <Card className="mb-4 border border-amber-200 bg-amber-50">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-bold text-amber-900">{legacyNotes.length} note{legacyNotes.length > 1 ? 's' : ''} avec nom en clair</div>
+                <div className="text-xs text-amber-800">Sécurise-les : nom et numéro de compte seront chiffrés et retirés de la base.</div>
+              </div>
+            </div>
+            <Button variant="primary" loading={migrating} onClick={handleMigrate}>Sécuriser maintenant</Button>
+          </div>
+        </Card>
+      )}
+
       {/* Search */}
       <div className="mb-4">
         <SearchInput value={search} onChange={(e) => setSearch(e.target.value)} onClear={() => setSearch('')} placeholder="Rechercher par nom de client..." />
@@ -171,7 +251,7 @@ export default function MeetingNotesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-bold text-text-main font-[family-name:var(--font-heading)] truncate">
-                          {note.client_name || 'Client non spécifié'}
+                          {nameOf(note) || 'Client non spécifié'}
                         </h3>
                         <Badge variant={note.status === 'completed' ? 'success' : 'warning'}>
                           {note.status === 'completed' ? 'Complétée' : 'Brouillon'}

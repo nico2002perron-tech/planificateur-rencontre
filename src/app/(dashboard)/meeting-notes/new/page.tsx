@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { AudioWaveform } from '@/components/meeting-notes/AudioWaveform';
+import { useVault } from '@/components/security/VaultProvider';
+import { VaultGate } from '@/components/security/VaultGate';
 import type { MeetingTransaction } from '@/lib/hooks/useMeetingNotes';
 import {
   ArrowLeft, Save, CheckCircle2, Mic, Square,
@@ -85,8 +87,13 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── Main ───────────────────────────────────────────────────────
 export default function NewMeetingNotePage() {
+  return <VaultGate><NewMeetingNoteInner /></VaultGate>;
+}
+
+function NewMeetingNoteInner() {
   const router = useRouter();
   const { toast } = useToast();
+  const vault = useVault();
   const [saving, setSaving] = useState(false);
 
   // Phase
@@ -240,8 +247,10 @@ export default function NewMeetingNotePage() {
     if (!clientName.trim()) { toast('warning', 'Entrez le nom du client'); setPhase('prepare'); return; }
     setSaving(true);
     try {
+      // Coffre client : le nom est chiffré dans le navigateur avant l'envoi.
+      const [name_enc, name_idx] = await Promise.all([vault.encrypt(clientName.trim()), vault.index(clientName.trim())]);
       const body = {
-        client_name: clientName, account_number: '', meeting_date: meetingDate, meeting_time: meetingTime,
+        name_enc, name_idx, account_enc: null, meeting_date: meetingDate, meeting_time: meetingTime,
         meeting_type: meetingType, subject, compliance: deriveCompliance(),
         transaction: transactions.length > 0 ? transactions : null,
         notes: { topics: Array.from(selectedChips).map((id) => TOPICS.find((t) => t.id === id)?.label).filter(Boolean).join(', '), decisions: '', followups: freeNotes, nextMeeting },
