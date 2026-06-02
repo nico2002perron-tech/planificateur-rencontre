@@ -457,6 +457,10 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
+  // Conviction (1-5) du conseiller sur ce lot de cours cibles. Optionnelle.
+  // Capturée dans le journal des cours cibles à la génération du PDF — c'est le
+  // pont vers la calibration de la conviction (boucle de rencontres).
+  const [conviction, setConviction] = useState<number | null>(null);
 
   // PDF builder state
   const [showPdfBuilder, setShowPdfBuilder] = useState(false);
@@ -1189,12 +1193,46 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast('success', 'PDF téléchargé');
+
+      // Journal des cours cibles : on enregistre en silence chaque cible comme
+      // une prédiction datée. Best-effort, non bloquant — le PDF est déjà
+      // téléchargé, un échec ici ne doit jamais remonter une erreur à l'écran.
+      try {
+        const snapshotRows = pdfHoldings
+          .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice > 0)
+          .map(h => ({
+            symbol: h.symbol,
+            name: h.name,
+            assetType: h.assetType,
+            quantity: h.quantity,
+            currentPrice: h.currentPrice,
+            targetPrice: h.targetPrice,
+            gainPct: h.gainPct,
+            targetSource: h.targetSource,
+            accountType: h.accountType,
+            accountLabel: h.accountLabel,
+          }));
+        if (snapshotRows.length > 0) {
+          void fetch('/api/price-target-snapshots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source_kind: 'price_targets_pdf',
+              clientName: clientName.trim() || undefined,
+              conviction,
+              rows: snapshotRows,
+            }),
+          }).catch(() => {});
+        }
+      } catch {
+        /* capture best-effort : on ignore toute erreur */
+      }
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Erreur de génération PDF');
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -2843,6 +2881,39 @@ export function ResultsView({ result, onReset, clientName = '' }: { result: Pars
                 </button>
               </div>
             )}
+
+            {/* Conviction (1-5) sur ce lot de cours cibles — optionnelle, enregistrée au journal */}
+            <div className="flex items-center justify-between gap-4 px-1 py-2 mb-1 rounded-2xl bg-gray-50 border border-gray-100">
+              <div className="flex flex-col pl-2">
+                <span className="text-xs font-bold text-gray-700">Ma conviction sur ces cibles</span>
+                <span className="text-[10px] text-text-muted">Optionnel — gardé au journal pour calibrer tes convictions dans le temps</span>
+              </div>
+              <div className="flex items-center gap-1.5 pr-1">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setConviction(c => (c === n ? null : n))}
+                    className="w-9 h-9 rounded-xl text-sm font-extrabold transition-all active:translate-y-[1px]"
+                    style={conviction === n
+                      ? { backgroundColor: DUO.purple, color: 'white', boxShadow: `0 3px 0 0 ${DUO.purpleDark}` }
+                      : { backgroundColor: 'white', color: '#6b7280', border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
+                    title={`Conviction ${n}/5`}
+                  >
+                    {n}
+                  </button>
+                ))}
+                {conviction != null && (
+                  <button
+                    type="button"
+                    onClick={() => setConviction(null)}
+                    className="ml-1 text-xs font-bold text-gray-400 hover:text-gray-600 underline"
+                  >
+                    effacer
+                  </button>
+                )}
+              </div>
+            </div>
 
             {/* Footer: page estimate + buttons */}
             <div className="flex items-center justify-between">
