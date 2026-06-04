@@ -26,6 +26,9 @@ type VaultContextValue = {
 
 const VaultContext = createContext<VaultContextValue | null>(null);
 
+// Durée d'inactivité avant verrouillage automatique du coffre (clés effacées).
+const IDLE_LOCK_MS = 15 * 60 * 1000; // 15 minutes
+
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<VaultStatus>('loading');
   // Clés en mémoire UNIQUEMENT (jamais en localStorage/sessionStorage).
@@ -98,6 +101,26 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     keysRef.current = null;
     setStatus('locked');
   }, []);
+
+  // Auto-verrouillage après inactivité. Tant que le coffre est déverrouillé, on
+  // arme un minuteur réinitialisé à chaque interaction ; sans activité pendant
+  // IDLE_LOCK_MS, on efface les clés de la mémoire (poste laissé ouvert, écran
+  // non verrouillé). Les noms redeviennent illisibles jusqu'à re-déverrouillage.
+  useEffect(() => {
+    if (status !== 'unlocked') return;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(lock, IDLE_LOCK_MS);
+    };
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [status, lock]);
 
   const requireKeys = (): VaultKeys => {
     if (!keysRef.current) throw new Error('Coffre verrouillé');

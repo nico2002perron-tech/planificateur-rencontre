@@ -91,9 +91,11 @@ export function buildReportPrompt(
     score: +v.scores.overall.toFixed(1),
   }));
 
+  // Nom réel jamais envoyé à Groq (libellé neutre ; le nom est imprimé
+  // localement sur le PDF). Note : générateur V1 conservé pour compat, non câblé.
   const prompt = `Génère le contenu narratif pour un rapport de portefeuille.
 
-CLIENT: ${data.client.name}
+CLIENT: Le client
 TYPE: ${data.client.type === 'client' ? 'Client' : 'Prospect'}
 PROFIL DE RISQUE: ${data.client.riskProfile}
 OBJECTIFS: ${data.client.objectives || 'Non spécifiés'}

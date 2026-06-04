@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/features/auth/config';
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
@@ -8,6 +10,12 @@ import { fetchHoldingMeta } from '@/lib/pdf/fetch-sectors';
 import { describeHoldings } from '@/lib/pdf/describe-holdings';
 
 export async function POST(req: NextRequest) {
+  // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
+  // C'est une donnée sensible : on exige une session authentifiée dans le
+  // handler lui-même (pas seulement via le middleware), par défense en profondeur.
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { fundCodes, options, clientName, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
@@ -72,8 +80,10 @@ export async function POST(req: NextRequest) {
     }
 
     const date = new Date().toISOString().split('T')[0];
-    const namePart = clientName ? clientName.trim().replace(/[^a-zA-Z\u00C0-\u00FF0-9 -]/g, '').replace(/\s+/g, '-') : '';
-    const filename = `cours-cibles${namePart ? `-${namePart}` : ''}-${date}.pdf`;
+    // Nom de fichier NEUTRE : le nom du client n'appara\u00EEt jamais dans l'en-t\u00EAte
+    // Content-Disposition (loggable par les proxies/CDN/Vercel). Il reste
+    // uniquement \u00E0 l'int\u00E9rieur du PDF, qui est le livrable destin\u00E9 au client.
+    const filename = `cours-cibles-${date}.pdf`;
 
     return new NextResponse(Buffer.from(finalPdfBytes), {
       headers: {

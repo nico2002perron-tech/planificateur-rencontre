@@ -130,9 +130,13 @@ export interface V2PromptData {
 }
 
 export function buildReportPromptV2(data: V2PromptData): string {
+  // Le nom réel du client n'est JAMAIS envoyé à Groq : le modèle n'en a pas
+  // besoin (le nom est imprimé localement sur la page couverture du PDF via le
+  // gabarit). On envoie un libellé neutre. data.clientName reste sur le type pour
+  // le rendu du PDF, mais n'apparaît plus dans le prompt.
   return `Génère le contenu narratif pour un rapport de portefeuille complet (18 pages).
 
-CLIENT: ${data.clientName}
+CLIENT: Le client
 PROFIL DE RISQUE: ${data.riskProfile}
 OBJECTIFS: ${data.objectives || 'Non spécifiés'}
 HORIZON: ${data.horizon || 'Non spécifié'}

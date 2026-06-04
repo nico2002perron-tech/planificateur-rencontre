@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/features/auth/config';
 import Groq from 'groq-sdk';
 
 const TEXT_MODEL = 'llama-3.3-70b-versatile';
@@ -42,6 +44,11 @@ const VISION_PROMPT = `Analyse cette image d'un relevé de portefeuille / relev�
 ${SYSTEM_PROMPT}`;
 
 export async function POST(req: NextRequest) {
+  // Cette route envoie le texte/l'image collés à Groq pour extraction. On exige
+  // une session authentifiée dans le handler (pas seulement via le middleware).
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ holdings: [], detectedColumns: [], error: 'Groq API key not configured' });

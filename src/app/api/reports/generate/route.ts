@@ -540,7 +540,8 @@ export async function POST(request: NextRequest) {
     return new NextResponse(Buffer.from(finalPdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="rapport-${client.last_name}-${portfolio.name}.pdf"`,
+        // Nom de fichier NEUTRE : pas de nom de client dans l'en-tête (loggable).
+        'Content-Disposition': `attachment; filename="rapport-${new Date().toISOString().split('T')[0]}.pdf"`,
         'X-Report-Id': report?.id || '',
         'X-Report-Title': reportTitle,
       },

@@ -10,12 +10,13 @@ import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import { useSymbolLogos } from '@/lib/hooks/useLogos';
 import { useVault } from '@/components/security/VaultProvider';
+import { buildEvolution, groupMeetings, type SnapshotRow, type MeetingEvolution } from '@/lib/journal/compare-meetings';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
   Check, Pencil, X, Download, ChevronDown, ChevronUp, Eye, Info, FileText,
   BookOpen, CheckCircle2, Clock, AlertCircle, Upload, Globe, Copy,
-  ArrowUpDown, ArrowUp, ArrowDown, Trophy, TrendingDown, Rocket,
+  ArrowUpDown, ArrowUp, ArrowDown, Trophy, TrendingDown, Rocket, History,
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -30,6 +31,22 @@ function formatCurrencyFull(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+}
+
+// Variantes tolérant null (pour l'évolution entre rencontres)
+function fmtMoneyN(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? '—' : formatCurrencyFull(v);
+}
+function fmtPctN(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? '—' : formatPercent(v);
+}
+function gainClass(v: number | null | undefined): string {
+  if (v == null) return 'text-text-muted';
+  return v > 0 ? 'text-emerald-600' : v < 0 ? 'text-red-600' : 'text-text-muted';
+}
+function fmtMeetingDate(s: string): string {
+  try { return new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(`${s}T00:00:00`)); }
+  catch { return s; }
 }
 
 // ─── Duolingo-style colors ───────────────────────────────────────────────────
@@ -464,6 +481,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   // pont vers la calibration de la conviction (boucle de rencontres).
   const [conviction, setConviction] = useState<number | null>(null);
 
+  // Historique du client : captures des rencontres passées (regroupées par index
+  // aveugle). Alimente l'évolution entre rencontres. Best-effort, non bloquant.
+  const [priorSnapshots, setPriorSnapshots] = useState<SnapshotRow[]>([]);
+  const [historyDetailOpen, setHistoryDetailOpen] = useState(false);
+
   // PDF builder state
   const [showPdfBuilder, setShowPdfBuilder] = useState(false);
   const [pdfOptions, setPdfOptions] = useState({
@@ -847,6 +869,70 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     return map;
   }, [showTargets, holdings, prices, targets, customTargets, customCurrentPrices, priceableSymbols, cdrMap, convertUsdToCad, usdCadRate]);
 
+  // ── Évolution entre rencontres ────────────────────────────────────────────
+  // À la saisie du nom (débouncé) et si le coffre est déverrouillé, on retrouve
+  // les rencontres passées du client via son index aveugle. Best-effort : toute
+  // erreur (coffre verrouillé, réseau) laisse simplement l'historique vide → la
+  // génération de cours cibles reste identique à aujourd'hui.
+  useEffect(() => {
+    const name = clientName.trim();
+    if (vault.status !== 'unlocked' || !name) { setPriorSnapshots([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const nameIdx = await vault.index(name);
+        const res = await fetch(`/api/price-target-snapshots?nameIdx=${encodeURIComponent(nameIdx)}`);
+        if (!res.ok) throw new Error();
+        const rows = await res.json();
+        if (!cancelled) setPriorSnapshots(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!cancelled) setPriorSnapshots([]);
+      }
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // vault.index est stable au sein d'une session déverrouillée.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientName, vault.status]);
+
+  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Titres vendus depuis la dernière rencontre (présents alors, absents
+  // aujourd'hui) — on récupère leur prix actuel pour le « gain depuis ».
+  const exitedSymbols = useMemo(() => {
+    if (priorSnapshots.length === 0) return [] as string[];
+    const meetings = groupMeetings(priorSnapshots).filter(m => m.date < today);
+    if (meetings.length === 0) return [];
+    const currentSet = new Set(
+      holdings.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).map(h => h.symbol)
+    );
+    return Array.from(new Set(meetings[0].rows.map(r => r.symbol))).filter(s => !currentSet.has(s));
+  }, [priorSnapshots, holdings, today]);
+
+  const { prices: exitedPrices } = useYahooPrices(exitedSymbols);
+
+  const evolution = useMemo<MeetingEvolution | null>(() => {
+    if (priorSnapshots.length === 0) return null;
+    const currentHoldings = holdings
+      .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType))
+      .map(h => {
+        const td = targetData.get(h.symbol);
+        return {
+          symbol: h.symbol,
+          name: h.name,
+          qty: h.quantity,
+          currentPrice: td?.currentPrice ?? h.marketPrice,
+          targetPrice: td?.targetPrice ?? 0,
+        };
+      });
+    return buildEvolution({
+      currentHoldings,
+      priorSnapshots,
+      priceOf: (sym) => { const p = exitedPrices.get(sym); return p ? { price: p.price, currency: p.currency } : undefined; },
+      usdCadRate: convertUsdToCad ? usdCadRate : null,
+      today,
+    });
+  }, [priorSnapshots, holdings, targetData, exitedPrices, usdCadRate, convertUsdToCad, today]);
+
   // Forward annual income per holding (extremely reliable — uses best source available).
   //
   // Source priority:
@@ -1124,6 +1210,9 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         holdings: pdfHoldings,
         generatedAt: new Date().toISOString(),
         clientName: clientName.trim() || undefined,
+        // Évolution depuis la dernière rencontre (récapitulatif PDF). Absent si
+        // pas d'historique → PDF identique à aujourd'hui.
+        evolution: evolution ?? undefined,
         usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : null,
         fundCodes: pdfOptions.fundCodesToInclude,
         options: {
@@ -1188,8 +1277,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const namePart = clientName.trim() ? clientName.trim().replace(/[^a-zA-ZÀ-ÿ0-9 -]/g, '').replace(/\s+/g, '-') : '';
-      a.download = `cours-cibles${namePart ? `-${namePart}` : ''}-${new Date().toISOString().split('T')[0]}.pdf`;
+      // Nom de fichier NEUTRE volontairement : le nom du client ne doit pas se
+      // retrouver en clair dans le dossier Téléchargements (souvent synchronisé
+      // OneDrive). Le nom reste à l'intérieur du PDF. Pour réintégrer le nom dans
+      // le fichier, remettre un suffixe basé sur clientName ici.
+      a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1239,7 +1331,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -1333,8 +1425,9 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const csvNamePart = clientName.trim() ? clientName.trim().replace(/[^a-zA-ZÀ-ÿ0-9 -]/g, '').replace(/\s+/g, '-') : '';
-    a.download = `cours-cibles${csvNamePart ? `-${csvNamePart}` : ''}-${new Date().toISOString().split('T')[0]}.csv`;
+    // Nom de fichier NEUTRE (voir export PDF) : pas de nom de client dans le
+    // dossier Téléchargements / OneDrive.
+    a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1605,6 +1698,78 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           Recommencer
         </button>
       </div>
+
+      {/* Bannière — client déjà rencontré (évolution depuis la dernière rencontre) */}
+      {evolution && (
+        <div className="rounded-2xl border border-brand-primary/20 bg-brand-primary/5 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-brand-primary/10 flex items-center justify-center flex-shrink-0">
+                <History className="h-5 w-5 text-brand-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-text-main">
+                  Client déjà rencontré {evolution.meetingCount} fois — dernière le {fmtMeetingDate(evolution.lastMeetingDate)}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {evolution.held.length} conservé{evolution.held.length > 1 ? 's' : ''} · {evolution.exited.length} vendu{evolution.exited.length > 1 ? 's' : ''} · {evolution.added.length} nouveau{evolution.added.length > 1 ? 'x' : ''} — récapitulatif inclus dans le PDF
+                </p>
+              </div>
+            </div>
+            {(evolution.held.length + evolution.exited.length + evolution.added.length) > 0 && (
+              <button onClick={() => setHistoryDetailOpen(o => !o)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-brand-primary hover:bg-brand-primary/10 flex-shrink-0">
+                {historyDetailOpen ? <>Masquer <ChevronUp className="h-3.5 w-3.5" /></> : <>Détail <ChevronDown className="h-3.5 w-3.5" /></>}
+              </button>
+            )}
+          </div>
+          {historyDetailOpen && (
+            <div className="border-t border-brand-primary/10 p-4 space-y-3">
+              {evolution.exited.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5">Vendus depuis la dernière rencontre</p>
+                  <div className="space-y-1">
+                    {evolution.exited.map(e => (
+                      <div key={e.symbol} className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-text-main">{e.symbol} <span className="text-xs font-normal text-text-muted">qté {e.prevQty}</span></span>
+                        <span className="flex items-center gap-2">
+                          {e.reachedPrevTarget && <span className="text-[11px] text-emerald-600 font-semibold inline-flex items-center gap-0.5"><CheckCircle2 className="h-3 w-3" /> cible atteinte</span>}
+                          <span className={`font-bold ${gainClass(e.sinceMeetingPct)}`}>{fmtPctN(e.sinceMeetingPct)}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {evolution.held.filter(h => h.targetDeltaPct != null && Math.abs(h.targetDeltaPct) >= 0.1).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5">Cibles révisées</p>
+                  <div className="space-y-1">
+                    {evolution.held.filter(h => h.targetDeltaPct != null && Math.abs(h.targetDeltaPct) >= 0.1).map(h => (
+                      <div key={h.symbol} className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-text-main">{h.symbol}</span>
+                        <span className="text-xs text-text-muted">
+                          {fmtMoneyN(h.prevTarget)} → {fmtMoneyN(h.newTarget)}{' '}
+                          <span className={`font-bold ${gainClass(h.targetDeltaPct)}`}>({fmtPctN(h.targetDeltaPct)})</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {evolution.added.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-1.5">Nouveaux titres</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {evolution.added.map(a => (
+                      <span key={a.symbol} className="inline-flex items-center px-2 py-0.5 rounded-full bg-white text-xs font-semibold text-text-main border border-gray-200">{a.symbol}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Account type badges */}
       {result.summary.accountTypes.length > 0 && (

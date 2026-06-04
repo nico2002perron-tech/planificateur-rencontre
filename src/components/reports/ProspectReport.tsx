@@ -559,6 +559,17 @@ function SmartInputZone({
               />
             </div>
 
+            {/* Avertissement confidentialité : si le parseur local échoue, le
+                contenu collé/téléversé est envoyé à un service d'IA (Groq) pour
+                extraction. On évite donc toute donnée nominative dans ce contenu. */}
+            <div className="px-6 pb-2">
+              <p className="text-[11px] leading-snug text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                ⚠️ Collez <strong>uniquement le tableau des positions</strong> (symboles, quantités, prix).
+                N&apos;incluez pas l&apos;entête nominative du relevé, ni une capture d&apos;écran du relevé complet :
+                si le format n&apos;est pas reconnu, ce contenu est transmis à un service d&apos;IA pour en extraire les titres.
+              </p>
+            </div>
+
             {/* File upload */}
             <div className="px-6 pb-6 flex justify-center">
               <label className="flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer text-xs font-bold text-text-muted hover:text-text-main hover:bg-gray-50 transition-all border-2 border-gray-200">
