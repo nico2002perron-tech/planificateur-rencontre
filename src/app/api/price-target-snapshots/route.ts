@@ -151,10 +151,25 @@ export async function POST(req: NextRequest) {
     ...r,
   }));
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('price_target_snapshots')
     .insert(toInsert)
     .select();
+
+  // Compatibilité : si la colonne PBR (average_cost) n'est pas encore migrée,
+  // on réessaie SANS elle pour que la capture passe quand même. Le PBR
+  // s'enregistrera automatiquement une fois `migration_snapshot_pbr.sql` exécuté.
+  if (error && /average_cost/i.test(error.message)) {
+    const withoutPbr = toInsert.map((row) => {
+      const copy = { ...row };
+      delete (copy as { average_cost?: number | null }).average_cost;
+      return copy;
+    });
+    ({ data, error } = await supabase
+      .from('price_target_snapshots')
+      .insert(withoutPbr)
+      .select());
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ batch_id: batchId, inserted: data?.length ?? 0 }, { status: 201 });
