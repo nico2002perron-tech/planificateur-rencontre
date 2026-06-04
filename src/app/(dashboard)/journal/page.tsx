@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { VaultGate } from '@/components/security/VaultGate';
@@ -25,6 +24,7 @@ type Snapshot = {
   name: string;
   asset_type: string;
   quantity: number | null;
+  average_cost: number | null; // PBR (prix de base rajusté / prix payé)
   current_price: number | null;
   target_price: number | null;
   expected_gain_pct: number | null;
@@ -61,11 +61,6 @@ function fmtDate(s: string | null | undefined): string {
   try {
     return new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(s));
   } catch { return s; }
-}
-function monthsElapsed(iso: string): number {
-  const start = new Date(iso).getTime();
-  const now = Date.now();
-  return Math.max(0, (now - start) / (1000 * 60 * 60 * 24 * 30.44));
 }
 function dueDate(iso: string, horizonMonths: number): Date {
   const d = new Date(iso);
@@ -132,6 +127,7 @@ function JournalInner() {
   const [fAccount, setFAccount] = useState('');
   const [fSymbol, setFSymbol] = useState('');
   const [fName, setFName] = useState('');
+  const [fPbr, setFPbr] = useState(''); // PBR / prix payé (optionnel)
   const [fCurrent, setFCurrent] = useState('');
   const [fTarget, setFTarget] = useState('');
   const [fConviction, setFConviction] = useState<number | null>(null);
@@ -264,7 +260,7 @@ function JournalInner() {
 
   function openForm(presetClient?: string) {
     setFClient(presetClient && presetClient !== NO_NAME ? presetClient : '');
-    setFAccount(''); setFSymbol(''); setFName(''); setFCurrent(''); setFTarget(''); setFConviction(null);
+    setFAccount(''); setFSymbol(''); setFName(''); setFPbr(''); setFCurrent(''); setFTarget(''); setFConviction(null);
     setShowForm(true);
   }
 
@@ -287,6 +283,7 @@ function JournalInner() {
             symbol: fSymbol.trim().toUpperCase(),
             name: fName.trim(),
             assetType: 'EQUITY',
+            averageCost: fPbr ? Number(fPbr) : undefined,
             currentPrice: fCurrent ? Number(fCurrent) : undefined,
             targetPrice: Number(fTarget),
             accountType: fAccount || undefined,
@@ -338,77 +335,78 @@ function JournalInner() {
         {showForm && <ManualForm
           fClient={fClient} setFClient={setFClient} fAccount={fAccount} setFAccount={setFAccount}
           fSymbol={fSymbol} setFSymbol={setFSymbol} fName={fName} setFName={setFName}
+          fPbr={fPbr} setFPbr={setFPbr}
           fCurrent={fCurrent} setFCurrent={setFCurrent} fTarget={fTarget} setFTarget={setFTarget}
           fConviction={fConviction} setFConviction={setFConviction}
           saving={saving} onSave={handleSave} onCancel={() => setShowForm(false)}
         />}
 
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {bySymbol.map(([symbol, rows]) => {
             const latest = rows[0];
             const history = rows.slice(1);
+            const pbr = latest.average_cost != null && latest.average_cost > 0 ? latest.average_cost : null;
             const pred = latest.current_price ?? null;
             const target = latest.target_price ?? null;
             const live = prices[symbol];
             const liveSincePred = live != null && pred && pred > 0 ? ((live - pred) / pred) * 100 : null;
+            // Gain au marché : depuis le PBR (prix payé) si connu, sinon depuis le prix de prédiction.
+            const marketGain = live != null && pbr ? ((live - pbr) / pbr) * 100 : liveSincePred;
+            const marketGainLabel = pbr != null ? 'depuis achat' : 'depuis pred.';
+            // Potentiel restant : du prix au marché vers la cible.
+            const upside = live != null && live > 0 && target != null ? ((target - live) / live) * 100 : null;
             const toTarget = live != null && pred != null && target != null && target !== pred
               ? ((live - pred) / (target - pred)) * 100 : null;
-            const elapsed = monthsElapsed(latest.predicted_at);
-            const timePct = latest.horizon_months > 0 ? (elapsed / latest.horizon_months) * 100 : 0;
             const due = dueDate(latest.predicted_at, latest.horizon_months);
             return (
-              <Card key={symbol} className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <span className="text-base font-bold text-text-main">{symbol}</span>
-                    {latest.name && <span className="ml-2 text-sm text-text-muted">{latest.name}</span>}
-                    <div className="text-xs text-text-muted mt-0.5">
-                      Prédiction du {fmtDate(latest.predicted_at)}
-                      {latest.conviction ? <> · <Badge variant="info">conviction {latest.conviction}/5</Badge></> : null}
-                      {latest.account_type ? ` · ${latest.account_type}` : ''}
-                    </div>
+              <Card key={symbol} className="p-3">
+                {/* En-tête compacte : titre + meta + suppr */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                    <span className="text-sm font-bold text-text-main">{symbol}</span>
+                    {latest.name && <span className="text-xs text-text-muted truncate max-w-[160px]">{latest.name}</span>}
+                    <span className="text-[10px] text-text-muted">
+                      {latest.account_type ? `${latest.account_type} · ` : ''}cible {latest.horizon_months} mois · {fmtDate(latest.predicted_at)}
+                      {latest.conviction ? ` · conv. ${latest.conviction}/5` : ''}
+                    </span>
                   </div>
                   <button onClick={() => handleDelete(latest.id)} disabled={deleting === latest.id}
-                    title="Supprimer" className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
-                    <Trash2 className="h-4 w-4" />
+                    title="Supprimer" className="p-1 rounded-md text-gray-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 shrink-0">
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                {/* Le compteur : prix alors → prix actuel → cible */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="rounded-xl bg-gray-50 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-text-muted">Prix alors</div>
-                    <div className="text-lg font-bold text-text-main">{fmtMoney(pred)}</div>
-                    <div className="text-[10px] text-text-muted">{fmtDate(latest.predicted_at)}</div>
+                {/* PBR payé → prix au marché → cours cible */}
+                <div className="flex items-stretch gap-1 text-center">
+                  <div className="flex-1 rounded-lg bg-gray-50 py-1.5 px-1">
+                    <div className="text-[9px] uppercase tracking-wide text-text-muted">PBR payé</div>
+                    <div className="text-sm font-bold text-text-main leading-tight">{fmtMoney(pbr)}</div>
                   </div>
-                  <div className="rounded-xl bg-blue-50 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-blue-700">Prix actuel</div>
-                    <div className="text-lg font-bold text-text-main">{fmtMoney(live)}</div>
-                    <div className={`text-[10px] font-semibold ${gainColor(liveSincePred)}`}>{liveSincePred != null ? `${fmtPct(liveSincePred)} depuis` : 'prix indisponible'}</div>
+                  <ArrowRight className="h-3.5 w-3.5 text-gray-300 self-center shrink-0" />
+                  <div className="flex-1 rounded-lg bg-blue-50 py-1.5 px-1">
+                    <div className="text-[9px] uppercase tracking-wide text-blue-700">Marché</div>
+                    <div className="text-sm font-bold text-text-main leading-tight">{fmtMoney(live)}</div>
+                    {marketGain != null
+                      ? <div className={`text-[9px] font-semibold ${gainColor(marketGain)}`}>{fmtPct(marketGain)} {marketGainLabel}</div>
+                      : <div className="text-[9px] text-text-muted">{pricesLoading ? '…' : '—'}</div>}
                   </div>
-                  <div className="rounded-xl bg-emerald-50 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-emerald-700">Cible {latest.horizon_months} mois</div>
-                    <div className="text-lg font-bold text-text-main">{fmtMoney(target)}</div>
-                    <div className={`text-[10px] font-semibold ${gainColor(latest.expected_gain_pct)}`}>{fmtPct(latest.expected_gain_pct)} visé</div>
+                  <ArrowRight className="h-3.5 w-3.5 text-gray-300 self-center shrink-0" />
+                  <div className="flex-1 rounded-lg bg-emerald-50 py-1.5 px-1">
+                    <div className="text-[9px] uppercase tracking-wide text-emerald-700">Cible</div>
+                    <div className="text-sm font-bold text-text-main leading-tight">{fmtMoney(target)}</div>
+                    {upside != null
+                      ? <div className={`text-[9px] font-semibold ${gainColor(upside)}`}>{fmtPct(upside)} à venir</div>
+                      : <div className={`text-[9px] font-semibold ${gainColor(latest.expected_gain_pct)}`}>{fmtPct(latest.expected_gain_pct)} visé</div>}
                   </div>
                 </div>
 
-                {/* Progressions */}
-                <div className="space-y-2">
-                  <div>
-                    <div className="flex justify-between text-[11px] text-text-muted mb-1">
-                      <span>Vers la cible</span>
-                      <span className="font-semibold">{toTarget != null ? `${Math.round(clamp(toTarget))} %` : '—'}</span>
-                    </div>
-                    <Bar pct={toTarget ?? 0} color="#10b981" />
+                {/* Progression vers la cible + échéance (compact) */}
+                <div className="mt-2">
+                  <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
+                    <span>Vers la cible{toTarget != null ? ` · ${Math.round(clamp(toTarget))} %` : ''}</span>
+                    <span>échéance {fmtDate(due.toISOString())}</span>
                   </div>
-                  <div>
-                    <div className="flex justify-between text-[11px] text-text-muted mb-1">
-                      <span>Temps écoulé</span>
-                      <span className="font-semibold">{Math.round(clamp(timePct))} % · échéance {fmtDate(due.toISOString())}</span>
-                    </div>
-                    <Bar pct={timePct} color="#93c5fd" />
-                  </div>
+                  <Bar pct={toTarget ?? 0} color="#10b981" />
                 </div>
 
                 {/* Verdict : prédiction résolue, ou cible déjà touchée en attendant l'échéance */}
@@ -517,6 +515,7 @@ function JournalInner() {
       {showForm && <ManualForm
         fClient={fClient} setFClient={setFClient} fAccount={fAccount} setFAccount={setFAccount}
         fSymbol={fSymbol} setFSymbol={setFSymbol} fName={fName} setFName={setFName}
+        fPbr={fPbr} setFPbr={setFPbr}
         fCurrent={fCurrent} setFCurrent={setFCurrent} fTarget={fTarget} setFTarget={setFTarget}
         fConviction={fConviction} setFConviction={setFConviction}
         saving={saving} onSave={handleSave} onCancel={() => setShowForm(false)}
@@ -569,12 +568,13 @@ function ManualForm(props: {
   fAccount: string; setFAccount: (v: string) => void;
   fSymbol: string; setFSymbol: (v: string) => void;
   fName: string; setFName: (v: string) => void;
+  fPbr: string; setFPbr: (v: string) => void;
   fCurrent: string; setFCurrent: (v: string) => void;
   fTarget: string; setFTarget: (v: string) => void;
   fConviction: number | null; setFConviction: (v: number | null) => void;
   saving: boolean; onSave: () => void; onCancel: () => void;
 }) {
-  const { fClient, setFClient, fAccount, setFAccount, fSymbol, setFSymbol, fName, setFName, fCurrent, setFCurrent, fTarget, setFTarget, fConviction, setFConviction, saving, onSave, onCancel } = props;
+  const { fClient, setFClient, fAccount, setFAccount, fSymbol, setFSymbol, fName, setFName, fPbr, setFPbr, fCurrent, setFCurrent, fTarget, setFTarget, fConviction, setFConviction, saving, onSave, onCancel } = props;
   const inputCls = 'mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-text-main';
   return (
     <Card className="mb-6">
@@ -597,6 +597,10 @@ function ManualForm(props: {
         <label className="text-xs font-semibold text-text-muted">
           Nom du titre
           <input value={fName} onChange={e => setFName(e.target.value)} className={inputCls} placeholder="Apple Inc." />
+        </label>
+        <label className="text-xs font-semibold text-text-muted">
+          PBR / Prix payé
+          <input type="number" step="0.01" value={fPbr} onChange={e => setFPbr(e.target.value)} className={inputCls} placeholder="0.00" />
         </label>
         <label className="text-xs font-semibold text-text-muted">
           Prix actuel

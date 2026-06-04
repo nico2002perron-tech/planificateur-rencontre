@@ -481,6 +481,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   // pont vers la calibration de la conviction (boucle de rencontres).
   const [conviction, setConviction] = useState<number | null>(null);
 
+  // Enregistrer ce lot au Journal des cibles (prédiction datée) ? Désactiver =
+  // cours cible « sur le coup » : le PDF est généré sans rien sauvegarder, et le
+  // nom du client devient optionnel (il n'apparaît alors que sur le PDF).
+  const [saveToJournal, setSaveToJournal] = useState(true);
+
   // Historique du client : captures des rencontres passées (regroupées par index
   // aveugle). Alimente l'évolution entre rencontres. Best-effort, non bloquant.
   const [priorSnapshots, setPriorSnapshots] = useState<SnapshotRow[]>([]);
@@ -1291,6 +1296,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       // Journal des cours cibles : on enregistre en silence chaque cible comme
       // une prédiction datée. Best-effort, non bloquant — le PDF est déjà
       // téléchargé, un échec ici ne doit jamais remonter une erreur à l'écran.
+      // Ignoré entièrement si l'enregistrement au Journal est désactivé (« sur le coup »).
       try {
         const snapshotRows = pdfHoldings
           .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice > 0)
@@ -1299,6 +1305,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
             name: h.name,
             assetType: h.assetType,
             quantity: h.quantity,
+            averageCost: h.averageCost, // PBR (prix payé) — pour la séquence PBR → marché → cible au journal
             currentPrice: h.currentPrice,
             targetPrice: h.targetPrice,
             gainPct: h.gainPct,
@@ -1306,7 +1313,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
             accountType: h.accountType,
             accountLabel: h.accountLabel,
           }));
-        if (snapshotRows.length > 0 && clientName.trim()) {
+        if (saveToJournal && snapshotRows.length > 0 && clientName.trim()) {
           // Coffre client : le nom est chiffré DANS le navigateur. On n'envoie
           // au serveur que le nom chiffré (name_enc) + l'index aveugle (name_idx).
           const trimmed = clientName.trim();
@@ -1331,7 +1338,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution]);
+  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution, saveToJournal]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -3054,21 +3061,50 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               </div>
             )}
 
-            {/* Nom du client — OBLIGATOIRE : classe la capture dans le Journal des cibles */}
+            {/* Mode : enregistrer au Journal (prédiction datée) ou cours cible « sur le coup » (rien enregistré) */}
+            <div className="flex items-center justify-between gap-3 px-1 py-2 mb-1 rounded-2xl bg-gray-50 border border-gray-100">
+              <div className="flex flex-col pl-2">
+                <span className="text-xs font-bold text-gray-700">Enregistrer au Journal des cibles</span>
+                <span className="text-[10px] text-text-muted">
+                  {saveToJournal
+                    ? 'Ce lot est gardé comme prédiction datée — nom du client requis.'
+                    : 'Cours cible « sur le coup » — rien n’est enregistré, nom optionnel.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={saveToJournal}
+                onClick={() => setSaveToJournal(v => !v)}
+                className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0 mr-1"
+                style={{ backgroundColor: saveToJournal ? DUO.green : '#d1d5db' }}
+                title={saveToJournal ? 'Enregistrement activé' : 'Enregistrement désactivé'}
+              >
+                <span
+                  className="absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform"
+                  style={{ transform: saveToJournal ? 'translateX(20px)' : 'translateX(0)' }}
+                />
+              </button>
+            </div>
+
+            {/* Nom du client — requis seulement si on enregistre au Journal */}
             <div className="flex items-center gap-3 px-1 py-2 mb-1 rounded-2xl bg-blue-50/40 border border-blue-100">
-              <label className="text-xs font-bold text-gray-700 pl-2 whitespace-nowrap">Nom du client *</label>
+              <label className="text-xs font-bold text-gray-700 pl-2 whitespace-nowrap">
+                Nom du client {saveToJournal ? '*' : '(optionnel)'}
+              </label>
               <input
                 value={clientName}
                 onChange={(e) => onClientNameChange?.(e.target.value)}
-                placeholder="Obligatoire — classe ce lot dans le Journal des cibles"
+                placeholder={saveToJournal ? 'Obligatoire — classe ce lot dans le Journal des cibles' : 'Optionnel — apparaît sur le PDF, non enregistré'}
                 className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm text-text-main"
               />
-              {!clientName.trim() && (
+              {saveToJournal && !clientName.trim() && (
                 <span className="text-xs font-semibold text-amber-700 pr-2 whitespace-nowrap">⚠ requis</span>
               )}
             </div>
 
-            {/* Conviction (1-5) sur ce lot de cours cibles — optionnelle, enregistrée au journal */}
+            {/* Conviction (1-5) — pertinente uniquement si on enregistre au Journal */}
+            {saveToJournal && (
             <div className="flex items-center justify-between gap-4 px-1 py-2 mb-1 rounded-2xl bg-gray-50 border border-gray-100">
               <div className="flex flex-col pl-2">
                 <span className="text-xs font-bold text-gray-700">Ma conviction sur ces cibles</span>
@@ -3100,6 +3136,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                 )}
               </div>
             </div>
+            )}
 
             {/* Footer: page estimate + buttons */}
             <div className="flex items-center justify-between">
@@ -3132,7 +3169,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                 </button>
                 <button
                   onClick={handleDownloadPdf}
-                  disabled={generatingPdf || !clientName.trim() || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
+                  disabled={generatingPdf || (saveToJournal && !clientName.trim()) || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
                   className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
                     transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}

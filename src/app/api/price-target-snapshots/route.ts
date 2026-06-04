@@ -15,6 +15,7 @@ type IncomingRow = {
   name?: string;
   assetType?: string;
   quantity?: number;
+  averageCost?: number; // PBR (prix de base rajusté / prix payé)
   currentPrice?: number;
   targetPrice?: number;
   gainPct?: number;
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
         name: (r.name ?? '').toString(),
         asset_type: (r.assetType ?? '').toString(),
         quantity: num(r.quantity) ?? 0,
+        average_cost: num(r.averageCost),
         current_price: current,
         target_price: target,
         expected_gain_pct: expectedGain,
