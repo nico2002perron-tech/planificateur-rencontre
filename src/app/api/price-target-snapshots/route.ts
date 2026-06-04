@@ -42,10 +42,19 @@ export async function GET(req: NextRequest) {
   const supabase = createClient();
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 500, 2000);
 
-  const { data, error } = await supabase
+  // Filtre optionnel par client (index aveugle). Quand absent, comportement
+  // inchangé : toutes les captures du conseiller. Utilisé par « Prêt à coller »
+  // pour retrouver l'historique d'un client sans révéler son nom.
+  const nameIdx = req.nextUrl.searchParams.get('nameIdx')?.trim();
+
+  let query = supabase
     .from('price_target_snapshots')
     .select('*')
-    .eq('advisor_id', session.user.id)
+    .eq('advisor_id', session.user.id);
+
+  if (nameIdx) query = query.eq('name_idx', nameIdx);
+
+  const { data, error } = await query
     .order('predicted_at', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(limit);

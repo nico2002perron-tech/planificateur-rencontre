@@ -7,6 +7,7 @@ import {
   Path, Line, Circle, Polygon, Polyline,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
+import type { MeetingEvolution } from '@/lib/journal/compare-meetings';
 
 const FONTS_DIR = path.join(process.cwd(), 'public', 'fonts');
 
@@ -87,6 +88,8 @@ export interface PriceTargetReportData {
   logos?: Record<string, string>;
   /** USD/CAD exchange rate applied (if any). Displayed on the PDF. */
   usdCadRate?: number | null;
+  /** Évolution depuis la dernière rencontre (récapitulatif). Absent = pas d'historique. */
+  evolution?: MeetingEvolution;
   summary: {
     totalMarketValue: number;
     totalBookValue: number;
@@ -1577,6 +1580,136 @@ function DescriptionsPage({ holdings, orientation }: {
 
 // ─── Main Document ───────────────────────────────────────────────────────────
 
+// ─── Récapitulatif depuis la dernière rencontre ─────────────────────────────
+function RecapPage({ evolution, orientation }: {
+  evolution: MeetingEvolution;
+  orientation: 'portrait' | 'landscape';
+}) {
+  const { held, exited, added, timeline, lastMeetingDate, meetingCount } = evolution;
+  const money = (v: number | null) => (v == null ? '—' : fmtFull(v));
+  const pctTxt = (v: number | null) => (v == null ? '—' : fmtPct(v));
+  const gc = (v: number | null) => (v == null ? '#94a3b8' : v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8');
+  const dateTxt = (s: string) => {
+    try { return new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(`${s}T00:00:00`)); }
+    catch { return s; }
+  };
+  const revised = held.filter(h => h.targetDeltaPct != null && Math.abs(h.targetDeltaPct) >= 0.1);
+
+  return (
+    <Page size="A4" orientation={orientation} style={styles.page}>
+      {/* Section header */}
+      <View style={{ marginBottom: 12, paddingBottom: 6, borderBottomWidth: 1.5, borderBottomColor: C.navy, borderBottomStyle: 'solid' as const }}>
+        <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>Récapitulatif depuis la dernière rencontre</Text>
+        <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 2 }}>
+          Évolution du portefeuille depuis le {dateTxt(lastMeetingDate)} — {meetingCount} rencontre{meetingCount > 1 ? 's' : ''} antérieure{meetingCount > 1 ? 's' : ''}
+        </Text>
+      </View>
+
+      {/* Compteurs */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+        {[
+          { label: 'Conservés', value: held.length, color: C.cyan },
+          { label: 'Vendus', value: exited.length, color: C.gold },
+          { label: 'Nouveaux', value: added.length, color: C.duoGreen },
+        ].map(c => (
+          <View key={c.label} style={{ flex: 1, backgroundColor: C.card, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, borderStyle: 'solid' as const, padding: 12, alignItems: 'center' as const }}>
+            <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: c.color }}>{c.value}</Text>
+            <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: C.textTer, textTransform: 'uppercase' as const, letterSpacing: 1 }}>{c.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Titres vendus */}
+      {exited.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={styles.subsectionTitle}>Titres vendus depuis la dernière rencontre</Text>
+          <View style={styles.table}>
+            <View style={styles.th}>
+              <Text style={[styles.thCell, { width: '18%' }]}>Titre</Text>
+              <Text style={[styles.thCell, { width: '30%' }]}>Nom</Text>
+              <Text style={[styles.thCell, { width: '10%', textAlign: 'right' as const }]}>Qté</Text>
+              <Text style={[styles.thCell, { width: '15%', textAlign: 'right' as const }]}>Prix alors</Text>
+              <Text style={[styles.thCell, { width: '15%', textAlign: 'right' as const }]}>Depuis</Text>
+              <Text style={[styles.thCell, { width: '12%', textAlign: 'center' as const }]}>Cible</Text>
+            </View>
+            {exited.map((e, i) => (
+              <View key={e.symbol} style={i % 2 ? styles.trAlt : styles.tr}>
+                <Text style={[styles.tdBold, { width: '18%' }]}>{e.symbol}</Text>
+                <Text style={[styles.td, { width: '30%' }]}>{e.name}</Text>
+                <Text style={[styles.td, { width: '10%', textAlign: 'right' as const }]}>{e.prevQty}</Text>
+                <Text style={[styles.td, { width: '15%', textAlign: 'right' as const }]}>{money(e.prevPrice)}</Text>
+                <Text style={[styles.td, { width: '15%', textAlign: 'right' as const, color: gc(e.sinceMeetingPct) }]}>{pctTxt(e.sinceMeetingPct)}</Text>
+                <View style={{ width: '12%', alignItems: 'center' as const, justifyContent: 'center' as const }}>
+                  {e.reachedPrevTarget === true
+                    ? <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: C.up }} />
+                    : e.reachedPrevTarget === false
+                      ? <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#e2e8f0' }} />
+                      : <Text style={{ fontSize: 7, color: '#cbd5e1' }}>—</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.noteText}>● cible atteinte (touchée pendant l&apos;horizon) · ○ cible non atteinte · gain « depuis » = mouvement du prix depuis la dernière rencontre.</Text>
+        </View>
+      )}
+
+      {/* Cours cibles révisés */}
+      {revised.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={styles.subsectionTitle}>Cours cibles révisés (titres conservés)</Text>
+          <View style={styles.table}>
+            <View style={styles.th}>
+              <Text style={[styles.thCell, { width: '24%' }]}>Titre</Text>
+              <Text style={[styles.thCell, { width: '28%', textAlign: 'right' as const }]}>Cible précédente</Text>
+              <Text style={[styles.thCell, { width: '28%', textAlign: 'right' as const }]}>Nouvelle cible</Text>
+              <Text style={[styles.thCell, { width: '20%', textAlign: 'right' as const }]}>Variation</Text>
+            </View>
+            {revised.map((h, i) => (
+              <View key={h.symbol} style={i % 2 ? styles.trAlt : styles.tr}>
+                <Text style={[styles.tdBold, { width: '24%' }]}>{h.symbol}</Text>
+                <Text style={[styles.td, { width: '28%', textAlign: 'right' as const }]}>{money(h.prevTarget)}</Text>
+                <Text style={[styles.td, { width: '28%', textAlign: 'right' as const }]}>{money(h.newTarget)}</Text>
+                <Text style={[styles.td, { width: '20%', textAlign: 'right' as const, color: gc(h.targetDeltaPct) }]}>{pctTxt(h.targetDeltaPct)}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Nouveaux titres */}
+      {added.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={styles.subsectionTitle}>Nouveaux titres ajoutés</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {added.map(a => (
+              <View key={a.symbol} style={{ backgroundColor: C.duoGreenBg, borderWidth: 1, borderColor: C.duoGreenPale, borderStyle: 'solid' as const, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+                <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{a.symbol}{a.target ? ` · cible ${money(a.target)}` : ''}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Frise des rencontres */}
+      {timeline.length > 0 && (
+        <View>
+          <Text style={styles.subsectionTitle}>Rencontres précédentes</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {timeline.map(t => (
+              <View key={t.date} style={{ backgroundColor: C.panel, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5 }}>
+                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{dateTxt(t.date)}</Text>
+                <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>{t.positions} position{t.positions > 1 ? 's' : ''}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      <PageFooter />
+    </Page>
+  );
+}
+
 export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) {
   const opts = data.options ?? {};
   const showCover = opts.includeCover !== false;
@@ -1602,6 +1735,10 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   return (
     <Document>
       {showCover && <CoverPage data={data} orientation={orientation} />}
+
+      {data.evolution && (data.evolution.held.length + data.evolution.exited.length + data.evolution.added.length) > 0 && (
+        <RecapPage evolution={data.evolution} orientation={orientation} />
+      )}
 
       {equities.length > 0 && (
         <EquityTablePage

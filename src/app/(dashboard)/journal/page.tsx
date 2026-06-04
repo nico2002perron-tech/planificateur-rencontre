@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,7 +10,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { VaultGate } from '@/components/security/VaultGate';
 import { useVault } from '@/components/security/VaultProvider';
-import { Plus, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight, ShieldAlert, Lock } from 'lucide-react';
+import { Plus, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight, ShieldAlert, Lock, BarChart3, CheckCircle2, XCircle } from 'lucide-react';
 
 type Snapshot = {
   id: string;
@@ -35,6 +36,10 @@ type Snapshot = {
   actual_price: number | null;
   actual_gain_pct: number | null;
   hit: boolean | null;
+  peak_price: number | null;
+  peak_at: string | null;
+  trough_price: number | null;
+  trough_at: string | null;
   created_at: string;
 };
 
@@ -406,6 +411,36 @@ function JournalInner() {
                   </div>
                 </div>
 
+                {/* Verdict : prédiction résolue, ou cible déjà touchée en attendant l'échéance */}
+                {latest.resolved_at ? (
+                  <div className={`mt-3 rounded-xl border p-3 ${latest.hit ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {latest.hit ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                        <span className={`text-sm font-bold ${latest.hit ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {latest.hit ? 'Cible atteinte' : 'Cible manquée'}
+                        </span>
+                        <span className="text-xs text-text-muted">· résolu le {fmtDate(latest.resolved_at)}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-text-main">{fmtMoney(latest.actual_price)}</div>
+                        <div className={`text-[11px] font-semibold ${gainColor(latest.actual_gain_pct)}`}>{fmtPct(latest.actual_gain_pct)} réalisé</div>
+                      </div>
+                    </div>
+                    {latest.peak_price != null && (
+                      <div className="text-[11px] text-text-muted mt-1.5 pt-1.5 border-t border-black/5">
+                        Sommet pendant l&apos;horizon : <span className="font-semibold text-text-main">{fmtMoney(latest.peak_price)}</span>
+                        {latest.peak_at ? ` (${fmtDate(latest.peak_at)})` : ''}
+                      </div>
+                    )}
+                  </div>
+                ) : latest.peak_price != null && target != null && pred != null && latest.peak_price >= target && target >= pred ? (
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    Sommet a déjà touché la cible ({fmtMoney(latest.peak_price)}{latest.peak_at ? `, ${fmtDate(latest.peak_at)}` : ''}) — en attente de l&apos;échéance.
+                  </div>
+                ) : null}
+
                 {/* Historique des prédictions précédentes pour ce titre */}
                 {history.length > 0 && (
                   <details className="mt-3">
@@ -437,7 +472,14 @@ function JournalInner() {
       <PageHeader
         title="Journal des cibles"
         description="Tes cours cibles classés par client. Clique un client pour suivre chaque position : prix d'alors → prix actuel → cible."
-        action={<Button icon={<Plus className="h-4 w-4" />} onClick={() => openForm()}>Ajouter manuellement</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Link href="/journal/bilan">
+              <Button variant="ghost" icon={<BarChart3 className="h-4 w-4" />}>Bilan</Button>
+            </Link>
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => openForm()}>Ajouter manuellement</Button>
+          </div>
+        }
       />
 
       {/* Bandeau confidentialité : les noms sont chiffrés côté navigateur */}

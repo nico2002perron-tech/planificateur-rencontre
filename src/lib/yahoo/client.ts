@@ -567,6 +567,79 @@ export async function getYahooHistoricalChart(
   }
 }
 
+// ── Daily OHLC History (résolution des cours cibles) ─────────────────────────
+
+export interface YahooDailyPoint {
+  date: string;  // YYYY-MM-DD
+  high: number;
+  low: number;
+  close: number;
+}
+
+/**
+ * Récupère l'historique quotidien (haut / bas / clôture) entre une date de
+ * départ et aujourd'hui. Utilisé par le cron de résolution des cours cibles
+ * pour mesurer le SOMMET et le CREUX atteints pendant l'horizon — pas seulement
+ * le prix de clôture final. Permet de juger « la cible a-t-elle été touchée ? »
+ * même rétroactivement (la fenêtre couvre toute la période depuis la prédiction).
+ *
+ * Renvoie aussi la devise native (`meta.currency`, ex. « USD » ou « CAD ») —
+ * l'appelant décide s'il convertit (le journal stocke en CAD).
+ *
+ * @param symbol   Symbole (converti au format Yahoo, ex. EIF.UN.TO → EIF-UN.TO)
+ * @param fromISO  Date de départ « YYYY-MM-DD » (incluse)
+ * @returns        { currency, points } — points triés par date croissante (vide si indisponible)
+ */
+export async function getYahooDailyHistory(symbol: string, fromISO: string): Promise<{ currency: string; points: YahooDailyPoint[] }> {
+  const empty = { currency: '', points: [] as YahooDailyPoint[] };
+  try {
+    const ySym = toYahooSymbol(symbol);
+    const period1 = Math.floor(new Date(`${fromISO}T00:00:00Z`).getTime() / 1000);
+    const period2 = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(period1) || period1 >= period2) return empty;
+
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?period1=${period1}&period2=${period2}&interval=1d`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return empty;
+
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return empty;
+
+    const currency: string = result.meta?.currency ?? '';
+    const timestamps: number[] = result.timestamp ?? [];
+    const quote = result.indicators?.quote?.[0] ?? {};
+    const highs: (number | null)[] = quote.high ?? [];
+    const lows: (number | null)[] = quote.low ?? [];
+    const closes: (number | null)[] = quote.close ?? [];
+    if (timestamps.length === 0) return empty;
+
+    const round = (v: number) => Math.round(v * 100) / 100;
+    const points: YahooDailyPoint[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const c = closes[i];
+      const h = highs[i];
+      const l = lows[i];
+      // Au moins une valeur exploitable; on retombe sur la clôture au besoin.
+      const close = c != null && isFinite(c) && c > 0 ? c : null;
+      const high = h != null && isFinite(h) && h > 0 ? h : close;
+      const low = l != null && isFinite(l) && l > 0 ? l : close;
+      if (close == null && high == null && low == null) continue;
+      points.push({
+        date: new Date(timestamps[i] * 1000).toISOString().split('T')[0],
+        high: round(high ?? close ?? 0),
+        low: round(low ?? close ?? 0),
+        close: round(close ?? high ?? 0),
+      });
+    }
+
+    points.sort((a, b) => a.date.localeCompare(b.date));
+    return { currency, points };
+  } catch {
+    return empty;
+  }
+}
+
 // ── ETF Sector Breakdown ─────────────────────────────────────────────────────
 
 /**
