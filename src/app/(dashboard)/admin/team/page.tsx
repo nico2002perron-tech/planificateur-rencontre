@@ -899,6 +899,24 @@ export default function AdminTeamPage() {
                 )}
               </div>
 
+              {/* Biographie */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-extrabold text-text-main flex items-center gap-1">
+                    <UserCircle className="h-3 w-3" style={{ color: DUO.purple }} /> Biographie
+                  </label>
+                  <span className={`text-[11px] font-bold ${form.bio.length > 450 ? 'text-amber-500' : 'text-text-muted'}`}>{form.bio.length}/500</span>
+                </div>
+                <textarea
+                  value={form.bio}
+                  onChange={(e) => { if (e.target.value.length <= 500) updateForm('bio', e.target.value); }}
+                  placeholder="Experience, approche et specialites du membre..."
+                  rows={4}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-text-main placeholder:text-text-muted/40 focus:outline-none focus:ring-2 focus:ring-[#CE82FF]/20 focus:border-[#CE82FF] transition-all resize-none"
+                />
+                <p className="text-[11px] text-text-muted mt-1">Texte affiche dans la fiche detaillee du membre sur le site.</p>
+              </div>
+
               {/* Quote / Devise */}
               <div>
                 <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1">
