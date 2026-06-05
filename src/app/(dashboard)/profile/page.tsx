@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { Input } from '@/components/ui/Input';
 import {
@@ -9,6 +9,7 @@ import {
   ExternalLink, Instagram, Facebook, Globe, Award, Languages, Clock,
   Phone, CalendarCheck, GraduationCap, Quote, Briefcase, X,
 } from 'lucide-react';
+import { PhotoStudio } from '@/components/team/PhotoStudio';
 
 // Duolingo palette (same as Reports page)
 const DUO = {
@@ -154,9 +155,9 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [photoHover, setPhotoHover] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
   const [customTitle, setCustomTitle] = useState(false);
   const [logos, setLogos] = useState<{ id: string; name: string; image_url: string }[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch('/api/team-profile')
@@ -196,9 +197,8 @@ export default function ProfilePage() {
     }
   }
 
-  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Reçoit le WebP déjà détouré + cadré par le Studio photo, puis l'upload.
+  async function uploadProcessedPhoto(file: File) {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -207,10 +207,9 @@ export default function ProfilePage() {
         method: 'POST',
         body: formData,
       });
-      if (res.ok) {
-        const { url } = await res.json();
-        setProfile(prev => prev ? { ...prev, photo_url: url } : prev);
-      }
+      if (!res.ok) throw new Error('upload failed');
+      const { url } = await res.json();
+      setProfile(prev => prev ? { ...prev, photo_url: url } : prev);
     } finally {
       setUploading(false);
     }
@@ -275,13 +274,13 @@ export default function ProfilePage() {
             <div className="flex flex-col items-center">
               <div
                 className="relative w-44 h-44 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden cursor-pointer group transition-all duration-300 hover:border-[#1CB0F6]"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setStudioOpen(true)}
                 onMouseEnter={() => setPhotoHover(true)}
                 onMouseLeave={() => setPhotoHover(false)}
               >
                 {resolvePhoto(profile.photo_url) ? (
                   <>
-                    <img src={resolvePhoto(profile.photo_url)} alt={profile.display_name} className="w-full h-full object-cover" />
+                    <img src={resolvePhoto(profile.photo_url)} alt={profile.display_name} className="w-full h-full object-contain" />
                     <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity duration-200 ${photoHover ? 'opacity-100' : 'opacity-0'}`}>
                       <div className="text-center text-white">
                         <Camera className="h-6 w-6 mx-auto mb-1" />
@@ -302,19 +301,18 @@ export default function ProfilePage() {
                           <Upload className="h-7 w-7" style={{ color: DUO.blue }} />
                         </div>
                         <p className="text-sm font-extrabold text-text-main">Cliquez pour ajouter</p>
-                        <p className="text-xs text-text-muted mt-1">JPG, PNG ou WebP - Max 5 Mo</p>
+                        <p className="text-xs text-text-muted mt-1">Détourage + cadrage automatiques</p>
                       </>
                     )}
                   </div>
                 )}
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handlePhotoUpload}
-              />
+              <button
+                onClick={() => setStudioOpen(true)}
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-extrabold text-[#1899d6] hover:underline"
+              >
+                <Camera className="h-3.5 w-3.5" /> {resolvePhoto(profile.photo_url) ? 'Changer la photo' : 'Ouvrir le studio photo'}
+              </button>
             </div>
           </div>
 
@@ -333,22 +331,22 @@ export default function ProfilePage() {
               <h3 className="text-lg font-extrabold text-text-main">Apercu en direct</h3>
             </div>
 
-            {/* Mini card — replica of the public site card */}
-            <div className="relative overflow-hidden rounded-2xl" style={{ aspectRatio: '3/4', maxHeight: 280, background: '#03045e' }}>
+            {/* Mini card — replica of the public site card (cutout transparent, fond clair) */}
+            <div className="relative overflow-hidden rounded-2xl mx-auto" style={{ aspectRatio: '3 / 3.4', maxHeight: 280, background: 'linear-gradient(160deg,#edf4ff 0%,#e2edfb 32%,#f2f7ff 58%,#e8f1fc 82%,#eef5ff 100%)' }}>
               {resolvePhoto(profile.photo_url) ? (
-                <img src={resolvePhoto(profile.photo_url)} alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
+                <img src={resolvePhoto(profile.photo_url)} alt="" className="absolute inset-0 w-full h-full" style={{ objectFit: 'contain', objectPosition: 'bottom center' }} />
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #023e8a 0%, #0077b6 50%, #00b4d8 100%)' }}>
-                  <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '3.5rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '3.5rem', fontWeight: 800, color: 'rgba(0,119,182,0.35)' }}>
                     {profile.initials || '??'}
                   </span>
                 </div>
               )}
-              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16" style={{ background: 'linear-gradient(to top, rgba(3,4,94,0.92) 0%, rgba(3,4,94,0.55) 55%, transparent 100%)' }}>
-                <p style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '0.88rem', fontWeight: 700, color: '#fff', lineHeight: 1.25, textShadow: '0 2px 8px rgba(0,0,0,0.5)', margin: '0 0 3px' }}>
+              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16" style={{ background: 'linear-gradient(to top, rgba(245,249,255,0.97) 0%, rgba(245,249,255,0.7) 55%, transparent 100%)' }}>
+                <p style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '0.88rem', fontWeight: 800, color: '#03045e', lineHeight: 1.25, margin: '0 0 3px' }}>
                   {profile.display_name || 'Votre nom'}
                 </p>
-                <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.8)', fontStyle: 'italic', textShadow: '0 1px 4px rgba(0,0,0,0.4)', margin: 0 }}>
+                <p style={{ fontSize: '0.65rem', color: '#5a7d95', fontStyle: 'italic', margin: 0 }}>
                   {profile.role_title || 'Votre titre'}
                 </p>
               </div>
@@ -358,9 +356,9 @@ export default function ProfilePage() {
             {/* Popup replica — what visitors see when clicking the card */}
             <div className="mt-4 rounded-2xl overflow-hidden" style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
               {/* Popup photo header */}
-              <div className="relative overflow-hidden" style={{ height: 120 }}>
+              <div className="relative overflow-hidden" style={{ height: 120, background: 'linear-gradient(160deg,#edf4ff 0%,#e2edfb 45%,#eef5ff 100%)' }}>
                 {resolvePhoto(profile.photo_url) ? (
-                  <img src={resolvePhoto(profile.photo_url)} alt="" className="w-full h-full object-cover object-top" />
+                  <img src={resolvePhoto(profile.photo_url)} alt="" className="w-full h-full object-contain" style={{ objectPosition: 'bottom center' }} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(150deg, #023e8a 0%, #0077b6 55%, #00b4d8 100%)' }}>
                     <span style={{ fontFamily: 'Montserrat, sans-serif', fontSize: '2.8rem', fontWeight: 800, color: 'rgba(255,255,255,0.88)' }}>
@@ -989,6 +987,15 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <PhotoStudio
+        open={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        onApply={uploadProcessedPhoto}
+        displayName={profile.display_name}
+        roleTitle={profile.role_title}
+        initials={profile.initials}
+      />
     </div>
   );
 }

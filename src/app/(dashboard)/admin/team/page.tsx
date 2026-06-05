@@ -8,6 +8,7 @@ import {
   Key, Copy, Shield, UserCircle, Camera, ImagePlus, X,
   Phone, CalendarCheck, GraduationCap, Quote, Briefcase,
 } from 'lucide-react';
+import { PhotoStudio } from '@/components/team/PhotoStudio';
 
 const DUO = {
   green: '#58CC02', greenDark: '#45a300',
@@ -217,7 +218,7 @@ export default function AdminTeamPage() {
   const [formError, setFormError] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [studioOpen, setStudioOpen] = useState(false);
 
   // Logos
   const [logos, setLogos] = useState<TeamLogo[]>([]);
@@ -335,9 +336,8 @@ export default function AdminTeamPage() {
     setShowForm(true);
   }
 
-  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>, profileId: string) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Reçoit le WebP déjà détouré + cadré par le Studio photo, puis l'upload.
+  async function uploadProcessedPhoto(file: File, profileId: string) {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -347,11 +347,10 @@ export default function AdminTeamPage() {
         method: 'POST',
         body: formData,
       });
-      if (res.ok) {
-        const { url } = await res.json();
-        setForm(prev => ({ ...prev, photo_url: url }));
-        setMembers(prev => prev.map(m => m.id === profileId ? { ...m, photo_url: url } : m));
-      }
+      if (!res.ok) throw new Error('upload failed');
+      const { url } = await res.json();
+      setForm(prev => ({ ...prev, photo_url: url }));
+      setMembers(prev => prev.map(m => m.id === profileId ? { ...m, photo_url: url } : m));
     } finally {
       setUploading(false);
     }
@@ -510,7 +509,7 @@ export default function AdminTeamPage() {
               >
                 {resolvePhoto(m.photo_url) ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolvePhoto(m.photo_url)} alt={m.display_name} className="w-full h-full object-cover" />
+                  <img src={resolvePhoto(m.photo_url)} alt={m.display_name} className="w-full h-full object-contain" />
                 ) : (
                   <span className="text-sm font-extrabold" style={{ color: DUO.purple }}>
                     {m.initials || m.display_name.slice(0, 2).toUpperCase()}
@@ -786,11 +785,12 @@ export default function AdminTeamPage() {
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 relative group cursor-pointer"
                   style={{ backgroundColor: `${DUO.purple}15` }}
-                  onClick={() => editId && fileInputRef.current?.click()}
+                  onClick={() => editId && setStudioOpen(true)}
+                  title={editId ? 'Studio photo' : 'Enregistrez le membre avant d’ajouter une photo'}
                 >
                   {resolvePhoto(form.photo_url) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={resolvePhoto(form.photo_url)} alt="" className="w-full h-full object-cover" />
+                    <img src={resolvePhoto(form.photo_url)} alt="" className="w-full h-full object-contain" />
                   ) : (
                     <Camera className="h-6 w-6" style={{ color: DUO.purple }} />
                   )}
@@ -800,8 +800,6 @@ export default function AdminTeamPage() {
                     </div>
                   )}
                 </div>
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-                  onChange={(e) => editId && handlePhotoUpload(e, editId)} />
                 <div className="flex-1">
                   <label className="block text-xs font-extrabold text-text-main mb-1.5">Nom complet *</label>
                   <input
@@ -1329,6 +1327,14 @@ export default function AdminTeamPage() {
           </div>
         </div>
       )}
+
+      <PhotoStudio
+        open={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        onApply={(file) => (editId ? uploadProcessedPhoto(file, editId) : Promise.resolve())}
+        displayName={form.display_name}
+        roleTitle={form.role_title}
+      />
     </div>
   );
 }

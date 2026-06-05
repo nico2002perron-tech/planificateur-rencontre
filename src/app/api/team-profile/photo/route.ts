@@ -36,14 +36,18 @@ export async function POST(request: NextRequest) {
     .from('team-photos')
     .getPublicUrl(fileName);
 
+  // Le fichier garde le même nom (upsert) → on ajoute une version pour casser
+  // les caches navigateur/CDN, sinon l'ancienne photo resterait affichée.
+  const versionedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+
   // Update profile with new photo URL
   await supabase
     .from('team_profiles')
     .upsert({
       user_id: session.user.id,
       display_name: session.user.name,
-      photo_url: urlData.publicUrl,
+      photo_url: versionedUrl,
     }, { onConflict: 'user_id' });
 
-  return NextResponse.json({ url: urlData.publicUrl });
+  return NextResponse.json({ url: versionedUrl });
 }
