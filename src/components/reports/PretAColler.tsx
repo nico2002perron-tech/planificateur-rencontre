@@ -959,11 +959,18 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
 
       if (isEquityLike) {
         if (h.isCDR) {
-          // CDR holdings: Yahoo dividendRate is per US underlying share, but
-          // quantity is in CDR units (each CDR = a fraction of 1 US share).
-          // Using Yahoo rate × CDR quantity massively overstates income.
-          // Croesus annualIncome is the actual income — always use it.
-          if (h.annualIncome > 0) {
+          // CDR (titre US édgé en CAD) : Croesus ne reporte souvent aucun revenu
+          // (annualIncome = 0) et le dividendRate Yahoo est PAR action US, alors que
+          // la quantité est en unités CDR (chaque CDR = une fraction d'action US) →
+          // rate × quantité surévalue massivement. Le RENDEMENT, lui, est invariant
+          // (devise + ratio CDR s'annulent) : on prend donc le rendement du
+          // sous-jacent US et on l'applique à la valeur de marché CAD du CDR.
+          const cdrYield = targets[h.symbol]?.cdrDividendYield;
+          if (cdrYield && cdrYield > 0 && h.marketValue > 0) {
+            annualIncome = h.marketValue * cdrYield;
+            source = 'forward';
+          } else if (h.annualIncome > 0) {
+            // Repli : revenu réel de Croesus si le rendement du sous-jacent manque.
             annualIncome = h.annualIncome;
             source = 'croesus';
           }
@@ -1000,7 +1007,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     });
 
     return map;
-  }, [holdings, prices]);
+  }, [holdings, prices, targets]);
 
   // Totals by category (forward-looking when possible)
   const incomeTotals = useMemo(() => {
@@ -1592,7 +1599,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       {aiMaturityChecking && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
           <Spinner className="h-4 w-4 text-amber-600" />
-          <span className="text-sm text-amber-700 font-medium">IA — Analyse des dates d'échéance en cours…</span>
+          <span className="text-sm text-amber-700 font-medium">IA — Analyse des dates d&apos;échéance en cours…</span>
         </div>
       )}
       {aiMaturityDone && Object.keys(aiMaturities).length > 0 && (

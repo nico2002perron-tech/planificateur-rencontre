@@ -13,6 +13,7 @@ export interface PriceTargetConsensus {
   numberOfAnalysts: number;
   source: 'yahoo' | 'fmp' | 'manual' | 'historical';
   cdrGainPct?: number; // For CDRs: the US underlying's gain % to apply to Croesus price
+  cdrDividendYield?: number; // For CDRs: the US underlying's forward dividend yield (decimal), applied to the CDR's CAD market value
 }
 
 /**

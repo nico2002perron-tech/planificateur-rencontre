@@ -12,6 +12,7 @@ export interface PriceTargetConsensus {
   source: 'yahoo' | 'fmp' | 'manual' | 'historical';
   resolvedSymbol?: string; // The actual Yahoo symbol that worked
   cdrGainPct?: number; // For CDRs: the US underlying's gain %, so client can apply to Croesus price
+  cdrDividendYield?: number; // For CDRs: the US underlying's forward dividend yield (decimal). Yield is currency- and ratio-agnostic → applied to the CDR's CAD market value.
 }
 
 /**
@@ -168,10 +169,10 @@ async function searchYahooTicker(query: string): Promise<string | null> {
  */
 async function fetchYahooSummary(sym: string): Promise<{
   usPrice: number; targetMean: number; targetHigh: number; targetLow: number;
-  numAnalysts: number; resolvedSymbol: string;
+  numAnalysts: number; resolvedSymbol: string; dividendYield?: number;
 } | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,price`;
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,price,summaryDetail`;
     const res = await yahooFetch(url);
     if (!res.ok) { console.log(`[CDR] Yahoo ${sym}: HTTP ${res.status}`); return null; }
 
@@ -181,19 +182,34 @@ async function fetchYahooSummary(sym: string): Promise<{
 
     const fd = result.financialData ?? {};
     const price = result.price ?? {};
+    const sd = result.summaryDetail ?? {};
     const usPrice = price.regularMarketPrice?.raw ?? 0;
     const targetMean = fd.targetMeanPrice?.raw ?? 0;
 
     if (usPrice <= 0) { console.log(`[CDR] Yahoo ${sym}: no price`); return null; }
     if (targetMean <= 0) { console.log(`[CDR] Yahoo ${sym}: price=$${usPrice} but no target`); return null; }
 
-    console.log(`[CDR] Yahoo ${sym}: price=$${usPrice}, target=$${targetMean}`);
+    // Forward dividend yield (decimal fraction, e.g. 0.025 = 2.5%). Derive it from
+    // the dividend rate ÷ price (both unambiguous absolute numbers) and fall back to
+    // Yahoo's own yield field. Currency- and CDR-ratio-agnostic, so the client can
+    // apply it straight to the CDR's CAD market value.
+    const divRate = typeof fd.dividendRate?.raw === 'number' ? fd.dividendRate.raw
+      : (typeof sd.dividendRate?.raw === 'number' ? sd.dividendRate.raw : 0);
+    let dividendYield: number | undefined;
+    if (divRate > 0 && usPrice > 0) {
+      dividendYield = divRate / usPrice;
+    } else if (typeof sd.dividendYield?.raw === 'number' && sd.dividendYield.raw > 0) {
+      dividendYield = sd.dividendYield.raw;
+    }
+
+    console.log(`[CDR] Yahoo ${sym}: price=$${usPrice}, target=$${targetMean}, yield=${dividendYield ? (dividendYield * 100).toFixed(2) + '%' : 'n/d'}`);
     return {
       usPrice, targetMean,
       targetHigh: fd.targetHighPrice?.raw ?? targetMean,
       targetLow: fd.targetLowPrice?.raw ?? targetMean,
       numAnalysts: fd.numberOfAnalystOpinions?.raw ?? 0,
       resolvedSymbol: sym,
+      dividendYield,
     };
   } catch { return null; }
 }
@@ -205,7 +221,7 @@ async function fetchYahooSummary(sym: string): Promise<{
  */
 async function fetchUSUnderlyingData(symbol: string): Promise<{
   usPrice: number; targetMean: number; targetHigh: number; targetLow: number;
-  numAnalysts: number; resolvedSymbol: string;
+  numAnalysts: number; resolvedSymbol: string; dividendYield?: number;
 } | null> {
   // Build list of symbols to try
   const variants = [symbol];
@@ -262,6 +278,7 @@ async function lookupCDRTarget(
         source: 'yahoo',
         resolvedSymbol: `${us.resolvedSymbol} (CDR)`,
         cdrGainPct: gainPct,
+        cdrDividendYield: us.dividendYield,
       },
     };
   } catch (err) {
