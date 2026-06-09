@@ -468,9 +468,14 @@ function normalizeSymbol(symbol: string, name: string, assetType: AssetType, cur
     s = s.replace(/\.([A-Z]{1,2})$/, '-$1');
   }
 
-  // CDR C$HDG stocks trade on NEO (.NE), not TSX — don't add .TO
+  // CDR C$HDG stocks trade on NEO (.NE), not TSX.
+  // Tag with the .NE suffix so a hedged-CAD CDR stays a DISTINCT symbol from the
+  // plain US listing of the same company (e.g. ADBE.NE vs ADBE). Without it, both
+  // collapse to the same bare ticker and end up sharing one (wrong) price/target.
+  // The .NE suffix is also the Yahoo/TradingView convention for NEO/Cboe Canada,
+  // and underlyingSymbol extraction already strips it back to the US ticker.
   if (/C\$H(DG|ED)|CDR\$?H|CDR/i.test(name)) {
-    return s;
+    return s.endsWith('.NE') ? s : `${s}.NE`;
   }
 
   // Use currency to determine exchange suffix:
