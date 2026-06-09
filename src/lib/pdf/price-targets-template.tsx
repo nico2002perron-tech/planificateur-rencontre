@@ -413,7 +413,16 @@ function buildEquitySectorSlices(holdings: PriceTargetHolding[]): SectorSlice[] 
   if (slices.length > 8) {
     const head = slices.slice(0, 7);
     const tailVal = slices.slice(7).reduce((s, x) => s + x.value, 0);
-    head.push({ code: 'OTHER', value: tailVal, pct: (tailVal / total) * 100, label: 'Autres', color: SECTOR_META.OTHER.color });
+    // Merge the tail into an existing "Autres" slice if one already ranks in the
+    // head (unknown-sector holdings), otherwise create one. Without this guard a
+    // pre-existing OTHER bucket + a tail OTHER produce TWO "Autres" slices.
+    const existingOther = head.find(s => s.code === 'OTHER');
+    if (existingOther) {
+      existingOther.value += tailVal;
+      existingOther.pct = (existingOther.value / total) * 100;
+    } else {
+      head.push({ code: 'OTHER', value: tailVal, pct: (tailVal / total) * 100, label: 'Autres', color: SECTOR_META.OTHER.color });
+    }
     slices = head;
   }
   return slices;
