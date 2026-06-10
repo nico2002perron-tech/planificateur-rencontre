@@ -94,9 +94,18 @@ export async function GET(request: NextRequest) {
   (regCounts || []).forEach(r => { countMap[r.event_id] = (countMap[r.event_id] || 0) + 1; });
   const teamCounts = await getTeamMemberCounts(supabase, eventIds);
 
+  // Nombre d'equipes inscrites par evenement (pour le mur des equipes)
+  const { data: teamRows } = await supabase
+    .from('event_teams')
+    .select('event_id')
+    .in('event_id', eventIds);
+  const teamCountMap: Record<string, number> = {};
+  (teamRows || []).forEach(t => { teamCountMap[t.event_id] = (teamCountMap[t.event_id] || 0) + 1; });
+
   const enriched = (data || []).map(e => ({
     ...e,
     registration_count: (countMap[e.id] || 0) + (teamCounts[e.id] || 0),
+    team_count: teamCountMap[e.id] || 0,
   }));
 
   const response = NextResponse.json(enriched);
