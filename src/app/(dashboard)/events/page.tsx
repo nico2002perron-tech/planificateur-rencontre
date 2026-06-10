@@ -7,8 +7,10 @@ import {
   ChevronDown, ChevronUp, MapPin, Clock, Users, AlertTriangle,
   CheckCircle, XCircle, X, Upload, ImagePlus, Handshake,
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
-  Mic, PartyPopper, Dumbbell, Star, Copy,
+  Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
 } from 'lucide-react';
+
+const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
 
 const DUO = {
   green: '#58CC02', greenDark: '#45a300',
@@ -87,6 +89,40 @@ interface Registration {
   notes: string;
   status: string;
   registered_at: string;
+  checked_in_at?: string | null;
+}
+
+interface TeamMember {
+  id: string;
+  team_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  skill_level: string;
+  shirt_size: string;
+  dietary_restrictions: string;
+  notes: string;
+  is_captain: boolean;
+  status: string;
+  joined_at: string;
+  checked_in_at?: string | null;
+}
+
+interface Team {
+  id: string;
+  team_name: string;
+  team_code: string;
+  captain_email: string;
+  logo_url: string | null;
+  max_members: number;
+  created_at: string;
+  members: TeamMember[];
+}
+
+// Les coéquipiers inscrits par le capitaine sans courriel ont un placeholder « .sans-courriel »
+function displayEmail(email: string): string {
+  return email && email.endsWith('.sans-courriel') ? '' : email;
 }
 
 const emptyForm = () => ({
@@ -151,6 +187,7 @@ export default function EventsPage() {
   // Expanded + registrations
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loadingRegs, setLoadingRegs] = useState(false);
 
   // Delete
@@ -170,7 +207,16 @@ export default function EventsPage() {
   async function fetchRegistrations(eventId: string) {
     setLoadingRegs(true);
     const res = await fetch(`/api/events/${eventId}/registrations`);
-    if (res.ok) setRegistrations(await res.json());
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setRegistrations(data);
+        setTeams([]);
+      } else {
+        setRegistrations(data.registrations || []);
+        setTeams(data.teams || []);
+      }
+    }
     setLoadingRegs(false);
   }
 
@@ -299,13 +345,64 @@ export default function EventsPage() {
     }
   }
 
-  function exportCSV(eventTitle: string) {
-    const active = registrations.filter(r => r.status !== 'cancelled');
-    const rows = [['Prenom', 'Nom', 'Courriel', 'Telephone', 'Entreprise', 'Client', 'Type', 'Equipe', 'Coequipiers', 'Accompagnateurs', 'Tarif', 'Restrictions', 'Niveau', 'Taille', 'Notes', 'Statut', 'Date'].join(',')];
-    active.forEach(r => {
-      const members = (r.team_members || []).map((m: { name: string }) => m.name).join('; ');
-      rows.push([r.first_name, r.last_name, r.email, r.phone, r.company, r.is_client ? 'Oui' : 'Non', r.registration_type, r.team_name, members, r.guests, r.pricing_option, r.dietary_restrictions, r.skill_level, r.shirt_size, r.notes.replace(/,/g, ';'), r.status, new Date(r.registered_at).toLocaleDateString('fr-CA')].map(v => `"${v || ''}"`).join(','));
+  async function removeTeamMember(eventId: string, teamId: string, memberId: string) {
+    const res = await fetch(`/api/events/${eventId}/registrations`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ member_id: memberId }),
     });
+    if (res.ok) {
+      setTeams(prev => prev.map(t => t.id === teamId ? { ...t, members: t.members.filter(m => m.id !== memberId) } : t));
+    }
+  }
+
+  async function deleteTeam(eventId: string, team: Team) {
+    if (!window.confirm(`Supprimer l'equipe \u00AB ${team.team_name} \u00BB et ses ${team.members.length} membre(s) ?`)) return;
+    const res = await fetch(`/api/events/${eventId}/registrations`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team_id: team.id }),
+    });
+    if (res.ok) {
+      setTeams(prev => prev.filter(t => t.id !== team.id));
+    }
+  }
+
+  // Tous les participants actifs (individuels + membres d'equipes)
+  function activeParticipantCount(): number {
+    return registrations.filter(r => r.status !== 'cancelled').length
+      + teams.reduce((sum, t) => sum + t.members.length, 0);
+  }
+
+  // Resume des tailles de chandails (individuels + equipes)
+  function shirtSummary(): { size: string; count: number }[] {
+    const counts: Record<string, number> = {};
+    registrations.filter(r => r.status !== 'cancelled' && r.shirt_size).forEach(r => { counts[r.shirt_size] = (counts[r.shirt_size] || 0) + 1; });
+    teams.forEach(t => t.members.filter(m => m.shirt_size).forEach(m => { counts[m.shirt_size] = (counts[m.shirt_size] || 0) + 1; }));
+    return SHIRT_SIZES.filter(s => counts[s]).map(s => ({ size: s, count: counts[s] }));
+  }
+
+  function exportCSV(eventTitle: string) {
+    const rows = [['Type', 'Equipe', 'Capitaine', 'Prenom', 'Nom', 'Courriel', 'Telephone', 'Entreprise', 'Client', 'Tarif', 'Restrictions', 'Niveau', 'Taille', 'Notes', 'Present', 'Date inscription'].join(',')];
+
+    registrations.filter(r => r.status !== 'cancelled').forEach(r => {
+      rows.push([
+        'Individuel', r.team_name, '', r.first_name, r.last_name, r.email, r.phone, r.company,
+        r.is_client ? 'Oui' : 'Non', r.pricing_option, r.dietary_restrictions, r.skill_level,
+        r.shirt_size, (r.notes || '').replace(/,/g, ';'), r.checked_in_at ? 'Oui' : '',
+        new Date(r.registered_at).toLocaleDateString('fr-CA'),
+      ].map(v => `"${v || ''}"`).join(','));
+    });
+
+    teams.forEach(t => t.members.forEach(m => {
+      rows.push([
+        'Equipe', t.team_name, m.is_captain ? 'Oui' : '', m.first_name, m.last_name, displayEmail(m.email), m.phone, '',
+        '', '', m.dietary_restrictions, m.skill_level,
+        m.shirt_size, (m.notes || '').replace(/,/g, ';'), m.checked_in_at ? 'Oui' : '',
+        new Date(m.joined_at).toLocaleDateString('fr-CA'),
+      ].map(v => `"${v || ''}"`).join(','));
+    }));
+
     const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -459,74 +556,147 @@ export default function EventsPage() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between mt-4 mb-3">
+                  <div className="flex items-center justify-between mt-4 mb-3 flex-wrap gap-2">
                     <h4 className="text-sm font-extrabold text-text-main flex items-center gap-1.5">
                       <UserCheck className="h-4 w-4" style={{ color: DUO.blue }} />
-                      Inscriptions ({registrations.filter(r => r.status !== 'cancelled').length})
+                      Participants ({activeParticipantCount()})
                     </h4>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <a href={`/events/${ev.id}/checkin`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                        style={{ backgroundColor: `${DUO.green}12`, color: DUO.greenDark }}
+                      ><ClipboardCheck className="h-3 w-3" /> Presences (jour J)</a>
                       <button onClick={() => exportCSV(ev.title)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold bg-gray-50 text-text-muted hover:bg-gray-100 transition-all"
                       ><Download className="h-3 w-3" /> CSV</button>
                       <button onClick={() => {
-                        const link = `${window.location.origin}/api/events/${ev.id}/register`;
+                        const link = `${SITE_BASE}/evenements.html?event=${ev.id}`;
                         navigator.clipboard.writeText(link);
                       }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold bg-gray-50 text-text-muted hover:bg-gray-100 transition-all"
-                      ><Copy className="h-3 w-3" /> Lien</button>
+                      ><Copy className="h-3 w-3" /> Lien public</button>
                     </div>
                   </div>
 
+                  {/* Resume des tailles de chandails */}
+                  {ev.form_options?.show_shirt_size && shirtSummary().length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap mb-3 p-3 rounded-xl" style={{ backgroundColor: `${DUO.purple}08` }}>
+                      <Shirt className="h-4 w-4 flex-shrink-0" style={{ color: DUO.purple }} />
+                      <span className="text-xs font-extrabold text-text-main">Chandails :</span>
+                      {shirtSummary().map(({ size, count }) => (
+                        <span key={size} className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-white border" style={{ borderColor: `${DUO.purple}30`, color: DUO.purpleDark }}>
+                          {size} &times; {count}
+                        </span>
+                      ))}
+                      <span className="text-[11px] text-text-muted ml-1">
+                        ({activeParticipantCount() - shirtSummary().reduce((s, x) => s + x.count, 0)} sans taille)
+                      </span>
+                    </div>
+                  )}
+
                   {loadingRegs ? (
                     <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin mx-auto" style={{ color: DUO.blue }} /></div>
-                  ) : registrations.filter(r => r.status !== 'cancelled').length === 0 ? (
+                  ) : activeParticipantCount() === 0 ? (
                     <p className="text-sm text-text-muted text-center py-6">Aucune inscription pour le moment</p>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Nom</th>
-                            <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Courriel</th>
-                            <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Tel.</th>
-                            {ev.registration_mode !== 'individual' && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Equipe</th>}
-                            {ev.form_options?.show_is_client && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Client</th>}
-                            {ev.pricing?.length > 0 && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Tarif</th>}
-                            {ev.form_options?.show_dietary && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Restrictions</th>}
-                            {ev.form_options?.show_skill_level && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Niveau</th>}
-                            {ev.form_options?.show_shirt_size && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Taille</th>}
-                            <th className="text-right py-2 px-2 text-xs font-bold text-text-muted"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {registrations.filter(r => r.status !== 'cancelled').map(r => (
-                            <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                              <td className="py-2 px-2 font-bold text-text-main">{r.first_name} {r.last_name}</td>
-                              <td className="py-2 px-2 text-text-muted">{r.email}</td>
-                              <td className="py-2 px-2 text-text-muted">{r.phone}</td>
-                              {ev.registration_mode !== 'individual' && (
-                                <td className="py-2 px-2">
-                                  {r.team_name && (
-                                    <div>
-                                      <span className="font-bold text-text-main">{r.team_name}</span>
-                                      {r.team_members?.length > 0 && (
-                                        <p className="text-[11px] text-text-muted">{r.team_members.map((m: { name: string }) => m.name).join(', ')}</p>
-                                      )}
-                                    </div>
+                    <div className="space-y-4">
+                      {/* Equipes */}
+                      {teams.length > 0 && (
+                        <div className="space-y-3">
+                          {teams.map(team => (
+                            <div key={team.id} className="rounded-xl border-2 border-gray-100 overflow-hidden">
+                              <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: `${DUO.blue}08` }}>
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {team.logo_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={team.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+                                  ) : (
+                                    <Trophy className="h-4 w-4 flex-shrink-0" style={{ color: DUO.blue }} />
                                   )}
-                                </td>
-                              )}
-                              {ev.form_options?.show_is_client && <td className="py-2 px-2">{r.is_client ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500" /> : <XCircle className="h-3.5 w-3.5 text-gray-300" />}</td>}
-                              {ev.pricing?.length > 0 && <td className="py-2 px-2 text-text-muted">{r.pricing_option}</td>}
-                              {ev.form_options?.show_dietary && <td className="py-2 px-2 text-text-muted text-xs">{r.dietary_restrictions}</td>}
-                              {ev.form_options?.show_skill_level && <td className="py-2 px-2 text-text-muted text-xs">{r.skill_level}</td>}
-                              {ev.form_options?.show_shirt_size && <td className="py-2 px-2 text-text-muted text-xs">{r.shirt_size}</td>}
-                              <td className="py-2 px-2 text-right">
-                                <button onClick={() => cancelRegistration(ev.id, r.id)} className="text-red-400 hover:text-red-600 transition-colors"><XCircle className="h-3.5 w-3.5" /></button>
-                              </td>
-                            </tr>
+                                  <span className="font-extrabold text-sm text-text-main truncate">{team.team_name}</span>
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-white border border-gray-200 text-text-muted tracking-wider">{team.team_code}</span>
+                                  <span className="text-[11px] font-bold text-text-muted flex-shrink-0">{team.members.length}/{team.max_members}</span>
+                                </div>
+                                <button onClick={() => deleteTeam(ev.id, team)}
+                                  className="p-1 rounded-md hover:bg-red-50 text-text-light hover:text-red-600 transition-all flex-shrink-0"
+                                  title="Supprimer l'equipe"
+                                ><Trash2 className="h-3.5 w-3.5" /></button>
+                              </div>
+                              <table className="w-full text-sm">
+                                <tbody>
+                                  {team.members.map(m => (
+                                    <tr key={m.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                                      <td className="py-2 px-4 font-bold text-text-main">
+                                        <span className="flex items-center gap-1.5">
+                                          {m.is_captain && <Crown className="h-3 w-3 flex-shrink-0" style={{ color: DUO.orange }} />}
+                                          {m.first_name} {m.last_name}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-2 text-text-muted text-xs">{displayEmail(m.email)}</td>
+                                      <td className="py-2 px-2 text-text-muted text-xs">{m.phone}</td>
+                                      {ev.form_options?.show_skill_level && <td className="py-2 px-2 text-text-muted text-xs">{m.skill_level}</td>}
+                                      {ev.form_options?.show_shirt_size && (
+                                        <td className="py-2 px-2">
+                                          {m.shirt_size && <span className="px-2 py-0.5 rounded-md text-[11px] font-extrabold" style={{ backgroundColor: `${DUO.purple}12`, color: DUO.purpleDark }}>{m.shirt_size}</span>}
+                                        </td>
+                                      )}
+                                      <td className="py-2 px-3 text-right">
+                                        {!m.is_captain && (
+                                          <button onClick={() => removeTeamMember(ev.id, team.id, m.id)} className="text-red-400 hover:text-red-600 transition-colors" title="Retirer ce membre"><XCircle className="h-3.5 w-3.5" /></button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
+                        </div>
+                      )}
+
+                      {/* Inscriptions individuelles */}
+                      {registrations.filter(r => r.status !== 'cancelled').length > 0 && (
+                        <div className="overflow-x-auto">
+                          {teams.length > 0 && (
+                            <p className="text-xs font-extrabold text-text-muted mb-2 flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Inscriptions individuelles</p>
+                          )}
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-100">
+                                <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Nom</th>
+                                <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Courriel</th>
+                                <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Tel.</th>
+                                {ev.form_options?.show_is_client && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Client</th>}
+                                {ev.pricing?.length > 0 && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Tarif</th>}
+                                {ev.form_options?.show_dietary && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Restrictions</th>}
+                                {ev.form_options?.show_skill_level && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Niveau</th>}
+                                {ev.form_options?.show_shirt_size && <th className="text-left py-2 px-2 text-xs font-bold text-text-muted">Taille</th>}
+                                <th className="text-right py-2 px-2 text-xs font-bold text-text-muted"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {registrations.filter(r => r.status !== 'cancelled').map(r => (
+                                <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                                  <td className="py-2 px-2 font-bold text-text-main">{r.first_name} {r.last_name}</td>
+                                  <td className="py-2 px-2 text-text-muted">{r.email}</td>
+                                  <td className="py-2 px-2 text-text-muted">{r.phone}</td>
+                                  {ev.form_options?.show_is_client && <td className="py-2 px-2">{r.is_client ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500" /> : <XCircle className="h-3.5 w-3.5 text-gray-300" />}</td>}
+                                  {ev.pricing?.length > 0 && <td className="py-2 px-2 text-text-muted">{r.pricing_option}</td>}
+                                  {ev.form_options?.show_dietary && <td className="py-2 px-2 text-text-muted text-xs">{r.dietary_restrictions}</td>}
+                                  {ev.form_options?.show_skill_level && <td className="py-2 px-2 text-text-muted text-xs">{r.skill_level}</td>}
+                                  {ev.form_options?.show_shirt_size && (
+                                    <td className="py-2 px-2">
+                                      {r.shirt_size && <span className="px-2 py-0.5 rounded-md text-[11px] font-extrabold" style={{ backgroundColor: `${DUO.purple}12`, color: DUO.purpleDark }}>{r.shirt_size}</span>}
+                                    </td>
+                                  )}
+                                  <td className="py-2 px-2 text-right">
+                                    <button onClick={() => cancelRegistration(ev.id, r.id)} className="text-red-400 hover:text-red-600 transition-colors"><XCircle className="h-3.5 w-3.5" /></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

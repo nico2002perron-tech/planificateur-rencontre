@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { sendTeamJoinedEmail, sendTeamMemberNotification } from '@/lib/email';
 
 function corsJson(body: unknown, status: number) {
   const response = NextResponse.json(body, { status });
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Find team
   const { data: team, error: teamError } = await supabase
     .from('event_teams')
-    .select('id, event_id, team_name, max_members')
+    .select('id, event_id, team_name, max_members, captain_email')
     .eq('team_code', code.toUpperCase())
     .single();
 
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Check event is still open
   const { data: event } = await supabase
     .from('events')
-    .select('is_registration_open, status')
+    .select('title, date, time, location, contact_email, contact_phone, is_registration_open, status')
     .eq('id', team.event_id)
     .single();
 
@@ -124,9 +125,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   if (insertError) return corsJson({ error: insertError.message }, 500);
 
+  // Emails (non-blocking)
+  const eventInfo = {
+    title: event.title,
+    date: event.date,
+    time: event.time,
+    location: event.location,
+    contact_email: event.contact_email,
+    contact_phone: event.contact_phone,
+  };
+  const memberCount = (count || 0) + 1;
+
+  // 1. Confirmation to the new member
+  sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name);
+
+  // 2. Notify the captain (unless the captain just joined their own team)
+  if (team.captain_email && team.captain_email !== body.email.toLowerCase().trim()) {
+    sendTeamMemberNotification(
+      eventInfo,
+      team.captain_email,
+      team.team_name,
+      `${body.first_name.trim()} ${body.last_name.trim()}`,
+      memberCount,
+      team.max_members,
+    );
+  }
+
   return corsJson({
     ok: true,
     team_name: team.team_name,
+    member_count: memberCount,
+    max_members: team.max_members,
     message: `Vous avez rejoint l'equipe "${team.team_name}" !`,
   }, 201);
 }

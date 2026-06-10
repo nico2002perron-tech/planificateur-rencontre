@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
           .in('team_id', teamIds)
           .eq('status', 'confirmed');
         for (const m of members || []) {
-          if (m.email) recipients.set(m.email.toLowerCase(), m.first_name || '');
+          // Les coéquipiers inscrits par le capitaine sans courriel ont un placeholder « .sans-courriel »
+          if (m.email && !m.email.endsWith('.sans-courriel')) recipients.set(m.email.toLowerCase(), m.first_name || '');
         }
       }
 

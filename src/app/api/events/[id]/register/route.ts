@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (new Date() > deadline) return corsJson({ error: 'La date limite d\'inscription est passee' }, 400);
   }
 
-  // Check capacity
+  // Check capacity (individual registrations + team members)
   if (event.max_attendees) {
     const { count } = await supabase
       .from('event_registrations')
@@ -41,7 +41,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .eq('event_id', id)
       .eq('status', 'confirmed');
 
-    if ((count || 0) >= event.max_attendees) {
+    let teamMemberCount = 0;
+    const { data: teamRows } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', id);
+    const teamIds = (teamRows || []).map(t => t.id);
+    if (teamIds.length > 0) {
+      const { count: memberCount } = await supabase
+        .from('event_team_members')
+        .select('*', { count: 'exact', head: true })
+        .in('team_id', teamIds)
+        .eq('status', 'confirmed');
+      teamMemberCount = memberCount || 0;
+    }
+
+    if ((count || 0) + teamMemberCount >= event.max_attendees) {
       return corsJson({ error: 'L\'evenement est complet' }, 400);
     }
   }

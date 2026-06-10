@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// Count confirmed team members per event (event_team_members joined via event_teams)
+async function getTeamMemberCounts(supabase: SupabaseClient, eventIds: string[]): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  if (eventIds.length === 0) return counts;
+
+  const { data: teams } = await supabase
+    .from('event_teams')
+    .select('id, event_id')
+    .in('event_id', eventIds);
+
+  const teamIds = (teams || []).map(t => t.id);
+  if (teamIds.length === 0) return counts;
+
+  const teamToEvent = new Map((teams || []).map(t => [t.id, t.event_id]));
+  const { data: members } = await supabase
+    .from('event_team_members')
+    .select('team_id')
+    .in('team_id', teamIds)
+    .eq('status', 'confirmed');
+
+  (members || []).forEach(m => {
+    const eventId = teamToEvent.get(m.team_id);
+    if (eventId) counts[eventId] = (counts[eventId] || 0) + 1;
+  });
+
+  return counts;
+}
 
 // GET /api/events — Public list of published events
 export async function GET(request: NextRequest) {
@@ -31,10 +60,11 @@ export async function GET(request: NextRequest) {
       .select('id, name, email')
       .in('id', userIds);
     const userMap = new Map((users || []).map(u => [u.id, u]));
+    const teamCounts = await getTeamMemberCounts(supabase, (data || []).map(e => e.id));
 
     const enriched = (data || []).map(e => ({
       ...e,
-      registration_count: e.event_registrations?.[0]?.count || 0,
+      registration_count: (e.event_registrations?.[0]?.count || 0) + (teamCounts[e.id] || 0),
       creator: userMap.get(e.created_by) || null,
     }));
 
@@ -62,10 +92,11 @@ export async function GET(request: NextRequest) {
 
   const countMap: Record<string, number> = {};
   (regCounts || []).forEach(r => { countMap[r.event_id] = (countMap[r.event_id] || 0) + 1; });
+  const teamCounts = await getTeamMemberCounts(supabase, eventIds);
 
   const enriched = (data || []).map(e => ({
     ...e,
-    registration_count: countMap[e.id] || 0,
+    registration_count: (countMap[e.id] || 0) + (teamCounts[e.id] || 0),
   }));
 
   const response = NextResponse.json(enriched);

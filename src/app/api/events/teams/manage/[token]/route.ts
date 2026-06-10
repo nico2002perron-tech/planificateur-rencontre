@@ -39,6 +39,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   return corsJson({
     team_name: team.team_name,
     team_code: team.team_code,
+    event_id: team.event_id,
     max_members: team.max_members,
     event: event || null,
     members: members || [],
