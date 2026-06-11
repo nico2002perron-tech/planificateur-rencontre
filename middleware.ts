@@ -2,7 +2,8 @@ import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/setup', '/api/test-email', '/api/portfolio'];
+// /api/qr/checkin : les clients courriel chargent l'image du laissez-passer sans session
+const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/setup', '/api/test-email', '/api/portfolio', '/api/qr/checkin'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

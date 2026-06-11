@@ -115,8 +115,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const eventInfo = { title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
   const regInfo = { first_name: body.first_name.trim(), last_name: body.last_name.trim(), email: body.email.toLowerCase().trim(), phone: body.phone.trim(), registration_type: regType, team_name: body.team_name || '', pricing_option: body.pricing_option || '' };
 
-  // 1. Confirmation to participant
-  sendRegistrationConfirmation(eventInfo, regInfo);
+  // 1. Confirmation to participant (avec laissez-passer QR)
+  sendRegistrationConfirmation(eventInfo, regInfo, data?.id);
 
   // 2. Notification to event creator
   if (event.created_by) {

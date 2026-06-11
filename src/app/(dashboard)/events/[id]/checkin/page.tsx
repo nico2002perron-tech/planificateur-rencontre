@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo, use } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, use } from 'react';
+import jsQR from 'jsqr';
 import {
   Loader2, Search, CheckCircle2, Circle, ArrowLeft, Trophy, Users, Shirt, PartyPopper,
+  ScanLine, X, AlertTriangle,
 } from 'lucide-react';
 
 const DUO = {
@@ -42,6 +44,16 @@ export default function CheckinPage({ params }: { params: Promise<{ id: string }
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'arrived'>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Scanner QR
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const [scanFeedback, setScanFeedback] = useState<{ status: 'ok' | 'already' | 'unknown'; label: string; detail?: string } | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const peopleRef = useRef<Person[]>([]);
+  const lastScanRef = useRef<{ payload: string; at: number }>({ payload: '', at: 0 });
+  useEffect(() => { peopleRef.current = people; }, [people]);
 
   useEffect(() => {
     async function load() {
@@ -110,6 +122,106 @@ export default function CheckinPage({ params }: { params: Promise<{ id: string }
     } finally {
       setBusyId(null);
     }
+  }
+
+  // ── Scanner QR : « GFSF:<kind>:<id> » dans les courriels de confirmation ──
+  const handleScanPayload = useCallback(async (payload: string) => {
+    const now = Date.now();
+    if (lastScanRef.current.payload === payload && now - lastScanRef.current.at < 3000) return;
+    lastScanRef.current = { payload, at: now };
+
+    const m = /^GFSF:(registration|member):([0-9a-f-]{36})$/i.exec(payload.trim());
+    if (!m) {
+      setScanFeedback({ status: 'unknown', label: 'Code non reconnu' });
+      return;
+    }
+    const kind = m[1].toLowerCase() as 'registration' | 'member';
+    const id = m[2].toLowerCase();
+    const person = peopleRef.current.find(p => p.kind === kind && p.id.toLowerCase() === id);
+
+    if (!person) {
+      setScanFeedback({ status: 'unknown', label: 'Laissez-passer d\'un autre evenement' });
+      return;
+    }
+    if (person.checked_in_at) {
+      setScanFeedback({
+        status: 'already',
+        label: `${person.first_name} ${person.last_name} — deja enregistre`,
+        detail: `Arrive a ${new Date(person.checked_in_at).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}`,
+      });
+      return;
+    }
+
+    // Enregistrement
+    setPeople(prev => prev.map(x => x.id === person.id ? { ...x, checked_in_at: new Date().toISOString() } : x));
+    if (navigator.vibrate) navigator.vibrate(120);
+    setScanFeedback({
+      status: 'ok',
+      label: `Bienvenue ${person.first_name} ${person.last_name}!`,
+      detail: [person.team_name || 'Individuel', person.shirt_size ? `Chandail ${person.shirt_size}` : ''].filter(Boolean).join(' · '),
+    });
+    try {
+      const res = await fetch(`/api/events/${eventId}/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: person.kind, id: person.id, checked: true }),
+      });
+      if (!res.ok) {
+        setPeople(prev => prev.map(x => x.id === person.id ? { ...x, checked_in_at: null } : x));
+        setScanFeedback({ status: 'unknown', label: 'Erreur d\'enregistrement — reessayez' });
+      }
+    } catch {
+      setPeople(prev => prev.map(x => x.id === person.id ? { ...x, checked_in_at: null } : x));
+      setScanFeedback({ status: 'unknown', label: 'Erreur de connexion — reessayez' });
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!scannerOpen) return;
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+
+        interval = setInterval(() => {
+          if (!video.videoWidth || !ctx) return;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          if (code?.data) handleScanPayload(code.data);
+        }, 250);
+      } catch {
+        setScannerError('Impossible d\'acceder a la camera. Verifiez les permissions du navigateur.');
+      }
+    }
+    start();
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    };
+  }, [scannerOpen, handleScanPayload]);
+
+  function closeScanner() {
+    setScannerOpen(false);
+    setScannerError('');
+    setScanFeedback(null);
   }
 
   const arrived = people.filter(p => p.checked_in_at).length;
@@ -183,6 +295,14 @@ export default function CheckinPage({ params }: { params: Promise<{ id: string }
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: DUO.green }} />
         </div>
       </div>
+
+      {/* Scanner QR */}
+      <button onClick={() => setScannerOpen(true)}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-white text-base font-extrabold mb-4 transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105"
+        style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}
+      >
+        <ScanLine className="h-5 w-5" /> Scanner les laissez-passer
+      </button>
 
       {/* Search + filters */}
       <div className="sticky top-0 z-10 bg-[#f7f7f7] pt-1 pb-3 space-y-2">
@@ -262,6 +382,57 @@ export default function CheckinPage({ params }: { params: Promise<{ id: string }
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Overlay scanner */}
+      {scannerOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 bg-black/80">
+            <p className="text-white font-extrabold text-sm flex items-center gap-2">
+              <ScanLine className="h-4 w-4" style={{ color: DUO.blue }} /> Scanner un laissez-passer
+            </p>
+            <button onClick={closeScanner} className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="relative flex-1 overflow-hidden">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+
+            {/* Cadre de visee */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-60 h-60 rounded-3xl" style={{ border: `3px solid ${DUO.blue}`, boxShadow: '0 0 0 9999px rgba(0,0,0,.45)' }} />
+            </div>
+
+            {scannerError && (
+              <div className="absolute inset-x-4 top-4 bg-red-50 text-red-700 text-sm font-bold px-4 py-3 rounded-xl flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {scannerError}
+              </div>
+            )}
+
+            {/* Feedback du dernier scan */}
+            {scanFeedback && (
+              <div className="absolute inset-x-4 bottom-6 rounded-2xl px-5 py-4 flex items-center gap-3"
+                style={{
+                  backgroundColor: scanFeedback.status === 'ok' ? DUO.green : scanFeedback.status === 'already' ? DUO.orange : '#ef4444',
+                }}
+              >
+                {scanFeedback.status === 'ok'
+                  ? <CheckCircle2 className="h-8 w-8 text-white flex-shrink-0" />
+                  : <AlertTriangle className="h-8 w-8 text-white flex-shrink-0" />}
+                <div className="min-w-0">
+                  <p className="text-white font-extrabold truncate">{scanFeedback.label}</p>
+                  {scanFeedback.detail && <p className="text-white/85 text-sm font-bold truncate">{scanFeedback.detail}</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="px-4 py-3 bg-black/80 text-center">
+            <p className="text-white/70 text-xs font-bold">{arrived}/{total} arrives · le compteur se met a jour a chaque scan</p>
+          </div>
         </div>
       )}
     </div>

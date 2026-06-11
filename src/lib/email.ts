@@ -8,6 +8,17 @@ function getResend(): Resend | null {
 }
 
 const FROM = process.env.EMAIL_FROM || 'Groupe Financier Ste-Foy <onboarding@resend.dev>';
+const APP_URL = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
+
+// Bloc « laissez-passer » : QR scanné à l'accueil le jour de l'événement
+function qrBlock(kind: 'registration' | 'member', id: string): string {
+  return `
+    <div style="text-align:center;margin:20px 0;padding:18px;background:white;border:1px solid #e2e8f0;border-radius:12px">
+      <p style="font-weight:bold;color:#03045e;margin:0 0 4px">Votre laissez-passer</p>
+      <p style="font-size:13px;color:#64748b;margin:0 0 12px">Presentez ce code a l'accueil — l'enregistrement prend 2 secondes.</p>
+      <img src="${APP_URL}/api/qr/checkin/${kind}/${id}" width="160" height="160" alt="Code QR d'acces" style="display:block;margin:0 auto"/>
+    </div>`;
+}
 
 interface EventInfo {
   title: string;
@@ -34,7 +45,7 @@ function formatDate(dateStr: string): string {
 }
 
 // Email to participant — registration confirmation
-export async function sendRegistrationConfirmation(event: EventInfo, registration: RegistrationInfo) {
+export async function sendRegistrationConfirmation(event: EventInfo, registration: RegistrationInfo, registrationId?: string) {
   const resend = getResend();
   if (!resend) return;
 
@@ -68,6 +79,7 @@ export async function sendRegistrationConfirmation(event: EventInfo, registratio
               ${teamLine}
               ${pricingLine}
             </div>
+            ${registrationId ? qrBlock('registration', registrationId) : ''}
             ${contactLines ? `<p style="font-size:13px;color:#64748b">Questions? ${contactLines}</p>` : ''}
             <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
           </div>
@@ -123,7 +135,7 @@ interface TeamCreatedInfo {
 }
 
 // Email to captain — team created (code + share link + manage link)
-export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: string, captainFirstName: string, team: TeamCreatedInfo) {
+export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: string, captainFirstName: string, team: TeamCreatedInfo, captainMemberId?: string) {
   const resend = getResend();
   if (!resend) return;
 
@@ -159,6 +171,7 @@ export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: strin
             <div style="text-align:center;margin:8px 0 16px">
               <span style="display:inline-block;background:#fef3c7;border:2px dashed #f59e0b;border-radius:10px;padding:10px 24px;font-size:24px;font-weight:bold;letter-spacing:3px;color:#92400e">${team.team_code}</span>
             </div>` : `<p style="margin:16px 0"><strong>Votre equipe est complete (${team.member_count}/${team.max_members}).</strong> Vous etes prets!</p>`}
+            ${captainMemberId ? qrBlock('member', captainMemberId) : ''}
             <div style="border-top:1px solid #e2e8f0;margin-top:20px;padding-top:16px">
               <p style="font-size:13px;color:#64748b;margin:0 0 8px">Pour voir ou gerer les membres de votre equipe en tout temps :</p>
               <p style="margin:0"><a href="${team.manage_url}" style="color:#0077b6;font-size:13px">${team.manage_url}</a></p>
@@ -175,7 +188,7 @@ export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: strin
 }
 
 // Email to a member who joined a team — confirmation
-export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string, memberFirstName: string, teamName: string) {
+export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string, memberFirstName: string, teamName: string, memberId?: string) {
   const resend = getResend();
   if (!resend) return;
 
@@ -205,6 +218,7 @@ export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string,
               ${timeLine}
               ${locationLine}
             </div>
+            ${memberId ? qrBlock('member', memberId) : ''}
             <p>On a hate de vous voir!</p>
             ${contactLines ? `<p style="font-size:13px;color:#64748b">Questions? ${contactLines}</p>` : ''}
             <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>

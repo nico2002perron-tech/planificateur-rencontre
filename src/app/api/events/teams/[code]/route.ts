@@ -108,7 +108,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (existing) return corsJson({ error: 'Ce courriel est deja inscrit dans cette equipe' }, 409);
 
   // Add member
-  const { error: insertError } = await supabase
+  const { data: newMember, error: insertError } = await supabase
     .from('event_team_members')
     .insert({
       team_id: team.id,
@@ -121,7 +121,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       dietary_restrictions: body.dietary_restrictions || '',
       notes: body.notes || '',
       is_captain: false,
-    });
+    })
+    .select('id')
+    .single();
 
   if (insertError) return corsJson({ error: insertError.message }, 500);
 
@@ -136,8 +138,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   };
   const memberCount = (count || 0) + 1;
 
-  // 1. Confirmation to the new member
-  sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name);
+  // 1. Confirmation to the new member (avec laissez-passer QR)
+  sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name, newMember?.id);
 
   // 2. Notify the captain (unless the captain just joined their own team)
   if (team.captain_email && team.captain_email !== body.email.toLowerCase().trim()) {

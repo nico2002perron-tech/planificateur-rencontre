@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
   if (teamError) return corsJson({ error: teamError.message }, 500);
 
   // Add captain as first member
-  const { error: memberError } = await supabase
+  const { data: captainMember, error: memberError } = await supabase
     .from('event_team_members')
     .insert({
       team_id: team.id,
@@ -164,7 +164,9 @@ export async function POST(request: NextRequest) {
       dietary_restrictions: body.dietary_restrictions || '',
       notes: body.notes || '',
       is_captain: true,
-    });
+    })
+    .select('id')
+    .single();
 
   if (memberError) return corsJson({ error: memberError.message }, 500);
 
@@ -198,7 +200,7 @@ export async function POST(request: NextRequest) {
   // Emails (non-blocking)
   const eventInfo = { title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
 
-  // 1. Captain receives code + share link + manage link
+  // 1. Captain receives code + share link + manage link + QR pass
   sendTeamCreatedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), {
     team_name: team.team_name,
     team_code: teamCode,
@@ -206,7 +208,7 @@ export async function POST(request: NextRequest) {
     manage_url: manageUrl,
     max_members: maxMembers,
     member_count: memberCount,
-  });
+  }, captainMember?.id);
 
   // 2. Event creator is notified
   if (event.created_by) {
