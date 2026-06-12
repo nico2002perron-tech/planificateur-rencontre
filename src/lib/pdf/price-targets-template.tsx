@@ -36,6 +36,11 @@ Font.register({
   ],
 });
 
+// Pas de césure : react-pdf coupe sinon les mots au milieu avec un trait
+// d'union (« Compt-tant ») dans les colonnes étroites. Les textes continuent
+// de se replier aux espaces.
+Font.registerHyphenationCallback(word => [word]);
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface PriceTargetHolding {
@@ -126,8 +131,9 @@ function fmtFull(value: number): string {
   return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(value);
 }
 
+// Espace insécable avant % pour ne jamais replier « +26.5 / % » sur deux lignes.
 function fmtPct(value: number): string {
-  return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)} %`;
 }
 
 // ─── Asset category colors (for row pastilles) ──────────────────────────────
@@ -983,7 +989,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
 // header, data rows and total stay perfectly aligned. Tuned for content:
 // wide "Description", roomy "Qté", and tight money columns (no wasted space).
 const EQ_COL = {
-  cpte: '5%', symbole: '9%', desc: '17%', qte: '6%', pbr: '7%', prix: '7%',
+  // cpte à 7 % : « Comptant » (le plus long libellé de compte) tient sur une ligne.
+  cpte: '7%', symbole: '9%', desc: '15%', qte: '6%', pbr: '7%', prix: '7%',
   marche: '8%', cible: '7%', gainPct: '8%', gainDollar: '9%', div: '9%', divPct: '8%',
 } as const;
 
@@ -1140,7 +1147,8 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
                 ) : (
                   <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
                 )}
-                <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
+                {/* Symboles longs (PMEI-UN.TO…) : police réduite pour ne pas déborder sur la description. */}
+                <Text style={{ fontSize: h.symbol.length > 8 ? 6.2 : 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
               </View>
               <Text style={[styles.td, { width: EQ_COL.desc, fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: EQ_COL.qte, textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
@@ -1171,7 +1179,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
           <Text style={{ width: EQ_COL.cpte }}>{''}</Text>
           <Text style={{ width: EQ_COL.symbole }}>{''}</Text>
           <View style={{ width: EQ_COL.desc, paddingHorizontal: 4 }}>
-            <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase' as const, letterSpacing: 0.3 }}>Total actions</Text>
+            <Text style={{ fontSize: 7.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase' as const, letterSpacing: 0.2 }}>Total actions</Text>
             <Text style={{ fontSize: 5.5, color: '#94a3b8', marginTop: 1 }}>Gain en capital (prix → cible)</Text>
           </View>
           {/* Les colonnes vides Qté/PBR/Prix (20 %) sont réparties pour donner de
@@ -1183,7 +1191,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
           <Text style={{ width: EQ_COL.gainPct, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalPct >= 0 ? '#6ee7b7' : '#fca5a5', textAlign: 'right', paddingHorizontal: 4 }}>{fmtPct(totalPct)}</Text>
           <Text style={{ width: EQ_COL.gainDollar, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalGain >= 0 ? '#6ee7b7' : '#fca5a5', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalGain)}</Text>
           <Text style={{ width: EQ_COL.div, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalDiv > 0 ? '#67e8f9' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalDiv)}</Text>
-          <Text style={{ width: EQ_COL.divPct, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: divYieldPct > 0 ? '#67e8f9' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{divYieldPct > 0 ? `${divYieldPct.toFixed(2)} %` : '—'}</Text>
+          <Text style={{ width: EQ_COL.divPct, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: divYieldPct > 0 ? '#67e8f9' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{divYieldPct > 0 ? `${divYieldPct.toFixed(2)} %` : '—'}</Text>
         </View>
       </View>
 
@@ -1290,9 +1298,9 @@ function FixedIncomeTablePage({ holdings, orientation }: {
 
       <View style={styles.tablePremium}>
         <View style={styles.thPremium}>
-          <Text style={[styles.thCellPremium, { width: '5%' }]}>Cpte</Text>
+          <Text style={[styles.thCellPremium, { width: '7%' }]}>Cpte</Text>
           <Text style={[styles.thCellPremium, { width: '9%', letterSpacing: 0.3 }]}>Symbole</Text>
-          <Text style={[styles.thCellPremium, { width: '17%' }]}>Description</Text>
+          <Text style={[styles.thCellPremium, { width: '15%' }]}>Description</Text>
           <Text style={[styles.thCellPremium, { width: '8%', textAlign: 'right', letterSpacing: 0.3 }]}>Qté/VN</Text>
           <Text style={[styles.thCellPremium, { width: '7%', textAlign: 'right', letterSpacing: 0.3 }]}>Coupon</Text>
           <Text style={[styles.thCellPremium, { width: '11%', textAlign: 'right' }]}>Échéance</Text>
@@ -1317,12 +1325,12 @@ function FixedIncomeTablePage({ holdings, orientation }: {
               borderBottomStyle: 'solid' as const,
               alignItems: 'center',
             }} wrap={false}>
-              <Text style={[styles.td, { width: '5%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
+              <Text style={[styles.td, { width: '7%', fontSize: 6.5, color: '#94a3b8' }]}>{h.accountLabel}</Text>
               <View style={{ width: '9%', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: dotColor, marginRight: 4 }} />
                 <Text style={{ fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{h.symbol}</Text>
               </View>
-              <Text style={[styles.td, { width: '17%', fontSize: 7.5 }]}>{h.name}</Text>
+              <Text style={[styles.td, { width: '15%', fontSize: 7.5 }]}>{h.name}</Text>
               <Text style={[styles.td, { width: '8%', textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.tdBold, { width: '7%', textAlign: 'right', color: C.navy }]}>
                 {h.couponRate ? `${h.couponRate.toFixed(2)}%` : '—'}
@@ -1354,9 +1362,9 @@ function FixedIncomeTablePage({ holdings, orientation }: {
           backgroundColor: C.navy, borderTopWidth: 2.5, borderTopColor: C.gold, borderTopStyle: 'solid' as const,
           alignItems: 'center',
         }}>
-          <Text style={{ width: '5%' }}>{''}</Text>
+          <Text style={{ width: '7%' }}>{''}</Text>
           <Text style={{ width: '9%' }}>{''}</Text>
-          <View style={{ width: '17%', paddingHorizontal: 4 }}>
+          <View style={{ width: '15%', paddingHorizontal: 4 }}>
             <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase' as const, letterSpacing: 0.3 }}>Total</Text>
             <Text style={{ fontSize: 5.5, color: '#94a3b8', marginTop: 1 }}>Coupons annuels espérés</Text>
           </View>
@@ -1367,7 +1375,7 @@ function FixedIncomeTablePage({ holdings, orientation }: {
           <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalMv)}</Text>
           <Text style={{ width: '8%' }}>{''}</Text>
           <Text style={{ width: '10%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: totalIncome > 0 ? '#6ee7b7' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(totalIncome)}</Text>
-          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: avgYieldPct > 0 ? '#6ee7b7' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{avgYieldPct > 0 ? `${avgYieldPct.toFixed(2)} %` : '—'}</Text>
+          <Text style={{ width: '8%', fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: avgYieldPct > 0 ? '#6ee7b7' : '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{avgYieldPct > 0 ? `${avgYieldPct.toFixed(2)} %` : '—'}</Text>
         </View>
       </View>
 
