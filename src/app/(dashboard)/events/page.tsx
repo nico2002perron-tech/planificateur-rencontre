@@ -8,6 +8,7 @@ import {
   CheckCircle, XCircle, X, Upload, ImagePlus, Handshake,
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
   Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
+  Sparkles, Timer,
 } from 'lucide-react';
 
 const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
@@ -31,6 +32,20 @@ const EVENT_TYPES = [
 
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 const SKILL_LEVELS = ['Debutant', 'Intermediaire', 'Avance'];
+
+// Couleurs d'accent (sobres, dans la charte du site)
+const ACCENT_SWATCHES = [
+  { value: '', label: 'Bleu (defaut)', color: '#0077b6' },
+  { value: '#03045e', label: 'Marine', color: '#03045e' },
+  { value: '#0a9396', label: 'Sarcelle', color: '#0a9396' },
+  { value: '#5e60ce', label: 'Indigo', color: '#5e60ce' },
+  { value: '#2a9d8f', label: 'Emeraude', color: '#2a9d8f' },
+  { value: '#9d4edd', label: 'Violet', color: '#9d4edd' },
+  { value: '#bb3e03', label: 'Cuivre', color: '#bb3e03' },
+];
+
+// Icones suggerees pour les atouts/inclus (noms Lucide)
+const HL_ICONS = ['check', 'utensils-crossed', 'wine', 'coffee', 'mic', 'music', 'gift', 'award', 'trophy', 'car', 'map-pin', 'users', 'sparkles', 'star', 'camera', 'ticket', 'heart', 'shield-check', 'clock', 'graduation-cap'];
 
 interface EventData {
   id: string;
@@ -67,6 +82,13 @@ interface EventData {
   created_at: string;
   registration_count: number;
   creator: { id: string; name: string; email: string } | null;
+  tagline?: string;
+  highlights?: { icon: string; text: string }[];
+  program?: { time: string; label: string }[];
+  accent_color?: string;
+  cta_label?: string;
+  show_countdown?: boolean;
+  featured?: boolean;
 }
 
 interface Registration {
@@ -155,6 +177,14 @@ const emptyForm = () => ({
   contact_email: '',
   contact_phone: '',
   status: 'draft' as string,
+  // Carte d'invitation personnalisable
+  tagline: '',
+  highlights: [] as { icon: string; text: string }[],
+  program: [] as { time: string; label: string }[],
+  accent_color: '',
+  cta_label: '',
+  show_countdown: true,
+  featured: false,
 });
 
 type FormData = ReturnType<typeof emptyForm>;
@@ -162,6 +192,58 @@ type FormData = ReturnType<typeof emptyForm>;
 function formatDate(d: string) {
   if (!d) return '';
   return new Date(d + 'T12:00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function lighten(hex: string, amt: number): string {
+  try {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.round(r + (255 - r) * amt); g = Math.round(g + (255 - g) * amt); b = Math.round(b + (255 - b) * amt);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  } catch { return '#00b4d8'; }
+}
+
+// Aperçu en direct de la carte d'invitation (miroir du rendu public)
+function CardPreview({ form }: { form: FormData }) {
+  const accent = form.accent_color || '#0077b6';
+  const accent2 = lighten(accent, 0.3);
+  const typeInfo = EVENT_TYPES.find(t => t.value === form.event_type) || EVENT_TYPES[6];
+  const TypeIcon = typeInfo.icon;
+  let cd = '';
+  if (form.date && form.show_countdown) {
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    const d = Math.round((new Date(form.date + 'T12:00:00').getTime() - t.getTime()) / 86400000);
+    cd = d <= 0 ? "C'est aujourd'hui" : d === 1 ? "C'est demain" : `Dans ${d} jours`;
+  }
+  const cta = (form.cta_label && form.cta_label.trim()) || 'Je reserve ma place';
+  const hl = form.highlights.filter(h => h.text).slice(0, 2);
+  return (
+    <div style={{ width: 300, borderRadius: 18, overflow: 'hidden', background: '#fff', border: '1px solid rgba(3,4,94,.08)', boxShadow: '0 10px 26px -14px rgba(3,4,94,.25)' }}>
+      <div style={{ position: 'relative', height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', background: form.cover_image ? '#03045e' : `linear-gradient(140deg,#03045e,${accent} 75%,${accent2})` }}>
+        {form.cover_image
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={form.cover_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <TypeIcon className="h-10 w-10" style={{ color: 'rgba(255,255,255,.85)' }} />}
+        {form.featured && <span style={{ position: 'absolute', top: 12, left: 12, padding: '5px 10px', borderRadius: 99, fontSize: 10, fontWeight: 800, color: '#fff', background: `linear-gradient(135deg,${accent},${accent2})`, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Star className="h-3 w-3" /> A la une</span>}
+        <span style={{ position: 'absolute', top: 12, right: 12, padding: '5px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(3,4,94,.6)', display: 'inline-flex', alignItems: 'center', gap: 5 }}><TypeIcon className="h-3 w-3" /> {typeInfo.label}</span>
+        {cd && <span style={{ position: 'absolute', bottom: 12, left: 12, padding: '5px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, color: '#03045e', background: 'rgba(255,255,255,.94)' }}>{cd}</span>}
+      </div>
+      <div style={{ padding: '16px 16px 18px' }}>
+        <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 800, fontSize: 16, color: '#03045e', lineHeight: 1.25 }}>{form.title || 'Titre de l’evenement'}</div>
+        {form.tagline && <div style={{ fontSize: 12.5, fontWeight: 600, color: accent, marginTop: 4 }}>{form.tagline}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12.5, color: '#1a2a3a', fontWeight: 600 }}>
+          <span style={{ width: 26, height: 26, borderRadius: 7, display: 'inline-grid', placeItems: 'center', background: `${accent}1a`, color: accent }}><CalendarDays className="h-3.5 w-3.5" /></span>
+          {form.date ? formatDate(form.date) : 'Date'}{form.time ? ` · ${form.time}` : ''}
+        </div>
+        {hl.map((h, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 12, color: '#586e82' }}>
+            <CheckCircle className="h-3.5 w-3.5" style={{ color: accent, flexShrink: 0 }} /> {h.text}
+          </div>
+        ))}
+        <button type="button" style={{ marginTop: 14, width: '100%', padding: '11px', borderRadius: 11, border: 'none', color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 13.5, background: `linear-gradient(135deg,${accent2},${accent})`, cursor: 'default' }}>{cta} &rarr;</button>
+      </div>
+    </div>
+  );
 }
 
 export default function EventsPage() {
@@ -253,6 +335,13 @@ export default function EventsPage() {
       contact_email: e.contact_email,
       contact_phone: e.contact_phone,
       status: e.status,
+      tagline: e.tagline || '',
+      highlights: e.highlights || [],
+      program: e.program || [],
+      accent_color: e.accent_color || '',
+      cta_label: e.cta_label || '',
+      show_countdown: e.show_countdown ?? true,
+      featured: e.featured ?? false,
     });
     setFormError('');
     setShowForm(true);
@@ -827,6 +916,89 @@ export default function EventsPage() {
                     className="px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 hover:border-[#CE82FF] disabled:opacity-40 transition-all"
                   ><Upload className="h-3.5 w-3.5" /></button>
                   <input ref={collabInputRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0], 'collab')} />
+                </div>
+              </div>
+
+              {/* ── Carte d'invitation (personnalisation + apercu) ── */}
+              <div className="p-4 rounded-xl border-2 space-y-4" style={{ borderColor: `${DUO.purple}30`, backgroundColor: `${DUO.purple}06` }}>
+                <h3 className="text-sm font-extrabold text-text-main flex items-center gap-1.5"><Sparkles className="h-4 w-4" style={{ color: DUO.purple }} /> Carte d&apos;invitation</h3>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5">Slogan d&apos;accroche</label>
+                  <input type="text" value={form.tagline} onChange={e => updateForm('tagline', e.target.value)} placeholder="Une soiree prestige au profit de..." className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#CE82FF]" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-extrabold text-text-main mb-1.5">Couleur d&apos;accent</label>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {ACCENT_SWATCHES.map(s => {
+                        const active = form.accent_color === s.value;
+                        return (
+                          <button key={s.value} type="button" title={s.label} onClick={() => updateForm('accent_color', s.value)}
+                            className="w-7 h-7 rounded-full transition-all"
+                            style={{ background: s.color, boxShadow: active ? `0 0 0 2px #fff, 0 0 0 4px ${s.color}` : 'none' }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold text-text-main mb-1.5">Texte du bouton</label>
+                    <input type="text" value={form.cta_label} onChange={e => updateForm('cta_label', e.target.value)} placeholder="Je reserve ma place" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#CE82FF]" />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {([['featured', 'A la une', Star], ['show_countdown', 'Afficher le decompte', Timer]] as const).map(([key, label, Ico]) => {
+                    const on = !!form[key as keyof FormData];
+                    return (
+                      <button key={key} type="button" onClick={() => updateForm(key, !on)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border-2"
+                        style={{ borderColor: on ? DUO.purple : '#e5e7eb', backgroundColor: on ? `${DUO.purple}10` : 'white', color: on ? DUO.purpleDark : '#9ca3af' }}
+                      ><Ico className="h-3.5 w-3.5" /> {label}</button>
+                    );
+                  })}
+                </div>
+
+                {/* Atouts / inclus */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-extrabold text-text-main flex items-center gap-1"><Sparkles className="h-3 w-3" style={{ color: DUO.purple }} /> Atouts / inclus</label>
+                    <button type="button" onClick={() => updateForm('highlights', [...form.highlights, { icon: 'check', text: '' }])} className="text-[11px] font-bold hover:underline" style={{ color: DUO.purple }}>+ Ajouter</button>
+                  </div>
+                  {form.highlights.map((h, i) => (
+                    <div key={i} className="flex gap-2 mb-1.5">
+                      <select value={h.icon} onChange={e => { const arr = [...form.highlights]; arr[i] = { ...arr[i], icon: e.target.value }; updateForm('highlights', arr); }} className="w-36 rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
+                        {HL_ICONS.map(ic => <option key={ic} value={ic}>{ic}</option>)}
+                      </select>
+                      <input type="text" value={h.text} onChange={e => { const arr = [...form.highlights]; arr[i] = { ...arr[i], text: e.target.value }; updateForm('highlights', arr); }} placeholder="Souper 5 services" className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm" />
+                      <button type="button" onClick={() => updateForm('highlights', form.highlights.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Programme / horaire */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-extrabold text-text-main flex items-center gap-1"><Clock className="h-3 w-3" style={{ color: DUO.purple }} /> Programme / horaire</label>
+                    <button type="button" onClick={() => updateForm('program', [...form.program, { time: '', label: '' }])} className="text-[11px] font-bold hover:underline" style={{ color: DUO.purple }}>+ Ajouter</button>
+                  </div>
+                  {form.program.map((p, i) => (
+                    <div key={i} className="flex gap-2 mb-1.5">
+                      <input type="text" value={p.time} onChange={e => { const arr = [...form.program]; arr[i] = { ...arr[i], time: e.target.value }; updateForm('program', arr); }} placeholder="18h00" className="w-24 rounded-lg border border-gray-200 px-3 py-1.5 text-sm" />
+                      <input type="text" value={p.label} onChange={e => { const arr = [...form.program]; arr[i] = { ...arr[i], label: e.target.value }; updateForm('program', arr); }} placeholder="Cocktail de bienvenue" className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm" />
+                      <button type="button" onClick={() => updateForm('program', form.program.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Apercu en direct */}
+                <div>
+                  <label className="text-xs font-extrabold text-text-main mb-2 block flex items-center gap-1"><Eye className="h-3 w-3" style={{ color: DUO.purple }} /> Apercu en direct</label>
+                  <div className="flex justify-center p-4 rounded-xl" style={{ background: 'linear-gradient(180deg,#f1f6fc,#e4ecf5)' }}>
+                    <CardPreview form={form} />
+                  </div>
                 </div>
               </div>
 

@@ -74,7 +74,9 @@ export async function GET(request: NextRequest) {
   // Public: only published events, upcoming first
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, description, event_type, date, time, end_date, location, location_url, cover_image, images, collab_logos, max_attendees, registration_deadline, is_registration_open, registration_mode, team_size, team_label, allow_team_logo, pricing, form_options, contact_email, contact_phone, status')
+    // select('*') : résilient si la migration des colonnes « carte d'invitation »
+    // n'est pas encore exécutée (sinon un select explicite casserait l'API publique).
+    .select('*')
     .eq('status', 'published')
     .eq('is_registration_open', true)
     .gte('date', new Date().toISOString().split('T')[0])
@@ -152,6 +154,14 @@ export async function POST(request: NextRequest) {
       contact_email: body.contact_email || '',
       contact_phone: body.contact_phone || '',
       status: body.status || 'draft',
+      // Carte d'invitation personnalisable
+      tagline: body.tagline || '',
+      highlights: body.highlights || [],
+      program: body.program || [],
+      accent_color: body.accent_color || '',
+      cta_label: body.cta_label || '',
+      show_countdown: body.show_countdown ?? true,
+      featured: body.featured ?? false,
     })
     .select()
     .single();
