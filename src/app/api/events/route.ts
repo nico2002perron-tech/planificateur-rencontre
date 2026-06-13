@@ -71,16 +71,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(enriched);
   }
 
-  // Public: only published events, upcoming first
-  const { data, error } = await supabase
-    .from('events')
-    // select('*') : résilient si la migration des colonnes « carte d'invitation »
-    // n'est pas encore exécutée (sinon un select explicite casserait l'API publique).
-    .select('*')
-    .eq('status', 'published')
-    .eq('is_registration_open', true)
-    .gte('date', new Date().toISOString().split('T')[0])
-    .order('date', { ascending: true });
+  // Public: published events.
+  // - défaut (ruban d'accueil) : à venir + inscriptions ouvertes.
+  // - ?past=1 (page Événements) : TOUS les publiés (passés + à venir, ouverts ou non)
+  //   pour alimenter les onglets « À venir / Passés ». Fenêtre passée : 18 mois.
+  const includePast = searchParams.get('past') === '1';
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // select('*') : résilient si la migration des colonnes « carte d'invitation »
+  // n'est pas encore exécutée (sinon un select explicite casserait l'API publique).
+  let pubQuery = supabase.from('events').select('*').eq('status', 'published');
+  if (includePast) {
+    const minDate = new Date(Date.now() - 18 * 30 * 86400000).toISOString().split('T')[0];
+    pubQuery = pubQuery.gte('date', minDate).order('date', { ascending: false });
+  } else {
+    pubQuery = pubQuery.eq('is_registration_open', true).gte('date', todayStr).order('date', { ascending: true });
+  }
+  const { data, error } = await pubQuery;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
