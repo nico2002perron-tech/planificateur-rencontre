@@ -263,11 +263,21 @@ export async function sendTeamMemberNotification(event: EventInfo, captainEmail:
 }
 
 // Email to participant — event reminder (J-14 / J-7)
+// Texte « quand » adapté à n'importe quel délai (rappels à dates configurables)
+function reminderWhen(days: number): string {
+  if (days <= 0) return "aujourd'hui";
+  if (days === 1) return 'demain';
+  if (days === 7) return 'dans 1 semaine';
+  if (days === 14) return 'dans 2 semaines';
+  if (days > 7 && days % 7 === 0) return `dans ${days / 7} semaines`;
+  return `dans ${days} jours`;
+}
+
 export async function sendEventReminder(event: EventInfo, to: string, firstName: string, daysUntil: number) {
   const resend = getResend();
   if (!resend) return;
 
-  const when = daysUntil >= 14 ? 'dans 2 semaines' : 'dans 1 semaine';
+  const when = reminderWhen(daysUntil);
   const locationLine = event.location ? `<p style="margin:4px 0"><strong>Lieu:</strong> ${event.location}</p>` : '';
   const timeLine = event.time ? `<p style="margin:4px 0"><strong>Heure:</strong> ${event.time}</p>` : '';
   const contactLines = [

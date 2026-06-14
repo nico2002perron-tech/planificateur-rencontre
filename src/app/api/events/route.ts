@@ -169,6 +169,8 @@ export async function POST(request: NextRequest) {
       cta_label: body.cta_label || '',
       show_countdown: body.show_countdown ?? true,
       featured: body.featured ?? false,
+      // Rappels courriel configurables (array de 'YYYY-MM-DD'); vide = défaut J-14/J-7 côté cron
+      reminder_dates: Array.isArray(body.reminder_dates) ? body.reminder_dates : [],
     })
     .select()
     .single();

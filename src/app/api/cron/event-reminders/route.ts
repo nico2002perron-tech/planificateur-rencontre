@@ -7,8 +7,15 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Dates de rappel effectives : celles configurées par l'organisateur, sinon défaut J-14 et J-7.
+function effectiveReminderDates(eventDate: string, configured: string[]): string[] {
+  if (configured.length > 0) return configured;
+  const base = new Date(eventDate + 'T12:00:00Z').getTime();
+  return [ymd(new Date(base - 14 * 86400000)), ymd(new Date(base - 7 * 86400000))];
+}
+
 // GET /api/cron/event-reminders — quotidien (Vercel Cron).
-// Envoie un rappel aux inscrits des événements à J-14 et J-7.
+// Envoie un rappel aux inscrits le jour de chaque date de rappel configurée (ou J-14/J-7 par défaut).
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -18,15 +25,14 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createClient();
     const now = new Date();
-    const d14 = ymd(new Date(now.getTime() + 14 * 86400000));
-    const d7 = ymd(new Date(now.getTime() + 7 * 86400000));
+    const today = ymd(now);
 
-    // Événements publiés à exactement J-14 ou J-7
+    // Événements publiés encore à venir (date >= aujourd'hui)
     const { data: events, error } = await supabase
       .from('events')
-      .select('id, title, date, time, location, contact_email, contact_phone, reminder_14d_sent_at, reminder_7d_sent_at')
+      .select('id, title, date, time, location, contact_email, contact_phone, reminder_dates, reminders_sent')
       .eq('status', 'published')
-      .in('date', [d14, d7]);
+      .gte('date', today);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -34,10 +40,12 @@ export async function GET(request: NextRequest) {
     const processed: string[] = [];
 
     for (const ev of events || []) {
-      const isD14 = ev.date === d14 && !ev.reminder_14d_sent_at;
-      const isD7 = ev.date === d7 && !ev.reminder_7d_sent_at;
-      if (!isD14 && !isD7) continue;
-      const daysUntil = isD14 ? 14 : 7;
+      const configured = Array.isArray(ev.reminder_dates) ? (ev.reminder_dates as string[]) : [];
+      const sent = Array.isArray(ev.reminders_sent) ? (ev.reminders_sent as string[]) : [];
+      const dates = effectiveReminderDates(ev.date, configured);
+
+      // Un rappel part-il aujourd'hui ? (date de rappel atteinte et pas déjà envoyée)
+      if (!dates.includes(today) || sent.includes(today)) continue;
 
       // Destinataires : inscrits individuels + membres d'équipe (dédupliqués par courriel)
       const recipients = new Map<string, string>(); // email -> prénom
@@ -63,7 +71,7 @@ export async function GET(request: NextRequest) {
           .in('team_id', teamIds)
           .eq('status', 'confirmed');
         for (const m of members || []) {
-          // Les coéquipiers inscrits par le capitaine sans courriel ont un placeholder « .sans-courriel »
+          // Les coéquipiers inscrits sans courriel ont un placeholder « .sans-courriel »
           if (m.email && !m.email.endsWith('.sans-courriel')) recipients.set(m.email.toLowerCase(), m.first_name || '');
         }
       }
@@ -73,18 +81,20 @@ export async function GET(request: NextRequest) {
         contact_email: ev.contact_email, contact_phone: ev.contact_phone,
       };
 
+      // Jours restants avant l'événement (pour le texte « dans X jours / 1 semaine / ... »)
+      const daysUntil = Math.round(
+        (new Date(ev.date + 'T12:00:00Z').getTime() - new Date(today + 'T12:00:00Z').getTime()) / 86400000
+      );
+
       for (const [email, firstName] of recipients) {
         await sendEventReminder(eventInfo, email, firstName, daysUntil);
         emailsSent++;
       }
 
-      // Marquer comme envoyé (évite les doublons)
-      const update = isD14
-        ? { reminder_14d_sent_at: now.toISOString() }
-        : { reminder_7d_sent_at: now.toISOString() };
-      await supabase.from('events').update(update).eq('id', ev.id);
+      // Marquer cette date comme envoyée (anti-doublon)
+      await supabase.from('events').update({ reminders_sent: [...sent, today] }).eq('id', ev.id);
 
-      processed.push(`${ev.title} (J-${daysUntil}, ${recipients.size} destinataire(s))`);
+      processed.push(`${ev.title} (${today}, ${recipients.size} destinataire(s))`);
     }
 
     return NextResponse.json({

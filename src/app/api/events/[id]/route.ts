@@ -29,6 +29,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     'registration_mode', 'team_size', 'team_label', 'allow_team_logo', 'pricing', 'form_options',
     'contact_email', 'contact_phone', 'status',
     'tagline', 'highlights', 'program', 'accent_color', 'cta_label', 'show_countdown', 'featured',
+    'reminder_dates',
   ];
   for (const f of fields) {
     if (body[f] !== undefined) updates[f] = body[f];
