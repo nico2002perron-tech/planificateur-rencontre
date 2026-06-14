@@ -8,17 +8,9 @@ function getResend(): Resend | null {
 }
 
 const FROM = process.env.EMAIL_FROM || 'Groupe Financier Ste-Foy <onboarding@resend.dev>';
-const APP_URL = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
 
-// Bloc « laissez-passer » : QR scanné à l'accueil le jour de l'événement
-function qrBlock(kind: 'registration' | 'member', id: string): string {
-  return `
-    <div style="text-align:center;margin:20px 0;padding:18px;background:white;border:1px solid #e2e8f0;border-radius:12px">
-      <p style="font-weight:bold;color:#03045e;margin:0 0 4px">Votre laissez-passer</p>
-      <p style="font-size:13px;color:#64748b;margin:0 0 12px">Presentez ce code a l'accueil — l'enregistrement prend 2 secondes.</p>
-      <img src="${APP_URL}/api/qr/checkin/${kind}/${id}" width="160" height="160" alt="Code QR d'acces" style="display:block;margin:0 auto"/>
-    </div>`;
-}
+// Logo Groupe Financier Ste-Foy (PNG hébergé sur le site public — s'affiche dans tous les clients courriel)
+const LOGO_URL = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app/images/logo-popup.png';
 
 interface EventInfo {
   title: string;
@@ -44,81 +36,112 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('fr-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// Email to participant — registration confirmation
-export async function sendRegistrationConfirmation(event: EventInfo, registration: RegistrationInfo, registrationId?: string) {
+// ── Habillage de marque commun à tous les courriels (en-tête logo + filet d'accent + pied) ──
+function emailShell(inner: string, contact = ''): string {
+  const contactLine = contact
+    ? `<p style="margin:0 0 6px;color:#64748b;font-size:12px">Une question&nbsp;? ${contact}</p>`
+    : '';
+  return `
+  <div style="background:#eef2f6;padding:28px 0;font-family:Arial,Helvetica,sans-serif">
+    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden">
+      <div style="padding:24px 24px 18px;text-align:center;background:#ffffff">
+        <img src="${LOGO_URL}" alt="Groupe Financier Ste-Foy" width="210" style="max-width:210px;height:auto;display:inline-block;border:0" />
+      </div>
+      <div style="height:4px;background:linear-gradient(90deg,#03045e 0%,#0077b6 50%,#00b4d8 100%)"></div>
+      <div style="padding:30px 30px 8px">
+        ${inner}
+      </div>
+      <div style="padding:20px 30px 26px;border-top:1px solid #eef2f7;text-align:center;margin-top:18px">
+        ${contactLine}
+        <p style="margin:6px 0 2px;color:#03045e;font-weight:bold;font-size:13px">Groupe Financier Ste-Foy</p>
+        <p style="margin:0;color:#94a3b8;font-size:12px">iA Gestion privée de patrimoine</p>
+        <p style="margin:11px 0 0;color:#b6c2cf;font-size:11px">Vous recevez ce courriel suite à votre inscription à un de nos événements.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function detailRow(label: string, val?: string): string {
+  if (!val) return '';
+  return `<tr><td style="padding:5px 0;width:74px;color:#94a3b8;font-size:14px;vertical-align:top">${label}</td><td style="padding:5px 0;font-weight:bold;color:#334155;font-size:14px">${val}</td></tr>`;
+}
+
+// Carte d'événement réutilisable (Date / Heure / Lieu + lignes supplémentaires optionnelles)
+function eventCard(event: EventInfo, extraRows = ''): string {
+  return `
+    <div style="background:#f8fafc;border:1px solid #e7edf3;border-radius:12px;padding:20px;margin:0 0 20px">
+      <h2 style="margin:0 0 12px;color:#03045e;font-size:19px">${event.title}</h2>
+      <table style="width:100%;border-collapse:collapse">
+        ${detailRow('Date', formatDate(event.date))}
+        ${detailRow('Heure', event.time)}
+        ${detailRow('Lieu', event.location)}
+        ${extraRows}
+      </table>
+    </div>`;
+}
+
+function contactStr(event: EventInfo): string {
+  return [
+    event.contact_email ? `<a href="mailto:${event.contact_email}" style="color:#0077b6">${event.contact_email}</a>` : '',
+    event.contact_phone || '',
+  ].filter(Boolean).join(' &nbsp;|&nbsp; ');
+}
+
+const reminderBanner = `
+  <div style="background:#ecfeff;border:1px solid #cffafe;border-radius:10px;padding:13px 16px;margin:0 0 8px">
+    <p style="margin:0;color:#0e7490;font-size:13px;line-height:1.5">&#128197; <strong>Rien à noter de votre côté&nbsp;:</strong> nous vous enverrons un rappel automatique avant l'événement.</p>
+  </div>`;
+
+// ── Courriel au participant — confirmation d'inscription ──
+export async function sendRegistrationConfirmation(event: EventInfo, registration: RegistrationInfo, _registrationId?: string) {
   const resend = getResend();
   if (!resend) return;
 
-  const locationLine = event.location ? `<p style="margin:4px 0"><strong>Lieu:</strong> ${event.location}</p>` : '';
-  const timeLine = event.time ? `<p style="margin:4px 0"><strong>Heure:</strong> ${event.time}</p>` : '';
-  const teamLine = registration.team_name ? `<p style="margin:4px 0"><strong>Equipe:</strong> ${registration.team_name}</p>` : '';
-  const pricingLine = registration.pricing_option ? `<p style="margin:4px 0"><strong>Option:</strong> ${registration.pricing_option}</p>` : '';
-  const contactLines = [
-    event.contact_email ? `<a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? event.contact_phone : '',
-  ].filter(Boolean).join(' | ');
+  const extraRows = detailRow('Équipe', registration.team_name) + detailRow('Option', registration.pricing_option);
+  const inner = `
+    <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">Votre place est confirmée&nbsp;!</h1>
+    <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">On a hâte de vous y voir.</p>
+    <p style="margin:0 0 14px;color:#1e293b;font-size:15px;line-height:1.5">Bonjour <strong>${registration.first_name}</strong>,</p>
+    <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Merci de votre inscription&nbsp;! Voici les détails de l'événement&nbsp;:</p>
+    ${eventCard(event, extraRows)}
+    ${reminderBanner}`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to: registration.email,
-      subject: `Confirmation - ${event.title}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#03045e;color:white;padding:24px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:20px">Inscription confirmee!</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p>Bonjour ${registration.first_name},</p>
-            <p>Votre inscription a l'evenement suivant est confirmee:</p>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:16px 0">
-              <h2 style="margin:0 0 8px;color:#03045e;font-size:18px">${event.title}</h2>
-              <p style="margin:4px 0"><strong>Date:</strong> ${formatDate(event.date)}</p>
-              ${timeLine}
-              ${locationLine}
-              ${teamLine}
-              ${pricingLine}
-            </div>
-            ${registrationId ? qrBlock('registration', registrationId) : ''}
-            ${contactLines ? `<p style="font-size:13px;color:#64748b">Questions? ${contactLines}</p>` : ''}
-            <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
-          </div>
-        </div>
-      `,
+      subject: `Confirmation – ${event.title}`,
+      html: emailShell(inner, contactStr(event)),
     });
   } catch (err) {
     console.error('Email confirmation failed:', err);
   }
 }
 
-// Email to event creator — new registration notification
+// ── Courriel au créateur de l'événement — notification de nouvelle inscription ──
 export async function sendRegistrationNotification(creatorEmail: string, event: EventInfo, registration: RegistrationInfo) {
   const resend = getResend();
   if (!resend) return;
 
-  const teamLine = registration.team_name ? ` (Equipe: ${registration.team_name})` : '';
+  const teamLine = registration.team_name ? ` (Équipe&nbsp;: ${registration.team_name})` : '';
+  const inner = `
+    <h1 style="margin:0 0 16px;color:#03045e;font-size:20px">Nouvelle inscription</h1>
+    <p style="margin:0 0 14px;color:#1e293b;font-size:15px"><strong>${registration.first_name} ${registration.last_name}</strong> s'est inscrit(e) à <strong>${event.title}</strong>${teamLine}.</p>
+    <div style="background:#f8fafc;border:1px solid #e7edf3;border-radius:12px;padding:16px;font-size:14px;color:#334155">
+      <table style="width:100%;border-collapse:collapse">
+        ${detailRow('Courriel', registration.email)}
+        ${detailRow('Téléphone', registration.phone)}
+        ${detailRow('Type', registration.registration_type === 'team' ? 'Équipe' : 'Individuel')}
+        ${detailRow('Option', registration.pricing_option)}
+      </table>
+    </div>`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to: creatorEmail,
-      subject: `Nouvelle inscription - ${event.title}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#00b4d8;color:white;padding:20px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:18px">Nouvelle inscription</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p><strong>${registration.first_name} ${registration.last_name}</strong> s'est inscrit(e) a <strong>${event.title}</strong>${teamLine}.</p>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin:12px 0;font-size:14px">
-              <p style="margin:4px 0"><strong>Courriel:</strong> ${registration.email}</p>
-              <p style="margin:4px 0"><strong>Telephone:</strong> ${registration.phone}</p>
-              <p style="margin:4px 0"><strong>Type:</strong> ${registration.registration_type === 'team' ? 'Equipe' : 'Individuel'}</p>
-              ${registration.pricing_option ? `<p style="margin:4px 0"><strong>Option:</strong> ${registration.pricing_option}</p>` : ''}
-            </div>
-          </div>
-        </div>
-      `,
+      subject: `Nouvelle inscription – ${event.title}`,
+      html: emailShell(inner),
     });
   } catch (err) {
     console.error('Email notification failed:', err);
@@ -134,136 +157,97 @@ interface TeamCreatedInfo {
   member_count: number;
 }
 
-// Email to captain — team created (code + share link + manage link)
-export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: string, captainFirstName: string, team: TeamCreatedInfo, captainMemberId?: string) {
+// ── Courriel au capitaine — équipe créée (code + lien d'invitation + lien de gestion) ──
+export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: string, captainFirstName: string, team: TeamCreatedInfo, _captainMemberId?: string) {
   const resend = getResend();
   if (!resend) return;
 
-  const locationLine = event.location ? `<p style="margin:4px 0"><strong>Lieu:</strong> ${event.location}</p>` : '';
-  const timeLine = event.time ? `<p style="margin:4px 0"><strong>Heure:</strong> ${event.time}</p>` : '';
   const spotsLeft = team.max_members - team.member_count;
+  const inviteBlock = spotsLeft > 0 ? `
+    <p style="margin:18px 0 8px;color:#1e293b;font-size:15px;line-height:1.5"><strong>Il reste ${spotsLeft} place${spotsLeft > 1 ? 's' : ''} dans votre équipe.</strong> Vos coéquipiers se joignent en un clic&nbsp;:</p>
+    <div style="text-align:center;margin:16px 0">
+      <a href="${team.share_url}" style="display:inline-block;background:#0077b6;color:#ffffff;font-weight:bold;padding:13px 26px;border-radius:10px;text-decoration:none;font-size:15px">Lien d'invitation à partager</a>
+    </div>
+    <p style="text-align:center;font-size:13px;color:#64748b;margin:0 0 6px">ou partagez simplement le code&nbsp;:</p>
+    <div style="text-align:center;margin:6px 0 18px">
+      <span style="display:inline-block;background:#e0f2fe;border:2px dashed #0077b6;border-radius:10px;padding:10px 24px;font-size:24px;font-weight:bold;letter-spacing:3px;color:#03045e">${team.team_code}</span>
+    </div>` : `<p style="margin:18px 0;color:#059669;font-weight:bold;font-size:15px">Votre équipe est complète (${team.member_count}/${team.max_members}). Vous êtes prêts&nbsp;!</p>`;
+
+  const inner = `
+    <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">Votre équipe est créée&nbsp;!</h1>
+    <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">Plus qu'à inviter vos coéquipiers.</p>
+    <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${captainFirstName}</strong>,</p>
+    <p style="margin:0 0 18px;color:#475569;font-size:15px">Votre équipe <strong>${team.team_name}</strong> est inscrite à&nbsp;:</p>
+    ${eventCard(event)}
+    ${inviteBlock}
+    <div style="border-top:1px solid #eef2f7;margin-top:8px;padding-top:16px">
+      <p style="margin:0 0 6px;color:#64748b;font-size:13px">Pour voir ou gérer votre équipe en tout temps&nbsp;:</p>
+      <p style="margin:0"><a href="${team.manage_url}" style="color:#0077b6;font-size:13px;word-break:break-all">${team.manage_url}</a></p>
+      <p style="margin:8px 0 0;color:#94a3b8;font-size:12px">Gardez ce courriel&nbsp;: ce lien est votre clé de capitaine.</p>
+    </div>`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to: captainEmail,
-      subject: `Votre equipe "${team.team_name}" est creee! - ${event.title}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#03045e;color:white;padding:24px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:20px">&#127942; Votre equipe est creee!</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p>Bonjour ${captainFirstName},</p>
-            <p>Votre equipe <strong>${team.team_name}</strong> est inscrite a l'evenement suivant :</p>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:16px 0">
-              <h2 style="margin:0 0 8px;color:#03045e;font-size:18px">${event.title}</h2>
-              <p style="margin:4px 0"><strong>Date:</strong> ${formatDate(event.date)}</p>
-              ${timeLine}
-              ${locationLine}
-            </div>
-            ${spotsLeft > 0 ? `
-            <p style="margin:16px 0 8px"><strong>Il reste ${spotsLeft} place${spotsLeft > 1 ? 's' : ''} dans votre equipe.</strong> Vos coequipiers peuvent se joindre en un clic :</p>
-            <div style="text-align:center;margin:16px 0">
-              <a href="${team.share_url}" style="display:inline-block;background:#f59e0b;color:white;font-weight:bold;padding:12px 24px;border-radius:10px;text-decoration:none">Lien d'invitation a partager</a>
-            </div>
-            <p style="text-align:center;font-size:13px;color:#64748b">ou partagez simplement le code :</p>
-            <div style="text-align:center;margin:8px 0 16px">
-              <span style="display:inline-block;background:#fef3c7;border:2px dashed #f59e0b;border-radius:10px;padding:10px 24px;font-size:24px;font-weight:bold;letter-spacing:3px;color:#92400e">${team.team_code}</span>
-            </div>` : `<p style="margin:16px 0"><strong>Votre equipe est complete (${team.member_count}/${team.max_members}).</strong> Vous etes prets!</p>`}
-            ${captainMemberId ? qrBlock('member', captainMemberId) : ''}
-            <div style="border-top:1px solid #e2e8f0;margin-top:20px;padding-top:16px">
-              <p style="font-size:13px;color:#64748b;margin:0 0 8px">Pour voir ou gerer les membres de votre equipe en tout temps :</p>
-              <p style="margin:0"><a href="${team.manage_url}" style="color:#0077b6;font-size:13px">${team.manage_url}</a></p>
-              <p style="font-size:12px;color:#94a3b8;margin-top:8px">Gardez ce courriel precieusement — ce lien est votre cle de capitaine.</p>
-            </div>
-            <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
-          </div>
-        </div>
-      `,
+      subject: `Votre équipe « ${team.team_name} » est créée – ${event.title}`,
+      html: emailShell(inner, contactStr(event)),
     });
   } catch (err) {
     console.error('Email team created failed:', err);
   }
 }
 
-// Email to a member who joined a team — confirmation
-export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string, memberFirstName: string, teamName: string, memberId?: string) {
+// ── Courriel à un membre qui rejoint une équipe — confirmation ──
+export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string, memberFirstName: string, teamName: string, _memberId?: string) {
   const resend = getResend();
   if (!resend) return;
 
-  const locationLine = event.location ? `<p style="margin:4px 0"><strong>Lieu:</strong> ${event.location}</p>` : '';
-  const timeLine = event.time ? `<p style="margin:4px 0"><strong>Heure:</strong> ${event.time}</p>` : '';
-  const contactLines = [
-    event.contact_email ? `<a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? event.contact_phone : '',
-  ].filter(Boolean).join(' | ');
+  const inner = `
+    <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">Vous faites partie de l'équipe&nbsp;!</h1>
+    <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">On a hâte de vous y voir.</p>
+    <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${memberFirstName}</strong>,</p>
+    <p style="margin:0 0 18px;color:#475569;font-size:15px">Vous avez rejoint l'équipe <strong>${teamName}</strong> pour&nbsp;:</p>
+    ${eventCard(event)}
+    ${reminderBanner}`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to: memberEmail,
-      subject: `Bienvenue dans l'equipe ${teamName}! - ${event.title}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#059669;color:white;padding:24px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:20px">&#9989; Vous faites partie de l'equipe!</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p>Bonjour ${memberFirstName},</p>
-            <p>Vous avez rejoint l'equipe <strong>${teamName}</strong> pour l'evenement suivant :</p>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:16px 0">
-              <h2 style="margin:0 0 8px;color:#03045e;font-size:18px">${event.title}</h2>
-              <p style="margin:4px 0"><strong>Date:</strong> ${formatDate(event.date)}</p>
-              ${timeLine}
-              ${locationLine}
-            </div>
-            ${memberId ? qrBlock('member', memberId) : ''}
-            <p>On a hate de vous voir!</p>
-            ${contactLines ? `<p style="font-size:13px;color:#64748b">Questions? ${contactLines}</p>` : ''}
-            <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
-          </div>
-        </div>
-      `,
+      subject: `Bienvenue dans l'équipe ${teamName} – ${event.title}`,
+      html: emailShell(inner, contactStr(event)),
     });
   } catch (err) {
     console.error('Email team joined failed:', err);
   }
 }
 
-// Email to captain — someone joined their team
+// ── Courriel au capitaine — un coéquipier a rejoint son équipe ──
 export async function sendTeamMemberNotification(event: EventInfo, captainEmail: string, teamName: string, memberName: string, memberCount: number, maxMembers: number) {
   const resend = getResend();
   if (!resend) return;
 
   const isFull = memberCount >= maxMembers;
+  const inner = `
+    <h1 style="margin:0 0 16px;color:#03045e;font-size:20px">Nouveau coéquipier&nbsp;!</h1>
+    <p style="margin:0 0 12px;color:#1e293b;font-size:15px"><strong>${memberName}</strong> a rejoint votre équipe <strong>${teamName}</strong> pour <strong>${event.title}</strong>.</p>
+    <p style="margin:0 0 12px;color:#475569;font-size:15px">Votre équipe compte maintenant <strong>${memberCount}/${maxMembers}</strong> membre${memberCount > 1 ? 's' : ''}.</p>
+    ${isFull ? '<p style="margin:0;color:#059669;font-weight:bold;font-size:15px">&#9989; Votre équipe est complète. Vous êtes prêts&nbsp;!</p>' : ''}`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to: captainEmail,
-      subject: `${memberName} a rejoint votre equipe ${teamName}! (${memberCount}/${maxMembers})`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#00b4d8;color:white;padding:20px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:18px">&#127881; Nouveau coequipier!</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p><strong>${memberName}</strong> a rejoint votre equipe <strong>${teamName}</strong> pour <strong>${event.title}</strong>.</p>
-            <p style="font-size:15px">Votre equipe compte maintenant <strong>${memberCount}/${maxMembers}</strong> membre${memberCount > 1 ? 's' : ''}.</p>
-            ${isFull ? '<p style="color:#059669;font-weight:bold">&#9989; Votre equipe est complete. Vous etes prets!</p>' : ''}
-            <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
-          </div>
-        </div>
-      `,
+      subject: `${memberName} a rejoint votre équipe ${teamName} (${memberCount}/${maxMembers})`,
+      html: emailShell(inner),
     });
   } catch (err) {
     console.error('Email member notification failed:', err);
   }
 }
 
-// Email to participant — event reminder (J-14 / J-7)
-// Texte « quand » adapté à n'importe quel délai (rappels à dates configurables)
+// ── Texte « quand » adapté à n'importe quel délai (rappels à dates configurables) ──
 function reminderWhen(days: number): string {
   if (days <= 0) return "aujourd'hui";
   if (days === 1) return 'demain';
@@ -273,43 +257,26 @@ function reminderWhen(days: number): string {
   return `dans ${days} jours`;
 }
 
+// ── Courriel au participant — rappel d'événement (dates configurables, repli J-14 / J-7) ──
 export async function sendEventReminder(event: EventInfo, to: string, firstName: string, daysUntil: number) {
   const resend = getResend();
   if (!resend) return;
 
   const when = reminderWhen(daysUntil);
-  const locationLine = event.location ? `<p style="margin:4px 0"><strong>Lieu:</strong> ${event.location}</p>` : '';
-  const timeLine = event.time ? `<p style="margin:4px 0"><strong>Heure:</strong> ${event.time}</p>` : '';
-  const contactLines = [
-    event.contact_email ? `<a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? event.contact_phone : '',
-  ].filter(Boolean).join(' | ');
+  const inner = `
+    <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">C'est bientôt&nbsp;!</h1>
+    <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">Votre événement a lieu ${when}.</p>
+    <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${firstName || ''}</strong>,</p>
+    <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Petit rappel amical&nbsp;: l'événement auquel vous êtes inscrit(e) a lieu <strong>${when}</strong>.</p>
+    ${eventCard(event)}
+    <p style="margin:0 0 8px;color:#475569;font-size:15px">Au plaisir de vous y voir&nbsp;!</p>`;
 
   try {
     await resend.emails.send({
       from: FROM,
       to,
-      subject: `Rappel - ${event.title} (${when})`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-          <div style="background:#0077b6;color:white;padding:24px;border-radius:12px 12px 0 0;text-align:center">
-            <h1 style="margin:0;font-size:20px">C'est bientot!</h1>
-          </div>
-          <div style="background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px">
-            <p>Bonjour ${firstName || ''},</p>
-            <p>Petit rappel : l'evenement auquel vous etes inscrit(e) a lieu <strong>${when}</strong>.</p>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:16px 0">
-              <h2 style="margin:0 0 8px;color:#03045e;font-size:18px">${event.title}</h2>
-              <p style="margin:4px 0"><strong>Date:</strong> ${formatDate(event.date)}</p>
-              ${timeLine}
-              ${locationLine}
-            </div>
-            <p>Au plaisir de vous y voir!</p>
-            ${contactLines ? `<p style="font-size:13px;color:#64748b">Questions? ${contactLines}</p>` : ''}
-            <p style="font-size:13px;color:#94a3b8;margin-top:24px">— Groupe Financier Ste-Foy</p>
-          </div>
-        </div>
-      `,
+      subject: `Rappel – ${event.title} (${when})`,
+      html: emailShell(inner, contactStr(event)),
     });
   } catch (err) {
     console.error('Email reminder failed:', err);
