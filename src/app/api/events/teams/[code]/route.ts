@@ -71,7 +71,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Check event is still open
   const { data: event } = await supabase
     .from('events')
-    .select('title, date, time, location, contact_email, contact_phone, is_registration_open, status')
+    .select('id, title, date, time, location, contact_email, contact_phone, is_registration_open, status')
     .eq('id', team.event_id)
     .single();
 
@@ -129,6 +129,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // Emails (non-blocking)
   const eventInfo = {
+    id: event.id,
     title: event.title,
     date: event.date,
     time: event.time,

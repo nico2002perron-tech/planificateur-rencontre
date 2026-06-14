@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { googleCalUrl, outlookCalUrl } from './calendar';
 
 let _resend: Resend | null = null;
 function getResend(): Resend | null {
@@ -8,15 +9,18 @@ function getResend(): Resend | null {
 }
 
 const FROM = process.env.EMAIL_FROM || 'Groupe Financier Ste-Foy <onboarding@resend.dev>';
+const APP_URL = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
 
 // Logo Groupe Financier Ste-Foy (PNG hébergé sur le site public — s'affiche dans tous les clients courriel)
 const LOGO_URL = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app/images/logo-popup.png';
 
 interface EventInfo {
+  id?: string;
   title: string;
   date: string;
   time?: string;
   location?: string;
+  description?: string;
   contact_email?: string;
   contact_phone?: string;
 }
@@ -87,6 +91,19 @@ function contactStr(event: EventInfo): string {
   ].filter(Boolean).join(' &nbsp;|&nbsp; ');
 }
 
+// Boutons « Ajouter à mon agenda » (Google, Outlook, Apple/.ics) — l'Apple/.ics requiert l'id de l'événement
+function calendarButtons(event: EventInfo): string {
+  if (!event.date) return '';
+  const btn = (href: string, label: string) =>
+    `<a href="${href}" style="display:inline-block;margin:3px 4px;padding:9px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;color:#03045e;text-decoration:none;font-size:13px;font-weight:bold">${label}</a>`;
+  const icsBtn = event.id ? btn(`${APP_URL}/api/events/${event.id}/ics`, 'Apple / iCal') : '';
+  return `
+    <div style="text-align:center;margin:0 0 20px">
+      <p style="margin:0 0 8px;color:#64748b;font-size:13px">&#128197; Ajouter à mon agenda&nbsp;:</p>
+      ${btn(googleCalUrl(event), 'Google')}${btn(outlookCalUrl(event), 'Outlook')}${icsBtn}
+    </div>`;
+}
+
 const reminderBanner = `
   <div style="background:#ecfeff;border:1px solid #cffafe;border-radius:10px;padding:13px 16px;margin:0 0 8px">
     <p style="margin:0;color:#0e7490;font-size:13px;line-height:1.5">&#128197; <strong>Rien à noter de votre côté&nbsp;:</strong> nous vous enverrons un rappel automatique avant l'événement.</p>
@@ -104,6 +121,7 @@ export async function sendRegistrationConfirmation(event: EventInfo, registratio
     <p style="margin:0 0 14px;color:#1e293b;font-size:15px;line-height:1.5">Bonjour <strong>${registration.first_name}</strong>,</p>
     <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Merci de votre inscription&nbsp;! Voici les détails de l'événement&nbsp;:</p>
     ${eventCard(event, extraRows)}
+    ${calendarButtons(event)}
     ${reminderBanner}`;
 
   try {
@@ -179,6 +197,7 @@ export async function sendTeamCreatedEmail(event: EventInfo, captainEmail: strin
     <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${captainFirstName}</strong>,</p>
     <p style="margin:0 0 18px;color:#475569;font-size:15px">Votre équipe <strong>${team.team_name}</strong> est inscrite à&nbsp;:</p>
     ${eventCard(event)}
+    ${calendarButtons(event)}
     ${inviteBlock}
     <div style="border-top:1px solid #eef2f7;margin-top:8px;padding-top:16px">
       <p style="margin:0 0 6px;color:#64748b;font-size:13px">Pour voir ou gérer votre équipe en tout temps&nbsp;:</p>
@@ -209,6 +228,7 @@ export async function sendTeamJoinedEmail(event: EventInfo, memberEmail: string,
     <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${memberFirstName}</strong>,</p>
     <p style="margin:0 0 18px;color:#475569;font-size:15px">Vous avez rejoint l'équipe <strong>${teamName}</strong> pour&nbsp;:</p>
     ${eventCard(event)}
+    ${calendarButtons(event)}
     ${reminderBanner}`;
 
   try {
@@ -269,6 +289,7 @@ export async function sendEventReminder(event: EventInfo, to: string, firstName:
     <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${firstName || ''}</strong>,</p>
     <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Petit rappel amical&nbsp;: l'événement auquel vous êtes inscrit(e) a lieu <strong>${when}</strong>.</p>
     ${eventCard(event)}
+    ${calendarButtons(event)}
     <p style="margin:0 0 8px;color:#475569;font-size:15px">Au plaisir de vous y voir&nbsp;!</p>`;
 
   try {

@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       }
 
       const eventInfo = {
-        title: ev.title, date: ev.date, time: ev.time, location: ev.location,
+        id: ev.id, title: ev.title, date: ev.date, time: ev.time, location: ev.location,
         contact_email: ev.contact_email, contact_phone: ev.contact_phone,
       };
 

@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
   const manageUrl = `${PUBLIC_SITE_URL}/evenements.html?gestion=${encodeURIComponent(manageToken)}`;
 
   // Emails (non-blocking)
-  const eventInfo = { title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
+  const eventInfo = { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
 
   // 1. Captain receives code + share link + manage link + QR pass
   sendTeamCreatedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), {

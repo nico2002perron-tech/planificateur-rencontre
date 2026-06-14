@@ -112,7 +112,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (error) return corsJson({ error: error.message }, 500);
 
   // Send emails (non-blocking — don't fail registration if email fails)
-  const eventInfo = { title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
+  const eventInfo = { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
   const regInfo = { first_name: body.first_name.trim(), last_name: body.last_name.trim(), email: body.email.toLowerCase().trim(), phone: body.phone.trim(), registration_type: regType, team_name: body.team_name || '', pricing_option: body.pricing_option || '' };
 
   // 1. Confirmation to participant (avec laissez-passer QR)
