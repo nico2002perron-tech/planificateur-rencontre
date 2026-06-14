@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTeamJoinedEmail, sendTeamMemberNotification } from '@/lib/email';
 
@@ -139,19 +139,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   };
   const memberCount = (count || 0) + 1;
 
-  // 1. Confirmation to the new member (avec laissez-passer QR)
-  sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name, newMember?.id);
+  // 1. Confirmation au nouveau membre — via after() (envoi garanti après la réponse)
+  after(() => sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name, newMember?.id));
 
-  // 2. Notify the captain (unless the captain just joined their own team)
+  // 2. Notifier le capitaine (sauf si le capitaine vient de rejoindre sa propre équipe)
   if (team.captain_email && team.captain_email !== body.email.toLowerCase().trim()) {
-    sendTeamMemberNotification(
+    after(() => sendTeamMemberNotification(
       eventInfo,
       team.captain_email,
       team.team_name,
       `${body.first_name.trim()} ${body.last_name.trim()}`,
       memberCount,
       team.max_members,
-    );
+    ));
   }
 
   return corsJson({

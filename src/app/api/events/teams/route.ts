@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTeamCreatedEmail, sendRegistrationNotification } from '@/lib/email';
 
@@ -200,21 +200,22 @@ export async function POST(request: NextRequest) {
   // Emails (non-blocking)
   const eventInfo = { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
 
-  // 1. Captain receives code + share link + manage link + QR pass
-  sendTeamCreatedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), {
+  // 1. Le capitaine reçoit code + lien d'invitation + lien de gestion — via after() (envoi garanti après la réponse)
+  after(() => sendTeamCreatedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), {
     team_name: team.team_name,
     team_code: teamCode,
     share_url: shareUrl,
     manage_url: manageUrl,
     max_members: maxMembers,
     member_count: memberCount,
-  }, captainMember?.id);
+  }, captainMember?.id));
 
-  // 2. Event creator is notified
+  // 2. Le créateur de l'événement est notifié
   if (event.created_by) {
-    supabase.from('users').select('email').eq('id', event.created_by).single().then(({ data: creator }) => {
+    after(async () => {
+      const { data: creator } = await supabase.from('users').select('email').eq('id', event.created_by).single();
       if (creator?.email) {
-        sendRegistrationNotification(creator.email, eventInfo, {
+        await sendRegistrationNotification(creator.email, eventInfo, {
           first_name: body.first_name.trim(),
           last_name: body.last_name.trim(),
           email: body.email.toLowerCase().trim(),

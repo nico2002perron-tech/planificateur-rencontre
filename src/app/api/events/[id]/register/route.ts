@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendRegistrationConfirmation, sendRegistrationNotification } from '@/lib/email';
 
@@ -115,13 +115,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const eventInfo = { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
   const regInfo = { first_name: body.first_name.trim(), last_name: body.last_name.trim(), email: body.email.toLowerCase().trim(), phone: body.phone.trim(), registration_type: regType, team_name: body.team_name || '', pricing_option: body.pricing_option || '' };
 
-  // 1. Confirmation to participant (avec laissez-passer QR)
-  sendRegistrationConfirmation(eventInfo, regInfo, data?.id);
+  // 1. Confirmation au participant — via after() : garantit l'envoi après la réponse (sans le perdre si le serveur gèle)
+  after(() => sendRegistrationConfirmation(eventInfo, regInfo, data?.id));
 
-  // 2. Notification to event creator
+  // 2. Notification au créateur de l'événement
   if (event.created_by) {
-    supabase.from('users').select('email').eq('id', event.created_by).single().then(({ data: creator }) => {
-      if (creator?.email) sendRegistrationNotification(creator.email, eventInfo, regInfo);
+    after(async () => {
+      const { data: creator } = await supabase.from('users').select('email').eq('id', event.created_by).single();
+      if (creator?.email) await sendRegistrationNotification(creator.email, eventInfo, regInfo);
     });
   }
 
