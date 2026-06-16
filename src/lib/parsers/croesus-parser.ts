@@ -544,13 +544,12 @@ export function parseCroesusData(rawText: string): ParseResult {
     // No headers detected — sniff format from first data row
     const firstVal = firstFields[0]?.trim();
     const hasCurrencyCol0 = /^(CAD|USD|EUR|GBP|JPY|CHF|AUD|CA|US)$/i.test(firstVal);
-    // Detect if col 1 is a text asset type (e.g. "Liquidités", "Titres de croissance")
-    // vs a number (quantity in the old 12-column format)
+    // Detect if col 1 is a text asset type (e.g. "Action", "Obligation", "Liquidités")
+    // vs a number (quantity, used by the formats that put Qté in col 1).
     const col1IsText = hasCurrencyCol0
-      && firstFields.length >= 13
       && /[a-zA-ZÀ-ÿ]{2,}/.test(firstFields[1]?.trim() || '');
 
-    if (hasCurrencyCol0 && col1IsText) {
+    if (hasCurrencyCol0 && col1IsText && firstFields.length >= 13) {
       // 13-column format: Devise | Type de titre | Qté | Desc | Compte | Symbole | PRU | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
       columnMapping = {
         currency: 0,
@@ -567,6 +566,26 @@ export function parseCroesusData(rawText: string): ParseResult {
       if (firstFields.length >= 11) columnMapping.modifiedDuration = 10;
       if (firstFields.length >= 12) columnMapping.accruedInterest = 11;
       if (firstFields.length >= 13) columnMapping.annualIncome = 12;
+    } else if (hasCurrencyCol0 && col1IsText && firstFields.length >= 9) {
+      // 12-column format WITH Type de titre but WITHOUT the account column:
+      //   Devise | Type de titre | Qté | Desc | Symbole | PRU | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
+      // Identical to the 13-column layout minus "Type de compte". Croesus exports this
+      // when the account column is hidden: col 1 is text ("Action"/"Obligation"/"Encaisse")
+      // and the Symbole sits at index 4, directly after the description.
+      columnMapping = {
+        currency: 0,
+        assetType: 1,
+        quantity: 2,
+        name: 3,
+        symbol: 4,
+        averageCost: 5,
+        marketPrice: 6,
+        bookValue: 7,
+        marketValue: 8,
+      };
+      if (firstFields.length >= 10) columnMapping.modifiedDuration = 9;
+      if (firstFields.length >= 11) columnMapping.accruedInterest = 10;
+      if (firstFields.length >= 12) columnMapping.annualIncome = 11;
     } else if (hasCurrencyCol0 && firstFields.length >= 9) {
       // 12-column format with Devise column at position 0 (no asset type column)
       columnMapping = {
