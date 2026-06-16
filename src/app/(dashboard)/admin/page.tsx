@@ -1,6 +1,6 @@
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
-import { Settings, Users, Shield } from 'lucide-react';
+import { Settings, Users, Shield, Wrench } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminPage() {
@@ -30,6 +30,13 @@ export default function AdminPage() {
             <Settings className="h-10 w-10 text-brand-primary mx-auto mb-3" />
             <h3 className="font-semibold">Parametres</h3>
             <p className="text-sm text-text-muted mt-1">Configuration de l&apos;application</p>
+          </Card>
+        </Link>
+        <Link href="/admin/tools-feedback">
+          <Card hover className="text-center py-8">
+            <Wrench className="h-10 w-10 text-brand-primary mx-auto mb-3" />
+            <h3 className="font-semibold">Nos outils</h3>
+            <p className="text-sm text-text-muted mt-1">Bugs signales par les utilisateurs</p>
           </Card>
         </Link>
         <Card className="text-center py-8">
