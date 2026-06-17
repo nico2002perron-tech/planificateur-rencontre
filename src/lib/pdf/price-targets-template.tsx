@@ -1000,14 +1000,22 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
   logos: Record<string, string>;
   usdCadRate?: number | null;
 }) {
-  const totalMv = holdings.reduce((s, h) => s + h.marketValue, 0);
+  // Valeur marché « effective » : si la valeur collée est absente (saisie manuelle
+  // / prospect sans prix), on la reconstruit avec quantité × prix actuel (live).
+  // Évite MARCHÉ = 0 $ et un Div. % vide (Div. % = dividende ÷ valeur marché).
+  const effMv = (h: PriceTargetHolding): number => {
+    if (h.marketValue > 0) return h.marketValue;
+    const cp = h.currentPrice || h.marketPrice;
+    return cp > 0 ? h.quantity * cp : 0;
+  };
+  const totalMv = holdings.reduce((s, h) => s + effMv(h), 0);
   const totalGain = holdings.reduce((s, h) => {
     if (h.targetPrice && (h.currentPrice || h.marketPrice) > 0)
       return s + h.quantity * (h.targetPrice - (h.currentPrice || h.marketPrice));
     return s;
   }, 0);
   const totalDiv = holdings.reduce((s, h) => s + (h.forwardDividend || 0), 0);
-  const totalTarget = holdings.reduce((s, h) => h.targetPrice ? s + h.quantity * h.targetPrice : s + h.marketValue, 0);
+  const totalTarget = holdings.reduce((s, h) => h.targetPrice ? s + h.quantity * h.targetPrice : s + effMv(h), 0);
   const totalPct = totalMv > 0 ? (totalGain / totalMv) * 100 : 0;
   const divYieldPct = totalMv > 0 ? (totalDiv / totalMv) * 100 : 0;
   const projection12m = totalDiv + totalGain;
@@ -1120,9 +1128,10 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
           const row = getRowStyle(i, holdings.length);
           const gp = h.gainPct ?? 0;
           const cp = h.currentPrice || h.marketPrice;
+          const mv = effMv(h);
           const gd = h.targetPrice && cp > 0 ? h.quantity * (h.targetPrice - cp) : 0;
           const div = h.forwardDividend || 0;
-          const divPct = div > 0 && h.marketValue > 0 ? (div / h.marketValue) * 100 : 0;
+          const divPct = div > 0 && mv > 0 ? (div / mv) * 100 : 0;
           const dotColor = getAssetColor(h.assetType);
           const logoSrc = logos[h.symbol];
 
@@ -1154,7 +1163,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
               <Text style={[styles.td, { width: EQ_COL.qte, textAlign: 'right' }]}>{h.quantity.toLocaleString('fr-CA')}</Text>
               <Text style={[styles.td, { width: EQ_COL.pbr, textAlign: 'right', color: '#64748b' }]}>{h.averageCost > 0 ? fmtFull(h.averageCost) : '—'}</Text>
               <Text style={[styles.tdBold, { width: EQ_COL.prix, textAlign: 'right' }]}>{cp > 0 ? fmtFull(cp) : '—'}</Text>
-              <Text style={[styles.tdBold, { width: EQ_COL.marche, textAlign: 'right' }]}>{fmt(h.marketValue)}</Text>
+              <Text style={[styles.tdBold, { width: EQ_COL.marche, textAlign: 'right' }]}>{mv > 0 ? fmt(mv) : '—'}</Text>
               <Text style={[styles.tdBold, { width: EQ_COL.cible, textAlign: 'right', color: C.navy }]}>
                 {fmtFull(h.targetPrice!)}
               </Text>
