@@ -57,6 +57,74 @@ export async function yahooFetch(url: string): Promise<Response> {
   return res;
 }
 
+// ── Recherche de symboles (autocomplétion type TradingView) ───────────────────
+
+export interface YahooSearchResult {
+  symbol: string;
+  name: string;
+  currency: string;
+  stockExchange: string;
+  exchangeShortName: string;
+  quoteType: string;
+}
+
+/** Devise probable selon le suffixe d'échange du symbole Yahoo. */
+function currencyForSymbol(symbol: string): string {
+  const s = symbol.toUpperCase();
+  if (/\.(TO|V|NE|CN)$/.test(s)) return 'CAD';
+  if (/\.L$/.test(s)) return 'GBP';
+  if (/\.(PA|DE|AS|MI|MC|BR|F)$/.test(s)) return 'EUR';
+  return 'USD'; // défaut (titres US sans suffixe)
+}
+
+/**
+ * Recherche de symboles via l'autocomplétion Yahoo Finance (gratuit, sans clé).
+ * Renvoie jusqu'à 10 résultats (actions, FNB, fonds, indices) pour le menu
+ * déroulant de type « TradingView ». Cet endpoint ne requiert pas de crumb.
+ *
+ * Remplace EODHD/FMP dont la recherche n'est pas couverte par les plans actuels
+ * (EODHD → 401, FMP → tableau vide), ce qui empêchait toute liste d'apparaître.
+ */
+export async function searchYahooSymbols(query: string): Promise<YahooSearchResult[]> {
+  const q = query.trim();
+  if (q.length < 1) return [];
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
+    const res = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    const quotes = (json?.quotes ?? []) as Record<string, unknown>[];
+
+    // On ne garde que ce qui a du sens dans un portefeuille (pas de news/futures/devises).
+    const ALLOWED = new Set(['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX']);
+    const results: YahooSearchResult[] = [];
+
+    for (const quote of quotes) {
+      const symbol = String(quote.symbol ?? '').trim();
+      const quoteType = String(quote.quoteType ?? '');
+      if (!symbol || !ALLOWED.has(quoteType)) continue;
+
+      const exchange = String(quote.exchDisp ?? quote.exchange ?? '');
+      results.push({
+        symbol,
+        name: String(quote.longname ?? quote.shortname ?? symbol),
+        currency: currencyForSymbol(symbol),
+        stockExchange: exchange,
+        exchangeShortName: exchange,
+        quoteType,
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface YahooPriceTarget {

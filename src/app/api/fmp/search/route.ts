@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchEODHD } from '@/lib/api/eodhd';
+import { searchYahooSymbols } from '@/lib/yahoo/client';
 
+// Recherche de symboles pour l'autocomplétion (Rapport Prospect, PortfolioBuilder,
+// SymbolSearch). Source : Yahoo Finance (gratuit, sans clé) — cohérent avec les prix
+// live et cours cibles utilisés ailleurs dans l'app.
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q');
   if (!query || query.length < 1) {
@@ -8,24 +11,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const raw = await searchEODHD(query);
-
-    // Map to the shape expected by SymbolSearch component
-    const results = raw.map((r) => {
-      // Build symbol: "CODE.Exchange" for non-US, just "CODE" for US
-      const symbol = r.Exchange === 'US' ? r.Code : `${r.Code}.${r.Exchange}`;
-      return {
-        symbol,
-        name: r.Name,
-        currency: r.Currency || '',
-        stockExchange: r.Exchange || '',
-        exchangeShortName: r.Exchange || '',
-      };
-    });
-
+    const results = await searchYahooSymbols(query);
     return NextResponse.json(results);
   } catch (error) {
-    console.error('EODHD search error:', error);
+    console.error('Symbol search error:', error);
     return NextResponse.json({ error: 'Search failed' }, { status: 500 });
   }
 }
