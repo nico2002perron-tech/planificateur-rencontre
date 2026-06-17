@@ -581,6 +581,63 @@ export async function getYahooQuotes(symbols: string[]): Promise<YahooQuote[]> {
   return results;
 }
 
+// ── Dividendes (repli fiable quand summaryDetail est vide) ────────────────────
+
+export interface YahooDividend {
+  rate: number;     // Dividende des 12 derniers mois, en devise native
+  yieldPct: number; // Rendement correspondant (ex. 4.94 = 4,94 %)
+  currency: string;
+}
+
+/**
+ * Récupère le dividende annuel d'un titre via l'API *chart* de Yahoo (événements
+ * de dividendes). Bien plus fiable que `quoteSummary?modules=summaryDetail`, qui
+ * renvoie souvent des champs de dividende vides de façon intermittente — surtout
+ * pour les titres canadiens .TO (ENB.TO, T.TO, BNS.TO…).
+ *
+ * Somme les versements des 365 derniers jours, en devise native du titre (aucune
+ * conversion nécessaire : ENB.TO renvoie directement le dividende en CAD).
+ * Renvoie `null` si indisponible ou si le titre ne verse pas de dividende.
+ */
+export async function getYahooDividend(symbol: string): Promise<YahooDividend | null> {
+  try {
+    const ySym = toYahooSymbol(symbol);
+    const now = Math.floor(Date.now() / 1000);
+    // Fenêtre ~13 mois pour capturer 4 versements trimestriels complets ; on
+    // filtre ensuite aux 365 derniers jours pour ne pas compter un 5e versement.
+    const period1 = now - 400 * 86_400;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?period1=${period1}&period2=${now}&interval=1d&events=div`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return null;
+
+    const price = Number(result.meta?.regularMarketPrice ?? 0);
+    const currency = String(result.meta?.currency ?? '');
+    const divs = result.events?.dividends as Record<string, { amount?: number; date?: number }> | undefined;
+    if (!(price > 0) || !divs) return null;
+
+    const cutoff = now - 365 * 86_400;
+    let ttm = 0;
+    for (const d of Object.values(divs)) {
+      const amt = Number(d?.amount);
+      const date = Number(d?.date);
+      if (isFinite(amt) && amt > 0 && isFinite(date) && date >= cutoff) ttm += amt;
+    }
+    if (!(ttm > 0)) return null;
+
+    return {
+      rate: Math.round(ttm * 10000) / 10000,
+      yieldPct: Math.round((ttm / price) * 10000) / 100,
+      currency,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Historical Chart Data (10y monthly) ─────────────────────────────
 
 export interface YahooChartPoint {

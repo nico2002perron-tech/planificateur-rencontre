@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { yahooFetch, toYahooSymbol, getUsdCadRate } from '@/lib/yahoo/client';
+import { yahooFetch, toYahooSymbol, getYahooDividend } from '@/lib/yahoo/client';
 
 interface PriceData {
   price: number;
@@ -54,9 +54,11 @@ async function tryFetchPrice(sym: string): Promise<PriceData | null> {
  * GET /api/prices?symbols=AAPL,ENB.TO,XBB.TO
  * Returns current prices + forward dividend data from Yahoo Finance.
  *
- * Reliability: for .TO symbols without dividend data on Yahoo (e.g. interlisted
- * tickers like MSFT.TO), falls back to the US base ticker and converts the
- * forward dividend rate from USD to CAD using a cached USD/CAD rate.
+ * Reliability: Yahoo's `summaryDetail` module omits dividend data intermittently
+ * (frequent for .TO tickers like ENB.TO, T.TO, BNS.TO). When the forward rate is
+ * missing, we fall back to the chart dividend-events API (getYahooDividend), which
+ * returns the trailing-12-month dividend in the symbol's native currency — no
+ * USD→CAD conversion and no fragile US-base-ticker guessing (T.TO ≠ AT&T).
  */
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('symbols')?.trim();
@@ -66,38 +68,26 @@ export async function GET(request: NextRequest) {
   if (symbols.length === 0) return NextResponse.json([]);
 
   try {
-    // Fetch USD/CAD rate once (shared across all fallbacks). Only needed if a
-    // .TO symbol has missing dividend data. Fetched lazily.
-    let cachedRate: number | null = null;
-    const getRate = async () => {
-      if (cachedRate !== null) return cachedRate;
-      cachedRate = await getUsdCadRate();
-      return cachedRate;
-    };
-
     const results = await Promise.all(
       symbols.map(async (symbol) => {
         const empty = { symbol, price: 0, currency: '', name: '' };
         const data = await tryFetchPrice(symbol);
+        if (!data) return empty;
 
-        // Reliability fallback: .TO symbols often lack dividend data on Yahoo
-        // (interlisted tickers, CDRs). Try the US base ticker and convert.
-        if (symbol.endsWith('.TO') && data && (!data.dividendRate || data.dividendRate <= 0)) {
-          const usTicker = symbol.replace('.TO', '');
-          const usData = await tryFetchPrice(usTicker);
-          if (usData && usData.dividendRate && usData.dividendRate > 0) {
-            const rate = await getRate();
+        // summaryDetail a omis le dividende → repli fiable via l'API chart.
+        if (!data.dividendRate || data.dividendRate <= 0) {
+          const div = await getYahooDividend(symbol);
+          if (div) {
             return {
               symbol,
               ...data,
-              dividendRate: Math.round(usData.dividendRate * rate * 10000) / 10000,
-              // Yield is a ratio, currency-agnostic
-              dividendYield: usData.dividendYield,
+              dividendRate: div.rate,
+              dividendYield: div.yieldPct / 100, // décimal (0.0494 = 4,94 %)
             };
           }
         }
 
-        return data ? { symbol, ...data } : empty;
+        return { symbol, ...data };
       })
     );
 
