@@ -786,9 +786,14 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         <>
           <View style={{ marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ width: 3, height: 14, backgroundColor: C.cyan, borderRadius: 1.5 }} />
-            <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-              Détail des projections
-            </Text>
+            <View>
+              <Text style={{ fontSize: 11, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
+                Détail des projections
+              </Text>
+              <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 1 }}>
+                Sur l&apos;ensemble des actions et FNB (titres avec ou sans cours cible)
+              </Text>
+            </View>
           </View>
 
           {/* 3 breakdown cards */}
@@ -823,7 +828,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 {fmt(eqDiv)}
               </Text>
               <Text style={{ fontSize: 6.5, color: '#64748b', marginBottom: 4 }}>
-                sur {fmt(eqMv)} en actions
+                sur {fmt(eqMv)} — toutes les actions/FNB
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
@@ -899,7 +904,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 {fmt(eqGain)}
               </Text>
               <Text style={{ fontSize: 6.5, color: '#64748b', marginBottom: 4 }}>
-                sur {fmt(eqMv)} en actions
+                sur {fmt(eqMv)} — toutes les actions/FNB
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 3 }}>
@@ -1206,7 +1211,7 @@ function EquityTablePage({ holdings, orientation, logos, usdCadRate }: {
 
       {/* Source */}
       <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 6 }}>
-        Source : Consensus des analystes via Yahoo Finance. Div. $ : dividende annuel projeté (Yahoo forward rate × quantité). Div. % : dividende annuel ÷ valeur au marché.
+        Source : Consensus des analystes via Yahoo Finance. Div. $ : dividende annuel projeté (Yahoo forward rate × quantité). Div. % : dividende annuel ÷ valeur au marché. Ce tableau ne couvre que les actions/FNB ayant un cours cible ; le sommaire en couverture porte sur l&apos;ensemble des actions/FNB, d&apos;où un dividende et un rendement légèrement différents.
       </Text>
 
       <PageFooter />
