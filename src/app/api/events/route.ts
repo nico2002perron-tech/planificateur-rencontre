@@ -151,6 +151,7 @@ export async function POST(request: NextRequest) {
       collab_logos: body.collab_logos || [],
       max_attendees: body.max_attendees || null,
       registration_deadline: body.registration_deadline || null,
+      shirt_order_deadline: body.shirt_order_deadline || null,
       is_registration_open: body.is_registration_open ?? true,
       registration_mode: body.registration_mode || 'individual',
       team_size: body.team_size || 4,

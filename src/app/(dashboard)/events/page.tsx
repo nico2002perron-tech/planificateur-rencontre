@@ -8,7 +8,7 @@ import {
   CheckCircle, XCircle, X, Upload, ImagePlus, Handshake,
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
   Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
-  Sparkles, Timer,
+  Sparkles, Timer, Search, ExternalLink, CalendarRange,
 } from 'lucide-react';
 
 const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
@@ -90,6 +90,7 @@ interface EventData {
   show_countdown?: boolean;
   featured?: boolean;
   reminder_dates?: string[];
+  shirt_order_deadline?: string | null;
 }
 
 interface Registration {
@@ -187,6 +188,7 @@ const emptyForm = () => ({
   show_countdown: true,
   featured: false,
   reminder_dates: [] as string[],
+  shirt_order_deadline: '',
 });
 
 type FormData = ReturnType<typeof emptyForm>;
@@ -194,6 +196,40 @@ type FormData = ReturnType<typeof emptyForm>;
 function formatDate(d: string) {
   if (!d) return '';
   return new Date(d + 'T12:00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Plage de dates « du ... au ... » avec formulation courte et naturelle (fr-CA).
+// Ex. même mois : « Du 14 au 16 août 2026 » ; mois différents : « Du 30 août au 2 septembre 2026 ».
+function formatDateRange(start: string, end?: string | null) {
+  if (!start) return '';
+  if (!end || end <= start) return formatDate(start);
+  const s = new Date(start + 'T12:00:00');
+  const e = new Date(end + 'T12:00:00');
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+  if (sameMonth) {
+    const month = s.toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
+    return `Du ${s.getDate()} au ${e.getDate()} ${month}`;
+  }
+  const startStr = s.toLocaleDateString('fr-CA', sameYear
+    ? { day: 'numeric', month: 'long' }
+    : { day: 'numeric', month: 'long', year: 'numeric' });
+  return `Du ${startStr} au ${formatDate(end)}`;
+}
+
+// Nombre de jours (entiers) entre aujourd'hui et une date 'YYYY-MM-DD'.
+// Négatif = échéance passée, 0 = aujourd'hui.
+function daysUntil(dateStr: string): number {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((new Date(dateStr + 'T12:00:00').getTime() - t.getTime()) / 86400000);
+}
+
+// Libellé de décompte court : « dans 5 jours », « demain », « aujourd'hui », « échéance dépassée ».
+function countdownLabel(days: number): string {
+  if (days < 0) return 'échéance dépassée';
+  if (days === 0) return "aujourd'hui";
+  if (days === 1) return 'demain';
+  return `dans ${days} jours`;
 }
 
 function lighten(hex: string, amt: number): string {
@@ -234,8 +270,8 @@ function CardPreview({ form }: { form: FormData }) {
         <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 800, fontSize: 16, color: '#03045e', lineHeight: 1.25 }}>{form.title || 'Titre de l’evenement'}</div>
         {form.tagline && <div style={{ fontSize: 12.5, fontWeight: 600, color: accent, marginTop: 4 }}>{form.tagline}</div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12.5, color: '#1a2a3a', fontWeight: 600 }}>
-          <span style={{ width: 26, height: 26, borderRadius: 7, display: 'inline-grid', placeItems: 'center', background: `${accent}1a`, color: accent }}><CalendarDays className="h-3.5 w-3.5" /></span>
-          {form.date ? formatDate(form.date) : 'Date'}{form.time ? ` · ${form.time}` : ''}
+          <span style={{ width: 26, height: 26, borderRadius: 7, display: 'inline-grid', placeItems: 'center', background: `${accent}1a`, color: accent }}>{form.end_date && form.end_date > form.date ? <CalendarRange className="h-3.5 w-3.5" /> : <CalendarDays className="h-3.5 w-3.5" />}</span>
+          {form.date ? formatDateRange(form.date, form.end_date) : 'Date'}{form.time ? ` · ${form.time}` : ''}
         </div>
         {hl.map((h, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 12, color: '#586e82' }}>
@@ -244,6 +280,98 @@ function CardPreview({ form }: { form: FormData }) {
         ))}
         <button type="button" style={{ marginTop: 14, width: '100%', padding: '11px', borderRadius: 11, border: 'none', color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 13.5, background: `linear-gradient(135deg,${accent2},${accent})`, cursor: 'default' }}>{cta} &rarr;</button>
       </div>
+    </div>
+  );
+}
+
+interface GeoResult { label: string; full: string; lat: string; lon: string; maps_url: string; }
+
+// Barre de recherche d'adresse (autocomplétion OpenStreetMap via /api/geocode).
+// La sélection remplit le lieu (si vide) et génère le lien Google Maps.
+function AddressSearch({
+  location, locationUrl, onPick, onClear,
+}: {
+  location: string;
+  locationUrl: string;
+  onPick: (r: GeoResult) => void;
+  onClear: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<GeoResult[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 3) { setResults([]); setOpen(false); return; }
+    setLoading(true);
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(term)}`);
+        if (res.ok) { setResults(await res.json()); setOpen(true); }
+      } finally { setLoading(false); }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  // Fermer la liste au clic à l'extérieur
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  return (
+    <div ref={boxRef} className="relative">
+      <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1">
+        <MapPin className="h-3 w-3" style={{ color: DUO.orange }} /> Adresse (recherche)
+      </label>
+
+      {/* Adresse / lien de carte déjà enregistré */}
+      {locationUrl && (
+        <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl text-sm" style={{ backgroundColor: `${DUO.green}10`, border: `1px solid ${DUO.green}30` }}>
+          <CheckCircle className="h-4 w-4 flex-shrink-0" style={{ color: DUO.greenDark }} />
+          <span className="flex-1 truncate font-bold text-text-main">{location || 'Adresse enregistree'}</span>
+          <a href={locationUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold hover:underline" style={{ color: DUO.blueDark }}>
+            <ExternalLink className="h-3.5 w-3.5" /> Carte
+          </a>
+          <button type="button" onClick={onClear} className="p-0.5 text-red-400 hover:text-red-600"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-light" />
+        <input
+          type="text"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder={locationUrl ? 'Modifier l’adresse…' : 'Ex. Parc Paul-Emile-Beaulieu, Quebec'}
+          className="w-full rounded-xl border-2 border-gray-200 bg-white pl-9 pr-9 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all"
+        />
+        {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-text-light" />}
+      </div>
+
+      {open && results.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full rounded-xl border-2 border-gray-100 bg-white shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+          {results.map((r, i) => (
+            <button key={i} type="button"
+              onClick={() => { onPick(r); setQ(''); setResults([]); setOpen(false); }}
+              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors flex items-start gap-2 border-b border-gray-50 last:border-0"
+            >
+              <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: DUO.orange }} />
+              <span className="min-w-0">
+                <span className="block font-bold text-sm text-text-main leading-tight truncate">{r.label}</span>
+                <span className="block text-[11px] text-text-muted truncate">{r.full}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-text-muted mt-1">La selection remplit le lieu et genere le lien de carte automatiquement.</p>
     </div>
   );
 }
@@ -345,6 +473,7 @@ export default function EventsPage() {
       show_countdown: e.show_countdown ?? true,
       featured: e.featured ?? false,
       reminder_dates: e.reminder_dates || [],
+      shirt_order_deadline: e.shirt_order_deadline || '',
     });
     setFormError('');
     setShowForm(true);
@@ -360,6 +489,7 @@ export default function EventsPage() {
         max_attendees: form.max_attendees ? Number(form.max_attendees) : null,
         end_date: form.end_date || null,
         registration_deadline: form.registration_deadline || null,
+        shirt_order_deadline: form.shirt_order_deadline || null,
       };
       const url = editId ? `/api/events/${editId}` : '/api/events';
       const method = editId ? 'PUT' : 'POST';
@@ -592,10 +722,20 @@ export default function EventsPage() {
                     {ev.status === 'cancelled' && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600">Annule</span>}
                     {ev.status === 'completed' && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Termine</span>}
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5 text-sm text-text-muted">
-                    <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> {formatDate(ev.date)}{ev.time ? ` a ${ev.time}` : ''}</span>
+                  <div className="flex items-center gap-3 mt-0.5 text-sm text-text-muted flex-wrap">
+                    <span className="flex items-center gap-1">{ev.end_date && ev.end_date > ev.date ? <CalendarRange className="h-3 w-3" /> : <CalendarDays className="h-3 w-3" />} {formatDateRange(ev.date, ev.end_date)}{ev.time ? ` a ${ev.time}` : ''}</span>
                     {ev.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {ev.location}</span>}
                     <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {ev.registration_count}{ev.max_attendees ? `/${ev.max_attendees}` : ''} inscrit{ev.registration_count !== 1 ? 's' : ''}</span>
+                    {ev.shirt_order_deadline && (() => {
+                      const d = daysUntil(ev.shirt_order_deadline);
+                      const over = d < 0;
+                      return (
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold"
+                          style={{ backgroundColor: over ? '#fee2e2' : `${DUO.purple}14`, color: over ? '#dc2626' : DUO.purpleDark }}
+                          title={`Commande de chandails : ${formatDate(ev.shirt_order_deadline)}`}
+                        ><Shirt className="h-3 w-3" /> Chandails {countdownLabel(d)}</span>
+                      );
+                    })()}
                     {ev.creator && <span className="text-[11px] text-text-light">par {ev.creator.name}</span>}
                   </div>
                 </div>
@@ -668,6 +808,34 @@ export default function EventsPage() {
                       ><Copy className="h-3 w-3" /> Lien public</button>
                     </div>
                   </div>
+
+                  {/* Decompte — commande de chandails personnalises */}
+                  {ev.shirt_order_deadline && (() => {
+                    const d = daysUntil(ev.shirt_order_deadline);
+                    const over = d < 0;
+                    const accentC = over ? '#dc2626' : DUO.purple;
+                    return (
+                      <div className="flex items-center gap-3 mb-3 p-3.5 rounded-xl" style={{ backgroundColor: over ? '#fef2f2' : `${DUO.purple}0c`, border: `1px solid ${over ? '#fecaca' : `${DUO.purple}30`}` }}>
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: over ? '#fee2e2' : `${DUO.purple}18` }}>
+                          <Shirt className="h-5 w-5" style={{ color: accentC }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-extrabold text-text-main">
+                            Commande de chandails &mdash; {over ? 'echeance depassee' : d === 0 ? "c'est aujourd'hui" : `il reste ${d} jour${d > 1 ? 's' : ''}`}
+                          </p>
+                          <p className="text-xs text-text-muted">
+                            Confirmation des equipes avant le <b>{formatDate(ev.shirt_order_deadline)}</b> &middot; {activeParticipantCount()} participant{activeParticipantCount() !== 1 ? 's' : ''} confirme{activeParticipantCount() !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+                        {!over && (
+                          <div className="text-right flex-shrink-0 pr-1">
+                            <div className="text-2xl font-extrabold leading-none" style={{ color: accentC }}>{d}</div>
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-text-light">jour{d > 1 ? 's' : ''}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Resume des tailles de chandails */}
                   {ev.form_options?.show_shirt_size && shirtSummary().length > 0 && (
@@ -833,26 +1001,44 @@ export default function EventsPage() {
                 </div>
               </div>
 
-              {/* Date + Time + Location */}
-              <div className="grid grid-cols-4 gap-3">
+              {/* Dates (plage du ... au ...) + Heure */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-extrabold text-text-main mb-1.5">Date *</label>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5">Date de debut *</label>
                   <input type="date" value={form.date} onChange={e => updateForm('date', e.target.value)} required className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1"><CalendarRange className="h-3 w-3" style={{ color: DUO.blue }} /> Date de fin <span className="font-normal text-text-light">(option.)</span></label>
+                  <input type="date" value={form.end_date} min={form.date || undefined} onChange={e => updateForm('end_date', e.target.value)} className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
                 </div>
                 <div>
                   <label className="block text-xs font-extrabold text-text-main mb-1.5">Heure</label>
                   <input type="text" value={form.time} onChange={e => updateForm('time', e.target.value)} placeholder="18h00" className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-extrabold text-text-main mb-1.5">Lieu</label>
-                  <input type="text" value={form.location} onChange={e => updateForm('location', e.target.value)} placeholder="Club de golf Lorette" className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
+              </div>
+              {form.end_date && form.end_date > form.date && (
+                <div className="-mt-3 flex items-center gap-1.5 text-[11px] font-bold" style={{ color: DUO.blueDark }}>
+                  <CalendarRange className="h-3.5 w-3.5" /> {formatDateRange(form.date, form.end_date)} &middot; s&apos;affichera ainsi sur la publicite
                 </div>
+              )}
+
+              {/* Lieu (nom de l'endroit) */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5">Lieu <span className="font-normal text-text-light">(nom de l&apos;endroit)</span></label>
+                <input type="text" value={form.location} onChange={e => updateForm('location', e.target.value)} placeholder="Parc Paul-Emile-Beaulieu" className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
               </div>
 
-              <div>
-                <label className="block text-xs font-extrabold text-text-main mb-1.5">Lien Google Maps</label>
-                <input type="url" value={form.location_url} onChange={e => updateForm('location_url', e.target.value)} placeholder="https://maps.google.com/..." className="w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-2.5 text-sm text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
-              </div>
+              {/* Recherche d'adresse -> remplit le lien de carte (remplace le lien Google Maps manuel) */}
+              <AddressSearch
+                location={form.location}
+                locationUrl={form.location_url}
+                onPick={(r) => setForm(prev => ({
+                  ...prev,
+                  location_url: r.maps_url,
+                  location: prev.location.trim() ? prev.location : r.label,
+                }))}
+                onClear={() => updateForm('location_url', '')}
+              />
 
               {/* Description */}
               <div>
@@ -1047,6 +1233,23 @@ export default function EventsPage() {
                     <label className="block text-xs font-extrabold text-text-main mb-1.5">Date limite</label>
                     <input type="date" value={form.registration_deadline} onChange={e => updateForm('registration_deadline', e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#58CC02]" />
                   </div>
+                </div>
+
+                {/* Date limite — commande de chandails personnalises */}
+                <div className="p-3 rounded-xl" style={{ backgroundColor: `${DUO.purple}08`, border: `1px solid ${DUO.purple}22` }}>
+                  <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1"><Shirt className="h-3.5 w-3.5" style={{ color: DUO.purple }} /> Date limite &mdash; commande de chandails</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input type="date" value={form.shirt_order_deadline} onChange={e => updateForm('shirt_order_deadline', e.target.value)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#CE82FF]" />
+                    {form.shirt_order_deadline && (
+                      <span className="text-xs font-extrabold px-2.5 py-1 rounded-full" style={{ backgroundColor: `${DUO.purple}14`, color: DUO.purpleDark }}>
+                        {countdownLabel(daysUntil(form.shirt_order_deadline))}
+                      </span>
+                    )}
+                    {form.shirt_order_deadline && (
+                      <button type="button" onClick={() => updateForm('shirt_order_deadline', '')} className="text-[11px] font-bold text-text-light hover:text-red-500">Retirer</button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-text-muted mt-1.5">Les equipes doivent confirmer avant cette date. Un decompte s&apos;affiche dans la liste des evenements.</p>
                 </div>
 
                 {/* Rappels par courriel */}
