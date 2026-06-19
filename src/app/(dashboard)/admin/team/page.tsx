@@ -141,7 +141,7 @@ function toggleArr(arr: string[], item: string): string[] {
   return arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item];
 }
 
-const SITE_BASE = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
+const SITE_BASE = 'https://groupefinancierstefoy.com';
 
 function resolvePhoto(url: string | null | undefined): string {
   if (!url) return '';

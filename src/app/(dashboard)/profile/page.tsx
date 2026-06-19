@@ -19,7 +19,7 @@ const DUO = {
   orange: '#FF9600', orangeDark: '#e08600',
 } as const;
 
-const SITE_BASE = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
+const SITE_BASE = 'https://groupefinancierstefoy.com';
 function resolvePhoto(url: string | null | undefined): string {
   if (!url) return '';
   if (url.startsWith('http')) return url;

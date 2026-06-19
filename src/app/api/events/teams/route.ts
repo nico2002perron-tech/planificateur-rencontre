@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTeamCreatedEmail, sendRegistrationNotification } from '@/lib/email';
 
-const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL || 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
+const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
 
 function corsJson(body: unknown, status: number) {
   // Un statut 204 (préflight CORS) ne doit PAS avoir de corps : NextResponse.json(null)

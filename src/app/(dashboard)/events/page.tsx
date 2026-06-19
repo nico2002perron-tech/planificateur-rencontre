@@ -11,7 +11,7 @@ import {
   Sparkles, Timer, Search, ExternalLink, CalendarRange,
 } from 'lucide-react';
 
-const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app';
+const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
 
 const DUO = {
   green: '#58CC02', greenDark: '#45a300',
