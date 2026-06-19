@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 function corsJson(body: unknown, status: number) {
-  const response = NextResponse.json(body, { status });
+  // Un statut 204 (préflight CORS) ne doit PAS avoir de corps : NextResponse.json(null)
+  // écrirait « null » et Next 16 renvoie alors 500 → le préflight échoue → « Erreur de connexion ».
+  const response = body === null
+    ? new NextResponse(null, { status })
+    : NextResponse.json(body, { status });
   response.headers.set('Access-Control-Allow-Origin', '*');
   response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
