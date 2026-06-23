@@ -11,8 +11,10 @@ function getResend(): Resend | null {
 const FROM = process.env.EMAIL_FROM || 'Groupe Financier Ste-Foy <onboarding@resend.dev>';
 const APP_URL = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
 
-// Logo Groupe Financier Ste-Foy (PNG hébergé sur le site public — s'affiche dans tous les clients courriel)
-const LOGO_URL = 'https://vf-groupe-financier-ste-foy-v2nr.vercel.app/images/logo-popup.png';
+// Logo Groupe Financier Ste-Foy — version couleur (visible sur l'en-tête blanc des courriels).
+// PNG converti depuis logo-gfsf-footer.webp et hébergé par l'app (public/) : le WebP ne s'affiche
+// pas dans plusieurs clients courriel (Outlook), d'où le PNG servi en même origine que l'envoi.
+const LOGO_URL = `${APP_URL}/email-logo-gfsf.png`;
 
 interface EventInfo {
   id?: string;

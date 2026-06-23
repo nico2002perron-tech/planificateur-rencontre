@@ -8,7 +8,7 @@ import {
   CheckCircle, XCircle, X, Upload, ImagePlus, Handshake,
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
   Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
-  Sparkles, Timer, Search, ExternalLink, CalendarRange,
+  Sparkles, Timer, Search, ExternalLink, CalendarRange, ScrollText,
 } from 'lucide-react';
 
 const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
@@ -68,6 +68,7 @@ interface EventData {
   team_size: number;
   team_label: string;
   allow_team_logo: boolean;
+  team_gender_composition?: { enabled: boolean; male_spots: number; female_spots: number } | null;
   pricing: { label: string; price: string }[];
   form_options: {
     show_company: boolean;
@@ -91,6 +92,7 @@ interface EventData {
   featured?: boolean;
   reminder_dates?: string[];
   shirt_order_deadline?: string | null;
+  rules_images?: string[];
 }
 
 interface Registration {
@@ -160,6 +162,7 @@ const emptyForm = () => ({
   location_url: '',
   cover_image: '',
   images: [] as string[],
+  rules_images: [] as string[],
   collab_logos: [] as { name: string; image_url: string }[],
   max_attendees: '' as string | number,
   registration_deadline: '',
@@ -168,6 +171,7 @@ const emptyForm = () => ({
   team_size: 4,
   team_label: 'Equipe',
   allow_team_logo: false,
+  team_gender_composition: { enabled: false, male_spots: 8, female_spots: 2 },
   pricing: [] as { label: string; price: string }[],
   form_options: {
     show_company: true,
@@ -393,6 +397,7 @@ export default function EventsPage() {
   const [uploading, setUploading] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const rulesInputRef = useRef<HTMLInputElement>(null);
   const collabInputRef = useRef<HTMLInputElement>(null);
   const [collabName, setCollabName] = useState('');
 
@@ -452,6 +457,7 @@ export default function EventsPage() {
       location_url: e.location_url,
       cover_image: e.cover_image,
       images: e.images || [],
+      rules_images: e.rules_images || [],
       collab_logos: e.collab_logos || [],
       max_attendees: e.max_attendees || '',
       registration_deadline: e.registration_deadline || '',
@@ -460,6 +466,7 @@ export default function EventsPage() {
       team_size: e.team_size,
       team_label: e.team_label,
       allow_team_logo: e.allow_team_logo ?? false,
+      team_gender_composition: e.team_gender_composition || { enabled: false, male_spots: 8, female_spots: 2 },
       pricing: e.pricing || [],
       form_options: e.form_options || emptyForm().form_options,
       contact_email: e.contact_email,
@@ -532,7 +539,7 @@ export default function EventsPage() {
     }
   }
 
-  async function uploadImage(file: File, type: 'cover' | 'gallery' | 'collab') {
+  async function uploadImage(file: File, type: 'cover' | 'gallery' | 'rules' | 'collab') {
     setUploading(true);
     try {
       const fd = new FormData();
@@ -545,6 +552,8 @@ export default function EventsPage() {
         setForm(prev => ({ ...prev, cover_image: url }));
       } else if (type === 'gallery') {
         setForm(prev => ({ ...prev, images: [...prev.images, url] }));
+      } else if (type === 'rules') {
+        setForm(prev => ({ ...prev, rules_images: [...prev.rules_images, url] }));
       } else if (type === 'collab') {
         if (collabName.trim()) {
           setForm(prev => ({ ...prev, collab_logos: [...prev.collab_logos, { name: collabName.trim(), image_url: url }] }));
@@ -1083,6 +1092,25 @@ export default function EventsPage() {
                 </div>
               </div>
 
+              {/* Reglements (photos) — surtout pour les tournois */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1"><ScrollText className="h-3 w-3" style={{ color: DUO.green }} /> Reglements (photos) <span className="font-normal text-text-light">(tournois)</span></label>
+                <div className="flex flex-wrap gap-2">
+                  {form.rules_images.map((img, i) => (
+                    <div key={i} className="relative w-20 h-14 rounded-lg overflow-hidden border border-gray-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img} alt="" className="w-full h-full object-cover" />
+                      <button type="button" onClick={() => setForm(prev => ({ ...prev, rules_images: prev.rules_images.filter((_, j) => j !== i) }))} className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-white/90 text-red-500"><X className="h-2.5 w-2.5" /></button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => rulesInputRef.current?.click()}
+                    className="w-20 h-14 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-text-muted hover:border-[#58CC02] transition-all"
+                  >{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}</button>
+                  <input ref={rulesInputRef} type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadImage(e.target.files[0], 'rules')} />
+                </div>
+                <p className="text-[11px] text-text-muted mt-1.5">Affiche une section &laquo; R&egrave;glements &raquo; sur la page publique. Les photos sont cliquables en plein &eacute;cran.</p>
+              </div>
+
               {/* Collaboration logos */}
               <div>
                 <label className="block text-xs font-extrabold text-text-main mb-1.5 flex items-center gap-1"><Handshake className="h-3 w-3" style={{ color: DUO.purple }} /> Logos partenaires</label>
@@ -1219,6 +1247,39 @@ export default function EventsPage() {
                           <input type="checkbox" checked={form.allow_team_logo} onChange={e => updateForm('allow_team_logo', e.target.checked)} />
                           Permettre un logo d&apos;equipe (le capitaine peut televerser un logo)
                         </label>
+                      </div>
+
+                      {/* Composition d'equipe par genre (gars / filles) */}
+                      <div style={{ gridColumn: '1 / -1', background: '#1CB0F608', border: '1px solid #1CB0F622', borderRadius: 12, padding: 12 }}>
+                        <label className="flex items-center gap-2 text-xs font-extrabold text-text-main cursor-pointer">
+                          <input type="checkbox" checked={!!form.team_gender_composition?.enabled} onChange={e => updateForm('team_gender_composition', { ...form.team_gender_composition, enabled: e.target.checked })} />
+                          Composition par genre (gars / filles)
+                        </label>
+                        {form.team_gender_composition?.enabled && (
+                          <div className="mt-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[11px] font-extrabold mb-1 flex items-center gap-1.5" style={{ color: '#1899d6' }}>
+                                  <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: '#1CB0F6' }} /> Places gars
+                                </label>
+                                <input type="number" min={0} max={20} value={form.team_gender_composition?.male_spots ?? 0}
+                                  onChange={e => { const v = parseInt(e.target.value) || 0; const comp = { ...form.team_gender_composition!, male_spots: v }; updateForm('team_gender_composition', comp); updateForm('team_size', v + (comp.female_spots || 0)); }}
+                                  className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ border: '1px solid #1CB0F655' }} />
+                              </div>
+                              <div>
+                                <label className="text-[11px] font-extrabold mb-1 flex items-center gap-1.5" style={{ color: '#db2777' }}>
+                                  <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: '50%', background: '#EC4899' }} /> Places filles
+                                </label>
+                                <input type="number" min={0} max={20} value={form.team_gender_composition?.female_spots ?? 0}
+                                  onChange={e => { const v = parseInt(e.target.value) || 0; const comp = { ...form.team_gender_composition!, female_spots: v }; updateForm('team_gender_composition', comp); updateForm('team_size', (comp.male_spots || 0) + v); }}
+                                  className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none" style={{ border: '1px solid #EC489955' }} />
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-text-muted mt-2">
+                              Equipe de <b>{(form.team_gender_composition?.male_spots || 0) + (form.team_gender_composition?.female_spots || 0)}</b> joueurs : {form.team_gender_composition?.male_spots || 0} gars + {form.team_gender_composition?.female_spots || 0} filles. A l&apos;inscription, le visiteur verra les places restantes par genre (bleu / rose).
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

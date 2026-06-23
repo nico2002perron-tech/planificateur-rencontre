@@ -40,6 +40,12 @@ interface TeammateInput {
   shirt_size?: string;
   skill_level?: string;
   dietary_restrictions?: string;
+  gender?: string;
+}
+
+// Normalise un genre : 'M' (gars) / 'F' (filles) / '' si non spécifié.
+function normGender(g: unknown): string {
+  return g === 'M' || g === 'F' ? g : '';
 }
 
 // POST /api/events/teams — Captain creates a team (optionally with teammates)
@@ -53,7 +59,7 @@ export async function POST(request: NextRequest) {
   // Validate event exists and supports teams
   const { data: event, error: eventError } = await supabase
     .from('events')
-    .select('id, title, date, time, location, contact_email, contact_phone, created_by, status, is_registration_open, registration_mode, team_size, max_attendees, registration_deadline')
+    .select('id, title, date, time, location, contact_email, contact_phone, created_by, status, is_registration_open, registration_mode, team_size, max_attendees, registration_deadline, team_gender_composition')
     .eq('id', eventId)
     .single();
 
@@ -91,6 +97,25 @@ export async function POST(request: NextRequest) {
     if (!t.first_name?.trim() || !t.last_name?.trim()) {
       return corsJson({ error: 'Chaque coequipier doit avoir un prenom et un nom' }, 400);
     }
+  }
+
+  // ── Composition par genre (gars / filles), si activée sur l'événement ──
+  const genderRule = event.team_gender_composition && event.team_gender_composition.enabled
+    ? event.team_gender_composition : null;
+  const captainGender = normGender(body.gender);
+  if (genderRule) {
+    const maleSpots = parseInt(genderRule.male_spots, 10) || 0;
+    const femaleSpots = parseInt(genderRule.female_spots, 10) || 0;
+    if (!captainGender) return corsJson({ error: 'Indiquez si le capitaine est un gars ou une fille' }, 400);
+    let males = captainGender === 'M' ? 1 : 0;
+    let females = captainGender === 'F' ? 1 : 0;
+    for (const t of teammates) {
+      const g = normGender(t.gender);
+      if (!g) return corsJson({ error: 'Indiquez le genre (gars / fille) de chaque coequipier' }, 400);
+      if (g === 'M') males++; else females++;
+    }
+    if (males > maleSpots) return corsJson({ error: `Trop de gars (${males}) : il y a ${maleSpots} place(s) gars.` }, 400);
+    if (females > femaleSpots) return corsJson({ error: `Trop de filles (${females}) : il y a ${femaleSpots} place(s) filles.` }, 400);
   }
 
   // Check global event capacity (individuals + team members already registered)
@@ -168,6 +193,7 @@ export async function POST(request: NextRequest) {
       dietary_restrictions: body.dietary_restrictions || '',
       notes: body.notes || '',
       is_captain: true,
+      gender: captainGender,
     })
     .select('id')
     .single();
@@ -188,6 +214,7 @@ export async function POST(request: NextRequest) {
       dietary_restrictions: t.dietary_restrictions || '',
       notes: 'Inscrit par le capitaine',
       is_captain: false,
+      gender: normGender(t.gender),
     }));
 
     const { error: teammatesError } = await supabase

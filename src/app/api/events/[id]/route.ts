@@ -24,9 +24,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const updates: Record<string, unknown> = {};
   const fields = [
     'title', 'description', 'event_type', 'date', 'time', 'end_date',
-    'location', 'location_url', 'cover_image', 'images', 'collab_logos',
+    'location', 'location_url', 'cover_image', 'images', 'rules_images', 'collab_logos',
     'max_attendees', 'registration_deadline', 'shirt_order_deadline', 'is_registration_open',
-    'registration_mode', 'team_size', 'team_label', 'allow_team_logo', 'pricing', 'form_options',
+    'registration_mode', 'team_size', 'team_label', 'allow_team_logo', 'team_gender_composition', 'pricing', 'form_options',
     'contact_email', 'contact_phone', 'status',
     'tagline', 'highlights', 'program', 'accent_color', 'cta_label', 'show_countdown', 'featured',
     'reminder_dates',

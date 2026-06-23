@@ -14,6 +14,11 @@ function corsJson(body: unknown, status: number) {
   return response;
 }
 
+// Normalise un genre : 'M' (gars) / 'F' (filles) / '' si non spécifié.
+function normGender(g: unknown): string {
+  return g === 'M' || g === 'F' ? g : '';
+}
+
 // GET /api/events/teams/[code] — Get team info by code (public)
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -30,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // Get current members
   const { data: members } = await supabase
     .from('event_team_members')
-    .select('first_name, last_name, is_captain, joined_at')
+    .select('first_name, last_name, is_captain, joined_at, gender')
     .eq('team_id', team.id)
     .eq('status', 'confirmed')
     .order('joined_at', { ascending: true });
@@ -38,9 +43,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // Get event info
   const { data: event } = await supabase
     .from('events')
-    .select('title, date, time, location, is_registration_open, form_options')
+    .select('title, date, time, location, is_registration_open, form_options, team_gender_composition')
     .eq('id', team.event_id)
     .single();
+
+  const males = (members || []).filter(m => m.gender === 'M').length;
+  const females = (members || []).filter(m => m.gender === 'F').length;
 
   return corsJson({
     team_name: team.team_name,
@@ -50,10 +58,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     members: (members || []).map(m => ({
       name: `${m.first_name} ${m.last_name}`,
       is_captain: m.is_captain,
+      gender: m.gender || '',
     })),
     member_count: members?.length || 0,
     max_members: team.max_members,
     spots_left: team.max_members - (members?.length || 0),
+    team_gender_composition: event?.team_gender_composition || null,
+    gender_counts: { male: males, female: females },
   }, 200);
 }
 
@@ -75,7 +86,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Check event is still open
   const { data: event } = await supabase
     .from('events')
-    .select('id, title, date, time, location, contact_email, contact_phone, is_registration_open, status')
+    .select('id, title, date, time, location, contact_email, contact_phone, is_registration_open, status, team_gender_composition')
     .eq('id', team.event_id)
     .single();
 
@@ -111,6 +122,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   if (existing) return corsJson({ error: 'Ce courriel est deja inscrit dans cette equipe' }, 409);
 
+  // ── Composition par genre (gars / filles), si activée sur l'événement ──
+  const genderRule = event.team_gender_composition && event.team_gender_composition.enabled
+    ? event.team_gender_composition : null;
+  const joinGender = normGender(body.gender);
+  if (genderRule) {
+    if (!joinGender) return corsJson({ error: 'Indiquez si vous etes un gars ou une fille' }, 400);
+    const { data: curMembers } = await supabase
+      .from('event_team_members')
+      .select('gender')
+      .eq('team_id', team.id)
+      .eq('status', 'confirmed');
+    const males = (curMembers || []).filter(m => m.gender === 'M').length;
+    const females = (curMembers || []).filter(m => m.gender === 'F').length;
+    const maleSpots = parseInt(genderRule.male_spots, 10) || 0;
+    const femaleSpots = parseInt(genderRule.female_spots, 10) || 0;
+    if (joinGender === 'M' && males >= maleSpots) return corsJson({ error: 'Toutes les places gars de cette equipe sont prises.' }, 400);
+    if (joinGender === 'F' && females >= femaleSpots) return corsJson({ error: 'Toutes les places filles de cette equipe sont prises.' }, 400);
+  }
+
   // Add member
   const { data: newMember, error: insertError } = await supabase
     .from('event_team_members')
@@ -125,6 +155,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       dietary_restrictions: body.dietary_restrictions || '',
       notes: body.notes || '',
       is_captain: false,
+      gender: joinGender,
     })
     .select('id')
     .single();
