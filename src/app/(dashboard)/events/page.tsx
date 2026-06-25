@@ -406,6 +406,8 @@ export default function EventsPage() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loadingRegs, setLoadingRegs] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<Team | null>(null);
+  const [logoDownloading, setLogoDownloading] = useState(false);
 
   // Delete
   const [confirmDelete, setConfirmDelete] = useState<EventData | null>(null);
@@ -596,6 +598,36 @@ export default function EventsPage() {
     });
     if (res.ok) {
       setTeams(prev => prev.filter(t => t.id !== team.id));
+    }
+  }
+
+  // Telecharge le logo d'une equipe avec un nom de fichier propre. L'URL est
+  // un objet public Supabase (CORS ouvert) -> fetch en blob puis download ;
+  // repli sur l'ouverture dans un onglet si le fetch echoue.
+  async function downloadTeamLogo(team: Team) {
+    if (!team.logo_url || logoDownloading) return;
+    const slug = team.team_name
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'equipe';
+    setLogoDownloading(true);
+    try {
+      const res = await fetch(team.logo_url);
+      if (!res.ok) throw new Error('fetch');
+      const blob = await res.blob();
+      const ext = ((blob.type.split('/')[1] || team.logo_url.split('.').pop() || 'png')
+        .replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png').toLowerCase();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `logo-${slug}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(team.logo_url, '_blank');
+    } finally {
+      setLogoDownloading(false);
     }
   }
 
@@ -876,8 +908,10 @@ export default function EventsPage() {
                               <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: `${DUO.blue}08` }}>
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   {team.logo_url ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={team.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+                                    <button type="button" onClick={() => setLogoPreview(team)} title="Voir le logo en grand" className="flex-shrink-0">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={team.logo_url} alt={`Logo ${team.team_name}`} className="w-8 h-8 rounded-lg object-cover border border-gray-200 cursor-pointer hover:ring-2 hover:ring-blue-300 hover:ring-offset-1 transition-all" />
+                                    </button>
                                   ) : (
                                     <Trophy className="h-4 w-4 flex-shrink-0" style={{ color: DUO.blue }} />
                                   )}
@@ -885,10 +919,18 @@ export default function EventsPage() {
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-white border border-gray-200 text-text-muted tracking-wider">{team.team_code}</span>
                                   <span className="text-[11px] font-bold text-text-muted flex-shrink-0">{team.members.length}/{team.max_members}</span>
                                 </div>
-                                <button onClick={() => deleteTeam(ev.id, team)}
-                                  className="p-1 rounded-md hover:bg-red-50 text-text-light hover:text-red-600 transition-all flex-shrink-0"
-                                  title="Supprimer l'equipe"
-                                ><Trash2 className="h-3.5 w-3.5" /></button>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {team.logo_url && (
+                                    <button onClick={() => downloadTeamLogo(team)} disabled={logoDownloading}
+                                      className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all disabled:opacity-50"
+                                      title="Telecharger le logo"
+                                    ><Download className="h-3.5 w-3.5" /></button>
+                                  )}
+                                  <button onClick={() => deleteTeam(ev.id, team)}
+                                    className="p-1 rounded-md hover:bg-red-50 text-text-light hover:text-red-600 transition-all"
+                                    title="Supprimer l'equipe"
+                                  ><Trash2 className="h-3.5 w-3.5" /></button>
+                                </div>
                               </div>
                               <table className="w-full text-sm">
                                 <tbody>
@@ -1447,6 +1489,38 @@ export default function EventsPage() {
                   Supprimer
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Apercu / telechargement du logo d'equipe */}
+      {logoPreview && logoPreview.logo_url && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setLogoPreview(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h2 className="text-base font-extrabold text-text-main truncate flex items-center gap-2">
+                <ImagePlus className="h-4 w-4 flex-shrink-0" style={{ color: DUO.blue }} />
+                Logo &laquo; {logoPreview.team_name} &raquo;
+              </h2>
+              <button type="button" onClick={() => setLogoPreview(null)} className="p-1 rounded-md text-text-light hover:bg-gray-100 hover:text-text-main transition-all flex-shrink-0"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-6 flex items-center justify-center bg-gray-50" style={{ minHeight: 240 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={logoPreview.logo_url} alt={`Logo ${logoPreview.team_name}`} className="max-h-[55vh] max-w-full object-contain rounded-lg" />
+            </div>
+            <div className="flex gap-3 p-4 border-t border-gray-100">
+              <a href={logoPreview.logo_url} target="_blank" rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all">
+                <ExternalLink className="h-4 w-4" /> Ouvrir
+              </a>
+              <button onClick={() => downloadTeamLogo(logoPreview)} disabled={logoDownloading}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] disabled:opacity-60"
+                style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}>
+                {logoDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Telecharger
+              </button>
             </div>
           </div>
         </div>
