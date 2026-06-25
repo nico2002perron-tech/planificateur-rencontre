@@ -408,6 +408,12 @@ export default function EventsPage() {
   const [loadingRegs, setLoadingRegs] = useState(false);
   const [logoPreview, setLogoPreview] = useState<Team | null>(null);
   const [logoDownloading, setLogoDownloading] = useState(false);
+  // Modele de courriel a copier-coller (aucun envoi automatique)
+  const [mailCtx, setMailCtx] = useState<{ ev: EventData; team: Team | null } | null>(null);
+  const [mailType, setMailType] = useState<'details' | 'incomplete' | 'shirt'>('details');
+  const [mailSubject, setMailSubject] = useState('');
+  const [mailBody, setMailBody] = useState('');
+  const [mailCopied, setMailCopied] = useState(false);
 
   // Delete
   const [confirmDelete, setConfirmDelete] = useState<EventData | null>(null);
@@ -631,6 +637,133 @@ export default function EventsPage() {
     }
   }
 
+  // ── Modeles de courriel a copier-coller (le conseiller envoie lui-meme) ──
+  // Liste des courriels reels d'un destinataire (equipe precise, ou tous).
+  function recipientEmails(team: Team | null): string[] {
+    const clean = (e: string) => !!e && !e.endsWith('.sans-courriel');
+    if (team) return team.members.map(m => m.email).filter(clean);
+    const indiv = registrations.filter(r => r.status !== 'cancelled').map(r => r.email).filter(clean);
+    const fromTeams = teams.flatMap(t => t.members.map(m => m.email)).filter(clean);
+    return Array.from(new Set([...indiv, ...fromTeams]));
+  }
+
+  function genMail(ev: EventData, team: Team | null, type: 'details' | 'incomplete' | 'shirt'): { subject: string; body: string } {
+    const captain = team?.members.find(m => m.is_captain);
+    const greetName = captain?.first_name || '';
+    const bonjour = greetName ? `Bonjour ${greetName},` : 'Bonjour,';
+    const when = `${formatDateRange(ev.date, ev.end_date)}${ev.time ? ` à ${ev.time}` : ''}`;
+    const where = ev.location || '';
+    const publicLink = `${SITE_BASE}/evenements.html?event=${ev.id}`;
+    const joinLink = team ? `${SITE_BASE}/evenements.html?event=${ev.id}&team=${team.id}` : '';
+    const sign = `Au plaisir,\nNicolas Perron\nGroupe Financier Ste-Foy`;
+
+    if (type === 'incomplete' && team) {
+      const filled = team.members.length;
+      const max = team.max_members;
+      const missing = Math.max(0, max - filled);
+      const subject = `${ev.title} — il reste ${missing} place${missing > 1 ? 's' : ''} dans votre équipe`;
+      const body =
+`${bonjour}
+
+Votre équipe « ${team.team_name} » compte présentement ${filled} membre${filled > 1 ? 's' : ''} sur ${max} : il vous manque donc ${missing} joueur${missing > 1 ? 's' : ''} pour être complète.
+
+Pour la compléter, partagez ce lien avec les personnes qui vous manquent — elles s'inscrivent en quelques secondes, sans code :
+${joinLink}
+
+(Au besoin, le code d'équipe est : ${team.team_code})
+
+Petit rappel des détails :
+Quand : ${when}${where ? `\nOù : ${where}` : ''}
+
+Merci, et au plaisir de vous voir au ${ev.title} !
+
+${sign}`;
+      return { subject, body };
+    }
+
+    if (type === 'shirt') {
+      const noSize = team
+        ? team.members.filter(m => !m.shirt_size).map(m => `- ${m.first_name} ${m.last_name}`)
+        : [
+            ...registrations.filter(r => r.status !== 'cancelled' && !r.shirt_size).map(r => `- ${r.first_name} ${r.last_name}`),
+            ...teams.flatMap(t => t.members.filter(m => !m.shirt_size).map(m => `- ${m.first_name} ${m.last_name} (${t.team_name})`)),
+          ];
+      const deadline = ev.shirt_order_deadline ? ` (avant le ${formatDate(ev.shirt_order_deadline)})` : '';
+      const subject = `${ev.title} — votre taille de chandail`;
+      const body = noSize.length
+        ? `${bonjour}
+
+Pour finaliser la commande des chandails${deadline}, il nous manque la taille de quelques personnes :
+
+${noSize.join('\n')}
+
+Pourriez-vous me transmettre leur taille (XS, S, M, L, XL ou XXL) dès que possible ?
+
+Merci beaucoup !
+
+${sign}`
+        : `${bonjour}
+
+Un petit rappel concernant les chandails${deadline} : merci de confirmer la taille (XS, S, M, L, XL ou XXL) de chaque personne si ce n'est pas déjà fait.
+
+Merci beaucoup !
+
+${sign}`;
+      return { subject, body };
+    }
+
+    // details (défaut)
+    const subject = `${ev.title} — les détails`;
+    const body =
+`${bonjour}
+
+Merci de votre inscription à « ${ev.title} » ! Voici les informations à retenir :
+
+Quand : ${when}${where ? `\nOù : ${where}` : ''}${ev.location_url ? `\nPlan : ${ev.location_url}` : ''}
+${ev.description ? `\n${ev.description}\n` : ''}${ev.shirt_order_deadline ? `\nPensez à confirmer votre taille de chandail avant le ${formatDate(ev.shirt_order_deadline)}.\n` : ''}
+Tous les détails sont aussi disponibles ici : ${publicLink}
+
+Pour toute question, répondez simplement à ce courriel.
+Au plaisir de vous y voir !
+
+${sign}`;
+    return { subject, body };
+  }
+
+  function openMail(ev: EventData, team: Team | null) {
+    const type: 'details' | 'incomplete' = team && team.members.length < team.max_members ? 'incomplete' : 'details';
+    const { subject, body } = genMail(ev, team, type);
+    setMailCtx({ ev, team });
+    setMailType(type);
+    setMailSubject(subject);
+    setMailBody(body);
+    setMailCopied(false);
+  }
+
+  function pickMailType(type: 'details' | 'incomplete' | 'shirt') {
+    if (!mailCtx) return;
+    const { subject, body } = genMail(mailCtx.ev, mailCtx.team, type);
+    setMailType(type);
+    setMailSubject(subject);
+    setMailBody(body);
+    setMailCopied(false);
+  }
+
+  function copyMail() {
+    navigator.clipboard.writeText(`Objet : ${mailSubject}\n\n${mailBody}`).then(() => {
+      setMailCopied(true);
+      setTimeout(() => setMailCopied(false), 2500);
+    });
+  }
+
+  function openMailClient() {
+    if (!mailCtx) return;
+    const to = mailCtx.team ? mailCtx.team.captain_email : '';
+    const bcc = mailCtx.team ? '' : recipientEmails(null).join(',');
+    const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}${bcc ? `&bcc=${encodeURIComponent(bcc)}` : ''}`;
+    window.location.href = url;
+  }
+
   // Tous les participants actifs (individuels + membres d'equipes)
   function activeParticipantCount(): number {
     return registrations.filter(r => r.status !== 'cancelled').length
@@ -847,6 +980,10 @@ export default function EventsPage() {
                         navigator.clipboard.writeText(link);
                       }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold bg-gray-50 text-text-muted hover:bg-gray-100 transition-all"
                       ><Copy className="h-3 w-3" /> Lien public</button>
+                      <button onClick={() => openMail(ev, null)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                        style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blueDark }}
+                      ><Mail className="h-3 w-3" /> Modele de courriel</button>
                     </div>
                   </div>
 
@@ -920,6 +1057,10 @@ export default function EventsPage() {
                                   <span className="text-[11px] font-bold text-text-muted flex-shrink-0">{team.members.length}/{team.max_members}</span>
                                 </div>
                                 <div className="flex items-center gap-1 flex-shrink-0">
+                                  <button onClick={() => openMail(ev, team)}
+                                    className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all"
+                                    title="Modele de courriel pour cette equipe"
+                                  ><Mail className="h-3.5 w-3.5" /></button>
                                   {team.logo_url && (
                                     <button onClick={() => downloadTeamLogo(team)} disabled={logoDownloading}
                                       className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all disabled:opacity-50"
@@ -1525,6 +1666,77 @@ export default function EventsPage() {
           </div>
         </div>
       )}
+
+      {/* Modele de courriel a copier-coller */}
+      {mailCtx && (() => {
+        const { ev, team } = mailCtx;
+        const types: { key: 'details' | 'incomplete' | 'shirt'; label: string; show: boolean }[] = [
+          { key: 'details', label: "Details de l'evenement", show: true },
+          { key: 'incomplete', label: 'Il vous manque des joueurs', show: !!team },
+          { key: 'shirt', label: 'Rappel taille de chandail', show: !!ev.form_options?.show_shirt_size },
+        ];
+        const audience = team ? `Equipe « ${team.team_name} »` : 'Tous les participants';
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMailCtx(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <div className="min-w-0">
+                  <h2 className="text-base font-extrabold text-text-main flex items-center gap-2"><Mail className="h-4 w-4 flex-shrink-0" style={{ color: DUO.blue }} /> Modele de courriel</h2>
+                  <p className="text-xs text-text-muted mt-0.5 truncate">{audience} &middot; a copier-coller dans ton courriel</p>
+                </div>
+                <button type="button" onClick={() => setMailCtx(null)} className="p-1 rounded-md text-text-light hover:bg-gray-100 hover:text-text-main transition-all flex-shrink-0"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Choix du modele */}
+                <div className="flex flex-wrap gap-2">
+                  {types.filter(t => t.show).map(t => (
+                    <button key={t.key} type="button" onClick={() => pickMailType(t.key)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-extrabold border-2 transition-all"
+                      style={mailType === t.key
+                        ? { backgroundColor: DUO.blue, borderColor: DUO.blue, color: '#fff' }
+                        : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#6b7280' }}
+                    >{t.label}</button>
+                  ))}
+                </div>
+
+                {/* Objet */}
+                <div>
+                  <label className="block text-xs font-extrabold text-text-muted mb-1">Objet</label>
+                  <input value={mailSubject} onChange={e => setMailSubject(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-gray-200 text-sm font-bold text-text-main focus:outline-none focus:border-blue-300" />
+                </div>
+
+                {/* Corps */}
+                <div>
+                  <label className="block text-xs font-extrabold text-text-muted mb-1">Message <span className="font-bold text-text-light">(modifiable avant d&apos;envoyer)</span></label>
+                  <textarea value={mailBody} onChange={e => setMailBody(e.target.value)} rows={16}
+                    className="w-full px-3 py-2.5 rounded-lg border-2 border-gray-200 text-sm text-text-main leading-relaxed focus:outline-none focus:border-blue-300 font-mono" style={{ whiteSpace: 'pre-wrap' }} />
+                </div>
+
+                <p className="text-xs text-text-light flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  Rien n&apos;est envoye automatiquement : tu copies le texte (ou tu l&apos;ouvres dans ton courriel) et tu l&apos;envoies toi-meme.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3 p-4 border-t border-gray-100 sticky bottom-0 bg-white">
+                <button onClick={openMailClient}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all">
+                  <ExternalLink className="h-4 w-4" /> Ouvrir dans mon courriel
+                </button>
+                <button onClick={copyMail}
+                  className="flex-1 min-w-[160px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px]"
+                  style={{ backgroundColor: mailCopied ? DUO.green : DUO.blue, boxShadow: `0 3px 0 0 ${mailCopied ? DUO.greenDark : DUO.blueDark}` }}>
+                  {mailCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {mailCopied ? 'Copie !' : 'Copier le courriel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
