@@ -410,7 +410,7 @@ export default function EventsPage() {
   const [logoDownloading, setLogoDownloading] = useState(false);
   // Modele de courriel a copier-coller (aucun envoi automatique)
   const [mailCtx, setMailCtx] = useState<{ ev: EventData; team: Team | null } | null>(null);
-  const [mailType, setMailType] = useState<'details' | 'incomplete' | 'shirt'>('details');
+  const [mailType, setMailType] = useState<'welcome' | 'details' | 'incomplete' | 'shirt'>('details');
   const [mailSubject, setMailSubject] = useState('');
   const [mailBody, setMailBody] = useState('');
   const [mailCopied, setMailCopied] = useState(false);
@@ -647,7 +647,7 @@ export default function EventsPage() {
     return Array.from(new Set([...indiv, ...fromTeams]));
   }
 
-  function genMail(ev: EventData, team: Team | null, type: 'details' | 'incomplete' | 'shirt'): { subject: string; body: string } {
+  function genMail(ev: EventData, team: Team | null, type: 'welcome' | 'details' | 'incomplete' | 'shirt'): { subject: string; body: string } {
     const captain = team?.members.find(m => m.is_captain);
     const greetName = captain?.first_name || '';
     const bonjour = greetName ? `Bonjour ${greetName},` : 'Bonjour,';
@@ -656,6 +656,36 @@ export default function EventsPage() {
     const publicLink = `${SITE_BASE}/evenements.html?event=${ev.id}`;
     const joinLink = team ? `${SITE_BASE}/evenements.html?event=${ev.id}&team=${team.id}` : '';
     const sign = `Au plaisir,\nNicolas Perron\nGroupe Financier Ste-Foy`;
+    const contactBits = [
+      ev.contact_email ? `par courriel à ${ev.contact_email}` : '',
+      ev.contact_phone ? `par téléphone au ${ev.contact_phone}` : '',
+    ].filter(Boolean);
+    const contactLine = contactBits.length
+      ? `Vous pouvez me joindre ${contactBits.join(' ou ')}.`
+      : 'Vous pouvez simplement répondre à ce courriel.';
+
+    if (type === 'welcome' && team) {
+      const filled = team.members.length;
+      const max = team.max_members;
+      const missing = Math.max(0, max - filled);
+      const subject = `${ev.title} — merci pour votre inscription !`;
+      const body =
+`${bonjour}
+
+Un grand merci d'avoir inscrit votre équipe « ${team.team_name} » au ${ev.title} ! C'est un plaisir de vous compter parmi nous.
+
+Votre équipe compte présentement ${filled} membre${filled > 1 ? 's' : ''} sur ${max}.${missing > 0 ? `\nIl vous reste ${missing} place${missing > 1 ? 's' : ''} : pour ajouter des coéquipiers, partagez ce lien (ou le code d'équipe « ${team.team_code} ») :\n${joinLink}` : ''}
+
+Si vous avez la moindre question, ou si vous devez ajouter ou retirer une personne de votre équipe, n'hésitez surtout pas à me contacter — je m'en occupe avec plaisir. ${contactLine}
+
+Petit rappel des détails :
+Quand : ${when}${where ? `\nOù : ${where}` : ''}
+
+Au plaisir de vous voir au ${ev.title} !
+
+${sign}`;
+      return { subject, body };
+    }
 
     if (type === 'incomplete' && team) {
       const filled = team.members.length;
@@ -731,7 +761,7 @@ ${sign}`;
   }
 
   function openMail(ev: EventData, team: Team | null) {
-    const type: 'details' | 'incomplete' = team && team.members.length < team.max_members ? 'incomplete' : 'details';
+    const type: 'welcome' | 'details' = team ? 'welcome' : 'details';
     const { subject, body } = genMail(ev, team, type);
     setMailCtx({ ev, team });
     setMailType(type);
@@ -740,7 +770,7 @@ ${sign}`;
     setMailCopied(false);
   }
 
-  function pickMailType(type: 'details' | 'incomplete' | 'shirt') {
+  function pickMailType(type: 'welcome' | 'details' | 'incomplete' | 'shirt') {
     if (!mailCtx) return;
     const { subject, body } = genMail(mailCtx.ev, mailCtx.team, type);
     setMailType(type);
@@ -1670,7 +1700,8 @@ ${sign}`;
       {/* Modele de courriel a copier-coller */}
       {mailCtx && (() => {
         const { ev, team } = mailCtx;
-        const types: { key: 'details' | 'incomplete' | 'shirt'; label: string; show: boolean }[] = [
+        const types: { key: 'welcome' | 'details' | 'incomplete' | 'shirt'; label: string; show: boolean }[] = [
+          { key: 'welcome', label: 'Merci au capitaine', show: !!team },
           { key: 'details', label: "Details de l'evenement", show: true },
           { key: 'incomplete', label: 'Il vous manque des joueurs', show: !!team },
           { key: 'shirt', label: 'Rappel taille de chandail', show: !!ev.form_options?.show_shirt_size },
