@@ -656,34 +656,34 @@ export default function EventsPage() {
     const publicLink = `${SITE_BASE}/evenements.html?event=${ev.id}`;
     const joinLink = team ? `${SITE_BASE}/evenements.html?event=${ev.id}&team=${team.id}` : '';
     const sign = `Au plaisir,\nNicolas Perron\nGroupe Financier Ste-Foy`;
-    const contactBits = [
-      ev.contact_email ? `par courriel à ${ev.contact_email}` : '',
-      ev.contact_phone ? `par téléphone au ${ev.contact_phone}` : '',
-    ].filter(Boolean);
-    const contactLine = contactBits.length
-      ? `Vous pouvez me joindre ${contactBits.join(' ou ')}.`
-      : 'Vous pouvez simplement répondre à ce courriel.';
 
     if (type === 'welcome' && team) {
-      const filled = team.members.length;
-      const max = team.max_members;
-      const missing = Math.max(0, max - filled);
+      const datePhrase = ev.date
+        ? (ev.end_date && ev.end_date > ev.date
+            ? formatDateRange(ev.date, ev.end_date).replace(/^Du /, 'du ')
+            : `le ${formatDate(ev.date)}`)
+        : '';
       const subject = `${ev.title} — merci pour votre inscription !`;
       const body =
 `${bonjour}
+J'espère que tu vas bien!
 
-Un grand merci d'avoir inscrit votre équipe « ${team.team_name} » au ${ev.title} ! C'est un plaisir de vous compter parmi nous.
+Merci beaucoup de vous être inscrit à notre ${ev.title}${datePhrase ? `, qui aura lieu ${datePhrase}` : ''}!
 
-Votre équipe compte présentement ${filled} membre${filled > 1 ? 's' : ''} sur ${max}.${missing > 0 ? `\nIl vous reste ${missing} place${missing > 1 ? 's' : ''} : pour ajouter des coéquipiers, partagez ce lien (ou le code d'équipe « ${team.team_code} ») :\n${joinLink}` : ''}
+Si vous souhaitez apporter des changements à votre équipe (ajouter ou retirer des joueurs, modifier des informations, etc.), vous pouvez le faire en consultant le courriel de confirmation reçu lors de votre inscription et en cliquant sur « Gérer mon équipe ».
 
-Si vous avez la moindre question, ou si vous devez ajouter ou retirer une personne de votre équipe, n'hésitez surtout pas à me contacter — je m'en occupe avec plaisir. ${contactLine}
+Aussi, s'il vous manque des joueurs pour compléter votre équipe, n'hésitez pas à m'en aviser. Nous pourrons voir s'il est possible de vous jumeler avec d'autres participants.
 
-Petit rappel des détails :
-Quand : ${when}${where ? `\nOù : ${where}` : ''}
+Une fois que votre équipe sera complète, je communiquerai avec vous afin de vous transmettre les informations concernant le paiement.
 
-Au plaisir de vous voir au ${ev.title} !
+Finalement, puisque les profits du tournoi sont remis à un organisme à but non lucratif, les frais d'inscription sont considérés comme un don. Vous pourrez donc obtenir un reçu à des fins fiscales.
 
-${sign}`;
+Si jamais tu as des questions n'hésite pas!
+
+Au plaisir de vous voir au tournoi et merci beaucoup encore!
+
+Nicolas Perron
+Groupe Financier Ste-Foy`;
       return { subject, body };
     }
 
