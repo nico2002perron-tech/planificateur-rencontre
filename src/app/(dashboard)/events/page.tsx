@@ -408,6 +408,13 @@ export default function EventsPage() {
   const [loadingRegs, setLoadingRegs] = useState(false);
   const [logoPreview, setLogoPreview] = useState<Team | null>(null);
   const [logoDownloading, setLogoDownloading] = useState(false);
+  // Edition d'une equipe (nom + logo) par l'organisateur
+  const [editTeamCtx, setEditTeamCtx] = useState<{ eventId: string; team: Team } | null>(null);
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamLogo, setEditTeamLogo] = useState<string | null>(null);
+  const [editTeamSaving, setEditTeamSaving] = useState(false);
+  const [editTeamUploading, setEditTeamUploading] = useState(false);
+  const editTeamLogoInputRef = useRef<HTMLInputElement>(null);
   // Modele de courriel a copier-coller (aucun envoi automatique)
   const [mailCtx, setMailCtx] = useState<{ ev: EventData; team: Team | null } | null>(null);
   const [mailType, setMailType] = useState<'welcome' | 'details' | 'incomplete' | 'shirt'>('details');
@@ -604,6 +611,53 @@ export default function EventsPage() {
     });
     if (res.ok) {
       setTeams(prev => prev.filter(t => t.id !== team.id));
+    }
+  }
+
+  // --- Edition d'une equipe (nom + logo) par l'organisateur ---
+  function openEditTeam(eventId: string, team: Team) {
+    setEditTeamCtx({ eventId, team });
+    setEditTeamName(team.team_name);
+    setEditTeamLogo(team.logo_url);
+  }
+
+  async function uploadEditTeamLogo(file: File) {
+    const maxSize = 2 * 1024 * 1024;
+    if (file.size > maxSize) { window.alert('Logo trop lourd (max 2 Mo)'); return; }
+    setEditTeamUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      const res = await fetch('/api/events/teams/logo', { method: 'POST', body: fd });
+      if (!res.ok) { window.alert('Echec du televersement du logo'); return; }
+      const { url } = await res.json();
+      setEditTeamLogo(url);
+    } finally {
+      setEditTeamUploading(false);
+    }
+  }
+
+  async function saveTeamEdit() {
+    if (!editTeamCtx) return;
+    const { eventId, team } = editTeamCtx;
+    const name = editTeamName.trim();
+    if (!name) { window.alert("Le nom de l'equipe ne peut pas etre vide"); return; }
+    setEditTeamSaving(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: team.id, team_name: name, logo_url: editTeamLogo }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Erreur' }));
+        window.alert(error || "Echec de l'enregistrement");
+        return;
+      }
+      setTeams(prev => prev.map(t => t.id === team.id ? { ...t, team_name: name, logo_url: editTeamLogo } : t));
+      setEditTeamCtx(null);
+    } finally {
+      setEditTeamSaving(false);
     }
   }
 
@@ -1091,6 +1145,10 @@ ${sign}`;
                                     className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all"
                                     title="Modele de courriel pour cette equipe"
                                   ><Mail className="h-3.5 w-3.5" /></button>
+                                  <button onClick={() => openEditTeam(ev.id, team)}
+                                    className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all"
+                                    title="Modifier le nom ou le logo"
+                                  ><Pencil className="h-3.5 w-3.5" /></button>
                                   {team.logo_url && (
                                     <button onClick={() => downloadTeamLogo(team)} disabled={logoDownloading}
                                       className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all disabled:opacity-50"
@@ -1691,6 +1749,79 @@ ${sign}`;
                 style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}>
                 {logoDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 Telecharger
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edition d'une equipe : nom + logo */}
+      {editTeamCtx && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !editTeamSaving && setEditTeamCtx(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h2 className="text-base font-extrabold text-text-main truncate flex items-center gap-2">
+                <Pencil className="h-4 w-4 flex-shrink-0" style={{ color: DUO.blue }} />
+                Modifier l&apos;equipe
+              </h2>
+              <button type="button" onClick={() => setEditTeamCtx(null)} disabled={editTeamSaving} className="p-1 rounded-md text-text-light hover:bg-gray-100 hover:text-text-main transition-all flex-shrink-0 disabled:opacity-50"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-5 space-y-5">
+              {/* Nom de l'equipe */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-muted mb-1.5 uppercase tracking-wide">Nom de l&apos;equipe</label>
+                <input
+                  type="text"
+                  value={editTeamName}
+                  maxLength={80}
+                  onChange={e => setEditTeamName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveTeamEdit(); }}
+                  className="w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-bold text-text-main focus:border-blue-400 focus:outline-none transition-all"
+                  placeholder="Nom de l'equipe"
+                />
+              </div>
+              {/* Logo */}
+              <div>
+                <label className="block text-xs font-extrabold text-text-muted mb-1.5 uppercase tracking-wide">Logo de l&apos;equipe</label>
+                <div className="flex items-center gap-3">
+                  <div className="flex-shrink-0 w-16 h-16 rounded-xl border-2 border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+                    {editTeamLogo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={editTeamLogo} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      <Trophy className="h-6 w-6 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 flex-1">
+                    <button type="button" onClick={() => editTeamLogoInputRef.current?.click()} disabled={editTeamUploading}
+                      className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-gray-200 text-xs font-extrabold text-text-muted hover:bg-gray-50 transition-all disabled:opacity-60">
+                      {editTeamUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      {editTeamLogo ? 'Remplacer le logo' : 'Ajouter un logo'}
+                    </button>
+                    {editTeamLogo && (
+                      <button type="button" onClick={() => setEditTeamLogo(null)} disabled={editTeamUploading}
+                        className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-red-100 text-xs font-extrabold text-red-500 hover:bg-red-50 transition-all disabled:opacity-60">
+                        <Trash2 className="h-4 w-4" /> Retirer le logo
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input ref={editTeamLogoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadEditTeamLogo(f); e.target.value = ''; }} />
+                <p className="text-[11px] text-text-light mt-1.5">JPG, PNG ou WebP, max 2 Mo.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 p-4 border-t border-gray-100">
+              <button onClick={() => setEditTeamCtx(null)} disabled={editTeamSaving}
+                className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all disabled:opacity-60">
+                Annuler
+              </button>
+              <button onClick={saveTeamEdit} disabled={editTeamSaving || editTeamUploading || !editTeamName.trim()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] disabled:opacity-60"
+                style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}>
+                {editTeamSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                Enregistrer
               </button>
             </div>
           </div>
