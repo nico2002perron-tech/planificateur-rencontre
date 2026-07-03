@@ -549,8 +549,21 @@ export function parseCroesusData(rawText: string): ParseResult {
     const col1IsText = hasCurrencyCol0
       && /[a-zA-ZÀ-ÿ]{2,}/.test(firstFields[1]?.trim() || '');
 
-    if (hasCurrencyCol0 && col1IsText && firstFields.length >= 13) {
+    // With Devise + Type de titre, two layouts exist: with or without a
+    // "Type de compte" column between Description and Symbole. Croesus exports
+    // the account code as a letter (A/E/W/S…) or a digit (0/2/4…) depending on
+    // the configuration, and may omit trailing columns (Revenu annuel), so the
+    // column COUNT alone can't tell the layouts apart: detect the account
+    // column by content — a single character at col 4 followed by something
+    // symbol-like at col 5 (letters like ADBE, 1CAD — never a number like a PRU).
+    const col4 = firstFields[4]?.trim() || '';
+    const col5 = firstFields[5]?.trim() || '';
+    const hasAccountColumn = firstFields.length >= 13 ||
+      (/^[A-Z0-9]$/i.test(col4) && /^[0-9]?[A-Z][A-Z0-9.\-]{0,9}$/i.test(col5));
+
+    if (hasCurrencyCol0 && col1IsText && firstFields.length >= 10 && hasAccountColumn) {
       // 13-column format: Devise | Type de titre | Qté | Desc | Compte | Symbole | PRU | Prix | VCompt | VMarché | DurMod | IntCour | RevAnn
+      // Some exports drop the trailing Revenu annuel → 12 columns, same layout.
       columnMapping = {
         currency: 0,
         assetType: 1,
