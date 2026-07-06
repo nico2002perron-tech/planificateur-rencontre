@@ -9,6 +9,7 @@ import {
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
   Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
   Sparkles, Timer, Search, ExternalLink, CalendarRange, ScrollText,
+  HeartHandshake,
 } from 'lucide-react';
 
 const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
@@ -93,6 +94,8 @@ interface EventData {
   reminder_dates?: string[];
   shirt_order_deadline?: string | null;
   rules_images?: string[];
+  donation_org?: string;
+  donation_amount?: number | null;
 }
 
 interface Registration {
@@ -193,6 +196,9 @@ const emptyForm = () => ({
   featured: false,
   reminder_dates: [] as string[],
   shirt_order_deadline: '',
+  // Dons : cause soutenue + montant amassé (saisi après l'événement)
+  donation_org: '',
+  donation_amount: '' as string | number,
 });
 
 type FormData = ReturnType<typeof emptyForm>;
@@ -200,6 +206,11 @@ type FormData = ReturnType<typeof emptyForm>;
 function formatDate(d: string) {
   if (!d) return '';
   return new Date(d + 'T12:00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// Montant en dollars, format fr-CA : « 5 000 $ » (décimales seulement si nécessaires)
+function fmtMoney(n: number): string {
+  return n.toLocaleString('fr-CA', { maximumFractionDigits: Number.isInteger(n) ? 0 : 2 }) + ' $';
 }
 
 // Plage de dates « du ... au ... » avec formulation courte et naturelle (fr-CA).
@@ -496,6 +507,8 @@ export default function EventsPage() {
       featured: e.featured ?? false,
       reminder_dates: e.reminder_dates || [],
       shirt_order_deadline: e.shirt_order_deadline || '',
+      donation_org: e.donation_org || '',
+      donation_amount: e.donation_amount ?? '',
     });
     setFormError('');
     setShowForm(true);
@@ -512,6 +525,7 @@ export default function EventsPage() {
         end_date: form.end_date || null,
         registration_deadline: form.registration_deadline || null,
         shirt_order_deadline: form.shirt_order_deadline || null,
+        donation_amount: form.donation_amount === '' ? null : Number(form.donation_amount),
       };
       const url = editId ? `/api/events/${editId}` : '/api/events';
       const method = editId ? 'PUT' : 'POST';
@@ -994,6 +1008,12 @@ ${sign}`;
                         ><Shirt className="h-3 w-3" /> Chandails {countdownLabel(d)}</span>
                       );
                     })()}
+                    {Number(ev.donation_amount) > 0 && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold"
+                        style={{ backgroundColor: '#e11d4814', color: '#be123c' }}
+                        title={ev.donation_org ? `Remis à ${ev.donation_org}` : 'Dons amassés'}
+                      ><HeartHandshake className="h-3 w-3" /> {fmtMoney(Number(ev.donation_amount))} amasses</span>
+                    )}
                     {ev.creator && <span className="text-[11px] text-text-light">par {ev.creator.name}</span>}
                   </div>
                 </div>
@@ -1650,6 +1670,23 @@ ${sign}`;
                         }}
                       >{opt.label}</button>
                     ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Dons et cause soutenue ── */}
+              <div className="p-4 rounded-xl border-2 space-y-4" style={{ borderColor: '#e11d4830', backgroundColor: '#e11d4806' }}>
+                <h3 className="text-sm font-extrabold text-text-main flex items-center gap-1.5"><HeartHandshake className="h-4 w-4" style={{ color: '#e11d48' }} /> Dons et cause soutenue</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-extrabold text-text-main mb-1.5">Organisme beneficiaire</label>
+                    <input type="text" value={form.donation_org} onChange={e => updateForm('donation_org', e.target.value)} placeholder="Ex: Maison de l'alphabetisation" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#e11d48]" />
+                    <p className="text-[11px] text-gray-500 mt-1">Affiche « Au profit de ... » sur la carte publique.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold text-text-main mb-1.5">Dons amasses ($)</label>
+                    <input type="number" min={0} step="0.01" value={form.donation_amount} onChange={e => updateForm('donation_amount', e.target.value)} placeholder="Ex: 5000" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-[#e11d48]" />
+                    <p className="text-[11px] text-gray-500 mt-1">A remplir apres l&apos;evenement — mis en vedette dans la section « Passes » du site.</p>
                   </div>
                 </div>
               </div>
