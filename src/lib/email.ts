@@ -305,3 +305,88 @@ export async function sendEventReminder(event: EventInfo, to: string, firstName:
     console.error('Email reminder failed:', err);
   }
 }
+
+// ── Tournoi — horaire d'équipe (bouton « Envoyer l'horaire à tous ») ──────────
+
+export interface TeamScheduleMatch {
+  matchNumber: number;
+  scheduledTime: string;   // 'HH:MM'
+  court: number;
+  opponentName: string;    // '' si l'adversaire n'est pas encore connu
+  phase: string;           // garantie | quart | demi | bronze | finale
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  garantie: '', quart: 'Quart de finale', demi: 'Demi-finale', bronze: 'Match pour le bronze', finale: 'FINALE',
+};
+
+function scheduleTable(teamName: string, matches: TeamScheduleMatch[]): string {
+  const rows = matches.map(m => {
+    const phaseLabel = PHASE_LABELS[m.phase] || '';
+    const opponent = m.opponentName || 'À déterminer';
+    return `
+      <tr>
+        <td style="padding:9px 12px;border-top:1px solid #e7edf3;font-weight:bold;color:#03045e;font-size:15px;white-space:nowrap">${m.scheduledTime}</td>
+        <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#475569;font-size:14px;white-space:nowrap">Terrain ${m.court}</td>
+        <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#334155;font-size:14px">vs <strong>${opponent}</strong>${phaseLabel ? ` <span style="color:#0077b6;font-size:12px;font-weight:bold">· ${phaseLabel}</span>` : ''}</td>
+      </tr>`;
+  }).join('');
+  return `
+    <div style="background:#f8fafc;border:1px solid #e7edf3;border-radius:12px;overflow:hidden;margin:0 0 20px">
+      <div style="padding:12px 16px;background:#03045e"><p style="margin:0;color:#ffffff;font-weight:bold;font-size:15px">🏆 ${teamName}</p></div>
+      <table style="width:100%;border-collapse:collapse">${rows}</table>
+    </div>`;
+}
+
+/**
+ * Envoie à chaque joueur de l'équipe son horaire du tournoi (lot Resend :
+ * jusqu'à 100 courriels par appel API — évite de dépasser le temps d'exécution).
+ * Retourne le nombre de courriels remis à Resend.
+ */
+export async function sendTournamentSchedule(
+  event: EventInfo,
+  teamName: string,
+  recipients: { email: string; firstName: string }[],
+  matches: TeamScheduleMatch[],
+  liveUrl: string,
+): Promise<number> {
+  const resend = getResend();
+  if (!resend || recipients.length === 0 || matches.length === 0) return 0;
+
+  const emails = recipients.map(r => {
+    const inner = `
+      <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">Votre horaire de tournoi&nbsp;!</h1>
+      <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">${event.title} · ${formatDate(event.date)}</p>
+      <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour <strong>${r.firstName || ''}</strong>,</p>
+      <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Voici les parties de votre équipe <strong>${teamName}</strong>${event.location ? ` au <strong>${event.location}</strong>` : ''}&nbsp;:</p>
+      ${scheduleTable(teamName, matches)}
+      <div style="text-align:center;margin:0 0 18px">
+        <a href="${liveUrl}" style="display:inline-block;background:#0077b6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 26px;border-radius:10px">Suivre le tournoi en direct</a>
+      </div>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:13px 16px">
+        <p style="margin:0;color:#92400e;font-size:13px;line-height:1.5">⏱️ <strong>Les heures peuvent bouger durant la journée.</strong> La page en direct ci-dessus fait toujours foi — gardez-la ouverte&nbsp;!</p>
+      </div>`;
+    return {
+      from: FROM,
+      to: r.email,
+      subject: `Votre horaire – ${event.title} (${teamName})`,
+      html: emailShell(inner, contactStr(event)),
+    };
+  });
+
+  let sent = 0;
+  try {
+    for (let i = 0; i < emails.length; i += 100) {
+      const chunk = emails.slice(i, i + 100);
+      const { error } = await resend.batch.send(chunk);
+      if (error) {
+        console.error('Tournament schedule batch failed:', error);
+        continue;
+      }
+      sent += chunk.length;
+    }
+  } catch (err) {
+    console.error('Tournament schedule email failed:', err);
+  }
+  return sent;
+}

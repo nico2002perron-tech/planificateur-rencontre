@@ -1076,6 +1076,10 @@ ${sign}`;
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
                         style={{ backgroundColor: `${DUO.green}12`, color: DUO.greenDark }}
                       ><ClipboardCheck className="h-3 w-3" /> Presences (jour J)</a>
+                      <a href={`/events/${ev.id}/tournoi`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                        style={{ backgroundColor: `${DUO.orange}12`, color: DUO.orangeDark }}
+                      ><Trophy className="h-3 w-3" /> Tournoi (horaire)</a>
                       <button onClick={() => exportCSV(ev.title)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold bg-gray-50 text-text-muted hover:bg-gray-100 transition-all"
                       ><Download className="h-3 w-3" /> CSV</button>
