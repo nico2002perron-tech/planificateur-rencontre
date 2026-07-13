@@ -26,6 +26,7 @@ interface Match {
   phase: string;
   match_number: number;
   court: number;
+  scheduled_date: string;
   scheduled_time: string;
   team_a_id: string | null;
   team_b_id: string | null;
@@ -94,25 +95,34 @@ function LivePageInner({ eventId }: { eventId: string }) {
     return (id: string | null, source: string) => (id ? map.get(id) : '') || source || 'À déterminer';
   }, [state?.teams]);
 
-  const bySlot = useMemo(() => {
-    const groups = new Map<string, Match[]>();
+  // Horaire groupé par JOURNÉE puis par heure — tri chronologique partout
+  // ('' = partie d'avant la v3 → date de l'événement)
+  const byDay = useMemo(() => {
+    const days = new Map<string, Map<string, Match[]>>();
     for (const m of state?.matches || []) {
-      const key = m.scheduled_time || '—';
-      groups.set(key, [...(groups.get(key) || []), m]);
+      const dk = m.scheduled_date || state?.event.date || '';
+      const tk = m.scheduled_time || '—';
+      const slots = days.get(dk) || new Map<string, Match[]>();
+      slots.set(tk, [...(slots.get(tk) || []), m]);
+      days.set(dk, slots);
     }
-    // Tri chronologique : l'organisateur peut déplacer des parties à la main
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [state?.matches]);
+    return [...days.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, slots]) => ({ date, slots: [...slots.entries()].sort((a, b) => a[0].localeCompare(b[0])) }));
+  }, [state?.matches, state?.event.date]);
 
-  // Prochaine partie de l'équipe sélectionnée — la plus tôt en HEURE
+  const multiDay = byDay.length > 1;
+
+  // Prochaine partie de l'équipe sélectionnée — la plus tôt en JOUR + HEURE
   // (pas en numéro de partie : l'organisateur peut déplacer des matchs)
   const nextMatch = useMemo(() => {
     if (!selectedTeam || !state) return null;
+    const when = (m: Match) => `${m.scheduled_date || state.event.date || ''}|${m.scheduled_time || '99:99'}`;
     return state.matches
       .filter(m =>
         (m.team_a_id === selectedTeam || m.team_b_id === selectedTeam) &&
         m.status !== 'finished' && m.status !== 'cancelled')
-      .sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))[0] || null;
+      .sort((a, b) => when(a).localeCompare(when(b)))[0] || null;
   }, [selectedTeam, state]);
 
   if (loading) {
@@ -147,7 +157,12 @@ function LivePageInner({ eventId }: { eventId: string }) {
           </div>
           <h1 className="text-2xl font-extrabold mt-1.5 leading-tight">{state.event.title}</h1>
           <p className="text-sm mt-1 opacity-90 flex items-center gap-3 flex-wrap">
-            <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{formatEventDate(state.event.date)}</span>
+            <span className="inline-flex items-center gap-1 capitalize">
+              <CalendarDays className="h-3.5 w-3.5" />
+              {multiDay
+                ? `${formatEventDate(byDay[0].date)} au ${formatEventDate(byDay[byDay.length - 1].date)}`
+                : formatEventDate(state.event.date)}
+            </span>
             {state.event.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{state.event.location}</span>}
           </p>
           {state.published_at && (
@@ -201,6 +216,11 @@ function LivePageInner({ eventId }: { eventId: string }) {
                     <p className="text-[11px] font-extrabold uppercase tracking-wider opacity-90">Votre prochaine partie</p>
                     <div className="flex items-end justify-between gap-3 mt-1">
                       <div>
+                        {multiDay && (
+                          <p className="text-xs font-extrabold capitalize opacity-90 mb-0.5">
+                            {formatEventDate(nextMatch.scheduled_date || state.event.date)}
+                          </p>
+                        )}
                         <p className="text-3xl font-extrabold leading-none">{nextMatch.scheduled_time}</p>
                         <p className="text-sm font-bold mt-1.5 opacity-95">
                           Terrain {nextMatch.court} · vs {teamName(
@@ -237,13 +257,22 @@ function LivePageInner({ eventId }: { eventId: string }) {
             {/* Horaire */}
             {tab === 'horaire' && (
               <div className="mt-3 space-y-4">
-                {bySlot.map(([time, matches]) => {
-                  const visible = selectedTeam
-                    ? matches.filter(m => m.team_a_id === selectedTeam || m.team_b_id === selectedTeam)
-                    : matches;
-                  if (visible.length === 0) return null;
+                {byDay.map(({ date, slots }) => {
+                  const daySlots = slots
+                    .map(([time, matches]) => [time, selectedTeam
+                      ? matches.filter(m => m.team_a_id === selectedTeam || m.team_b_id === selectedTeam)
+                      : matches] as const)
+                    .filter(([, ms]) => ms.length > 0);
+                  if (daySlots.length === 0) return null;
                   return (
-                    <div key={time}>
+                    <div key={date || 'sans-date'}>
+                      {multiDay && (
+                        <p className="text-sm font-extrabold mt-5 mb-2 px-1 capitalize" style={{ color: BRAND.navy }}>
+                          📆 {formatEventDate(date)}
+                        </p>
+                      )}
+                      {daySlots.map(([time, visible]) => (
+                    <div key={time} className="mb-4">
                       <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wide mb-1.5 px-1">{time}</p>
                       <div className="space-y-1.5">
                         {visible.map(m => {
@@ -278,6 +307,8 @@ function LivePageInner({ eventId }: { eventId: string }) {
                           );
                         })}
                       </div>
+                    </div>
+                      ))}
                     </div>
                   );
                 })}

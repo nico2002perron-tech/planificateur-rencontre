@@ -56,6 +56,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.scheduled_time !== undefined && /^\d{1,2}:\d{2}$/.test(String(body.scheduled_time))) {
     patch.scheduled_time = String(body.scheduled_time);
   }
+  if (body.scheduled_date !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(String(body.scheduled_date))) {
+    patch.scheduled_date = String(body.scheduled_date);
+  }
 
   const { data: updated, error } = await supabase
     .from('event_matches')

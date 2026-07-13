@@ -67,12 +67,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     );
   }
 
+  // Journées configurées, sinon repli : une seule journée = date de l'événement,
+  // de l'ancienne heure de début jusqu'en fin de soirée (configs d'avant la v3).
+  let days = Array.isArray(config.days) ? config.days : [];
+  if (days.length === 0) {
+    const { data: ev } = await supabase.from('events').select('date').eq('id', eventId).single();
+    days = [{ date: ev?.date || '', start: config.start_time || '09:00', end: '23:59' }];
+  }
+
   const schedule = generateSchedule(
     teams.map(t => ({ id: t.id, name: t.team_name })),
     {
       guaranteedGames: config.guaranteed_games,
       courts: config.courts,
-      startTime: config.start_time,
+      days,
       gameMinutes: config.game_minutes,
       breakMinutes: config.break_minutes,
     },
@@ -90,6 +98,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       round_number: m.roundNumber,
       match_number: m.matchNumber,
       court: m.court,
+      scheduled_date: m.scheduledDate,
       scheduled_time: m.scheduledTime,
       team_a_id: m.teamAId,
       team_b_id: m.teamBId,

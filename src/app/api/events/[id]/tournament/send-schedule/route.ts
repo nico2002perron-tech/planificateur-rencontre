@@ -61,14 +61,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let teamsNotified = 0;
   const teamsWithoutMatches: string[] = [];
 
+  // Le jour n'est affiché dans le courriel que si le tournoi a plusieurs journées
+  const matchDate = (m: { scheduled_date: string }) => m.scheduled_date || state.event.date || '';
+  const multiDay = new Set(state.matches.map(matchDate)).size > 1;
+  const dayLabel = (d: string) => d
+    ? new Date(d + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' })
+    : '';
+
   for (const team of state.teams) {
     const teamMatches: TeamScheduleMatch[] = state.matches
       .filter(m => m.team_a_id === team.id || m.team_b_id === team.id)
+      .sort((x, y) => `${matchDate(x)}|${x.scheduled_time}`.localeCompare(`${matchDate(y)}|${y.scheduled_time}`))
       .map(m => {
         const opponentId = m.team_a_id === team.id ? m.team_b_id : m.team_a_id;
         const opponentSource = m.team_a_id === team.id ? m.source_b : m.source_a;
         return {
           matchNumber: m.match_number,
+          dayLabel: multiDay ? dayLabel(matchDate(m)) : undefined,
           scheduledTime: m.scheduled_time,
           court: m.court,
           opponentName: (opponentId ? teamNames.get(opponentId) : '') || opponentSource || '',

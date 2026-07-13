@@ -15,12 +15,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeStandings, type StandingRow } from './standings';
 
+export interface TournamentDay {
+  date: string;  // 'YYYY-MM-DD'
+  start: string; // 'HH:MM'
+  end: string;   // 'HH:MM'
+}
+
 export interface TournamentConfig {
   id: string;
   event_id: string;
   guaranteed_games: number;
   courts: number;
   start_time: string;
+  days: TournamentDay[] | null; // null = une seule journée (date de l'événement)
   game_minutes: number;
   break_minutes: number;
   playoffs_enabled: boolean;
@@ -45,6 +52,7 @@ export interface TournamentMatch {
   round_number: number;
   match_number: number;
   court: number;
+  scheduled_date: string; // '' = date de l'événement (parties d'avant la v3)
   scheduled_time: string;
   team_a_id: string | null;
   team_b_id: string | null;
@@ -67,14 +75,14 @@ export interface TournamentState {
 }
 
 export const MATCH_COLUMNS =
-  'id, phase, round_number, match_number, court, scheduled_time, team_a_id, team_b_id, source_a, source_b, score_a, score_b, status';
+  'id, phase, round_number, match_number, court, scheduled_date, scheduled_time, team_a_id, team_b_id, source_a, source_b, score_a, score_b, status';
 
 // Forme comparable d'un jeu de parties (ordre stable, sans horodatages)
 function comparable(ms: TournamentMatch[]): string {
   return JSON.stringify(
     [...ms]
       .sort((a, b) => a.match_number - b.match_number)
-      .map(m => [m.phase, m.match_number, m.court, m.scheduled_time, m.team_a_id, m.team_b_id, m.source_a, m.source_b, m.score_a, m.score_b, m.status]),
+      .map(m => [m.phase, m.match_number, m.court, m.scheduled_date ?? '', m.scheduled_time, m.team_a_id, m.team_b_id, m.source_a, m.source_b, m.score_a, m.score_b, m.status]),
   );
 }
 

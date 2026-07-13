@@ -22,10 +22,13 @@ const DUO = {
   red: '#FF4B4B',
 } as const;
 
+interface Day { date: string; start: string; end: string }
+
 interface Config {
   guaranteed_games: number;
   courts: number;
   start_time: string;
+  days: Day[];
   game_minutes: number;
   break_minutes: number;
   status: 'draft' | 'published';
@@ -40,6 +43,7 @@ interface Match {
   phase: string;
   match_number: number;
   court: number;
+  scheduled_date: string;
   scheduled_time: string;
   team_a_id: string | null;
   team_b_id: string | null;
@@ -67,9 +71,21 @@ interface TournamentState {
 }
 
 const DEFAULT_CONFIG: Config = {
-  guaranteed_games: 2, courts: 2, start_time: '09:00',
+  guaranteed_games: 2, courts: 2, start_time: '09:00', days: [],
   game_minutes: 25, break_minutes: 5, status: 'draft', schedule_sent_at: null, published_at: null,
 };
+
+function formatDayLong(dateStr: string): string {
+  if (!dateStr) return '';
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+// Journée suivante (YYYY-MM-DD + 1 jour) pour le bouton « Ajouter une journée »
+function nextDate(dateStr: string): string {
+  const d = new Date((dateStr || new Date().toISOString().slice(0, 10)) + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function TournamentConsolePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -86,7 +102,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const [drafts, setDrafts] = useState<Record<string, { a: string; b: string }>>({});
   // Édition heure/terrain d'une partie (déplacer une partie avant ou pendant le tournoi)
   const [editing, setEditing] = useState<string>('');
-  const [editDraft, setEditDraft] = useState<{ time: string; court: number }>({ time: '', court: 1 });
+  const [editDraft, setEditDraft] = useState<{ date: string; time: string; court: number }>({ date: '', time: '', court: 1 });
   // Mode « Échanger » : deux taps sur des noms d'équipes pour les échanger de place
   const [swapMode, setSwapMode] = useState(false);
   const [swapSel, setSwapSel] = useState<{ matchId: string; side: 'a' | 'b' } | null>(null);
@@ -98,18 +114,23 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
 
   const applyState = useCallback((s: TournamentState) => {
     setState(s);
+    const fallbackDays = [{ date: s.event.date || '', start: s.config?.start_time || '09:00', end: '17:00' }];
     if (s.config) {
       const c = s.config;
       setForm({
         guaranteed_games: c.guaranteed_games,
         courts: c.courts,
         start_time: c.start_time,
+        days: Array.isArray(c.days) && c.days.length > 0 ? c.days : fallbackDays,
         game_minutes: c.game_minutes,
         break_minutes: c.break_minutes,
         status: c.status,
         schedule_sent_at: c.schedule_sent_at,
         published_at: c.published_at,
       });
+    } else {
+      // Pas encore de tournoi : préremplit une journée = date de l'événement
+      setForm(f => (f.days.length === 0 ? { ...f, days: fallbackDays } : f));
     }
   }, []);
 
@@ -130,15 +151,23 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     return (id: string | null, source: string) => (id ? map.get(id) : '') || source || 'À déterminer';
   }, [state?.teams]);
 
-  const bySlot = useMemo(() => {
-    const groups = new Map<string, Match[]>();
+  // Horaire groupé par JOURNÉE puis par heure — tri chronologique partout
+  // ('' = partie d'avant la v3 → date de l'événement)
+  const byDay = useMemo(() => {
+    const days = new Map<string, Map<string, Match[]>>();
     for (const m of state?.matches || []) {
-      const key = m.scheduled_time || '—';
-      groups.set(key, [...(groups.get(key) || []), m]);
+      const dk = m.scheduled_date || state?.event.date || '';
+      const tk = m.scheduled_time || '—';
+      const slots = days.get(dk) || new Map<string, Match[]>();
+      slots.set(tk, [...(slots.get(tk) || []), m]);
+      days.set(dk, slots);
     }
-    // Tri chronologique : indispensable dès qu'on déplace des parties à la main
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [state?.matches]);
+    return [...days.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, slots]) => ({ date, slots: [...slots.entries()].sort((a, b) => a[0].localeCompare(b[0])) }));
+  }, [state?.matches, state?.event.date]);
+
+  const multiDay = byDay.length > 1 || form.days.length > 1;
 
   // Conflits créés par des déplacements manuels — signalés en rouge, jamais
   // bloquants (inverser deux parties passe par un conflit temporaire).
@@ -148,7 +177,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     for (let i = 0; i < ms.length; i++) {
       for (let j = i + 1; j < ms.length; j++) {
         const a = ms[i], b = ms[j];
-        if (a.scheduled_time !== b.scheduled_time) continue;
+        if ((a.scheduled_date || '') !== (b.scheduled_date || '') || a.scheduled_time !== b.scheduled_time) continue;
         const sharesTeam = [a.team_a_id, a.team_b_id].some(id => id && (id === b.team_a_id || id === b.team_b_id));
         if (sharesTeam) {
           map.set(a.id, 'équipe déjà en jeu à cette heure');
@@ -190,7 +219,11 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       applyState(data);
       setDrafts({});
       const extra = data.summary?.teamsWithExtraGame?.length || 0;
-      showToast(`Horaire généré : ${data.matches.length} parties${extra ? ` (${extra} équipe(s) avec une partie de plus)` : ''}.`);
+      const overflow = data.summary?.overflowMatches || 0;
+      showToast(
+        `Horaire généré : ${data.matches.length} parties${extra ? ` (${extra} équipe(s) avec une partie de plus)` : ''}.` +
+        (overflow ? ` ⚠ ${overflow} partie(s) dépassent la fin de la dernière journée — ajoute une journée, un terrain ou raccourcis les parties.` : ''),
+      );
     } finally {
       setBusy('');
     }
@@ -256,17 +289,18 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
 
   async function saveTimeCourt(m: Match) {
     if (!/^\d{1,2}:\d{2}$/.test(editDraft.time)) { showToast('Heure invalide.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editDraft.date)) { showToast('Date invalide.'); return; }
     setBusy(m.id);
     try {
       const res = await fetch(`/api/events/${eventId}/tournament/matches/${m.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduled_time: editDraft.time, court: editDraft.court }),
+        body: JSON.stringify({ scheduled_date: editDraft.date, scheduled_time: editDraft.time, court: editDraft.court }),
       });
       if (!res.ok) { showToast('Erreur de déplacement.'); return; }
       applyState(await res.json());
       setEditing('');
-      showToast(`M${m.match_number} déplacée à ${editDraft.time} · Terrain ${editDraft.court}.`);
+      showToast(`M${m.match_number} déplacée au ${formatDayLong(editDraft.date)} ${editDraft.time} · Terrain ${editDraft.court}.`);
     } finally {
       setBusy('');
     }
@@ -402,13 +436,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
               ))}
             </div>
           </div>
-          <div>
-            <label className="text-xs font-extrabold text-text-muted block mb-1">Début</label>
-            <input type="time" value={form.start_time}
-              onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
-              className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2 grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs font-extrabold text-text-muted block mb-1">Partie (min)</label>
               <input type="number" min={5} max={240} value={form.game_minutes}
@@ -421,6 +449,46 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                 onChange={e => setForm(f => ({ ...f, break_minutes: parseInt(e.target.value) || 0 }))}
                 className="w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
             </div>
+          </div>
+
+          {/* Journées du tournoi : chaque journée a sa fenêtre d'heures */}
+          <div className="col-span-2">
+            <label className="text-xs font-extrabold text-text-muted block mb-1">Jours et heures du tournoi</label>
+            <div className="space-y-1.5">
+              {form.days.map((d, i) => (
+                <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                  <input type="date" value={d.date}
+                    onChange={e => setForm(f => ({ ...f, days: f.days.map((x, j) => j === i ? { ...x, date: e.target.value } : x) }))}
+                    className="flex-1 min-w-[130px] rounded-xl border-2 border-gray-200 bg-white px-2.5 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
+                  <span className="text-xs font-bold text-text-muted">de</span>
+                  <input type="time" value={d.start}
+                    onChange={e => setForm(f => ({ ...f, days: f.days.map((x, j) => j === i ? { ...x, start: e.target.value } : x) }))}
+                    className="w-[92px] rounded-xl border-2 border-gray-200 bg-white px-2 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
+                  <span className="text-xs font-bold text-text-muted">à</span>
+                  <input type="time" value={d.end}
+                    onChange={e => setForm(f => ({ ...f, days: f.days.map((x, j) => j === i ? { ...x, end: e.target.value } : x) }))}
+                    className="w-[92px] rounded-xl border-2 border-gray-200 bg-white px-2 py-2 text-sm font-bold text-text-main focus:outline-none focus:border-[#FF9600] transition-all" />
+                  {form.days.length > 1 && (
+                    <button onClick={() => setForm(f => ({ ...f, days: f.days.filter((_, j) => j !== i) }))}
+                      className="p-1.5 rounded-lg hover:bg-red-50 transition-all" title="Retirer cette journée">
+                      <X className="h-4 w-4" style={{ color: DUO.red }} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setForm(f => ({
+                ...f,
+                days: [...f.days, { date: nextDate(f.days[f.days.length - 1]?.date || state.event.date), start: '09:00', end: '17:00' }],
+              }))}
+              className="mt-1.5 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+              style={{ backgroundColor: `${DUO.orange}12`, color: DUO.orangeDark }}>
+              + Ajouter une journée
+            </button>
+            <p className="text-[11px] text-text-muted mt-1">
+              Une partie n&apos;est cédulée dans une journée que si elle peut finir avant l&apos;heure de fin. Le surplus continue sur la journée suivante.
+            </p>
           </div>
         </div>
 
@@ -521,10 +589,17 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             </div>
           )}
           <div className="space-y-3">
-            {bySlot.map(([time, matches]) => (
-              <div key={time}>
+            {byDay.map(({ date, slots }) => (
+              <div key={date || 'sans-date'}>
+                {multiDay && (
+                  <p className="text-sm font-extrabold text-text-main mt-4 mb-1.5 px-1 capitalize flex items-center gap-1.5">
+                    📆 {formatDayLong(date) || 'Journée à déterminer'}
+                  </p>
+                )}
+                {slots.map(([time, matches]) => (
+              <div key={`${date}|${time}`}>
                 <p className="text-xs font-extrabold text-text-muted mb-1.5 px-1">🕐 {time}</p>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 mb-3">
                   {matches.map(m => {
                     const d = drafts[m.id] ?? { a: m.score_a === null ? '' : String(m.score_a), b: m.score_b === null ? '' : String(m.score_b) };
                     const finished = m.status === 'finished';
@@ -545,7 +620,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                               onClick={() => {
                                 if (editing === m.id) { setEditing(''); return; }
                                 setEditing(m.id);
-                                setEditDraft({ time: m.scheduled_time, court: m.court });
+                                setEditDraft({ date: m.scheduled_date || date || state.event.date, time: m.scheduled_time, court: m.court });
                               }}
                               className="p-1 rounded-md hover:bg-gray-100 transition-all flex-shrink-0"
                               title="Déplacer (heure / terrain)">
@@ -555,6 +630,11 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                         </div>
                         {editing === m.id && (
                           <div className="mb-2 p-2.5 rounded-xl flex items-center gap-2 flex-wrap" style={{ backgroundColor: '#f8fafc', border: '2px solid #e5e7eb' }}>
+                            {multiDay && (
+                              <input type="date" value={editDraft.date}
+                                onChange={e => setEditDraft(d => ({ ...d, date: e.target.value }))}
+                                className="rounded-lg border-2 border-gray-200 bg-white px-2 py-1.5 text-sm font-bold text-text-main focus:outline-none focus:border-[#1CB0F6]" />
+                            )}
                             <input type="time" value={editDraft.time}
                               onChange={e => setEditDraft(d => ({ ...d, time: e.target.value }))}
                               className="rounded-lg border-2 border-gray-200 bg-white px-2 py-1.5 text-sm font-bold text-text-main focus:outline-none focus:border-[#1CB0F6]" />
@@ -630,6 +710,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                     );
                   })}
                 </div>
+              </div>
+                ))}
               </div>
             ))}
           </div>

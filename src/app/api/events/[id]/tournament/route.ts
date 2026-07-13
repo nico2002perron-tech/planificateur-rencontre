@@ -51,6 +51,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (body.guaranteed_games !== undefined) patch.guaranteed_games = int(body.guaranteed_games, 1, 5, 2);
   if (body.courts !== undefined) patch.courts = int(body.courts, 1, 8, 2);
   if (body.start_time !== undefined && /^\d{1,2}:\d{2}$/.test(String(body.start_time))) patch.start_time = String(body.start_time);
+
+  // Journées du tournoi : [{ date, start, end }] — triées, bornées, validées.
+  if (body.days !== undefined) {
+    const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const isTime = (v: unknown) => typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v);
+    const days = Array.isArray(body.days)
+      ? body.days
+          .filter((d: Record<string, unknown>) => d && isDate(d.date) && isTime(d.start) && isTime(d.end) && String(d.start) < String(d.end))
+          .slice(0, 7)
+          .map((d: Record<string, unknown>) => ({ date: String(d.date), start: String(d.start), end: String(d.end) }))
+          .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date))
+      : [];
+    if (days.length === 0) {
+      return NextResponse.json({ error: 'Au moins une journée valide est requise (l\'heure de fin doit suivre l\'heure de début).' }, { status: 400 });
+    }
+    patch.days = days;
+    patch.start_time = days[0].start; // cohérence avec l'ancien champ
+  }
   if (body.game_minutes !== undefined) patch.game_minutes = int(body.game_minutes, 5, 240, 25);
   if (body.break_minutes !== undefined) patch.break_minutes = int(body.break_minutes, 0, 60, 5);
   if (body.playoffs_enabled !== undefined) patch.playoffs_enabled = !!body.playoffs_enabled;

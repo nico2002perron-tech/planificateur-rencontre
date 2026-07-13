@@ -318,6 +318,7 @@ export async function sendEventReminder(event: EventInfo, to: string, firstName:
 
 export interface TeamScheduleMatch {
   matchNumber: number;
+  dayLabel?: string;       // 'ven. 14 août' — fourni seulement si le tournoi a plusieurs jours
   scheduledTime: string;   // 'HH:MM'
   court: number;
   opponentName: string;    // '' si l'adversaire n'est pas encore connu
@@ -332,9 +333,12 @@ function scheduleTable(teamName: string, matches: TeamScheduleMatch[]): string {
   const rows = matches.map(m => {
     const phaseLabel = PHASE_LABELS[m.phase] || '';
     const opponent = m.opponentName || 'À déterminer';
+    const when = m.dayLabel
+      ? `<span style="color:#0077b6;font-size:12px">${m.dayLabel}</span><br>${m.scheduledTime}`
+      : m.scheduledTime;
     return `
       <tr>
-        <td style="padding:9px 12px;border-top:1px solid #e7edf3;font-weight:bold;color:#03045e;font-size:15px;white-space:nowrap">${m.scheduledTime}</td>
+        <td style="padding:9px 12px;border-top:1px solid #e7edf3;font-weight:bold;color:#03045e;font-size:15px;white-space:nowrap">${when}</td>
         <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#475569;font-size:14px;white-space:nowrap">Terrain ${m.court}</td>
         <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#334155;font-size:14px">vs <strong>${opponent}</strong>${phaseLabel ? ` <span style="color:#0077b6;font-size:12px;font-weight:bold">· ${phaseLabel}</span>` : ''}</td>
       </tr>`;
