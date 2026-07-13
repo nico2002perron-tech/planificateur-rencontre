@@ -12,7 +12,7 @@
 import { useState, useEffect, useMemo, useCallback, use } from 'react';
 import {
   Loader2, ArrowLeft, Trophy, CalendarClock, Send, RefreshCw, Eye, Copy, Check,
-  AlertTriangle, MapPin, Medal, X,
+  AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe,
 } from 'lucide-react';
 
 const DUO = {
@@ -30,6 +30,7 @@ interface Config {
   break_minutes: number;
   status: 'draft' | 'published';
   schedule_sent_at: string | null;
+  published_at: string | null;
 }
 
 interface Team { id: string; name: string; logo_url: string | null }
@@ -61,11 +62,13 @@ interface TournamentState {
   teams: Team[];
   matches: Match[];
   standings: Standing[];
+  published_at: string | null;
+  has_unpublished_changes?: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
   guaranteed_games: 2, courts: 2, start_time: '09:00',
-  game_minutes: 25, break_minutes: 5, status: 'draft', schedule_sent_at: null,
+  game_minutes: 25, break_minutes: 5, status: 'draft', schedule_sent_at: null, published_at: null,
 };
 
 export default function TournamentConsolePage({ params }: { params: Promise<{ id: string }> }) {
@@ -81,6 +84,12 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const [copied, setCopied] = useState(false);
   // Brouillons de pointage en cours de frappe (id de match → scores affichés)
   const [drafts, setDrafts] = useState<Record<string, { a: string; b: string }>>({});
+  // Édition heure/terrain d'une partie (déplacer une partie avant ou pendant le tournoi)
+  const [editing, setEditing] = useState<string>('');
+  const [editDraft, setEditDraft] = useState<{ time: string; court: number }>({ time: '', court: 1 });
+  // Mode « Échanger » : deux taps sur des noms d'équipes pour les échanger de place
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapSel, setSwapSel] = useState<{ matchId: string; side: 'a' | 'b' } | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -99,6 +108,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         break_minutes: c.break_minutes,
         status: c.status,
         schedule_sent_at: c.schedule_sent_at,
+        published_at: c.published_at,
       });
     }
   }, []);
@@ -126,7 +136,30 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       const key = m.scheduled_time || '—';
       groups.set(key, [...(groups.get(key) || []), m]);
     }
-    return [...groups.entries()];
+    // Tri chronologique : indispensable dès qu'on déplace des parties à la main
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [state?.matches]);
+
+  // Conflits créés par des déplacements manuels — signalés en rouge, jamais
+  // bloquants (inverser deux parties passe par un conflit temporaire).
+  const conflicts = useMemo(() => {
+    const map = new Map<string, string>();
+    const ms = (state?.matches || []).filter(m => m.status !== 'cancelled' && m.scheduled_time);
+    for (let i = 0; i < ms.length; i++) {
+      for (let j = i + 1; j < ms.length; j++) {
+        const a = ms[i], b = ms[j];
+        if (a.scheduled_time !== b.scheduled_time) continue;
+        const sharesTeam = [a.team_a_id, a.team_b_id].some(id => id && (id === b.team_a_id || id === b.team_b_id));
+        if (sharesTeam) {
+          map.set(a.id, 'équipe déjà en jeu à cette heure');
+          map.set(b.id, 'équipe déjà en jeu à cette heure');
+        } else if (a.court === b.court) {
+          map.set(a.id, `terrain ${a.court} en double à cette heure`);
+          map.set(b.id, `terrain ${b.court} en double à cette heure`);
+        }
+      }
+    }
+    return map;
   }, [state?.matches]);
 
   const finishedCount = (state?.matches || []).filter(m => m.status === 'finished').length;
@@ -163,17 +196,16 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     }
   }
 
-  async function setPublished(published: boolean) {
+  // « Mettre à jour le site » : prend une photo des parties vivantes → le site
+  // public affiche exactement ça (et rien ne bougera avant le prochain clic).
+  async function publishSite() {
     setBusy('publish');
     try {
-      const res = await fetch(`/api/events/${eventId}/tournament`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: published ? 'published' : 'draft' }),
-      });
-      if (!res.ok) { showToast('Erreur.'); return; }
-      applyState(await res.json());
-      showToast(published ? 'Horaire publié — la page en direct est en ligne !' : 'Horaire remis en brouillon.');
+      const res = await fetch(`/api/events/${eventId}/tournament/publish`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Erreur de publication.'); return; }
+      applyState(data);
+      showToast('✓ Le site affiche maintenant ta dernière version.');
     } finally {
       setBusy('');
     }
@@ -222,6 +254,55 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     }
   }
 
+  async function saveTimeCourt(m: Match) {
+    if (!/^\d{1,2}:\d{2}$/.test(editDraft.time)) { showToast('Heure invalide.'); return; }
+    setBusy(m.id);
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/matches/${m.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduled_time: editDraft.time, court: editDraft.court }),
+      });
+      if (!res.ok) { showToast('Erreur de déplacement.'); return; }
+      applyState(await res.json());
+      setEditing('');
+      showToast(`M${m.match_number} déplacée à ${editDraft.time} · Terrain ${editDraft.court}.`);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Mode Échanger : 1er tap = sélection, 2e tap = échange via l'API
+  async function handleSwapTap(m: Match, side: 'a' | 'b') {
+    if (m.status === 'finished' || m.status === 'cancelled') {
+      showToast('Partie terminée — équipes verrouillées.');
+      return;
+    }
+    if (!swapSel) {
+      setSwapSel({ matchId: m.id, side });
+      return;
+    }
+    if (swapSel.matchId === m.id && swapSel.side === side) {
+      setSwapSel(null); // re-tap sur la même position = désélection
+      return;
+    }
+    setBusy('swap');
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/swap-teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ a: swapSel, b: { matchId: m.id, side } }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Erreur d\'échange.'); return; }
+      applyState(data);
+      setSwapSel(null);
+      showToast('✓ Équipes échangées — n\'oublie pas « Mettre à jour le site ».');
+    } finally {
+      setBusy('');
+    }
+  }
+
   // ── Rendu ──────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -245,7 +326,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const hasSchedule = state.matches.length > 0;
 
   return (
-    <div className="max-w-2xl mx-auto pb-24">
+    <div className="max-w-2xl mx-auto pb-36">
       {/* Header */}
       <div className="mb-4">
         <a href="/events" className="inline-flex items-center gap-1.5 text-sm font-bold text-text-muted hover:text-text-main transition-colors mb-2">
@@ -356,18 +437,46 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         )}
       </div>
 
-      {/* Publication + envoi */}
+      {/* Publication + envoi — rien ne part sur le site sans un geste explicite */}
       {hasSchedule && (
         <div className="rounded-2xl bg-white p-4 mb-4 space-y-2.5" style={{ border: '2px solid #e5e7eb40', borderBottom: '4px solid #d1d5db40' }}>
           {!published ? (
-            <button onClick={() => setPublished(true)} disabled={busy !== ''}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-white text-base font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
-              style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}>
-              {busy === 'publish' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Eye className="h-5 w-5" />}
-              Publier l&apos;horaire (page en direct)
-            </button>
+            <>
+              <button onClick={publishSite} disabled={busy !== ''}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-white text-base font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
+                style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}>
+                {busy === 'publish' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Globe className="h-5 w-5" />}
+                Publier l&apos;horaire sur le site
+              </button>
+              <p className="text-xs text-text-muted text-center">
+                Rien n&apos;est visible publiquement tant que tu n&apos;as pas publié. Tu pourras continuer d&apos;ajuster ensuite.
+              </p>
+            </>
           ) : (
             <>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs font-extrabold text-text-muted">
+                  🌐 En ligne · Dernière mise à jour :{' '}
+                  {state.published_at
+                    ? new Date(state.published_at).toLocaleString('fr-CA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </p>
+                <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: state.has_unpublished_changes ? `${DUO.orange}18` : `${DUO.green}18`,
+                    color: state.has_unpublished_changes ? DUO.orangeDark : DUO.greenDark,
+                  }}>
+                  {state.has_unpublished_changes ? 'CHANGEMENTS NON PUBLIÉS' : 'SITE À JOUR'}
+                </span>
+              </div>
+              {state.has_unpublished_changes && (
+                <button onClick={publishSite} disabled={busy !== ''}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-white text-base font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
+                  style={{ backgroundColor: DUO.orange, boxShadow: `0 3px 0 0 ${DUO.orangeDark}` }}>
+                  {busy === 'publish' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Globe className="h-5 w-5" />}
+                  Mettre à jour le site
+                </button>
+              )}
               <button onClick={() => setConfirmSend(true)} disabled={busy !== ''}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-white text-base font-extrabold transition-all active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-60"
                 style={{ backgroundColor: DUO.blue, boxShadow: `0 3px 0 0 ${DUO.blueDark}` }}>
@@ -387,12 +496,30 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       {/* Horaire + pointages */}
       {hasSchedule && (
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-2 px-1">
+          <div className="flex items-center justify-between mb-2 px-1 gap-2 flex-wrap">
             <h2 className="text-sm font-extrabold text-text-main flex items-center gap-1.5">
               <CalendarClock className="h-4 w-4" style={{ color: DUO.blue }} /> Horaire &amp; pointages
             </h2>
-            <span className="text-xs font-extrabold" style={{ color: DUO.greenDark }}>{finishedCount}/{state.matches.length} jouées</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold" style={{ color: DUO.greenDark }}>{finishedCount}/{state.matches.length} jouées</span>
+              <button onClick={() => { setSwapMode(!swapMode); setSwapSel(null); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                style={{
+                  backgroundColor: swapMode ? DUO.blue : `${DUO.blue}12`,
+                  color: swapMode ? 'white' : DUO.blueDark,
+                }}>
+                <ArrowLeftRight className="h-3.5 w-3.5" /> {swapMode ? 'Terminer' : 'Échanger des équipes'}
+              </button>
+            </div>
           </div>
+          {swapMode && (
+            <div className="rounded-xl px-3.5 py-2.5 mb-2 text-xs font-bold"
+              style={{ backgroundColor: `${DUO.blue}10`, color: DUO.blueDark, border: `2px solid ${DUO.blue}30` }}>
+              {swapSel
+                ? '👆 Maintenant, touche le nom avec qui l\'échanger — n\'importe où dans l\'horaire.'
+                : '👇 Touche un nom d\'équipe, puis un autre : ils échangent leur place. Les parties terminées sont verrouillées.'}
+            </div>
+          )}
           <div className="space-y-3">
             {bySlot.map(([time, matches]) => (
               <div key={time}>
@@ -407,14 +534,65 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                     return (
                       <div key={m.id} className="rounded-2xl bg-white p-3"
                         style={{ border: finished ? `2px solid ${DUO.green}50` : '2px solid #e5e7eb', borderBottom: finished ? `4px solid ${DUO.green}50` : '4px solid #e5e7eb' }}>
-                        <div className="flex items-center justify-between text-[11px] font-extrabold text-text-muted mb-1.5">
-                          <span>M{m.match_number} · Terrain {m.court}</span>
-                          {finished && <span style={{ color: DUO.greenDark }}>✓ Terminée</span>}
+                        <div className="flex items-center justify-between text-[11px] font-extrabold text-text-muted mb-1.5 gap-2">
+                          <span className="whitespace-nowrap">M{m.match_number} · Terrain {m.court}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {conflicts.has(m.id) && (
+                              <span className="truncate" style={{ color: DUO.red }}>⚠ {conflicts.get(m.id)}</span>
+                            )}
+                            {finished && <span className="whitespace-nowrap" style={{ color: DUO.greenDark }}>✓ Terminée</span>}
+                            <button
+                              onClick={() => {
+                                if (editing === m.id) { setEditing(''); return; }
+                                setEditing(m.id);
+                                setEditDraft({ time: m.scheduled_time, court: m.court });
+                              }}
+                              className="p-1 rounded-md hover:bg-gray-100 transition-all flex-shrink-0"
+                              title="Déplacer (heure / terrain)">
+                              <Pencil className="h-3.5 w-3.5" style={{ color: editing === m.id ? DUO.blueDark : '#9ca3af' }} />
+                            </button>
+                          </div>
                         </div>
+                        {editing === m.id && (
+                          <div className="mb-2 p-2.5 rounded-xl flex items-center gap-2 flex-wrap" style={{ backgroundColor: '#f8fafc', border: '2px solid #e5e7eb' }}>
+                            <input type="time" value={editDraft.time}
+                              onChange={e => setEditDraft(d => ({ ...d, time: e.target.value }))}
+                              className="rounded-lg border-2 border-gray-200 bg-white px-2 py-1.5 text-sm font-bold text-text-main focus:outline-none focus:border-[#1CB0F6]" />
+                            <div className="flex gap-1">
+                              {Array.from({ length: Math.max(form.courts, m.court) }, (_, i) => i + 1).map(c => (
+                                <button key={c} onClick={() => setEditDraft(d => ({ ...d, court: c }))}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-extrabold transition-all"
+                                  style={{
+                                    backgroundColor: editDraft.court === c ? `${DUO.blue}15` : 'white',
+                                    color: editDraft.court === c ? DUO.blueDark : '#9ca3af',
+                                    border: editDraft.court === c ? `2px solid ${DUO.blue}60` : '2px solid #e5e7eb',
+                                  }}>T{c}</button>
+                              ))}
+                            </div>
+                            <button onClick={() => saveTimeCourt(m)} disabled={busy !== ''}
+                              className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-xs font-extrabold transition-all active:translate-y-[1px] disabled:opacity-60"
+                              style={{ backgroundColor: DUO.blue, boxShadow: `0 2px 0 0 ${DUO.blueDark}` }}>
+                              {busy === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                              Déplacer
+                            </button>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
-                          <span className="flex-1 text-sm font-extrabold truncate text-right" style={{ color: aWins ? DUO.greenDark : '#334155' }}>
-                            {teamName(m.team_a_id, m.source_a)}
-                          </span>
+                          {swapMode ? (
+                            <button onClick={() => handleSwapTap(m, 'a')} disabled={busy !== '' || finished}
+                              className="flex-1 text-sm font-extrabold truncate text-right px-2 py-1.5 rounded-lg transition-all disabled:opacity-40"
+                              style={{
+                                backgroundColor: swapSel?.matchId === m.id && swapSel?.side === 'a' ? DUO.blue : `${DUO.blue}0d`,
+                                color: swapSel?.matchId === m.id && swapSel?.side === 'a' ? 'white' : DUO.blueDark,
+                                border: `2px dashed ${DUO.blue}60`,
+                              }}>
+                              {teamName(m.team_a_id, m.source_a)}
+                            </button>
+                          ) : (
+                            <span className="flex-1 text-sm font-extrabold truncate text-right" style={{ color: aWins ? DUO.greenDark : '#334155' }}>
+                              {teamName(m.team_a_id, m.source_a)}
+                            </span>
+                          )}
                           <input inputMode="numeric" value={d.a}
                             onChange={e => setDrafts(prev => ({ ...prev, [m.id]: { ...d, a: e.target.value.replace(/\D/g, '') } }))}
                             className="w-12 text-center rounded-lg border-2 border-gray-200 py-1.5 text-sm font-extrabold text-text-main focus:outline-none focus:border-[#1CB0F6]"
@@ -424,9 +602,21 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                             onChange={e => setDrafts(prev => ({ ...prev, [m.id]: { ...d, b: e.target.value.replace(/\D/g, '') } }))}
                             className="w-12 text-center rounded-lg border-2 border-gray-200 py-1.5 text-sm font-extrabold text-text-main focus:outline-none focus:border-[#1CB0F6]"
                             placeholder="—" />
-                          <span className="flex-1 text-sm font-extrabold truncate" style={{ color: bWins ? DUO.greenDark : '#334155' }}>
-                            {teamName(m.team_b_id, m.source_b)}
-                          </span>
+                          {swapMode ? (
+                            <button onClick={() => handleSwapTap(m, 'b')} disabled={busy !== '' || finished}
+                              className="flex-1 text-sm font-extrabold truncate text-left px-2 py-1.5 rounded-lg transition-all disabled:opacity-40"
+                              style={{
+                                backgroundColor: swapSel?.matchId === m.id && swapSel?.side === 'b' ? DUO.blue : `${DUO.blue}0d`,
+                                color: swapSel?.matchId === m.id && swapSel?.side === 'b' ? 'white' : DUO.blueDark,
+                                border: `2px dashed ${DUO.blue}60`,
+                              }}>
+                              {teamName(m.team_b_id, m.source_b)}
+                            </button>
+                          ) : (
+                            <span className="flex-1 text-sm font-extrabold truncate" style={{ color: bWins ? DUO.greenDark : '#334155' }}>
+                              {teamName(m.team_b_id, m.source_b)}
+                            </span>
+                          )}
                         </div>
                         {dirty && (
                           <button onClick={() => saveScore(m)} disabled={busy !== ''}
@@ -504,7 +694,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       {confirmSend && (
         <ConfirmModal
           title="Envoyer l'horaire aux équipes ?"
-          body={`Chaque joueur confirmé recevra par courriel l'horaire de son équipe et le lien de la page en direct. ${state.config?.schedule_sent_at ? 'Un envoi a déjà été fait — ceci renverra à tout le monde.' : ''}`}
+          body={`Chaque joueur confirmé recevra par courriel l'horaire de son équipe (version publiée sur le site) et le lien de la page en direct. ${state.has_unpublished_changes ? '⚠ Tu as des changements NON PUBLIÉS : clique d\'abord « Mettre à jour le site », sinon les courriels enverront l\'ancienne version. ' : ''}${state.config?.schedule_sent_at ? 'Un envoi a déjà été fait — ceci renverra à tout le monde.' : ''}`}
           confirmLabel="Envoyer maintenant"
           color={DUO.blue}
           onConfirm={sendSchedule}
@@ -512,9 +702,27 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         />
       )}
 
-      {/* Toast */}
+      {/* Barre collante — le site n'affiche pas la dernière version */}
+      {published && state.has_unpublished_changes && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4">
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-3 rounded-2xl px-4 py-3 shadow-lg"
+            style={{ backgroundColor: '#1e293b' }}>
+            <p className="text-white text-sm font-extrabold leading-tight">
+              ⚠ Le site n&apos;affiche pas tes derniers changements
+            </p>
+            <button onClick={publishSite} disabled={busy !== ''}
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[1px] disabled:opacity-60"
+              style={{ backgroundColor: DUO.orange, boxShadow: `0 2px 0 0 ${DUO.orangeDark}` }}>
+              {busy === 'publish' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+              Mettre à jour le site
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast (au-dessus de la barre collante) */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-white text-sm font-extrabold shadow-lg"
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-white text-sm font-extrabold shadow-lg max-w-[92vw] text-center"
           style={{ backgroundColor: '#1e293b' }}>
           {toast}
         </div>

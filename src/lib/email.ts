@@ -25,6 +25,10 @@ interface EventInfo {
   description?: string;
   contact_email?: string;
   contact_phone?: string;
+  // Page publique en direct du tournoi — renseignée par l'appelant SEULEMENT
+  // si un tournoi publié existe (voir publishedTournamentUrl) : le bouton
+  // « Planning du tournoi » n'apparaît alors qu'aux bons événements.
+  tournament_live_url?: string;
 }
 
 interface RegistrationInfo {
@@ -94,15 +98,19 @@ function contactStr(event: EventInfo): string {
 }
 
 // Boutons « Ajouter à mon agenda » (Google, Outlook, Apple/.ics) — l'Apple/.ics requiert l'id de l'événement
+// + bouton « Planning du tournoi » juste à côté quand l'événement a un tournoi publié
 function calendarButtons(event: EventInfo): string {
   if (!event.date) return '';
   const btn = (href: string, label: string) =>
     `<a href="${href}" style="display:inline-block;margin:3px 4px;padding:9px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;color:#03045e;text-decoration:none;font-size:13px;font-weight:bold">${label}</a>`;
   const icsBtn = event.id ? btn(`${APP_URL}/api/events/${event.id}/ics`, 'Apple / iCal') : '';
+  const tournamentBtn = event.tournament_live_url
+    ? `<a href="${event.tournament_live_url}" style="display:inline-block;margin:3px 4px;padding:9px 16px;background:#0077b6;border:1px solid #0077b6;border-radius:8px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:bold">&#127942; Planning du tournoi</a>`
+    : '';
   return `
     <div style="text-align:center;margin:0 0 20px">
       <p style="margin:0 0 8px;color:#64748b;font-size:13px">&#128197; Ajouter à mon agenda&nbsp;:</p>
-      ${btn(googleCalUrl(event), 'Google')}${btn(outlookCalUrl(event), 'Outlook')}${icsBtn}
+      ${btn(googleCalUrl(event), 'Google')}${btn(outlookCalUrl(event), 'Outlook')}${icsBtn}${tournamentBtn}
     </div>`;
 }
 

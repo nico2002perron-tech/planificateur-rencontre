@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendRegistrationConfirmation, sendRegistrationNotification } from '@/lib/email';
+import { publishedTournamentUrl } from '@/lib/tournament/state';
 
 function corsJson(body: unknown, status: number) {
   const response = NextResponse.json(body, { status });
@@ -116,7 +117,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const regInfo = { first_name: body.first_name.trim(), last_name: body.last_name.trim(), email: body.email.toLowerCase().trim(), phone: body.phone.trim(), registration_type: regType, team_name: body.team_name || '', pricing_option: body.pricing_option || '' };
 
   // 1. Confirmation au participant — via after() : garantit l'envoi après la réponse (sans le perdre si le serveur gèle)
-  after(() => sendRegistrationConfirmation(eventInfo, regInfo, data?.id));
+  after(async () => sendRegistrationConfirmation(
+    { ...eventInfo, tournament_live_url: await publishedTournamentUrl(supabase, event.id) },
+    regInfo,
+    data?.id,
+  ));
 
   // 2. Notification au créateur de l'événement
   if (event.created_by) {

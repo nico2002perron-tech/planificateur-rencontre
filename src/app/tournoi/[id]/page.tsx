@@ -48,6 +48,7 @@ interface TournamentState {
   teams: Team[];
   matches: Match[];
   standings: Standing[];
+  published_at: string | null;
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -99,16 +100,19 @@ function LivePageInner({ eventId }: { eventId: string }) {
       const key = m.scheduled_time || '—';
       groups.set(key, [...(groups.get(key) || []), m]);
     }
-    return [...groups.entries()];
+    // Tri chronologique : l'organisateur peut déplacer des parties à la main
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [state?.matches]);
 
-  // Prochaine partie de l'équipe sélectionnée
+  // Prochaine partie de l'équipe sélectionnée — la plus tôt en HEURE
+  // (pas en numéro de partie : l'organisateur peut déplacer des matchs)
   const nextMatch = useMemo(() => {
     if (!selectedTeam || !state) return null;
-    return state.matches.find(m =>
-      (m.team_a_id === selectedTeam || m.team_b_id === selectedTeam) &&
-      m.status !== 'finished' && m.status !== 'cancelled',
-    ) || null;
+    return state.matches
+      .filter(m =>
+        (m.team_a_id === selectedTeam || m.team_b_id === selectedTeam) &&
+        m.status !== 'finished' && m.status !== 'cancelled')
+      .sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))[0] || null;
   }, [selectedTeam, state]);
 
   if (loading) {
@@ -146,6 +150,11 @@ function LivePageInner({ eventId }: { eventId: string }) {
             <span className="inline-flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{formatEventDate(state.event.date)}</span>
             {state.event.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{state.event.location}</span>}
           </p>
+          {state.published_at && (
+            <p className="text-[11px] mt-2 opacity-75 font-bold">
+              Horaire mis à jour le {new Date(state.published_at).toLocaleString('fr-CA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
         </div>
       </div>
 

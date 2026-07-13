@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendEventReminder } from '@/lib/email';
+import { publishedTournamentUrl } from '@/lib/tournament/state';
 
 // YYYY-MM-DD (UTC) — la colonne events.date est une chaîne 'YYYY-MM-DD'
 function ymd(d: Date): string {
@@ -79,6 +80,8 @@ export async function GET(request: NextRequest) {
       const eventInfo = {
         id: ev.id, title: ev.title, date: ev.date, time: ev.time, location: ev.location,
         contact_email: ev.contact_email, contact_phone: ev.contact_phone,
+        // Bouton « Planning du tournoi » dans le rappel si l'horaire est publié
+        tournament_live_url: await publishedTournamentUrl(supabase, ev.id),
       };
 
       // Jours restants avant l'événement (pour le texte « dans X jours / 1 semaine / ... »)

@@ -28,15 +28,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const state = await fetchTournamentState(supabase, eventId, true);
+  // Version PUBLIÉE (includeDraft=false) : les courriels disent exactement ce
+  // que le site affiche — jamais un brouillon en cours de réarrangement.
+  const state = await fetchTournamentState(supabase, eventId, false);
   if (!state || !state.config) {
     return NextResponse.json({ error: 'Aucun tournoi configuré pour cet événement.' }, { status: 400 });
   }
-  if (state.config.status !== 'published') {
-    return NextResponse.json({ error: 'Publiez l\'horaire avant de l\'envoyer aux équipes.' }, { status: 400 });
-  }
-  if (state.matches.length === 0) {
-    return NextResponse.json({ error: 'Aucune partie à l\'horaire.' }, { status: 400 });
+  if (state.config.status !== 'published' || state.matches.length === 0) {
+    return NextResponse.json({ error: 'Mets d\'abord l\'horaire en ligne (« Mettre à jour le site ») avant de l\'envoyer aux équipes.' }, { status: 400 });
   }
 
   const { data: event } = await supabase

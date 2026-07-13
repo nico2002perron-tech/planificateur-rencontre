@@ -2,8 +2,15 @@
  * État complet d'un tournoi — assemblé côté serveur pour la console
  * organisateur ET la page publique en direct (même forme de réponse).
  *
+ * Deux mondes bien séparés :
+ *  - CONSOLE (includeDraft=true)  : les parties VIVANTES (event_matches) —
+ *    l'organisateur y réarrange tout, saisit les pointages, etc.
+ *  - PUBLIC  (includeDraft=false) : la PHOTO publiée (published_snapshot),
+ *    prise au clic « Mettre à jour le site ». Rien ne bouge publiquement
+ *    sans un geste explicite de l'organisateur.
+ *
  * Le classement n'est jamais lu de la base : il est recalculé ici à chaque
- * requête depuis les parties terminées (source de vérité = event_matches).
+ * requête depuis les parties (vivantes ou publiées, selon le monde).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeStandings, type StandingRow } from './standings';
@@ -23,6 +30,7 @@ export interface TournamentConfig {
   points_loss: number;
   status: 'draft' | 'published';
   schedule_sent_at: string | null;
+  published_at: string | null;
 }
 
 export interface TournamentTeam {
@@ -53,16 +61,32 @@ export interface TournamentState {
   teams: TournamentTeam[];
   matches: TournamentMatch[];
   standings: StandingRow[];
+  published_at: string | null;
+  // Console seulement : vrai si les parties vivantes diffèrent de la photo publiée
+  has_unpublished_changes?: boolean;
 }
 
-const MATCH_COLUMNS =
+export const MATCH_COLUMNS =
   'id, phase, round_number, match_number, court, scheduled_time, team_a_id, team_b_id, source_a, source_b, score_a, score_b, status';
 
-/**
- * @param includeDraft faux pour la page publique : tant que l'horaire n'est
- *        pas publié, les parties ne sortent pas (la config reste visible pour
- *        afficher « horaire à venir »).
- */
+// Forme comparable d'un jeu de parties (ordre stable, sans horodatages)
+function comparable(ms: TournamentMatch[]): string {
+  return JSON.stringify(
+    [...ms]
+      .sort((a, b) => a.match_number - b.match_number)
+      .map(m => [m.phase, m.match_number, m.court, m.scheduled_time, m.team_a_id, m.team_b_id, m.source_a, m.source_b, m.score_a, m.score_b, m.status]),
+  );
+}
+
+async function fetchLiveMatches(supabase: SupabaseClient, eventId: string): Promise<TournamentMatch[]> {
+  const { data } = await supabase
+    .from('event_matches')
+    .select(MATCH_COLUMNS)
+    .eq('event_id', eventId)
+    .order('match_number');
+  return (data as TournamentMatch[]) || [];
+}
+
 export async function fetchTournamentState(
   supabase: SupabaseClient,
   eventId: string,
@@ -75,7 +99,7 @@ export async function fetchTournamentState(
     .single();
   if (!event) return null;
 
-  const [{ data: config }, { data: rawTeams }] = await Promise.all([
+  const [{ data: rawConfig }, { data: rawTeams }] = await Promise.all([
     supabase.from('event_tournaments').select('*').eq('event_id', eventId).maybeSingle(),
     supabase.from('event_teams').select('id, team_name, logo_url').eq('event_id', eventId).order('team_name'),
   ]);
@@ -86,15 +110,35 @@ export async function fetchTournamentState(
     logo_url: t.logo_url || null,
   }));
 
-  const showMatches = !!config && (includeDraft || config.status === 'published');
+  const snapshot: TournamentMatch[] | null = Array.isArray(rawConfig?.published_snapshot)
+    ? (rawConfig.published_snapshot as TournamentMatch[])
+    : null;
+  const isPublished = rawConfig?.status === 'published';
+
   let matches: TournamentMatch[] = [];
-  if (showMatches) {
-    const { data } = await supabase
-      .from('event_matches')
-      .select(MATCH_COLUMNS)
-      .eq('event_id', eventId)
-      .order('match_number');
-    matches = (data as TournamentMatch[]) || [];
+  let hasUnpublishedChanges: boolean | undefined;
+
+  if (includeDraft) {
+    // Console : toujours les parties vivantes
+    matches = rawConfig ? await fetchLiveMatches(supabase, eventId) : [];
+    if (rawConfig) {
+      hasUnpublishedChanges = isPublished
+        // Ancien tournoi publié avant la v2 (pas de photo) : proposer une mise à jour
+        ? (snapshot === null ? matches.length > 0 : comparable(matches) !== comparable(snapshot))
+        : matches.length > 0;
+    }
+  } else if (isPublished) {
+    // Public : la photo publiée — repli sur les vivantes pour les tournois
+    // publiés avant la v2 (le premier « Mettre à jour le site » crée la photo).
+    matches = snapshot ?? await fetchLiveMatches(supabase, eventId);
+  }
+
+  // La photo (JSONB) ne sort jamais telle quelle vers le client
+  let config: TournamentConfig | null = null;
+  if (rawConfig) {
+    const clean = { ...rawConfig } as Record<string, unknown>;
+    delete clean.published_snapshot;
+    config = clean as unknown as TournamentConfig;
   }
 
   const standings = config
@@ -114,9 +158,27 @@ export async function fetchTournamentState(
 
   return {
     event: { id: event.id, title: event.title, date: event.date, location: event.location || '' },
-    config: (config as TournamentConfig) || null,
+    config,
     teams,
     matches,
     standings,
+    published_at: config?.published_at || null,
+    ...(includeDraft ? { has_unpublished_changes: hasUnpublishedChanges } : {}),
   };
+}
+
+/**
+ * URL de la page publique en direct si (et seulement si) l'événement a un
+ * tournoi PUBLIÉ — sinon undefined. Sert aux courriels (confirmation, rappel…)
+ * pour afficher le bouton « Planning du tournoi » uniquement quand il existe.
+ */
+export async function publishedTournamentUrl(supabase: SupabaseClient, eventId: string): Promise<string | undefined> {
+  const { data } = await supabase
+    .from('event_tournaments')
+    .select('status')
+    .eq('event_id', eventId)
+    .maybeSingle();
+  if (data?.status !== 'published') return undefined;
+  const appUrl = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
+  return `${appUrl}/tournoi/${eventId}`;
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTeamJoinedEmail, sendTeamMemberNotification } from '@/lib/email';
+import { publishedTournamentUrl } from '@/lib/tournament/state';
 
 function corsJson(body: unknown, status: number) {
   // Un statut 204 (préflight CORS) ne doit PAS avoir de corps : NextResponse.json(null)
@@ -175,7 +176,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const memberCount = (count || 0) + 1;
 
   // 1. Confirmation au nouveau membre — via after() (envoi garanti après la réponse)
-  after(() => sendTeamJoinedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), team.team_name, newMember?.id));
+  after(async () => sendTeamJoinedEmail(
+    { ...eventInfo, tournament_live_url: await publishedTournamentUrl(supabase, event.id) },
+    body.email.toLowerCase().trim(),
+    body.first_name.trim(),
+    team.team_name,
+    newMember?.id,
+  ));
 
   // 2. Notifier le capitaine (sauf si le capitaine vient de rejoindre sa propre équipe)
   if (team.captain_email && team.captain_email !== body.email.toLowerCase().trim()) {

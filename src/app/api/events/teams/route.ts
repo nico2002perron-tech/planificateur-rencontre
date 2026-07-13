@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendTeamCreatedEmail, sendRegistrationNotification } from '@/lib/email';
+import { publishedTournamentUrl } from '@/lib/tournament/state';
 
 const PUBLIC_SITE_URL = process.env.PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
 
@@ -232,7 +233,7 @@ export async function POST(request: NextRequest) {
   const eventInfo = { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone };
 
   // 1. Le capitaine reçoit code + lien d'invitation + lien de gestion — via after() (envoi garanti après la réponse)
-  after(() => sendTeamCreatedEmail(eventInfo, body.email.toLowerCase().trim(), body.first_name.trim(), {
+  after(async () => sendTeamCreatedEmail({ ...eventInfo, tournament_live_url: await publishedTournamentUrl(supabase, event.id) }, body.email.toLowerCase().trim(), body.first_name.trim(), {
     team_name: team.team_name,
     team_code: teamCode,
     share_url: shareUrl,
