@@ -9,7 +9,7 @@ import {
   Download, Phone, Mail, UserCheck, Trophy, UtensilsCrossed,
   Mic, PartyPopper, Dumbbell, Star, Copy, Crown, Shirt, ClipboardCheck,
   Sparkles, Timer, Search, ExternalLink, CalendarRange, ScrollText,
-  HeartHandshake,
+  HeartHandshake, UserPlus,
 } from 'lucide-react';
 
 const SITE_BASE = process.env.NEXT_PUBLIC_SITE_URL || 'https://groupefinancierstefoy.com';
@@ -152,6 +152,99 @@ interface Team {
 // Les coéquipiers inscrits par le capitaine sans courriel ont un placeholder « .sans-courriel »
 function displayEmail(email: string): string {
   return email && email.endsWith('.sans-courriel') ? '' : email;
+}
+
+// Champs d'une personne ajoutée à la main par l'organisateur (capitaine ou membre).
+type PersonForm = {
+  first_name: string; last_name: string; email: string; phone: string;
+  gender: string; skill_level: string; shirt_size: string; dietary_restrictions: string;
+};
+const emptyPerson = (): PersonForm => ({
+  first_name: '', last_name: '', email: '', phone: '',
+  gender: '', skill_level: '', shirt_size: '', dietary_restrictions: '',
+});
+
+// Sélecteur gars / fille (composition d'équipe par genre). Recliquer désélectionne.
+function GenderPills({ value, onChange }: { value: string; onChange: (g: string) => void }) {
+  const opts = [{ v: 'M', label: 'Gars', color: DUO.blue }, { v: 'F', label: 'Fille', color: DUO.purple }];
+  return (
+    <div className="flex gap-2">
+      {opts.map(o => (
+        <button key={o.v} type="button" onClick={() => onChange(value === o.v ? '' : o.v)}
+          className="flex-1 px-3 py-2 rounded-xl border-2 text-xs font-extrabold transition-all"
+          style={value === o.v
+            ? { backgroundColor: o.color, borderColor: o.color, color: '#fff' }
+            : { backgroundColor: '#fff', borderColor: '#e5e7eb', color: '#6b7280' }}
+        >{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+const fieldCls = 'w-full px-3 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-bold text-text-main focus:border-blue-400 focus:outline-none transition-all';
+const fieldLabelCls = 'block text-xs font-extrabold text-text-muted mb-1.5 uppercase tracking-wide';
+
+// Champs communs d'une personne : prénom/nom, courriel/téléphone, genre (si composition
+// activée) et les champs optionnels de l'événement (taille, niveau, restrictions).
+function PersonFields({ ev, person, onChange }: { ev: EventData; person: PersonForm; onChange: (patch: Partial<PersonForm>) => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={fieldLabelCls}>Prenom *</label>
+          <input value={person.first_name} onChange={e => onChange({ first_name: e.target.value })} className={fieldCls} placeholder="Prenom" />
+        </div>
+        <div>
+          <label className={fieldLabelCls}>Nom *</label>
+          <input value={person.last_name} onChange={e => onChange({ last_name: e.target.value })} className={fieldCls} placeholder="Nom" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={fieldLabelCls}>Courriel</label>
+          <input type="email" value={person.email} onChange={e => onChange({ email: e.target.value })} className={fieldCls} placeholder="courriel@exemple.com" />
+        </div>
+        <div>
+          <label className={fieldLabelCls}>Telephone</label>
+          <input value={person.phone} onChange={e => onChange({ phone: e.target.value })} className={fieldCls} placeholder="418 555-1234" />
+        </div>
+      </div>
+      {ev.team_gender_composition?.enabled && (
+        <div>
+          <label className={fieldLabelCls}>Genre</label>
+          <GenderPills value={person.gender} onChange={g => onChange({ gender: g })} />
+        </div>
+      )}
+      {(ev.form_options?.show_shirt_size || ev.form_options?.show_skill_level) && (
+        <div className="grid grid-cols-2 gap-3">
+          {ev.form_options?.show_shirt_size && (
+            <div>
+              <label className={fieldLabelCls}>Taille</label>
+              <select value={person.shirt_size} onChange={e => onChange({ shirt_size: e.target.value })} className={fieldCls}>
+                <option value="">—</option>
+                {SHIRT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
+          {ev.form_options?.show_skill_level && (
+            <div>
+              <label className={fieldLabelCls}>Niveau</label>
+              <select value={person.skill_level} onChange={e => onChange({ skill_level: e.target.value })} className={fieldCls}>
+                <option value="">—</option>
+                {SKILL_LEVELS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+      {ev.form_options?.show_dietary && (
+        <div>
+          <label className={fieldLabelCls}>Restrictions alimentaires</label>
+          <input value={person.dietary_restrictions} onChange={e => onChange({ dietary_restrictions: e.target.value })} className={fieldCls} placeholder="Allergies, regime…" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 const emptyForm = () => ({
@@ -426,6 +519,21 @@ export default function EventsPage() {
   const [editTeamSaving, setEditTeamSaving] = useState(false);
   const [editTeamUploading, setEditTeamUploading] = useState(false);
   const editTeamLogoInputRef = useRef<HTMLInputElement>(null);
+  // Ajout manuel d'un membre a une equipe par l'organisateur
+  const [addMemberCtx, setAddMemberCtx] = useState<{ ev: EventData; team: Team } | null>(null);
+  const [memberForm, setMemberForm] = useState<PersonForm>(emptyPerson());
+  const [memberSendEmail, setMemberSendEmail] = useState(true);
+  const [memberNotifyCaptain, setMemberNotifyCaptain] = useState(true);
+  const [memberSaving, setMemberSaving] = useState(false);
+  // Creation manuelle d'une equipe (capitaine + logo) par l'organisateur
+  const [createTeamCtx, setCreateTeamCtx] = useState<EventData | null>(null);
+  const [ctTeamName, setCtTeamName] = useState('');
+  const [ctCaptain, setCtCaptain] = useState<PersonForm>(emptyPerson());
+  const [ctLogo, setCtLogo] = useState<string | null>(null);
+  const [ctSendEmail, setCtSendEmail] = useState(true);
+  const [ctSaving, setCtSaving] = useState(false);
+  const [ctUploading, setCtUploading] = useState(false);
+  const ctLogoInputRef = useRef<HTMLInputElement>(null);
   // Modele de courriel a copier-coller (aucun envoi automatique)
   const [mailCtx, setMailCtx] = useState<{ ev: EventData; team: Team | null } | null>(null);
   const [mailType, setMailType] = useState<'welcome' | 'details' | 'incomplete' | 'shirt'>('details');
@@ -672,6 +780,79 @@ export default function EventsPage() {
       setEditTeamCtx(null);
     } finally {
       setEditTeamSaving(false);
+    }
+  }
+
+  // --- Ajout manuel d'un membre a une equipe (envoie les memes courriels que le flux public) ---
+  function openAddMember(ev: EventData, team: Team) {
+    setAddMemberCtx({ ev, team });
+    setMemberForm(emptyPerson());
+    setMemberSendEmail(true);
+    setMemberNotifyCaptain(true);
+  }
+
+  async function saveAddMember() {
+    if (!addMemberCtx) return;
+    const { ev, team } = addMemberCtx;
+    if (!memberForm.first_name.trim() || !memberForm.last_name.trim()) { window.alert('Prenom et nom requis'); return; }
+    setMemberSaving(true);
+    try {
+      const res = await fetch(`/api/events/${ev.id}/registrations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_member', team_id: team.id, member: memberForm, send_email: memberSendEmail, notify_captain: memberNotifyCaptain }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { window.alert(data.error || "Echec de l'ajout"); return; }
+      setTeams(prev => prev.map(t => t.id === team.id ? { ...t, members: [...t.members, data.member] } : t));
+      setAddMemberCtx(null);
+    } finally {
+      setMemberSaving(false);
+    }
+  }
+
+  // --- Creation manuelle d'une equipe par l'organisateur (capitaine + logo optionnel) ---
+  function openCreateTeam(ev: EventData) {
+    setCreateTeamCtx(ev);
+    setCtTeamName('');
+    setCtCaptain(emptyPerson());
+    setCtLogo(null);
+    setCtSendEmail(true);
+  }
+
+  async function uploadCreateTeamLogo(file: File) {
+    if (file.size > 2 * 1024 * 1024) { window.alert('Logo trop lourd (max 2 Mo)'); return; }
+    setCtUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      const res = await fetch('/api/events/teams/logo', { method: 'POST', body: fd });
+      if (!res.ok) { window.alert('Echec du televersement du logo'); return; }
+      const { url } = await res.json();
+      setCtLogo(url);
+    } finally {
+      setCtUploading(false);
+    }
+  }
+
+  async function saveCreateTeam() {
+    if (!createTeamCtx) return;
+    const ev = createTeamCtx;
+    if (!ctTeamName.trim()) { window.alert("Nom d'equipe requis"); return; }
+    if (!ctCaptain.first_name.trim() || !ctCaptain.last_name.trim()) { window.alert('Prenom et nom du capitaine requis'); return; }
+    setCtSaving(true);
+    try {
+      const res = await fetch(`/api/events/${ev.id}/registrations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_team', team_name: ctTeamName, captain: ctCaptain, logo_url: ctLogo, send_email: ctSendEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { window.alert(data.error || "Echec de la creation"); return; }
+      setTeams(prev => [...prev, data.team]);
+      setCreateTeamCtx(null);
+    } finally {
+      setCtSaving(false);
     }
   }
 
@@ -1092,6 +1273,12 @@ ${sign}`;
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all"
                         style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blueDark }}
                       ><Mail className="h-3 w-3" /> Modele de courriel</button>
+                      {(ev.registration_mode === 'team' || ev.registration_mode === 'both') && (
+                        <button onClick={() => openCreateTeam(ev)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold text-white transition-all active:translate-y-[1px]"
+                          style={{ backgroundColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` }}
+                        ><Plus className="h-3 w-3" /> Creer une equipe</button>
+                      )}
                     </div>
                   </div>
 
@@ -1165,6 +1352,15 @@ ${sign}`;
                                   <span className="text-[11px] font-bold text-text-muted flex-shrink-0">{team.members.length}/{team.max_members}</span>
                                 </div>
                                 <div className="flex items-center gap-1 flex-shrink-0">
+                                  {team.members.length < team.max_members ? (
+                                    <button onClick={() => openAddMember(ev, team)}
+                                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-extrabold transition-all"
+                                      style={{ backgroundColor: `${DUO.green}14`, color: DUO.greenDark }}
+                                      title="Ajouter un membre a cette equipe"
+                                    ><UserPlus className="h-3.5 w-3.5" /> Ajouter</button>
+                                  ) : (
+                                    <span className="px-2 py-1 rounded-md text-[10px] font-extrabold bg-gray-100 text-text-light" title="L'equipe est complete">Complete</span>
+                                  )}
                                   <button onClick={() => openMail(ev, team)}
                                     className="p-1 rounded-md hover:bg-blue-50 text-text-light hover:text-blue-600 transition-all"
                                     title="Modele de courriel pour cette equipe"
@@ -1797,6 +1993,124 @@ ${sign}`;
       )}
 
       {/* Edition d'une equipe : nom + logo */}
+      {/* Ajouter un membre a une equipe (organisateur) */}
+      {addMemberCtx && (() => {
+        const { ev, team } = addMemberCtx;
+        const hasEmail = memberForm.email.trim().length > 0;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !memberSaving && setAddMemberCtx(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <div className="min-w-0">
+                  <h2 className="text-base font-extrabold text-text-main flex items-center gap-2"><UserPlus className="h-4 w-4 flex-shrink-0" style={{ color: DUO.green }} /> Ajouter un membre</h2>
+                  <p className="text-xs text-text-muted mt-0.5 truncate">Equipe &laquo; {team.team_name} &raquo; &middot; {team.members.length}/{team.max_members}</p>
+                </div>
+                <button type="button" onClick={() => setAddMemberCtx(null)} disabled={memberSaving} className="p-1 rounded-md text-text-light hover:bg-gray-100 hover:text-text-main transition-all flex-shrink-0 disabled:opacity-50"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <PersonFields ev={ev} person={memberForm} onChange={patch => setMemberForm(prev => ({ ...prev, ...patch }))} />
+                <div className="space-y-2.5 pt-1 border-t border-gray-100">
+                  <label className={`flex items-center gap-2.5 text-sm font-bold pt-3 ${hasEmail ? 'text-text-main cursor-pointer' : 'text-text-light'}`}>
+                    <input type="checkbox" checked={hasEmail && memberSendEmail} disabled={!hasEmail} onChange={e => setMemberSendEmail(e.target.checked)} className="h-4 w-4 rounded" />
+                    Envoyer le courriel de bienvenue
+                    {!hasEmail && <span className="text-[11px] font-normal text-text-light">(courriel requis)</span>}
+                  </label>
+                  <label className="flex items-center gap-2.5 text-sm font-bold text-text-main cursor-pointer">
+                    <input type="checkbox" checked={memberNotifyCaptain} onChange={e => setMemberNotifyCaptain(e.target.checked)} className="h-4 w-4 rounded" />
+                    Prevenir le capitaine par courriel
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-3 p-4 border-t border-gray-100 sticky bottom-0 bg-white">
+                <button onClick={() => setAddMemberCtx(null)} disabled={memberSaving} className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all disabled:opacity-60">Annuler</button>
+                <button onClick={saveAddMember} disabled={memberSaving || !memberForm.first_name.trim() || !memberForm.last_name.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] disabled:opacity-60"
+                  style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}>
+                  {memberSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                  Ajouter
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Creer une equipe (organisateur) */}
+      {createTeamCtx && (() => {
+        const ev = createTeamCtx;
+        const hasEmail = ctCaptain.email.trim().length > 0;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !ctSaving && setCreateTeamCtx(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <div className="min-w-0">
+                  <h2 className="text-base font-extrabold text-text-main flex items-center gap-2"><Trophy className="h-4 w-4 flex-shrink-0" style={{ color: DUO.green }} /> Creer une equipe</h2>
+                  <p className="text-xs text-text-muted mt-0.5 truncate">{ev.title}</p>
+                </div>
+                <button type="button" onClick={() => setCreateTeamCtx(null)} disabled={ctSaving} className="p-1 rounded-md text-text-light hover:bg-gray-100 hover:text-text-main transition-all flex-shrink-0 disabled:opacity-50"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className={fieldLabelCls}>Nom de l&apos;equipe *</label>
+                  <input value={ctTeamName} maxLength={80} onChange={e => setCtTeamName(e.target.value)} className={fieldCls} placeholder="Nom de l'equipe" />
+                </div>
+                {/* Logo (optionnel, des la creation) */}
+                <div>
+                  <label className={fieldLabelCls}>Logo de l&apos;equipe <span className="normal-case font-bold text-text-light">(optionnel)</span></label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-16 h-16 rounded-xl border-2 border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+                      {ctLogo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={ctLogo} alt="Logo" className="w-full h-full object-cover" />
+                      ) : (
+                        <Trophy className="h-6 w-6 text-gray-300" />
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 flex-1">
+                      <button type="button" onClick={() => ctLogoInputRef.current?.click()} disabled={ctUploading}
+                        className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-gray-200 text-xs font-extrabold text-text-muted hover:bg-gray-50 transition-all disabled:opacity-60">
+                        {ctUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        {ctLogo ? 'Remplacer le logo' : 'Ajouter un logo'}
+                      </button>
+                      {ctLogo && (
+                        <button type="button" onClick={() => setCtLogo(null)} disabled={ctUploading}
+                          className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-red-100 text-xs font-extrabold text-red-500 hover:bg-red-50 transition-all disabled:opacity-60">
+                          <Trash2 className="h-4 w-4" /> Retirer le logo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input ref={ctLogoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadCreateTeamLogo(f); e.target.value = ''; }} />
+                  <p className="text-[11px] text-text-light mt-1.5">JPG, PNG ou WebP, max 2 Mo.</p>
+                </div>
+                {/* Capitaine */}
+                <div className="pt-1 border-t border-gray-100">
+                  <p className="text-xs font-extrabold text-text-main mb-2.5 mt-3 flex items-center gap-1.5"><Crown className="h-3.5 w-3.5" style={{ color: DUO.orange }} /> Capitaine</p>
+                  <PersonFields ev={ev} person={ctCaptain} onChange={patch => setCtCaptain(prev => ({ ...prev, ...patch }))} />
+                </div>
+                <label className={`flex items-center gap-2.5 text-sm font-bold ${hasEmail ? 'text-text-main cursor-pointer' : 'text-text-light'}`}>
+                  <input type="checkbox" checked={hasEmail && ctSendEmail} disabled={!hasEmail} onChange={e => setCtSendEmail(e.target.checked)} className="h-4 w-4 rounded" />
+                  Envoyer le courriel au capitaine
+                  {!hasEmail && <span className="text-[11px] font-normal text-text-light">(courriel requis)</span>}
+                </label>
+              </div>
+              <div className="flex gap-3 p-4 border-t border-gray-100 sticky bottom-0 bg-white">
+                <button onClick={() => setCreateTeamCtx(null)} disabled={ctSaving} className="flex-1 px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-extrabold text-text-muted hover:bg-gray-50 transition-all disabled:opacity-60">Annuler</button>
+                <button onClick={saveCreateTeam} disabled={ctSaving || ctUploading || !ctTeamName.trim() || !ctCaptain.first_name.trim() || !ctCaptain.last_name.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-extrabold transition-all active:translate-y-[2px] disabled:opacity-60"
+                  style={{ backgroundColor: DUO.green, boxShadow: `0 3px 0 0 ${DUO.greenDark}` }}>
+                  {ctSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Creer l&apos;equipe
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {editTeamCtx && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !editTeamSaving && setEditTeamCtx(null)} />
