@@ -14,6 +14,11 @@ import {
   Loader2, ArrowLeft, Trophy, CalendarClock, Send, RefreshCw, Eye, Copy, Check,
   AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe,
 } from 'lucide-react';
+import Bracket from '@/components/tournament/Bracket';
+
+const PHASE_LABELS: Record<string, string> = {
+  quart: 'Quart', demi: 'Demi-finale', bronze: 'Bronze', finale: 'FINALE',
+};
 
 const DUO = {
   green: '#58CC02', greenDark: '#45a300',
@@ -31,6 +36,8 @@ interface Config {
   days: Day[];
   game_minutes: number;
   break_minutes: number;
+  playoffs_enabled: boolean;
+  playoffs_team_count: number;
   status: 'draft' | 'published';
   schedule_sent_at: string | null;
   published_at: string | null;
@@ -72,7 +79,8 @@ interface TournamentState {
 
 const DEFAULT_CONFIG: Config = {
   guaranteed_games: 2, courts: 2, start_time: '09:00', days: [],
-  game_minutes: 25, break_minutes: 5, status: 'draft', schedule_sent_at: null, published_at: null,
+  game_minutes: 25, break_minutes: 5, playoffs_enabled: true, playoffs_team_count: 4,
+  status: 'draft', schedule_sent_at: null, published_at: null,
 };
 
 function formatDayLong(dateStr: string): string {
@@ -96,6 +104,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const [busy, setBusy] = useState('');           // 'config' | 'generate' | 'publish' | 'send' | match id
   const [toast, setToast] = useState('');
   const [confirmRegen, setConfirmRegen] = useState(false);
+  const [confirmRegenPlayoffs, setConfirmRegenPlayoffs] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [copied, setCopied] = useState(false);
   // Brouillons de pointage en cours de frappe (id de match → scores affichés)
@@ -124,6 +133,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         days: Array.isArray(c.days) && c.days.length > 0 ? c.days : fallbackDays,
         game_minutes: c.game_minutes,
         break_minutes: c.break_minutes,
+        playoffs_enabled: c.playoffs_enabled,
+        playoffs_team_count: c.playoffs_team_count,
         status: c.status,
         schedule_sent_at: c.schedule_sent_at,
         published_at: c.published_at,
@@ -192,6 +203,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   }, [state?.matches]);
 
   const finishedCount = (state?.matches || []).filter(m => m.status === 'finished').length;
+  const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
   const liveUrl = typeof window !== 'undefined' ? `${window.location.origin}/tournoi/${eventId}` : `/tournoi/${eventId}`;
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -301,6 +313,37 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       applyState(await res.json());
       setEditing('');
       showToast(`M${m.match_number} déplacée au ${formatDayLong(editDraft.date)} ${editDraft.time} · Terrain ${editDraft.court}.`);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Génère (ou régénère) le bracket des séries à la suite de l'horaire
+  async function generatePlayoffs(force = false) {
+    setBusy('playoffs');
+    setConfirmRegenPlayoffs(false);
+    try {
+      // La config affichée (taille des séries, journées…) doit être celle qui sert
+      const putRes = await fetch(`/api/events/${eventId}/tournament`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!putRes.ok) { showToast('Erreur de sauvegarde de la configuration.'); return; }
+
+      const res = await fetch(`/api/events/${eventId}/tournament/playoffs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (res.status === 409 && data.needsForce) { setConfirmRegenPlayoffs(true); return; }
+      if (!res.ok) { showToast(data.error || 'Erreur de génération des séries.'); return; }
+      applyState(data);
+      showToast(
+        `Séries générées : ${data.playoffsGenerated} parties. Les cases se rempliront automatiquement avec les pointages.` +
+        (data.overflowMatches ? ` ⚠ ${data.overflowMatches} partie(s) dépassent la fin de la dernière journée.` : ''),
+      );
     } finally {
       setBusy('');
     }
@@ -490,6 +533,28 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
               Une partie n&apos;est cédulée dans une journée que si elle peut finir avant l&apos;heure de fin. Le surplus continue sur la journée suivante.
             </p>
           </div>
+
+          {/* Séries éliminatoires après les parties garanties */}
+          <div className="col-span-2">
+            <label className="text-xs font-extrabold text-text-muted block mb-1">Séries éliminatoires (après les parties garanties)</label>
+            <div className="flex gap-1.5">
+              {([[0, 'Aucune'], [2, 'Finale'], [4, 'Top 4'], [8, 'Top 8']] as const).map(([val, label]) => {
+                const selected = val === 0 ? !form.playoffs_enabled : (form.playoffs_enabled && form.playoffs_team_count === val);
+                return (
+                  <button key={val}
+                    onClick={() => setForm(f => val === 0
+                      ? { ...f, playoffs_enabled: false }
+                      : { ...f, playoffs_enabled: true, playoffs_team_count: val })}
+                    className="flex-1 py-2 rounded-xl text-sm font-extrabold transition-all"
+                    style={{
+                      backgroundColor: selected ? `${DUO.orange}15` : 'white',
+                      color: selected ? DUO.orangeDark : '#9ca3af',
+                      border: selected ? `2px solid ${DUO.orange}60` : '2px solid #e5e7eb',
+                    }}>{label}</button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <button onClick={() => generate(false)} disabled={busy !== ''}
@@ -498,6 +563,14 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
           {busy === 'generate' ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
           {hasSchedule ? 'Régénérer l\'horaire' : 'Générer l\'horaire'}
         </button>
+        {hasSchedule && form.playoffs_enabled && (
+          <button onClick={() => generatePlayoffs(false)} disabled={busy !== ''}
+            className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-base font-extrabold transition-all active:translate-y-[2px] disabled:opacity-60"
+            style={{ backgroundColor: `${DUO.orange}12`, color: DUO.orangeDark, border: `2px solid ${DUO.orange}50` }}>
+            {busy === 'playoffs' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trophy className="h-5 w-5" />}
+            {playoffMatches.length > 0 ? 'Régénérer les séries' : `Générer les séries (top ${form.playoffs_team_count})`}
+          </button>
+        )}
         {state.teams.length < 2 && (
           <p className="text-xs font-bold mt-2 flex items-center gap-1" style={{ color: DUO.red }}>
             <AlertTriangle className="h-3.5 w-3.5" /> Il faut au moins 2 équipes inscrites.
@@ -610,7 +683,12 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                       <div key={m.id} className="rounded-2xl bg-white p-3"
                         style={{ border: finished ? `2px solid ${DUO.green}50` : '2px solid #e5e7eb', borderBottom: finished ? `4px solid ${DUO.green}50` : '4px solid #e5e7eb' }}>
                         <div className="flex items-center justify-between text-[11px] font-extrabold text-text-muted mb-1.5 gap-2">
-                          <span className="whitespace-nowrap">M{m.match_number} · Terrain {m.court}</span>
+                          <span className="whitespace-nowrap">
+                            M{m.match_number} · Terrain {m.court}
+                            {m.phase !== 'garantie' && (
+                              <span style={{ color: DUO.orangeDark }}> · {PHASE_LABELS[m.phase] || m.phase}</span>
+                            )}
+                          </span>
                           <div className="flex items-center gap-2 min-w-0">
                             {conflicts.has(m.id) && (
                               <span className="truncate" style={{ color: DUO.red }}>⚠ {conflicts.get(m.id)}</span>
@@ -758,6 +836,29 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             </table>
           </div>
         </div>
+      )}
+
+      {/* Bracket des séries */}
+      {playoffMatches.length > 0 && (
+        <div className="rounded-2xl bg-white p-4 mt-4" style={{ border: '2px solid #e5e7eb40', borderBottom: '4px solid #d1d5db40' }}>
+          <h2 className="text-sm font-extrabold text-text-main mb-3 flex items-center gap-1.5">
+            <Trophy className="h-4 w-4" style={{ color: DUO.orange }} /> Séries éliminatoires
+            <span className="text-[11px] text-text-muted font-bold">(se remplit avec les pointages)</span>
+          </h2>
+          <Bracket matches={playoffMatches} teamName={teamName} multiDay={multiDay} accent={DUO.blue} />
+        </div>
+      )}
+
+      {/* Modale — régénérer les séries avec pointages */}
+      {confirmRegenPlayoffs && (
+        <ConfirmModal
+          title="Régénérer les séries ?"
+          body="Des pointages de séries sont déjà saisis. Régénérer efface toutes les parties de séries et leurs résultats (les parties garanties ne bougent pas)."
+          confirmLabel="Oui, régénérer les séries"
+          color={DUO.red}
+          onConfirm={() => generatePlayoffs(true)}
+          onClose={() => setConfirmRegenPlayoffs(false)}
+        />
       )}
 
       {/* Modale — régénérer avec pointages */}

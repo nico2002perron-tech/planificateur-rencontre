@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fetchTournamentState } from '@/lib/tournament/state';
+import { fetchTournamentState, applyPlayoffResolution } from '@/lib/tournament/state';
 
 async function checkPermission(supabase: SupabaseClient, eventId: string, userId: string, role: string): Promise<boolean> {
   if (role === 'admin') return true;
@@ -69,6 +69,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!updated) return NextResponse.json({ error: 'Partie introuvable' }, { status: 404 });
+
+  // Le bracket vit en temps réel : seeds et « Gagnant/Perdant MX » se
+  // remplissent (ou se vident, si correction) après chaque pointage.
+  await applyPlayoffResolution(supabase, eventId);
 
   const state = await fetchTournamentState(supabase, eventId, true);
   return NextResponse.json(state);

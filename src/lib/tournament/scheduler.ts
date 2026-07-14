@@ -89,7 +89,7 @@ export function addMinutes(hhmm: string, minutes: number): string {
 
 // ── Créneaux multi-jours ─────────────────────────────────────────────────────
 
-interface SlotDef {
+export interface SlotDef {
   date: string;
   time: string;
   overflow: boolean; // au-delà de la fin de la dernière journée
@@ -99,8 +99,9 @@ interface SlotDef {
  * Créneaux réguliers dans les fenêtres des journées (une partie doit finir
  * avant l'heure de fin). getSlot(k) déborde sur la dernière journée au-delà
  * de sa fin quand la capacité normale est épuisée — le débordement est marqué.
+ * Exporté : la génération des séries cédule À LA SUITE des parties garanties.
  */
-function makeSlotProvider(days: SchedulerDay[], gameMinutes: number, breakMinutes: number) {
+export function makeSlotProvider(days: SchedulerDay[], gameMinutes: number, breakMinutes: number) {
   const step = gameMinutes + Math.max(0, breakMinutes);
   const effectiveDays = days.length > 0 ? days : [{ date: '', start: '09:00', end: '23:59' }];
 

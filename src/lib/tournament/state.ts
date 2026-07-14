@@ -14,6 +14,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeStandings, type StandingRow } from './standings';
+import { resolvePlayoffSlots } from './playoffs';
 
 export interface TournamentDay {
   date: string;  // 'YYYY-MM-DD'
@@ -173,6 +174,46 @@ export async function fetchTournamentState(
     published_at: config?.published_at || null,
     ...(includeDraft ? { has_unpublished_changes: hasUnpublishedChanges } : {}),
   };
+}
+
+/**
+ * Résolution automatique des séries : remplit/vide les cases « 1er au
+ * classement » et « Gagnant/Perdant MX » selon l'état ACTUEL des parties.
+ * À appeler après chaque saisie de pointage et après la génération des séries.
+ * Retourne le nombre de cases mises à jour.
+ */
+export async function applyPlayoffResolution(supabase: SupabaseClient, eventId: string): Promise<number> {
+  const [{ data: config }, { data: rawTeams }, { data: rawMatches }] = await Promise.all([
+    supabase.from('event_tournaments').select('points_win, points_tie, points_loss').eq('event_id', eventId).maybeSingle(),
+    supabase.from('event_teams').select('id, team_name').eq('event_id', eventId),
+    supabase.from('event_matches').select(MATCH_COLUMNS).eq('event_id', eventId).order('match_number'),
+  ]);
+  const matches = (rawMatches as TournamentMatch[]) || [];
+  if (!config || !matches.some(m => m.phase !== 'garantie')) return 0;
+
+  const standings = computeStandings(
+    (rawTeams || []).map(t => ({ id: t.id, name: t.team_name })),
+    matches.map(m => ({
+      phase: m.phase,
+      status: m.status,
+      teamAId: m.team_a_id,
+      teamBId: m.team_b_id,
+      scoreA: m.score_a,
+      scoreB: m.score_b,
+    })),
+    { win: config.points_win, tie: config.points_tie, loss: config.points_loss },
+  );
+
+  const changes = resolvePlayoffSlots(matches, standings);
+  const now = new Date().toISOString();
+  for (const c of changes) {
+    await supabase
+      .from('event_matches')
+      .update({ team_a_id: c.team_a_id, team_b_id: c.team_b_id, updated_at: now })
+      .eq('id', c.id)
+      .eq('event_id', eventId);
+  }
+  return changes.length;
 }
 
 /**

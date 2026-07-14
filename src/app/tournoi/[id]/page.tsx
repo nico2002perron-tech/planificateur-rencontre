@@ -9,6 +9,7 @@
 import { useState, useEffect, useMemo, useCallback, use, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, MapPin, CalendarDays, Radio, Medal, Clock3 } from 'lucide-react';
+import Bracket from '@/components/tournament/Bracket';
 
 const BRAND = {
   navy: '#03045e',
@@ -67,7 +68,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
   const [state, setState] = useState<TournamentState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'horaire' | 'classement'>('horaire');
+  const [tab, setTab] = useState<'horaire' | 'series' | 'classement'>('horaire');
   const [selectedTeam, setSelectedTeam] = useState<string>(searchParams.get('equipe') || '');
 
   const load = useCallback(async () => {
@@ -112,6 +113,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
   }, [state?.matches, state?.event.date]);
 
   const multiDay = byDay.length > 1;
+  const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
 
   // Prochaine partie de l'équipe sélectionnée — la plus tôt en JOUR + HEURE
   // (pas en numéro de partie : l'organisateur peut déplacer des matchs)
@@ -242,7 +244,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
 
             {/* Onglets */}
             <div className="flex gap-2 mt-4">
-              {([['horaire', 'Horaire'], ['classement', 'Classement']] as const).map(([key, label]) => (
+              {([['horaire', 'Horaire'], ...(playoffMatches.length > 0 ? [['series', 'Séries']] : []), ['classement', 'Classement']] as ['horaire' | 'series' | 'classement', string][]).map(([key, label]) => (
                 <button key={key} onClick={() => setTab(key)}
                   className="flex-1 px-3 py-2.5 rounded-xl text-sm font-extrabold transition-all border-2"
                   style={{
@@ -312,6 +314,23 @@ function LivePageInner({ eventId }: { eventId: string }) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Séries éliminatoires */}
+            {tab === 'series' && playoffMatches.length > 0 && (
+              <div className="mt-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <h2 className="text-sm font-extrabold text-slate-800 mb-3">🏆 Séries éliminatoires</h2>
+                <Bracket
+                  matches={playoffMatches}
+                  teamName={teamName}
+                  highlightTeam={selectedTeam || undefined}
+                  multiDay={multiDay}
+                  accent={BRAND.blue}
+                />
+                <p className="text-[11px] text-slate-400 font-bold mt-3 text-center">
+                  Les cases se remplissent automatiquement à mesure que les résultats rentrent.
+                </p>
               </div>
             )}
 
