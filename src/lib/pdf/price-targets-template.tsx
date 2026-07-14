@@ -61,6 +61,9 @@ export interface PriceTargetHolding {
   /** Fréquence de versement (« mensuel », « trimestriel », « semestriel », « annuel »).
    *  Optionnel — dérivé de l'historique Yahoo events=div en Phase 2 ; absent = non affiché. */
   dividendFrequency?: string;
+  /** Dividende annuel réparti par trimestre [T1, T2, T3, T4], d'après les mois de
+   *  versement réels (Yahoo). Absent = repli sur une répartition égale annuel/4. */
+  quarterlyDividends?: number[];
   currentPrice?: number;
   targetPrice?: number;
   gainPct?: number;
@@ -1929,8 +1932,25 @@ function ShareBar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-const DIV_COL = { cpte: '7%', titre: '29%', marche: '15%', rend: '12%', revenu: '15%', part: '22%' } as const;
+// Le tableau des dividendes montre le versement par TRIMESTRE (T1..T4) plutôt que
+// la barre « part du revenu » : cpte + titre + marché + rend. + div./an, puis 4
+// colonnes trimestrielles de même largeur (`tq`).
+const DIV_COL = { cpte: '6%', titre: '27%', marche: '13%', rend: '9%', revenu: '13%', tq: '8%' } as const;
 const COUP_COL = { cpte: '7%', titre: '26%', marche: '14%', coupon: '10%', rend: '12%', revenu: '14%', part: '17%' } as const;
+
+// Dividende annuel réparti par trimestre [T1..T4] : la donnée Yahoo si présente
+// (mois de versement réels), sinon repli sur une répartition égale annuel/4.
+function quarterlyOf(h: PriceTargetHolding): [number, number, number, number] {
+  const q = h.quarterlyDividends;
+  if (q && q.length === 4) return [q[0], q[1], q[2], q[3]];
+  const per = Math.round((h.forwardDividend || 0) / 4);
+  return [per, per, per, per];
+}
+
+// Montant trimestriel compact pour une cellule étroite : « 458 $ » ou « — » si nul.
+function fmtQ(value: number): string {
+  return value > 0 ? fmt(value) : '—';
+}
 
 function IncomeDetailPage({ holdings, orientation, logos }: {
   holdings: PriceTargetHolding[];
@@ -1950,6 +1970,11 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
     .sort((a, b) => (b.annualIncome || 0) - (a.annualIncome || 0));
 
   const divTotal = divs.reduce((s, h) => s + (h.forwardDividend || 0), 0);
+  // Total versé par trimestre (somme des répartitions T1..T4 de chaque titre).
+  const divQ = divs.reduce<[number, number, number, number]>((acc, h) => {
+    const q = quarterlyOf(h);
+    return [acc[0] + q[0], acc[1] + q[1], acc[2] + q[2], acc[3] + q[3]];
+  }, [0, 0, 0, 0]);
   const coupTotal = coups.reduce((s, h) => s + (h.annualIncome || 0), 0);
   const incomeTotal = divTotal + coupTotal;
   const divMv = divs.reduce((s, h) => s + effMv(h), 0);
@@ -2001,6 +2026,7 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
             <View style={{ width: 3, height: 12, backgroundColor: C.duoGreen, borderRadius: 1.5 }} />
             <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>Dividendes — actions et FNB</Text>
             <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>classés par montant versé</Text>
+            <Text style={{ fontSize: 6, color: '#94a3b8', marginLeft: 'auto' as const }}>T1 janv–mars · T2 avr–juin · T3 juil–sept · T4 oct–déc</Text>
           </View>
           <View style={styles.tablePremium}>
             <View style={styles.thPremium} fixed>
@@ -2009,14 +2035,17 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
               <Text style={[styles.thCellPremium, { width: DIV_COL.marche, textAlign: 'right' }]}>Marché</Text>
               <Text style={[styles.thCellPremium, { width: DIV_COL.rend, textAlign: 'right' }]}>Rend.</Text>
               <Text style={[styles.thCellPremium, { width: DIV_COL.revenu, textAlign: 'right' }]}>Div. / an</Text>
-              <Text style={[styles.thCellPremium, { width: DIV_COL.part, textAlign: 'center' }]}>Part du revenu</Text>
+              <Text style={[styles.thCellPremium, { width: DIV_COL.tq, textAlign: 'right' }]}>T1</Text>
+              <Text style={[styles.thCellPremium, { width: DIV_COL.tq, textAlign: 'right' }]}>T2</Text>
+              <Text style={[styles.thCellPremium, { width: DIV_COL.tq, textAlign: 'right' }]}>T3</Text>
+              <Text style={[styles.thCellPremium, { width: DIV_COL.tq, textAlign: 'right' }]}>T4</Text>
             </View>
             {divs.map((h, i) => {
               const row = getRowStyle(i, divs.length);
               const mv = effMv(h);
               const inc = h.forwardDividend || 0;
               const yld = mv > 0 ? (inc / mv) * 100 : 0;
-              const share = divTotal > 0 ? (inc / divTotal) * 100 : 0;
+              const q = quarterlyOf(h);
               const logoSrc = logos[h.symbol];
               return (
                 <View key={`${h.symbol}-${i}`} style={{ flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8, backgroundColor: row.bg, borderBottomWidth: row.borderBottomWidth, borderBottomColor: row.borderBottomColor, borderBottomStyle: 'solid' as const, alignItems: 'center' }} wrap={false}>
@@ -2041,7 +2070,9 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
                   <Text style={[styles.tdBold, { width: DIV_COL.marche, textAlign: 'right', fontSize: 8 }]}>{mv > 0 ? fmt(mv) : '—'}</Text>
                   <PctPill value={yld} tone="income" width={DIV_COL.rend} />
                   <Text style={{ width: DIV_COL.revenu, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#059669', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(inc)}</Text>
-                  <View style={{ width: DIV_COL.part, paddingHorizontal: 4 }}><ShareBar pct={share} color={C.duoGreen} /></View>
+                  {q.map((qv, qi) => (
+                    <Text key={qi} style={{ width: DIV_COL.tq, fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: qv > 0 ? 600 : 400, color: qv > 0 ? '#334155' : '#cbd5e1', textAlign: 'right' as const, paddingHorizontal: 3 }}>{fmtQ(qv)}</Text>
+                  ))}
                 </View>
               );
             })}
@@ -2052,7 +2083,9 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
               <Text style={{ width: DIV_COL.marche, fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(divMv)}</Text>
               <Text style={{ width: DIV_COL.rend, fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#7dd3fc', textAlign: 'right', paddingHorizontal: 4 }}>{divYield.toFixed(2)} %</Text>
               <Text style={{ width: DIV_COL.revenu, fontSize: 8.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#6ee7b7', textAlign: 'right', paddingHorizontal: 4 }}>{fmt(divTotal)}</Text>
-              <Text style={{ width: DIV_COL.part, fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8', textAlign: 'center', paddingHorizontal: 4 }}>100 %</Text>
+              {divQ.map((qv, qi) => (
+                <Text key={qi} style={{ width: DIV_COL.tq, fontSize: 6.5, fontFamily: 'Montserrat', fontWeight: 800, color: '#cbd5e1', textAlign: 'right' as const, paddingHorizontal: 3 }}>{fmtQ(qv)}</Text>
+              ))}
             </View>
           </View>
         </View>

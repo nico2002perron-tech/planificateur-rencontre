@@ -74,10 +74,14 @@ async function paymentSchedule(symbol: string): Promise<{ months: number[]; coun
 export async function buildIncomeCalendar(holdings: PriceTargetHolding[]): Promise<{
   calendar: IncomeMonth[];
   frequencies: Record<string, string>;
+  quarterlyBySymbol: Record<string, [number, number, number, number]>;
 }> {
   const dividends = new Array(12).fill(0) as number[];
   const coupons = new Array(12).fill(0) as number[];
   const frequencies: Record<string, string> = {};
+  // Dividende annuel réparti par TRIMESTRE (T1..T4) pour chaque titre, d'après
+  // ses mois de versement réels — alimente les colonnes T1–T4 de la page Revenus.
+  const quarterlyBySymbol: Record<string, [number, number, number, number]> = {};
 
   const dividendPayers = holdings.filter(h =>
     ['EQUITY', 'ETF', 'FUND', 'PREFERRED'].includes(h.assetType) &&
@@ -94,7 +98,9 @@ export async function buildIncomeCalendar(holdings: PriceTargetHolding[]): Promi
     if (freq) frequencies[h.symbol] = freq;
     const payMonths = sched.months.length > 0 ? sched.months : [2, 5, 8, 11];
     const per = annual / payMonths.length;
-    for (const m of payMonths) dividends[m] += per;
+    const q: [number, number, number, number] = [0, 0, 0, 0];
+    for (const m of payMonths) { dividends[m] += per; q[Math.floor(m / 3)] += per; }
+    quarterlyBySymbol[h.symbol] = [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), Math.round(q[3])];
   }
 
   const bonds = holdings.filter(h => h.assetType === 'FIXED_INCOME' && (h.annualIncome ?? 0) > 0);
@@ -115,5 +121,5 @@ export async function buildIncomeCalendar(holdings: PriceTargetHolding[]): Promi
     dividends: Math.round(dividends[i]),
     coupons: Math.round(coupons[i]),
   }));
-  return { calendar, frequencies };
+  return { calendar, frequencies, quarterlyBySymbol };
 }

@@ -75,11 +75,15 @@ export async function POST(req: NextRequest) {
     // Best-effort ; sauté seulement si les deux sections sont explicitement désactivées.
     if (options?.includeIncomeCalendar !== false || options?.includeIncomeDetail !== false) {
       try {
-        const { calendar, frequencies } = await buildIncomeCalendar(reportData.holdings);
+        const { calendar, frequencies, quarterlyBySymbol } = await buildIncomeCalendar(reportData.holdings);
         reportData.incomeCalendar = calendar;
-        reportData.holdings = reportData.holdings.map(h =>
-          frequencies[h.symbol] ? { ...h, dividendFrequency: frequencies[h.symbol] } : h
-        );
+        reportData.holdings = reportData.holdings.map(h => {
+          const freq = frequencies[h.symbol];
+          const quarterly = quarterlyBySymbol[h.symbol];
+          return (freq || quarterly)
+            ? { ...h, ...(freq ? { dividendFrequency: freq } : {}), ...(quarterly ? { quarterlyDividends: quarterly } : {}) }
+            : h;
+        });
       } catch (e) {
         console.error('Income calendar build failed (non-fatal):', e);
       }
