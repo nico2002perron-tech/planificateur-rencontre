@@ -638,6 +638,47 @@ export async function getYahooDividend(symbol: string): Promise<YahooDividend | 
   }
 }
 
+export interface YahooDividendEvent {
+  date: string;   // YYYY-MM-DD (date ex-dividende ≈ mois de versement)
+  amount: number; // en devise native
+}
+
+/**
+ * Versements de dividendes DATÉS des ~365 derniers jours (API chart Yahoo
+ * events=div). Sert au calendrier des revenus (quels mois + fréquence).
+ * Contrairement à getYahooDividend, ne somme pas : retourne chaque versement
+ * { date, amount }. Aucune conversion FX (montants en devise native).
+ * Retourne `[]` si indisponible ou si le titre ne verse pas de dividende.
+ */
+export async function getYahooDividendEvents(symbol: string): Promise<YahooDividendEvent[]> {
+  try {
+    const ySym = toYahooSymbol(symbol);
+    const now = Math.floor(Date.now() / 1000);
+    const period1 = now - 400 * 86_400;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?period1=${period1}&period2=${now}&interval=1d&events=div`;
+    const res = await yahooFetch(url);
+    if (!res.ok) return [];
+
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    const divs = result?.events?.dividends as Record<string, { amount?: number; date?: number }> | undefined;
+    if (!divs) return [];
+
+    const cutoff = now - 365 * 86_400;
+    const events: YahooDividendEvent[] = [];
+    for (const d of Object.values(divs)) {
+      const amount = Number(d?.amount);
+      const date = Number(d?.date);
+      if (isFinite(amount) && amount > 0 && isFinite(date) && date > 0 && date >= cutoff) {
+        events.push({ date: new Date(date * 1000).toISOString().split('T')[0], amount });
+      }
+    }
+    return events.sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}
+
 // ── Historical Chart Data (10y monthly) ─────────────────────────────
 
 export interface YahooChartPoint {

@@ -8,6 +8,7 @@ import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
 import { fetchHoldingMeta } from '@/lib/pdf/fetch-sectors';
 import { describeHoldings } from '@/lib/pdf/describe-holdings';
+import { buildIncomeCalendar } from '@/lib/pdf/fetch-income-calendar';
 
 export async function POST(req: NextRequest) {
   // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
@@ -65,6 +66,23 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.error('Holding enrichment failed (non-fatal):', e);
+    }
+
+    // Calendrier des revenus 12 mois (couverture) + fréquence de versement par
+    // titre (page « Revenus du portefeuille »). Les MOIS viennent des dates de
+    // dividendes Yahoo ; les MONTANTS restent ceux (déjà en CAD) sur les holdings —
+    // aucune double conversion FX. Coupons dérivés du mois d'échéance, sans réseau.
+    // Best-effort ; sauté seulement si les deux sections sont explicitement désactivées.
+    if (options?.includeIncomeCalendar !== false || options?.includeIncomeDetail !== false) {
+      try {
+        const { calendar, frequencies } = await buildIncomeCalendar(reportData.holdings);
+        reportData.incomeCalendar = calendar;
+        reportData.holdings = reportData.holdings.map(h =>
+          frequencies[h.symbol] ? { ...h, dividendFrequency: frequencies[h.symbol] } : h
+        );
+      } catch (e) {
+        console.error('Income calendar build failed (non-fatal):', e);
+      }
     }
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });

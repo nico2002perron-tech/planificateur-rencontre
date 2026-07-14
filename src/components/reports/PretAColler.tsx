@@ -498,6 +498,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     includeEquities: true,
     includeFixedIncome: true,
     includeDescriptions: true,
+    includeIncomeDetail: true,
     fundCodesToInclude: [] as string[],
     orientation: 'portrait' as 'portrait' | 'landscape',
   });
@@ -805,8 +806,8 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
 
   // Compute target data
   const targetData = useMemo(() => {
-    if (!showTargets) return new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
-    const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string }>();
+    if (!showTargets) return new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string; targetLow: number; targetHigh: number; analystCount: number }>();
+    const map = new Map<string, { currentPrice: number; targetPrice: number; gainPct: number; source: string; targetLow: number; targetHigh: number; analystCount: number }>();
     const fx = convertUsdToCad && usdCadRate ? usdCadRate : 1;
 
     priceableSymbols.forEach(sym => {
@@ -852,7 +853,17 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
 
       const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
 
-      map.set(sym, { currentPrice, targetPrice, gainPct, source });
+      // Fourchette d'analystes (bas/haut) — même conversion FX que le consensus,
+      // et seulement sur la branche « Analyste » (0 pour manuel / CDR / N-D, où
+      // aucune vraie fourchette n'est disponible → la piste dégrade en « cible seule »).
+      const isConsensusTarget = !hasCustom && !(isCDR && target?.cdrGainPct !== undefined) && !!(target?.targetConsensus && target.targetConsensus > 0);
+      const targetLow = isConsensusTarget && target?.targetLow ? Math.round(target.targetLow * symFx * 100) / 100 : 0;
+      const targetHigh = isConsensusTarget && target?.targetHigh ? Math.round(target.targetHigh * symFx * 100) / 100 : 0;
+      // Nombre d'analystes : 0 pour une cible manuelle (sinon on afficherait « N anal. »
+      // sous un cours cible saisi à la main). Conservé pour les CDR (compte du sous-jacent US).
+      const analystCount = hasCustom ? 0 : (target?.numberOfAnalysts ?? 0);
+
+      map.set(sym, { currentPrice, targetPrice, gainPct, source, targetLow, targetHigh, analystCount });
     });
 
     // Include custom targets for symbols not yet in the map (e.g. API returned nothing)
@@ -867,7 +878,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         const currentPrice = customCurrentPrices[sym] ?? currentPriceBase;
         const targetPrice = customTargets[sym];
         const gainPct = targetPrice > 0 && currentPrice > 0 ? ((targetPrice - currentPrice) / currentPrice) * 100 : 0;
-        map.set(sym, { currentPrice, targetPrice, gainPct, source: 'Manuel' });
+        map.set(sym, { currentPrice, targetPrice, gainPct, source: 'Manuel', targetLow: 0, targetHigh: 0, analystCount: 0 });
       }
     }
 
@@ -1204,6 +1215,9 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           targetPrice: td?.targetPrice || 0,
           gainPct: td?.gainPct || 0,
           targetSource: td?.source || '',
+          targetLow: td?.targetLow || 0,
+          targetHigh: td?.targetHigh || 0,
+          analystCount: td?.analystCount || 0,
           couponRate: h.couponRate,
           maturityDate: h.maturityDate,
           modifiedDuration: h.modifiedDuration,
@@ -1232,6 +1246,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           includeEquities: pdfOptions.includeEquities,
           includeFixedIncome: pdfOptions.includeFixedIncome,
           includeDescriptions: pdfOptions.includeDescriptions,
+          includeIncomeDetail: pdfOptions.includeIncomeDetail,
           orientation: pdfOptions.orientation,
         },
         summary: (() => {
@@ -2797,6 +2812,43 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                   </button>
                 );
               })()}
+
+              {/* Revenus du portefeuille (dividendes + coupons détaillés par titre) */}
+              {(() => {
+                const count = holdings.filter(h =>
+                  ['EQUITY', 'ETF', 'FUND', 'PREFERRED', 'FIXED_INCOME'].includes(h.assetType) && (h.annualIncome || 0) > 0).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    onClick={() => setPdfOptions(p => ({ ...p, includeIncomeDetail: !p.includeIncomeDetail }))}
+                    className="relative text-left p-4 rounded-2xl transition-all duration-200 active:translate-y-[1px]"
+                    style={{
+                      border: `2px solid ${pdfOptions.includeIncomeDetail ? DUO.green : '#e5e7eb'}`,
+                      borderBottom: `4px solid ${pdfOptions.includeIncomeDetail ? DUO.greenDark : '#d1d5db'}`,
+                      backgroundColor: pdfOptions.includeIncomeDetail ? `${DUO.green}08` : '#fafafa',
+                    }}
+                  >
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: pdfOptions.includeIncomeDetail ? DUO.green : '#d1d5db', boxShadow: pdfOptions.includeIncomeDetail ? `0 2px 0 0 ${DUO.greenDark}` : 'none' }}
+                    >
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    </div>
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center mb-2"
+                      style={{ backgroundColor: pdfOptions.includeIncomeDetail ? `${DUO.green}20` : '#f3f4f6' }}
+                    >
+                      <Wallet className="h-5 w-5" style={{ color: pdfOptions.includeIncomeDetail ? DUO.green : '#9ca3af' }} />
+                    </div>
+                    <p className="text-xs font-extrabold" style={{ color: pdfOptions.includeIncomeDetail ? '#1f2937' : '#9ca3af' }}>
+                      Revenus du portefeuille
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: pdfOptions.includeIncomeDetail ? '#6b7280' : '#d1d5db' }}>
+                      {count} payeur{count > 1 ? 's' : ''}
+                    </p>
+                  </button>
+                );
+              })()}
             </div>
 
             {/* Orientation selector */}
@@ -3150,12 +3202,16 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               <div className="text-xs text-text-muted">
                 {(() => {
                   const incl = holdings.filter(h => !excludedRows.has(h._key));
-                  const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)).length;
+                  // Le tableau des cours cibles ne montre que les titres AYANT une cible.
+                  const eqCount = incl.filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && (targetData.get(h.symbol)?.targetPrice || 0) > 0).length;
                   const fiCount = incl.filter(h => h.assetType === 'FIXED_INCOME').length;
-                  const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 22 : 28;
+                  const incomeCount = incl.filter(h => ['EQUITY', 'ETF', 'FUND', 'PREFERRED', 'FIXED_INCOME'].includes(h.assetType) && (h.annualIncome || 0) > 0).length;
+                  // Lignes à 2 niveaux (piste + valeurs empilées) : ~20/page portrait, ~16 paysage.
+                  const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 16 : 20;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
+                  if (pdfOptions.includeIncomeDetail && incomeCount > 0) pages += 1;
                   if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
                   if (pdfOptions.includeDescriptions && incl.length > 0) pages += Math.ceil(incl.length / 24);
                   pages += pdfOptions.fundCodesToInclude.length * 2;
