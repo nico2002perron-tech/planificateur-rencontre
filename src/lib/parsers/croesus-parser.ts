@@ -141,6 +141,13 @@ const FIXED_INCOME_KEYWORDS = [
   /\bics\b/i,             // "ICS" = Infrastructure/Institutional Certificate Series
   /\bred\b/i,             // "RED" = redeemable (corporate bonds)
   /\d+[.,]\d+%\s*\d{2}/i, // pattern like "2.961%16SP26" or "4.5% 15JA30"
+  // Date d'échéance compacte de Croesus : « 15JN32 », « 3OC28 », « 2JL35 »
+  // (jour + code mois 2 lettres + année 2 chiffres). Signal d'obligation très
+  // spécifique — rattrape les titres à taux flottant ou dont le coupon n'a
+  // qu'un chiffre de jour après le %, que le motif ci-dessus manque.
+  /\b\d{1,2}(JA|FE|MR|AL|MA|JN|JL|AU|SP|OC|NO|DE)\d{2}\b/i,
+  /\bfx-?tv\b/i,          // "FX-TV" = taux fixe-à-variable (obligations bancaires)
+  /\bnvcc\b/i,            // "NVCC" = capital conditionnel bancaire (obligations)
   /revenu\s*fixe/i, /fixed\s*income/i,
 ];
 
@@ -502,6 +509,183 @@ function isSkippableLine(line: string): boolean {
   return false;
 }
 
+// ─── Vertical (one-value-per-line) format ────────────────────────────────────
+//
+// Certaines vues web de Croesus se copient VERTICALEMENT : chaque cellule tombe
+// sur sa propre ligne au lieu d'être séparée par des tabulations. Un titre =
+//   Symbole            (ex. AQN, AP.UN, Y14AB9)
+//   Description        (ex. ALGONQUIN PWR&UTILITIES)
+//   Quantité           (ex. 16 400)
+//   Prix du marché     (ex. 8,030)
+//   Valeur marchande   (ex. 131 692,00)
+// et, pour une obligation, un bloc d'intérêts courus s'ajoute avant le titre
+// suivant : « Int. courus » + le montant couru + « * ».
+//
+// Ce format ne fournit NI valeur comptable NI coût (bookValue / averageCost
+// restent 0 → le PDF masque simplement le PBR), NI dividendes. Les dividendes
+// sont récupérés en aval via Yahoo (prix + dividendRate) ; les obligations
+// tirent leur revenu du taux de coupon extrait de la description. On lit ce
+// format en s'ancrant sur les lignes « symbole ».
+
+// Une ligne purement numérique au format FR : « 16 400 », « 8,030 »,
+// « 131 692,00 », « (1 234,56) ». Inclut les espaces insécables de Croesus.
+const VERTICAL_NUMBER_LINE = /^\(?-?\d[\d\s  ]*(?:,\d+)?\)?$/;
+
+function isNumberLine(s: string): boolean {
+  const t = s.trim();
+  return t !== '' && VERTICAL_NUMBER_LINE.test(t);
+}
+
+// Une ligne « symbole » : un seul jeton sans espace, au moins une lettre (ce qui
+// exclut une quantité purement numérique comme « 415 »), assez court. Couvre les
+// actions (AQN, AP.UN, GIB.A, RCI.B) comme les obligations façon CUSIP (Y14AB9,
+// W85032, FC.DB.M, CHR.DB.C).
+function isSymbolLine(s: string): boolean {
+  const t = s.trim();
+  if (!t || t.length > 12 || /\s/.test(t)) return false;
+  if (!/[A-Za-z]/.test(t)) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9.\-]*$/.test(t);
+}
+
+// L'étiquette d'intérêts courus qui précède le montant dans une obligation.
+function isAccruedLabel(s: string): boolean {
+  return /^int\.?\s*cour/i.test(s.trim());
+}
+
+/**
+ * Détecte le format vertical : aucune colonne (pas de tabulation ni « ; »),
+ * plusieurs symboles et assez de lignes numériques pour former des
+ * enregistrements. Garde AVANT le parseur tabulaire — un vrai collage tabulaire
+ * (avec tabulations) échoue ce test et suit la voie normale.
+ */
+function looksVerticalFormat(lines: string[]): boolean {
+  if (lines.length < 6) return false;
+  if (lines.some(l => /[\t;]/.test(l))) return false;
+  const numbers = lines.filter(isNumberLine).length;
+  const symbols = lines.filter(isSymbolLine).length;
+  return symbols >= 2 && numbers >= 3 && numbers >= lines.length * 0.25;
+}
+
+/**
+ * Parse le format vertical en s'ancrant sur les lignes « symbole ». Chaque
+ * enregistrement va d'un symbole jusqu'au symbole suivant : la 1re ligne après
+ * le symbole est la description, puis viennent quantité / prix / valeur (3
+ * nombres) et, pour une obligation, « Int. courus » + le montant couru (« * »
+ * ignoré). Les nombres avant « Int. courus » sont les données de marché ; le
+ * premier nombre après = les intérêts courus.
+ */
+function parseVerticalHoldings(lines: string[]): ParseResult {
+  const holdings: ParsedHolding[] = [];
+  const warnings: string[] = [];
+
+  const n = lines.length;
+  let i = 0;
+  // Sauter d'éventuelles lignes orphelines avant le premier symbole (ex. un
+  // collage qui aurait perdu le tout premier symbole en haut du tableau).
+  while (i < n && !isSymbolLine(lines[i])) i++;
+
+  while (i < n) {
+    const rawSymbol = lines[i].trim();
+    i++;
+    // La description est TOUJOURS la ligne suivante (même si, rarement, un nom
+    // d'un seul mot ressemblait à un symbole).
+    const name = i < n ? lines[i].trim() : '';
+    if (name) i++;
+
+    // Tout jusqu'au prochain symbole appartient à cet enregistrement.
+    const body: string[] = [];
+    while (i < n && !isSymbolLine(lines[i])) { body.push(lines[i].trim()); i++; }
+
+    // Extraire les nombres (avant / après « Int. courus ») + une éventuelle
+    // devise explicite.
+    const nums: number[] = [];
+    let accrued = 0;
+    let currency = 'CAD';
+    let afterAccruedLabel = false;
+    for (const line of body) {
+      if (isAccruedLabel(line)) { afterAccruedLabel = true; continue; }
+      if (line === '*') continue;
+      if (/^(USD|CAD|EUR|GBP|CHF|AUD|JPY)$/i.test(line)) { currency = line.toUpperCase(); continue; }
+      if (isNumberLine(line)) {
+        if (afterAccruedLabel && accrued === 0) accrued = parseNumber(line);
+        else nums.push(parseNumber(line));
+      }
+    }
+
+    // Il faut au moins quantité + prix + valeur.
+    if (!rawSymbol || nums.length < 3) {
+      if (rawSymbol) warnings.push(`Position ignorée (données incomplètes) : ${rawSymbol}${name ? ' — ' + name : ''}`);
+      continue;
+    }
+
+    const quantity = nums[0];
+    const marketPrice = nums[1];
+    const marketValue = nums[2] || quantity * marketPrice;
+
+    const assetType = classifyAssetType(rawSymbol, name, '', 0);
+    const symbol = normalizeSymbol(rawSymbol, name, assetType, currency);
+
+    const holding: ParsedHolding = {
+      symbol,
+      name: name || rawSymbol,
+      quantity,
+      marketPrice,
+      marketValue,
+      bookValue: 0,      // absent de ce format
+      averageCost: 0,    // absent de ce format → le PDF masque le PBR
+      currency: /^(CAD|CA|CAN)$/i.test(currency) ? 'CAD' : currency,
+      assetType,
+      weight: 0,
+      accountType: '',
+      accountLabel: '',
+      annualIncome: 0,   // dividendes récupérés en aval via Yahoo ; coupons via le taux
+      rawRow: [rawSymbol, name, ...body].join(' | '),
+    };
+
+    if (accrued !== 0) holding.accruedInterest = accrued;
+
+    // Obligations : coupon + échéance depuis la description.
+    if (assetType === 'FIXED_INCOME') {
+      const bond = extractBondDetails(name);
+      if (bond.coupon) holding.couponRate = bond.coupon;
+      if (bond.maturity) holding.maturityDate = bond.maturity;
+    }
+
+    // CDR (titre US couvert en CAD sur NEO) — même logique que le parseur tabulaire.
+    if (/C\$H(DG|ED)|CDR\$?H|CDR/i.test(name)) {
+      holding.isCDR = true;
+      holding.underlyingSymbol = symbol.replace(/\.(NE|NEO)$/i, '').replace(/-[A-Z]{1,2}$/, '');
+    }
+
+    holdings.push(holding);
+  }
+
+  // Poids relatifs sur la valeur de marché positive.
+  const totalPositive = holdings.reduce((s, h) => s + Math.max(0, h.marketValue), 0);
+  if (totalPositive > 0) holdings.forEach(h => { h.weight = (h.marketValue / totalPositive) * 100; });
+
+  if (holdings.length === 0) warnings.push('Aucune position valide détectée. Vérifiez le format des données.');
+
+  return {
+    holdings,
+    detectedHeaders: [],
+    warnings,
+    summary: {
+      equities: holdings.filter(h => h.assetType === 'EQUITY').length,
+      fixedIncome: holdings.filter(h => h.assetType === 'FIXED_INCOME').length,
+      etfs: holdings.filter(h => h.assetType === 'ETF').length,
+      funds: holdings.filter(h => h.assetType === 'FUND').length,
+      preferred: holdings.filter(h => h.assetType === 'PREFERRED').length,
+      cash: holdings.filter(h => h.assetType === 'CASH').length,
+      other: holdings.filter(h => h.assetType === 'OTHER').length,
+      totalMarketValue: holdings.reduce((s, h) => s + h.marketValue, 0),
+      totalAnnualIncome: 0,
+      currencies: [...new Set(holdings.map(h => h.currency))],
+      accountTypes: [],
+    },
+  };
+}
+
 // ─── Main parse function ─────────────────────────────────────────────────────
 
 export function parseCroesusData(rawText: string): ParseResult {
@@ -519,6 +703,14 @@ export function parseCroesusData(rawText: string): ParseResult {
       warnings: ['Aucune donnée détectée. Copiez les positions depuis Croesus et collez-les ici.'],
       summary: { equities: 0, fixedIncome: 0, etfs: 0, funds: 0, preferred: 0, cash: 0, other: 0, totalMarketValue: 0, totalAnnualIncome: 0, currencies: [], accountTypes: [] },
     };
+  }
+
+  // Format vertical (une valeur par ligne, sans séparateur de colonnes) : la vue
+  // web « Symbole / Quantité / Prix du marché / Valeur marchande ». On le lit ici
+  // en priorité ; s'il ne donne rien, on retombe sur le parseur tabulaire.
+  if (looksVerticalFormat(allLines)) {
+    const vertical = parseVerticalHoldings(allLines);
+    if (vertical.holdings.length > 0) return vertical;
   }
 
   const separator = detectSeparator(allLines);
