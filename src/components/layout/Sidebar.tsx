@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Compass,
   History,
+  ReceiptText,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -28,6 +29,7 @@ const navItems = [
   { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/valuation', label: 'Valorisation', icon: BarChart2 },
   { href: '/reports', label: 'Cours Cibles', icon: FileText },
+  { href: '/transactions-du-jour', label: 'Transactions du jour', icon: ReceiptText },
   { href: '/journal', label: 'Journal des cibles', icon: History },
   { href: '/strategies', label: 'Stratégies', icon: Compass },
   { href: '/fund-reports', label: 'Rapports de fonds', icon: BookOpen },

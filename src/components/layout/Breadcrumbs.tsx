@@ -14,6 +14,7 @@ const labels: Record<string, string> = {
   stats: 'Statistiques',
   models: 'Modèles',
   reports: 'Rapports',
+  'transactions-du-jour': 'Transactions du jour',
   admin: 'Administration',
   new: 'Nouveau',
   edit: 'Modifier',
