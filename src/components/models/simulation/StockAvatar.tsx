@@ -7,6 +7,10 @@ export function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: numb
   const [imgError, setImgError] = useState(false);
   const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '');
   const color = duoColor(ticker);
+  // Proportions selon la taille : sous 36 px, bordure fine et coins serrés
+  // (une bordure de 3 px mangerait un avatar de 28 px).
+  const small = size < 36;
+  const frame = small ? 'rounded-xl border-[2px]' : 'rounded-2xl border-[3px]';
 
   if (!imgError) {
     return (
@@ -17,7 +21,7 @@ export function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: numb
           alt={ticker}
           width={size}
           height={size}
-          className="rounded-2xl border-[3px] object-contain bg-white"
+          className={`${frame} object-contain bg-white`}
           style={{ borderColor: color + '40' }}
           onError={() => setImgError(true)}
         />
@@ -27,12 +31,12 @@ export function StockAvatar({ symbol, size = 44 }: { symbol: string; size?: numb
 
   return (
     <div
-      className="rounded-2xl border-[3px] flex items-center justify-center flex-shrink-0"
+      className={`${frame} flex items-center justify-center flex-shrink-0`}
       style={{
         width: size, height: size,
         backgroundColor: color + '18',
         borderColor: color + '50',
-        boxShadow: `0 3px 0 0 ${color}30`,
+        boxShadow: small ? undefined : `0 3px 0 0 ${color}30`,
       }}
     >
       <span className="font-extrabold" style={{ color, fontSize: size * 0.32 }}>

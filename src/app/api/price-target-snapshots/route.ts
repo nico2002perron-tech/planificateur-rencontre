@@ -136,7 +136,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = createClient();
   const batchId = crypto.randomUUID();
-  const today = new Date().toISOString().split('T')[0];
+  // Date du jour en heure du Québec (pas UTC) : un enregistrement à 21 h ne
+  // doit pas être daté de « demain » (predicted_at + dédoublonnage cohérents).
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
 
   // Dédoublonnage des captures auto : régénérer le PDF du même client le même
   // jour remplace la capture précédente (on garde la plus récente), sans
@@ -152,19 +156,9 @@ export async function POST(req: NextRequest) {
       .eq('predicted_at', today);
   }
 
-  // Même patron pour les portefeuilles modèles : la dernière proposition du jour
-  // pour un client REMPLACE la précédente (deux clics « Enregistrer » ne créent
-  // jamais de doublons). Sûr : ce chemin exige la colonne entry_type (voir la
-  // garde du repli plus bas — sans migration, le POST modèle échoue en 400).
-  if (entryType === 'model_portfolio') {
-    await supabase
-      .from('price_target_snapshots')
-      .delete()
-      .eq('advisor_id', advisorId)
-      .eq('entry_type', 'model_portfolio')
-      .eq('name_idx', nameIdx)
-      .eq('predicted_at', today);
-  }
+  // NOTE : le dédoublonnage des portefeuilles modèles se fait APRÈS l'insert
+  // (voir plus bas) — jamais de delete-avant-insert, sinon un insert qui échoue
+  // détruirait la proposition du jour déjà enregistrée.
 
   const toInsert = rows.map((r) => ({
     advisor_id: advisorId,
@@ -208,6 +202,23 @@ export async function POST(req: NextRequest) {
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // « La dernière proposition du jour remplace la précédente » — APRÈS un
+  // insert réussi, on retire les lots model_portfolio du même client/jour
+  // AUTRES que celui qu'on vient d'écrire. Un échec ici laisse un doublon
+  // (signalé au log), jamais une perte.
+  if (entryType === 'model_portfolio') {
+    const { error: dedupError } = await supabase
+      .from('price_target_snapshots')
+      .delete()
+      .eq('advisor_id', advisorId)
+      .eq('entry_type', 'model_portfolio')
+      .eq('name_idx', nameIdx)
+      .eq('predicted_at', today)
+      .neq('batch_id', batchId);
+    if (dedupError) console.error('Dédoublonnage du portefeuille modèle échoué (doublon possible):', dedupError.message);
+  }
+
   return NextResponse.json({ batch_id: batchId, inserted: data?.length ?? 0 }, { status: 201 });
 }
 

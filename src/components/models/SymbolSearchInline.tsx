@@ -15,7 +15,8 @@ interface SearchResult {
  * Recherche de titre en ligne — composant PARTAGÉ (models/compare + proposition).
  * Style « candy » établi (bordure épaisse pointillée, hover #1CB0F6).
  * Pilotable au clavier : ↑/↓ naviguent, Enter sélectionne, Échap ferme ;
- * clic à l'extérieur ferme aussi. La liste s'ouvre à partir de 2 caractères.
+ * clic à l'extérieur ferme aussi. La liste s'ouvre dès 1 caractère (les
+ * tickers d'une lettre — V, F, T — doivent être trouvables).
  */
 export function SymbolSearchInline({ onSelect, placeholder }: {
   onSelect: (symbol: string, name: string, exchangeShortName?: string) => void;
@@ -26,7 +27,7 @@ export function SymbolSearchInline({ onSelect, placeholder }: {
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const { results, isLoading } = useSymbolSearch(query);
-  const showList = open && query.length >= 2;
+  const showList = open && query.length >= 1;
   const list: SearchResult[] = showList ? results : [];
 
   // Fermer au clic/tap à l'extérieur.

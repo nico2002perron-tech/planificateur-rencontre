@@ -9,61 +9,15 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
+import { useModels } from '@/lib/hooks/useModels';
 import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import { SymbolSearchInline } from '@/components/models/SymbolSearchInline';
+import { StockAvatar } from '@/components/models/simulation/StockAvatar';
 import {
-  ArrowLeft, Search, Plus, Trash2, TrendingUp, TrendingDown,
-  Target, DollarSign, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp,
-  CalendarDays,
+  ArrowLeft, Search, Trash2,
+  Target, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp,
 } from 'lucide-react';
-
-// ── Duolingo Color hash ─────────────────────────────────────────────────
-const DUO_COLORS = ['#58CC02', '#CE82FF', '#1CB0F6', '#FF9600', '#FF4B4B', '#FFC800', '#00CD9C'];
-function duoColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  return DUO_COLORS[Math.abs(hash) % DUO_COLORS.length];
-}
-
-// ── Stock Avatar (logo or colorful initials) ────────────────────────────
-function StockAvatar({ symbol, size = 36 }: { symbol: string; size?: number }) {
-  const [imgError, setImgError] = useState(false);
-  const ticker = symbol.replace('.TO', '').replace('.V', '').replace('.CN', '');
-  const color = duoColor(ticker);
-
-  if (!imgError) {
-    return (
-      <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`}
-          alt={ticker}
-          width={size}
-          height={size}
-          className="rounded-xl border-[2px] object-contain bg-white"
-          style={{ borderColor: color + '40' }}
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border-[2px] flex items-center justify-center flex-shrink-0"
-      style={{
-        width: size, height: size,
-        backgroundColor: color + '18',
-        borderColor: color + '50',
-      }}
-    >
-      <span className="font-extrabold" style={{ color, fontSize: size * 0.32 }}>
-        {ticker.slice(0, 3)}
-      </span>
-    </div>
-  );
-}
 
 // ── Duolingo palette & constants ────────────────────────────────────────
 
@@ -104,27 +58,6 @@ interface PortfolioHistoryData {
   benchmarks: Record<string, number[]>;
 }
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
-
-// ── Duo Stat Card ───────────────────────────────────────────────────────
-
-function DuoStat({ label, value, sub, color, icon }: {
-  label: string; value: string; sub?: string; color: string; icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border-[3px] p-3"
-      style={{ borderColor: color + '30', boxShadow: `0 3px 0 0 ${color}20` }}>
-      <div className="flex items-center gap-2 mb-1">
-        <div className="p-1.5 rounded-xl" style={{ backgroundColor: color + '15' }}>
-          <span style={{ color }}>{icon}</span>
-        </div>
-        <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
-      </div>
-      <p className="text-lg font-extrabold" style={{ color }}>{value}</p>
-      {sub && <p className="text-xs font-semibold text-text-muted mt-0.5">{sub}</p>}
-    </div>
-  );
-}
 
 // ═════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -204,7 +137,8 @@ export default function ComparePage() {
 
   // ── Client portfolio calculations ──
   const clientStats = useMemo(() => {
-    let totalValue = 0, projectedValue = 0, totalDivIncome = 0;
+    let totalValue = 0, projectedValue = 0;
+    const totalDivIncome = 0;
     for (const h of clientHoldings) {
       const q = quotesMap.get(h.symbol);
       const price = q?.price || 0;

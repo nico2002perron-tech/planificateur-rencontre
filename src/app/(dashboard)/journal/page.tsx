@@ -60,7 +60,10 @@ function fmtPct(v: number | null | undefined): string {
 function fmtDate(s: string | null | undefined): string {
   if (!s) return '—';
   try {
-    return new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(s));
+    // Une date-seule (« 2026-07-22 ») parsée telle quelle est interprétée en
+    // UTC minuit → affichée la VEILLE au Québec. On l'ancre à midi local.
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T12:00:00` : s;
+    return new Intl.DateTimeFormat('fr-CA', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(normalized));
   } catch { return s; }
 }
 function dueDate(iso: string, horizonMonths: number): Date {
@@ -266,11 +269,23 @@ function JournalInner() {
     const syms = Array.from(new Set(selectedRows.map(r => r.symbol))).slice(0, 30);
     if (syms.length === 0) return;
     setPricesLoading(true);
-    fetch(`/api/prices?symbols=${encodeURIComponent(syms.join(','))}`)
-      .then(r => r.json())
-      .then((arr: { symbol: string; price: number }[]) => {
+    // Les snapshots sont stockés en CAD (la Proposition et le Prêt-à-coller
+    // convertissent à l'enregistrement) : le prix « Marché » d'un titre US doit
+    // donc lui aussi être converti, sinon marché/cible se comparent USD vs CAD.
+    Promise.all([
+      fetch(`/api/prices?symbols=${encodeURIComponent(syms.join(','))}`).then(r => r.json()),
+      fetch('/api/yahoo-rate').then(r => r.json()).catch(() => null),
+    ])
+      .then(([arr, fx]: [{ symbol: string; price: number; currency?: string }[], { rate?: number } | null]) => {
+        const rate = fx?.rate && fx.rate > 0 ? fx.rate : null;
         const m: Record<string, number> = {};
-        for (const p of arr) if (p.price > 0) m[p.symbol] = p.price;
+        for (const p of arr) {
+          if (!(p.price > 0)) continue;
+          const isUsd = (p.currency || '').toUpperCase() === 'USD';
+          // Titre US sans taux disponible : mieux vaut « — » qu'un faux gain.
+          if (isUsd && !rate) continue;
+          m[p.symbol] = isUsd && rate ? p.price * rate : p.price;
+        }
         setPrices(m);
       })
       .catch(() => {})
@@ -321,10 +336,18 @@ function JournalInner() {
     }
   }
 
+  // Si la suppression vide le client sélectionné, revenir à la liste (sinon
+  // vue détail fantôme titrée « ⋯ »).
+  function pruneSelection(remaining: Snapshot[]) {
+    if (selectedKey && !remaining.some(s => groupKeyOf(s) === selectedKey)) setSelectedKey(null);
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Supprimer cette prédiction du journal? Cette action est irréversible.')) return;
     setDeleting(id);
-    setSnapshots(prev => prev.filter(s => s.id !== id));
+    const remaining = snapshots.filter(s => s.id !== id);
+    setSnapshots(remaining);
+    pruneSelection(remaining);
     try {
       const res = await fetch(`/api/price-target-snapshots/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
@@ -342,7 +365,9 @@ function JournalInner() {
   async function handleDeleteBatch(batchId: string, count: number) {
     if (!confirm(`Supprimer ce portefeuille modèle (${count} titre${count > 1 ? 's' : ''}) du journal? Cette action est irréversible.`)) return;
     setDeleting(batchId);
-    setSnapshots(prev => prev.filter(s => s.batch_id !== batchId));
+    const remaining = snapshots.filter(s => s.batch_id !== batchId);
+    setSnapshots(remaining);
+    pruneSelection(remaining);
     try {
       const res = await fetch(`/api/price-target-snapshots?batch_id=${encodeURIComponent(batchId)}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();

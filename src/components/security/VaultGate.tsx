@@ -52,7 +52,7 @@ function SetupCard({ inline = false }: { inline?: boolean }) {
 
   return (
     <div className={inline ? '' : 'max-w-lg mx-auto mt-6'}>
-      <Card className="p-6">
+      <Card className={inline ? 'p-0 shadow-none bg-transparent rounded-none' : 'p-6'}>
         <div className="flex items-center gap-3 mb-4">
           <div className="h-11 w-11 rounded-2xl bg-emerald-50 flex items-center justify-center">
             <ShieldCheck className="h-6 w-6 text-emerald-600" />
@@ -137,7 +137,7 @@ function UnlockCard({ inline = false }: { inline?: boolean }) {
 
   return (
     <div className={inline ? '' : 'max-w-md mx-auto mt-10'}>
-      <Card className="p-6">
+      <Card className={inline ? 'p-0 shadow-none bg-transparent rounded-none' : 'p-6'}>
         <div className="flex items-center gap-3 mb-4">
           <div className="h-11 w-11 rounded-2xl bg-blue-50 flex items-center justify-center">
             <Lock className="h-6 w-6 text-brand-primary" />

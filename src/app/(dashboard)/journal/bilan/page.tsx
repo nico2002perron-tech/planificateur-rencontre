@@ -266,7 +266,16 @@ export default function BilanPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* ── Calibration par conviction ── */}
+            {/* ── Calibration par conviction — sans objet pour les propositions
+                 (les portefeuilles modèles n'ont pas de conviction saisie) ── */}
+            {scope === 'models' ? (
+              <Card>
+                <h2 className="text-sm font-bold text-text-main mb-1">Calibration par conviction</h2>
+                <p className="text-xs text-text-muted py-6 text-center">
+                  Non applicable aux portefeuilles modèles — les propositions n&apos;ont pas de niveau de conviction.
+                </p>
+              </Card>
+            ) : (
             <Card>
               <h2 className="text-sm font-bold text-text-main mb-1">Calibration par conviction</h2>
               <p className="text-xs text-text-muted mb-4">Plus ta conviction est haute, plus le taux de réussite devrait l&apos;être. C&apos;est le test de ton jugement.</p>
@@ -303,6 +312,7 @@ export default function BilanPage() {
                 <span>gain réalisé · n →</span>
               </div>
             </Card>
+            )}
 
             {/* ── Nuage prédit vs réalisé ── */}
             <Card>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
@@ -44,9 +44,11 @@ function parseMoney(value: string): number {
 }
 
 // Poids saisi à la main : virgule française acceptée (« 12,5 » → 12.5).
+// PAS de plafond ici : un « 150 » doit gonfler le total et déclencher
+// « dépasse 100 % » (le plafonner cacherait l'erreur de saisie).
 function parseWeight(value: string): number {
   const n = Number.parseFloat(value.trim().replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 // Nombre → chaîne de poids affichée (virgule, sans zéro inutile : 6.3 → « 6,3 », 25 → « 25 »).
 function fmtWeightStr(n: number): string {
@@ -84,6 +86,16 @@ export default function PropositionPage() {
   const [context, setContext] = useState<ClientContext>('new');
   const [clientName, setClientName] = useState('');
   const [clientFocus, setClientFocus] = useState(false);
+  // Fermeture des suggestions au clic extérieur (même patron que la recherche
+  // de titres) — un onBlur différé perdrait le clic sur une suggestion.
+  const clientBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (clientBoxRef.current && !clientBoxRef.current.contains(e.target as Node)) setClientFocus(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, []);
   const [amountStr, setAmountStr] = useState('');
   const [positions, setPositions] = useState<Position[]>([]);
   // Vrai dès qu'un poids a été ajusté à la main : l'ajout d'un titre cesse
@@ -105,21 +117,29 @@ export default function PropositionPage() {
       };
       if (draft.context === 'new' || draft.context === 'elsewhere') setContext(draft.context);
       if (typeof draft.amountStr === 'string') setAmountStr(draft.amountStr);
-      if (typeof draft.customWeights === 'boolean') setCustomWeights(draft.customWeights);
       if (Array.isArray(draft.positions)) {
-        setPositions(
-          draft.positions
-            .filter((p) => p && typeof p.symbol === 'string' && p.symbol)
-            .map((p) => ({
-              symbol: p.symbol,
-              name: typeof p.name === 'string' ? p.name : p.symbol,
-              // Brouillons d'anciennes versions : weight numérique → chaîne.
-              weightStr: typeof p.weightStr === 'string'
-                ? p.weightStr
-                : Number.isFinite(p.weight) && (p.weight as number) > 0 ? fmtWeightStr(p.weight as number) : '',
-              currency: p.currency === 'USD' || p.currency === 'CAD' ? p.currency : detectCurrency(p.symbol),
-            }))
-        );
+        const restored = draft.positions
+          .filter((p) => p && typeof p.symbol === 'string' && p.symbol)
+          .map((p) => ({
+            symbol: p.symbol,
+            name: typeof p.name === 'string' ? p.name : p.symbol,
+            // Brouillons d'anciennes versions : weight numérique → chaîne.
+            weightStr: typeof p.weightStr === 'string'
+              ? p.weightStr
+              : Number.isFinite(p.weight) && (p.weight as number) > 0 ? fmtWeightStr(p.weight as number) : '',
+            currency: p.currency === 'USD' || p.currency === 'CAD' ? p.currency : detectCurrency(p.symbol),
+          }));
+        setPositions(restored);
+        if (typeof draft.customWeights === 'boolean') {
+          setCustomWeights(draft.customWeights);
+        } else if (restored.length > 1) {
+          // Vieux brouillon sans le drapeau : des poids inégaux = ajustés à la
+          // main → à protéger (sinon le premier ajout les écraserait).
+          const ws = restored.map((p) => parseWeight(p.weightStr));
+          setCustomWeights(ws.some((w) => Math.abs(w - ws[0]) > 0.01));
+        }
+      } else if (typeof draft.customWeights === 'boolean') {
+        setCustomWeights(draft.customWeights);
       }
     } catch { /* brouillon corrompu → on repart à neuf */ }
     // Au montage seulement.
@@ -142,10 +162,11 @@ export default function PropositionPage() {
   const symbols = useMemo(() => positions.map((p) => p.symbol), [positions]);
   const { quotesMap, isLoading: quotesLoading, error: quotesError } = useQuotes(symbols);
   const { targets, isLoading: targetsLoading, error: targetsError } = usePriceTargetConsensus(symbols);
-  const { rate: usdCadRate } = useUsdCadRate();
-  const enriching = positions.length > 0 && (quotesLoading || targetsLoading);
+  const { rate: usdCadRate, isLoading: rateLoading } = useUsdCadRate();
+  const enriching = positions.length > 0 && (quotesLoading || targetsLoading || (rateLoading && positions.some((p) => p.currency === 'USD')));
   const dataError = positions.length > 0 && Boolean(quotesError || targetsError);
-  const usdRateMissing = positions.some((p) => p.currency === 'USD') && !usdCadRate;
+  // Bannière seulement quand le taux a VRAIMENT échoué (pas pendant son chargement).
+  const usdRateMissing = positions.some((p) => p.currency === 'USD') && !usdCadRate && !rateLoading;
 
   // ── Suggestions de clients (module Clients) — texte libre toujours permis ──
   const clientSuggestions = useMemo(() => {
@@ -158,6 +179,10 @@ export default function PropositionPage() {
   }, [clients, clientName]);
 
   const addPosition = useCallback((symbol: string, name: string, exchangeShortName?: string) => {
+    if (positions.some((p) => p.symbol === symbol)) {
+      toast('info', `${symbol} est déjà dans le portefeuille`);
+      return;
+    }
     setPositions((prev) => {
       if (prev.some((p) => p.symbol === symbol)) return prev;
       const added: Position = { symbol, name, weightStr: '', currency: detectCurrency(symbol, exchangeShortName) };
@@ -168,18 +193,20 @@ export default function PropositionPage() {
       }
       return next;
     });
-  }, [customWeights]);
+  }, [customWeights, positions, toast]);
 
   const removePosition = useCallback((symbol: string) => {
-    setPositions((prev) => {
-      const next = prev.filter((p) => p.symbol !== symbol);
-      if (!customWeights && next.length > 0) {
-        const weights = equalWeights(next.length);
-        return next.map((p, i) => ({ ...p, weightStr: fmtWeightStr(weights[i]) }));
-      }
-      return next;
-    });
-  }, [customWeights]);
+    const next = positions.filter((p) => p.symbol !== symbol);
+    // Tableau vidé = plus de « poids voulus » à protéger : le prochain ajout
+    // repart en répartition égale.
+    if (next.length === 0) setCustomWeights(false);
+    if (!customWeights && next.length > 0) {
+      const weights = equalWeights(next.length);
+      setPositions(next.map((p, i) => ({ ...p, weightStr: fmtWeightStr(weights[i]) })));
+    } else {
+      setPositions(next);
+    }
+  }, [customWeights, positions]);
 
   const setWeightStr = useCallback((symbol: string, value: string) => {
     setCustomWeights(true);
@@ -244,6 +271,10 @@ export default function PropositionPage() {
 
   const overAllocated = stats.totalWeight > 100.5;
   const canSave = clientName.trim().length > 0 && amount > 0 && snapshotRows.length > 0 && !overAllocated;
+
+  // Le panneau de confirmation ne survit pas à une condition d'enregistrement
+  // devenue fausse (sinon « Fermer » désactivé + réouverture surprise).
+  useEffect(() => { if (!canSave) setShowSave(false); }, [canSave]);
 
   const handleSave = useCallback(async () => {
     const name = clientName.trim();
@@ -326,13 +357,12 @@ export default function PropositionPage() {
           })}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="relative">
+          <div className="relative" ref={clientBoxRef}>
             <label className="flex items-center gap-1.5 text-xs font-semibold text-text-muted mb-1"><User className="h-3.5 w-3.5" /> Nom du client (prénom et nom)</label>
             <input
               value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
+              onChange={(e) => { setClientName(e.target.value); setClientFocus(true); }}
               onFocus={() => setClientFocus(true)}
-              onBlur={() => setTimeout(() => setClientFocus(false), 150)}
               placeholder="Ex. Jean Tremblay"
               className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-text-main outline-none focus:border-brand-primary"
             />
@@ -363,7 +393,7 @@ export default function PropositionPage() {
             <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.deux }}>2</span>
             <h2 className="font-extrabold text-text-main">Bâtir le portefeuille</h2>
           </div>
-          {positions.length > 1 && (
+          {positions.length >= 1 && (
             <button type="button" onClick={equalize}
               className="flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:underline">
               <Scale className="h-3.5 w-3.5" /> Répartir également
@@ -435,10 +465,10 @@ export default function PropositionPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap">
-                        {r.price > 0 ? fmtCad(r.price) : <span className="text-text-muted">{quotesLoading ? '…' : '—'}</span>}
+                        {r.price > 0 ? fmtCad(r.price) : <span className="text-text-muted">{quotesLoading || (r.currency === 'USD' && rateLoading) ? '…' : '—'}</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs font-bold whitespace-nowrap">
-                        {r.target > 0 ? fmtCad(r.target) : <span className="text-text-muted font-normal">{targetsLoading ? '…' : '—'}</span>}
+                        {r.target > 0 ? fmtCad(r.target) : <span className="text-text-muted font-normal">{targetsLoading || (r.currency === 'USD' && rateLoading) ? '…' : '—'}</span>}
                       </td>
                       <td className={`px-3 py-2.5 text-right font-mono text-xs font-extrabold whitespace-nowrap ${r.gainPct == null ? 'text-text-muted' : r.gainPct >= 0 ? 'text-[#45a300]' : 'text-[#FF4B4B]'}`}>{fmtPct(r.gainPct)}</td>
                       <td className="px-3 py-2.5">
@@ -492,7 +522,7 @@ export default function PropositionPage() {
             <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.trois }}>3</span>
             <h2 className="font-extrabold text-text-main">Le résultat</h2>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 flex flex-col justify-between min-h-[72px]">
               <div className="text-[10px] font-semibold uppercase text-text-muted leading-tight">Investi</div>
               <div className="text-lg font-extrabold text-text-main whitespace-nowrap">{amount > 0 ? fmtMoney(stats.invested) : '—'}</div>
@@ -559,7 +589,11 @@ export default function PropositionPage() {
                 <div className="h-10 w-10 rounded-2xl bg-[#58CC02]/10 flex items-center justify-center"><BookmarkPlus className="h-5 w-5 text-[#58CC02]" /></div>
                 <div>
                   <h3 className="font-extrabold text-text-main text-sm">Enregistrer au Journal des cibles</h3>
-                  <p className="text-xs text-text-muted">{snapshotRows.length} titres · gain projeté <span className="font-bold text-[#45a300]">{fmtPct(stats.gainPct)}</span> · sous « Portefeuille modèle »</p>
+                  <p className="text-xs text-text-muted">
+                    {enriching && snapshotRows.length === 0
+                      ? 'Chargement des prix et cours cibles…'
+                      : <>{snapshotRows.length} titres · gain projeté <span className="font-bold text-[#45a300]">{fmtPct(stats.gainPct)}</span> · sous « Portefeuille modèle »</>}
+                  </p>
                 </div>
               </div>
               <button type="button" disabled={!canSave} onClick={() => setShowSave((v) => !v)}
@@ -573,6 +607,8 @@ export default function PropositionPage() {
                 {overAllocated ? 'La pondération dépasse 100 % — ajuste les poids.'
                   : !clientName.trim() ? 'Entre le nom du client (étape 1) pour enregistrer.'
                   : amount <= 0 ? 'Entre le montant à investir (étape 1).'
+                  : enriching ? 'Chargement des prix et cours cibles — un instant…'
+                  : usdRateMissing ? 'Taux USD/CAD indisponible — les titres américains sont exclus pour l’instant.'
                   : 'Ajoute au moins un titre avec un cours cible et un poids.'}
               </p>
             )}
