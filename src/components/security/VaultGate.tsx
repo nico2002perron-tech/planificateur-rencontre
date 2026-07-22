@@ -15,18 +15,18 @@ const MIN_LENGTH = 12;
  * au lieu du contenu. Les noms ne sont déchiffrés/chiffrés qu'une fois le
  * coffre ouvert, avec une phrase de passe qui ne quitte jamais le navigateur.
  */
-export function VaultGate({ children }: { children: ReactNode }) {
+export function VaultGate({ children, inline = false }: { children: ReactNode; inline?: boolean }) {
   const { status } = useVault();
 
   if (status === 'loading') {
-    return <div className="flex items-center justify-center py-20"><Spinner /></div>;
+    return <div className={`flex items-center justify-center ${inline ? 'py-6' : 'py-20'}`}><Spinner /></div>;
   }
   if (status === 'unlocked') return <>{children}</>;
-  if (status === 'needs-setup') return <SetupCard />;
-  return <UnlockCard />;
+  if (status === 'needs-setup') return <SetupCard inline={inline} />;
+  return <UnlockCard inline={inline} />;
 }
 
-function SetupCard() {
+function SetupCard({ inline = false }: { inline?: boolean }) {
   const { setup } = useVault();
   const [pass, setPass] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -51,7 +51,7 @@ function SetupCard() {
   }
 
   return (
-    <div className="max-w-lg mx-auto mt-6">
+    <div className={inline ? '' : 'max-w-lg mx-auto mt-6'}>
       <Card className="p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="h-11 w-11 rounded-2xl bg-emerald-50 flex items-center justify-center">
@@ -116,7 +116,7 @@ function SetupCard() {
   );
 }
 
-function UnlockCard() {
+function UnlockCard({ inline = false }: { inline?: boolean }) {
   const { unlock } = useVault();
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
@@ -136,7 +136,7 @@ function UnlockCard() {
   }
 
   return (
-    <div className="max-w-md mx-auto mt-10">
+    <div className={inline ? '' : 'max-w-md mx-auto mt-10'}>
       <Card className="p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="h-11 w-11 rounded-2xl bg-blue-50 flex items-center justify-center">

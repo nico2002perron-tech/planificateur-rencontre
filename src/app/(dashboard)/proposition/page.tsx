@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { useQuotes } from '@/lib/hooks/useQuotes';
@@ -12,18 +11,31 @@ import { useClients } from '@/lib/hooks/useClients';
 import { useVault } from '@/components/security/VaultProvider';
 import { VaultGate } from '@/components/security/VaultGate';
 import { SymbolSearchInline } from '@/components/models/SymbolSearchInline';
+import { StockAvatar } from '@/components/models/simulation/StockAvatar';
 import { parseMoneyLoose } from '@/lib/money/parse-loose';
 import {
   Briefcase, User, DollarSign, TrendingUp, TrendingDown, BookmarkPlus,
   Sparkles, MapPin, Scale, Trash2, History, ArrowRight, PiggyBank,
-  CheckCircle2, RotateCcw, AlertTriangle,
+  CheckCircle2, RotateCcw, AlertTriangle, Search,
 } from 'lucide-react';
 
-// ── Formatage ───────────────────────────────────────────────────────────────
+// ── Formatage — fr-CA partout (virgule décimale, $ suffixe, % insécable) ──
 const fmtMoney = (n: number) =>
   new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(n);
-const fmtDec = (n: number) => n.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtPct = (n: number | null) => (n == null ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(1)} %`);
+const fmtCad = (n: number) =>
+  `${n.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+const fmtPct = (n: number | null) =>
+  n == null ? '—' : `${n >= 0 ? '+' : ''}${n.toLocaleString('fr-CA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+
+// Couleurs d'identité des étapes (langage « candy » des pages Modèles) + verts
+// établis de l'app (PretAColler DUO.green/greenDark).
+const STEP = {
+  un: '#1CB0F6',
+  deux: '#CE82FF',
+  trois: '#58CC02',
+} as const;
+const GREEN = '#58CC02';
+const GREEN_DARK = '#45a300';
 
 // Montant saisi à la main → nombre positif (0 si vide/invalide).
 function parseMoney(value: string): number {
@@ -111,7 +123,7 @@ export default function PropositionPage() {
       }
     } catch { /* brouillon corrompu → on repart à neuf */ }
     // Au montage seulement.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -287,15 +299,15 @@ export default function PropositionPage() {
           <Briefcase className="h-6 w-6 text-brand-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-text-main">Proposition de portefeuille</h1>
-          <p className="text-sm text-text-muted">Bâtis un portefeuille sur mesure pour un client, vois le gain projeté, et enregistre-le au Journal des cibles.</p>
+          <h1 className="text-2xl font-bold font-[family-name:var(--font-heading)] text-text-main">Proposition de portefeuille</h1>
+          <p className="mt-1 text-sm text-text-muted">Bâtis un portefeuille sur mesure pour un client, vois le gain projeté, et enregistre-le au Journal des cibles.</p>
         </div>
       </div>
 
       {/* 1. Le client */}
-      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="rounded-3xl border-[3px] bg-white p-5" style={{ borderColor: `${STEP.un}30`, boxShadow: `0 3px 0 0 ${STEP.un}20` }}>
         <div className="flex items-center gap-2 mb-4">
-          <span className="h-6 w-6 rounded-lg bg-brand-primary text-white text-xs font-extrabold flex items-center justify-center">1</span>
+          <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.un }}>1</span>
           <h2 className="font-extrabold text-text-main">Le client</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
@@ -345,10 +357,10 @@ export default function PropositionPage() {
       </div>
 
       {/* 2. Bâtir le portefeuille */}
-      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="rounded-3xl border-[3px] bg-white p-5" style={{ borderColor: `${STEP.deux}30`, boxShadow: `0 3px 0 0 ${STEP.deux}20` }}>
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
-            <span className="h-6 w-6 rounded-lg bg-brand-primary text-white text-xs font-extrabold flex items-center justify-center">2</span>
+            <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.deux }}>2</span>
             <h2 className="font-extrabold text-text-main">Bâtir le portefeuille</h2>
           </div>
           {positions.length > 1 && (
@@ -380,11 +392,15 @@ export default function PropositionPage() {
         )}
 
         {positions.length === 0 ? (
-          <p className="text-center text-sm text-text-muted py-6">Ajoute des titres pour bâtir le portefeuille. Le prix, le cours cible et le gain se calculent tout seuls.</p>
+          <div className="text-center py-8">
+            <Search className="h-8 w-8 text-text-muted/30 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-text-main">Bâtis le portefeuille titre par titre</p>
+            <p className="text-xs text-text-muted mt-1">Ajoute des titres avec la recherche — le prix, le cours cible et le gain se calculent tout seuls.</p>
+          </div>
         ) : (
           <>
             <div className="overflow-x-auto rounded-xl border border-gray-100 mt-4">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-left text-[10px] text-text-muted uppercase tracking-wider border-b border-gray-100 font-bold bg-gray-50/60">
                     <th className="px-3 py-2.5">Titre</th>
@@ -400,26 +416,31 @@ export default function PropositionPage() {
                   {rows.map((r) => (
                     <tr key={r.symbol} className="border-t border-gray-50">
                       <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-extrabold text-text-main text-xs">{r.symbol}</span>
-                          {r.currency === 'USD' && (
-                            <span
-                              className="text-[8px] font-extrabold px-1 py-0.5 rounded bg-blue-50 text-blue-600"
-                              title={usdCadRate ? `Converti en CAD au taux ${usdCadRate.toFixed(4)}` : 'Taux USD/CAD en chargement'}
-                            >
-                              US$→CA$
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <StockAvatar symbol={r.symbol} size={28} />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-text-main text-xs">{r.symbol}</span>
+                              {r.currency === 'USD' && (
+                                <span
+                                  className="text-[8px] font-extrabold px-1 py-0.5 rounded bg-blue-50 text-blue-600 whitespace-nowrap"
+                                  title={usdCadRate ? `Converti en CAD au taux ${usdCadRate.toFixed(4)}` : 'Taux USD/CAD en chargement'}
+                                >
+                                  US$→CA$
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-text-muted truncate max-w-[150px]">{r.name}</div>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-text-muted truncate max-w-[160px]">{r.name}</div>
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">
-                        {r.price > 0 ? `$${fmtDec(r.price)}` : <span className="text-text-muted">{quotesLoading ? '…' : '—'}</span>}
+                      <td className="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap">
+                        {r.price > 0 ? fmtCad(r.price) : <span className="text-text-muted">{quotesLoading ? '…' : '—'}</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs font-bold">
-                        {r.target > 0 ? `$${fmtDec(r.target)}` : <span className="text-text-muted font-normal">{targetsLoading ? '…' : '—'}</span>}
+                      <td className="px-3 py-2.5 text-right font-mono text-xs font-bold whitespace-nowrap">
+                        {r.target > 0 ? fmtCad(r.target) : <span className="text-text-muted font-normal">{targetsLoading ? '…' : '—'}</span>}
                       </td>
-                      <td className={`px-3 py-2.5 text-right font-mono text-xs font-extrabold ${r.gainPct == null ? 'text-text-muted' : r.gainPct >= 0 ? 'text-[#45a300]' : 'text-[#FF4B4B]'}`}>{fmtPct(r.gainPct)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono text-xs font-extrabold whitespace-nowrap ${r.gainPct == null ? 'text-text-muted' : r.gainPct >= 0 ? 'text-[#45a300]' : 'text-[#FF4B4B]'}`}>{fmtPct(r.gainPct)}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-center gap-1">
                           <input
@@ -428,14 +449,14 @@ export default function PropositionPage() {
                             value={r.weightStr}
                             onChange={(e) => setWeightStr(r.symbol, e.target.value)}
                             placeholder="0"
-                            className={`w-16 px-2 py-1.5 rounded-lg border text-xs text-right font-bold outline-none focus:border-brand-primary ${
+                            className={`w-[4.5rem] px-2 py-2 rounded-lg border text-xs text-right font-bold outline-none focus:border-brand-primary ${
                               r.weight === 0 ? 'border-amber-300 bg-amber-50/50 text-amber-700' : 'border-gray-200 text-text-main'
                             }`}
                           />
                           <span className="text-[10px] text-text-muted">%</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono text-xs">{fmtMoney(r.alloc)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap">{fmtMoney(r.alloc)}</td>
                       <td className="px-2 py-2.5 text-right">
                         <button onClick={() => removePosition(r.symbol)} className="text-text-muted hover:text-[#FF4B4B] transition" title="Retirer"><Trash2 className="h-3.5 w-3.5" /></button>
                       </td>
@@ -452,9 +473,10 @@ export default function PropositionPage() {
                 <span className={`font-extrabold ${weightColor}`}>{stats.totalWeight.toFixed(1).replace('.', ',')} %</span>
                 {overAllocated && <span className="text-[#FF4B4B] font-semibold">(dépasse 100 %)</span>}
               </div>
-              {stats.cash > 0 && amount > 0 && (
+              {/* Masquée quand le « reste » n'est qu'un artefact d'arrondi (< 0,25 %) */}
+              {stats.cash > 0 && amount > 0 && (100 - stats.totalWeight) >= 0.25 && (
                 <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                  <PiggyBank className="h-3.5 w-3.5" /> Liquidités : <span className="font-bold text-text-main">{fmtMoney(stats.cash)}</span> ({(100 - stats.totalWeight).toFixed(0)} %)
+                  <PiggyBank className="h-3.5 w-3.5" /> Liquidités : <span className="font-bold text-text-main">{fmtMoney(stats.cash)}</span> ({(100 - stats.totalWeight).toLocaleString('fr-CA', { maximumFractionDigits: 1 })} %)
                 </div>
               )}
               {enriching && <Spinner size="sm" />}
@@ -465,20 +487,29 @@ export default function PropositionPage() {
 
       {/* 3. Gain projeté + enregistrement — visible dès qu'il y a des titres */}
       {positions.length > 0 && (
-        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-5">
+        <div className="rounded-3xl border-[3px] bg-white p-5 space-y-5" style={{ borderColor: `${STEP.trois}30`, boxShadow: `0 3px 0 0 ${STEP.trois}20` }}>
+          <div className="flex items-center gap-2">
+            <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.trois }}>3</span>
+            <h2 className="font-extrabold text-text-main">Le résultat</h2>
+          </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
-              <div className="text-[10px] font-semibold uppercase text-text-muted">Investi</div>
-              <div className="mt-1 text-lg font-extrabold text-text-main">{amount > 0 ? fmtMoney(stats.invested) : '—'}</div>
+            <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 flex flex-col justify-between min-h-[72px]">
+              <div className="text-[10px] font-semibold uppercase text-text-muted leading-tight">Investi</div>
+              <div className="text-lg font-extrabold text-text-main whitespace-nowrap">{amount > 0 ? fmtMoney(stats.invested) : '—'}</div>
             </div>
-            <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
-              <div className="text-[10px] font-semibold uppercase text-text-muted">Valeur projetée 12 m</div>
-              <div className="mt-1 text-lg font-extrabold text-text-main">{amount > 0 ? fmtMoney(stats.projected) : '—'}</div>
+            <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 flex flex-col justify-between min-h-[72px]">
+              <div className="text-[10px] font-semibold uppercase text-text-muted leading-tight">Valeur projetée 12 m</div>
+              <div className="text-lg font-extrabold text-text-main whitespace-nowrap">{amount > 0 ? fmtMoney(stats.projected) : '—'}</div>
             </div>
-            <div className={`rounded-xl border p-3 ${stats.gainPct >= 0 ? 'bg-[#58CC02]/5 border-[#58CC02]/20' : 'bg-[#FF4B4B]/5 border-[#FF4B4B]/20'}`}>
-              <div className="text-[10px] font-semibold uppercase text-text-muted">Gain projeté (consensus)</div>
-              <div className={`mt-1 text-lg font-extrabold flex items-center gap-1 ${stats.gainPct >= 0 ? 'text-[#45a300]' : 'text-[#FF4B4B]'}`}>
-                {stats.gainPct >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{amount > 0 ? fmtPct(stats.gainPct) : '—'}
+            <div className={`rounded-xl border p-3 flex flex-col justify-between min-h-[72px] ${stats.gainPct >= 0 ? 'bg-[#58CC02]/5 border-[#58CC02]/20' : 'bg-[#FF4B4B]/5 border-[#FF4B4B]/20'}`}>
+              <div className="text-[10px] font-semibold uppercase text-text-muted leading-tight">Gain projeté (consensus)</div>
+              <div>
+                <div className={`text-lg font-extrabold flex items-center gap-1 whitespace-nowrap ${stats.gainPct >= 0 ? 'text-[#45a300]' : 'text-[#FF4B4B]'}`}>
+                  {stats.gainPct >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{amount > 0 ? fmtPct(stats.gainPct) : '—'}
+                </div>
+                {(stats.cash > 0 || stats.uncovered > 0) && amount > 0 && (
+                  <div className="text-[9px] text-text-muted mt-0.5">liquidités et titres sans cible comptés à 0 %</div>
+                )}
               </div>
             </div>
           </div>
@@ -509,7 +540,9 @@ export default function PropositionPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Link href="/journal" className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl text-sm font-extrabold text-white bg-brand-primary hover:brightness-105 transition">
+                  <Link href="/journal"
+                    className="inline-flex items-center gap-1 px-4 py-2.5 rounded-2xl text-sm font-extrabold text-white transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105"
+                    style={{ backgroundColor: '#1CB0F6', boxShadow: '0 4px 0 0 #0a8fd4' }}>
                     Ouvrir le Journal <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                   <button type="button" onClick={resetAll}
@@ -530,7 +563,8 @@ export default function PropositionPage() {
                 </div>
               </div>
               <button type="button" disabled={!canSave} onClick={() => setShowSave((v) => !v)}
-                className="px-4 py-2 rounded-xl text-sm font-extrabold text-white bg-[#58CC02] hover:brightness-105 transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                className="px-5 py-2.5 rounded-2xl text-sm font-extrabold text-white transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                style={{ backgroundColor: GREEN, boxShadow: canSave ? `0 4px 0 0 ${GREEN_DARK}` : 'none' }}>
                 {showSave ? 'Fermer' : 'Enregistrer'}
               </button>
             </div>
@@ -544,10 +578,15 @@ export default function PropositionPage() {
             )}
             {showSave && canSave && (
               <div className="mt-4 border-t border-[#58CC02]/15 pt-4">
-                <VaultGate>
+                <VaultGate inline>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <p className="text-sm text-text-main flex-1">Enregistrer <strong>{snapshotRows.length} prédictions</strong> pour <strong>{clientName.trim()}</strong> (nom chiffré dans le coffre) ?</p>
-                    <Button onClick={handleSave} loading={saving} disabled={saving}>Confirmer l’enregistrement</Button>
+                    <button type="button" onClick={handleSave} disabled={saving}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-extrabold text-white transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: GREEN, boxShadow: `0 4px 0 0 ${GREEN_DARK}` }}>
+                      {saving && <Spinner size="sm" />}
+                      {saving ? 'Enregistrement…' : 'Confirmer l’enregistrement'}
+                    </button>
                   </div>
                   <p className="mt-2 text-[11px] text-text-muted flex items-center gap-1.5">
                     <History className="h-3.5 w-3.5" />
