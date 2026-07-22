@@ -12,7 +12,7 @@
 import { useState, useEffect, useMemo, useCallback, use } from 'react';
 import {
   Loader2, ArrowLeft, Trophy, CalendarClock, Send, RefreshCw, Eye, Copy, Check,
-  AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe,
+  AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe, Tv, Mail,
 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
 
@@ -115,6 +115,10 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   // Mode « Échanger » : deux taps sur des noms d'équipes pour les échanger de place
   const [swapMode, setSwapMode] = useState(false);
   const [swapSel, setSwapSel] = useState<{ matchId: string; side: 'a' | 'b' } | null>(null);
+  // Prévisualisation « Aviser les équipes » après un pointage (1 tap → courriels)
+  const [notifyMatch, setNotifyMatch] = useState<Match | null>(null);
+  // Décaler tout le reste (retard)
+  const [confirmShift, setConfirmShift] = useState<number | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -288,12 +292,91 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         body: JSON.stringify({ score_a: a, score_b: b }),
       });
       if (!res.ok) { showToast('Erreur de sauvegarde du pointage.'); return; }
-      applyState(await res.json());
+      const data: TournamentState = await res.json();
+      applyState(data);
       setDrafts(prev => {
         const next = { ...prev };
         delete next[m.id];
         return next;
       });
+      // Partie terminée → propose d'aviser les 2 équipes (prévisualisation + 1 tap)
+      const saved = data.matches.find(x => x.id === m.id);
+      if (saved && saved.status === 'finished' && saved.team_a_id && saved.team_b_id) {
+        setNotifyMatch(saved);
+      }
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Envoi « résultat + prochaine partie » aux joueurs des 2 équipes
+  async function notifyTeams(m: Match) {
+    setBusy('notify');
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/notify-match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId: m.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Erreur d\'envoi.'); return; }
+      setNotifyMatch(null);
+      showToast(`✉️ ${data.emailsSent} courriel(s) envoyé(s) à ${(data.notified || []).join(' et ')}.`);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Retard : décale toutes les parties restantes de ± X minutes
+  async function shiftAll(minutes: number) {
+    setBusy('shift');
+    setConfirmShift(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/shift`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Erreur de décalage.'); return; }
+      applyState(data);
+      showToast(`⏱ ${data.shifted} partie(s) décalée(s) de ${minutes > 0 ? '+' : ''}${minutes} min — pense à « Mettre à jour le site ».`);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Forfait : l'équipe désignée perd 0-1, la partie est terminée (classement + séries suivent)
+  async function forfeit(m: Match, side: 'a' | 'b') {
+    setBusy(m.id);
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/matches/${m.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score_a: side === 'a' ? 0 : 1, score_b: side === 'b' ? 0 : 1, status: 'finished' }),
+      });
+      if (!res.ok) { showToast('Erreur.'); return; }
+      applyState(await res.json());
+      setEditing('');
+      showToast(`Forfait enregistré (${teamName(side === 'a' ? m.team_a_id : m.team_b_id, '')} perd 0-1).`);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Annuler / rétablir une partie (annulée = exclue du classement et des conflits)
+  async function setCancelled(m: Match, cancelled: boolean) {
+    setBusy(m.id);
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/matches/${m.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: cancelled ? 'cancelled' : 'scheduled' }),
+      });
+      if (!res.ok) { showToast('Erreur.'); return; }
+      applyState(await res.json());
+      setEditing('');
+      showToast(cancelled ? 'Partie annulée.' : 'Partie rétablie.');
     } finally {
       setBusy('');
     }
@@ -431,7 +514,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
           </p>
           <p className="text-xs text-text-muted mt-0.5 truncate">{liveUrl}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={() => { navigator.clipboard.writeText(liveUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold bg-gray-50 text-text-muted hover:bg-gray-100 transition-all">
             {copied ? <Check className="h-3.5 w-3.5" style={{ color: DUO.green }} /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copié !' : 'Copier'}
@@ -440,6 +523,12 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-all"
             style={{ backgroundColor: `${DUO.blue}12`, color: DUO.blueDark }}>
             <Eye className="h-3.5 w-3.5" /> Ouvrir
+          </a>
+          <a href={`${liveUrl}/tv`} target="_blank" rel="noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-all"
+            style={{ backgroundColor: '#1e293b', color: 'white' }}
+            title="Grand écran à projeter au gymnase (rotation classement/séries automatique)">
+            <Tv className="h-3.5 w-3.5" /> Mode TV
           </a>
         </div>
       </div>
@@ -661,6 +750,17 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                 : '👇 Touche un nom d\'équipe, puis un autre : ils échangent leur place. Les parties terminées sont verrouillées.'}
             </div>
           )}
+          {/* Retard ? Tout le reste se décale d'un coup */}
+          <div className="flex items-center gap-1.5 mb-2 px-1 flex-wrap">
+            <span className="text-[11px] font-extrabold text-text-muted">⏱ Décaler le reste :</span>
+            {[-10, 10, 15, 30].map(mn => (
+              <button key={mn} onClick={() => setConfirmShift(mn)} disabled={busy !== ''}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all disabled:opacity-50"
+                style={{ backgroundColor: '#f3f4f6', color: '#64748b', border: '1px solid #e5e7eb' }}>
+                {mn > 0 ? `+${mn}` : mn} min
+              </button>
+            ))}
+          </div>
           <div className="space-y-3">
             {byDay.map(({ date, slots }) => (
               <div key={date || 'sans-date'}>
@@ -676,6 +776,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                   {matches.map(m => {
                     const d = drafts[m.id] ?? { a: m.score_a === null ? '' : String(m.score_a), b: m.score_b === null ? '' : String(m.score_b) };
                     const finished = m.status === 'finished';
+                    const cancelled = m.status === 'cancelled';
                     const dirty = drafts[m.id] !== undefined;
                     const aWins = finished && m.score_a !== null && m.score_b !== null && m.score_a > m.score_b;
                     const bWins = finished && m.score_a !== null && m.score_b !== null && m.score_b > m.score_a;
@@ -694,6 +795,14 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                               <span className="truncate" style={{ color: DUO.red }}>⚠ {conflicts.get(m.id)}</span>
                             )}
                             {finished && <span className="whitespace-nowrap" style={{ color: DUO.greenDark }}>✓ Terminée</span>}
+                            {cancelled && <span className="whitespace-nowrap" style={{ color: '#9ca3af' }}>✕ Annulée</span>}
+                            {finished && m.team_a_id && m.team_b_id && (
+                              <button onClick={() => setNotifyMatch(m)}
+                                className="p-1 rounded-md hover:bg-gray-100 transition-all flex-shrink-0"
+                                title="Aviser les 2 équipes (résultat + prochaine partie)">
+                                <Mail className="h-3.5 w-3.5" style={{ color: DUO.blueDark }} />
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 if (editing === m.id) { setEditing(''); return; }
@@ -701,7 +810,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                                 setEditDraft({ date: m.scheduled_date || date || state.event.date, time: m.scheduled_time, court: m.court });
                               }}
                               className="p-1 rounded-md hover:bg-gray-100 transition-all flex-shrink-0"
-                              title="Déplacer (heure / terrain)">
+                              title="Déplacer / forfait / annuler">
                               <Pencil className="h-3.5 w-3.5" style={{ color: editing === m.id ? DUO.blueDark : '#9ca3af' }} />
                             </button>
                           </div>
@@ -733,6 +842,30 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                               {busy === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                               Déplacer
                             </button>
+                            {/* Cas de force majeure : forfait (l'autre gagne 0-1) ou annulation */}
+                            <div className="w-full flex items-center gap-1.5 flex-wrap pt-1.5 mt-0.5" style={{ borderTop: '1px dashed #e5e7eb' }}>
+                              {!finished && !cancelled && m.team_a_id && m.team_b_id && (
+                                <>
+                                  <button onClick={() => forfeit(m, 'a')} disabled={busy !== ''}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all disabled:opacity-50"
+                                    style={{ backgroundColor: '#fef2f2', color: DUO.red, border: '1px solid #fecaca' }}>
+                                    Forfait {teamName(m.team_a_id, m.source_a)}
+                                  </button>
+                                  <button onClick={() => forfeit(m, 'b')} disabled={busy !== ''}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all disabled:opacity-50"
+                                    style={{ backgroundColor: '#fef2f2', color: DUO.red, border: '1px solid #fecaca' }}>
+                                    Forfait {teamName(m.team_b_id, m.source_b)}
+                                  </button>
+                                </>
+                              )}
+                              {!finished && (
+                                <button onClick={() => setCancelled(m, !cancelled)} disabled={busy !== ''}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-all disabled:opacity-50"
+                                  style={{ backgroundColor: '#f3f4f6', color: '#64748b', border: '1px solid #e5e7eb' }}>
+                                  {cancelled ? 'Rétablir la partie' : 'Annuler la partie'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                         <div className="flex items-center gap-2">
@@ -882,6 +1015,78 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
           color={DUO.blue}
           onConfirm={sendSchedule}
           onClose={() => setConfirmSend(false)}
+        />
+      )}
+
+      {/* Modale — aviser les 2 équipes après un pointage (prévisualisation + 1 tap) */}
+      {notifyMatch && (() => {
+        const nm = notifyMatch;
+        const nextFor = (teamId: string | null) => teamId ? (state.matches
+          .filter(x => x.id !== nm.id && (x.team_a_id === teamId || x.team_b_id === teamId) && x.status !== 'finished' && x.status !== 'cancelled')
+          .sort((x, y) => `${x.scheduled_date || ''}|${x.scheduled_time}`.localeCompare(`${y.scheduled_date || ''}|${y.scheduled_time}`))[0] || null) : null;
+        const sides = [
+          { teamId: nm.team_a_id, scoreFor: nm.score_a ?? 0, scoreAgainst: nm.score_b ?? 0, opponentId: nm.team_b_id },
+          { teamId: nm.team_b_id, scoreFor: nm.score_b ?? 0, scoreAgainst: nm.score_a ?? 0, opponentId: nm.team_a_id },
+        ];
+        const hasPlayoffs = state.matches.some(x => x.phase !== 'garantie');
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(15,23,42,0.55)' }} onClick={() => setNotifyMatch(null)}>
+            <div className="bg-white rounded-2xl p-5 max-w-md w-full" onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between mb-3">
+                <h3 className="text-base font-extrabold text-text-main flex items-center gap-1.5">
+                  <Mail className="h-4 w-4" style={{ color: DUO.blue }} /> Aviser les équipes ?
+                </h3>
+                <button onClick={() => setNotifyMatch(null)} className="text-text-light hover:text-text-main"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="space-y-2 mb-3">
+                {sides.map(s => {
+                  const next = nextFor(s.teamId);
+                  const won = s.scoreFor > s.scoreAgainst;
+                  const tie = s.scoreFor === s.scoreAgainst;
+                  return (
+                    <div key={s.teamId || 'x'} className="rounded-xl p-3" style={{ backgroundColor: '#f8fafc', border: '2px solid #e7edf3' }}>
+                      <p className="text-sm font-extrabold text-text-main">{teamName(s.teamId, '')}</p>
+                      <p className="text-xs font-bold mt-0.5" style={{ color: tie ? '#64748b' : won ? DUO.greenDark : DUO.red }}>
+                        {tie ? 'Nulle' : won ? 'Victoire' : 'Défaite'} {s.scoreFor}–{s.scoreAgainst} contre {teamName(s.opponentId, '')}
+                      </p>
+                      <p className="text-xs font-bold text-text-muted mt-1">
+                        {next
+                          ? <>⏭ Prochaine : <span style={{ color: DUO.blueDark }}>{multiDay && (next.scheduled_date || '') !== '' ? `${formatDayLong(next.scheduled_date)} · ` : ''}{next.scheduled_time} · Terrain {next.court} · vs {teamName(next.team_a_id === s.teamId ? next.team_b_id : next.team_a_id, next.team_a_id === s.teamId ? next.source_b : next.source_a)}</span></>
+                          : '🏁 Aucune autre partie — courriel de remerciement'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-text-muted mb-4">
+                Chaque joueur des deux équipes reçoit ce résumé par courriel avec le lien de la page en direct{hasPlayoffs ? ' et l\'image du bracket' : ''}.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setNotifyMatch(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-extrabold bg-gray-100 text-text-muted hover:bg-gray-200 transition-all">
+                  Pas maintenant
+                </button>
+                <button onClick={() => notifyTeams(nm)} disabled={busy !== ''}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-extrabold text-white transition-all active:translate-y-[1px] disabled:opacity-60"
+                  style={{ backgroundColor: DUO.blue }}>
+                  {busy === 'notify' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Envoyer
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modale — décaler tout le reste */}
+      {confirmShift !== null && (
+        <ConfirmModal
+          title={`Décaler le reste de ${confirmShift > 0 ? '+' : ''}${confirmShift} min ?`}
+          body={`Toutes les parties pas encore jouées seront décalées de ${confirmShift > 0 ? '+' : ''}${confirmShift} minutes (les journées ne changent pas). Pense à « Mettre à jour le site » ensuite.`}
+          confirmLabel="Décaler"
+          color={DUO.orange}
+          onConfirm={() => shiftAll(confirmShift)}
+          onClose={() => setConfirmShift(null)}
         />
       )}
 

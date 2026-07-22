@@ -402,3 +402,103 @@ export async function sendTournamentSchedule(
   }
   return sent;
 }
+
+// ── Tournoi — résultat + prochaine partie (pendant le tournoi, 1 tap) ─────────
+
+export interface MatchResultInfo {
+  opponent: string;
+  scoreFor: number;
+  scoreAgainst: number;
+}
+
+export interface NextMatchInfo {
+  dayLabel?: string;       // 'sam. 15 août' — seulement si le tournoi a plusieurs jours
+  time: string;            // 'HH:MM'
+  court: number;
+  opponent: string;        // nom résolu, sinon source (« Gagnant M9 »), sinon 'À déterminer'
+  phase: string;
+}
+
+/**
+ * Courriel envoyé aux joueurs d'UNE équipe juste après sa partie :
+ * le résultat + leur prochaine partie en gros (ou « journée terminée »),
+ * l'image du bracket si des séries existent, et le lien de la page en direct.
+ */
+export async function sendMatchResultEmails(
+  event: EventInfo,
+  teamName: string,
+  recipients: { email: string; firstName: string }[],
+  result: MatchResultInfo,
+  next: NextMatchInfo | null,
+  liveUrl: string,
+  bracketImageUrl?: string,
+): Promise<number> {
+  const resend = getResend();
+  if (!resend || recipients.length === 0) return 0;
+
+  const won = result.scoreFor > result.scoreAgainst;
+  const tie = result.scoreFor === result.scoreAgainst;
+  const resultLine = tie
+    ? `Partie nulle <strong>${result.scoreFor}–${result.scoreAgainst}</strong> contre ${result.opponent}.`
+    : won
+      ? `Victoire <strong>${result.scoreFor}–${result.scoreAgainst}</strong> contre ${result.opponent}&nbsp;! 🎉`
+      : `Défaite ${result.scoreFor}–${result.scoreAgainst} contre ${result.opponent}.`;
+
+  const phaseLabel = next ? (PHASE_LABELS[next.phase] || '') : '';
+  const nextBlock = next
+    ? `
+      <div style="background:linear-gradient(135deg,#0077b6,#00b4d8);border-radius:14px;padding:20px 22px;margin:0 0 18px;text-align:center">
+        <p style="margin:0 0 4px;color:#ffffff;opacity:.9;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.06em">Votre prochaine partie${phaseLabel ? ` · ${phaseLabel}` : ''}</p>
+        <p style="margin:0;color:#ffffff;font-size:34px;font-weight:800;line-height:1.1">${next.dayLabel ? `${next.dayLabel} · ` : ''}${next.time}</p>
+        <p style="margin:6px 0 0;color:#ffffff;font-size:15px;font-weight:bold">Terrain ${next.court} · vs ${next.opponent}</p>
+      </div>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 15px;margin:0 0 18px">
+        <p style="margin:0;color:#92400e;font-size:13px;line-height:1.5">⏱️ Les heures peuvent bouger — la page en direct fait toujours foi.</p>
+      </div>`
+    : `
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px;padding:20px 22px;margin:0 0 18px;text-align:center">
+        <p style="margin:0;color:#15803d;font-size:17px;font-weight:800">🏁 Aucune autre partie à votre horaire</p>
+        <p style="margin:6px 0 0;color:#166534;font-size:14px">Merci d'avoir participé — consultez le classement et les séries sur la page en direct&nbsp;!</p>
+      </div>`;
+
+  const bracketBlock = bracketImageUrl
+    ? `<div style="text-align:center;margin:0 0 18px">
+         <img src="${bracketImageUrl}" alt="Bracket des séries" width="520" style="max-width:100%;height:auto;border-radius:12px;border:1px solid #e7edf3" />
+       </div>`
+    : '';
+
+  const emails = recipients.map(r => {
+    const inner = `
+      <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">${teamName}</h1>
+      <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.5">Bonjour <strong>${r.firstName || ''}</strong>, ${resultLine}</p>
+      ${nextBlock}
+      ${bracketBlock}
+      <div style="text-align:center;margin:0 0 8px">
+        <a href="${liveUrl}" style="display:inline-block;background:#0077b6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 26px;border-radius:10px">Suivre le tournoi en direct</a>
+      </div>`;
+    return {
+      from: FROM,
+      to: r.email,
+      subject: next
+        ? `Prochaine partie ${next.dayLabel ? `${next.dayLabel} ` : ''}${next.time} – ${teamName}`
+        : `Merci ! – ${event.title} (${teamName})`,
+      html: emailShell(inner, contactStr(event)),
+    };
+  });
+
+  let sent = 0;
+  try {
+    for (let i = 0; i < emails.length; i += 100) {
+      const chunk = emails.slice(i, i + 100);
+      const { error } = await resend.batch.send(chunk);
+      if (error) {
+        console.error('Match result batch failed:', error);
+        continue;
+      }
+      sent += chunk.length;
+    }
+  } catch (err) {
+    console.error('Match result email failed:', err);
+  }
+  return sent;
+}
