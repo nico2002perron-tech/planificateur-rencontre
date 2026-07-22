@@ -18,6 +18,7 @@ import {
   Compass,
   History,
   ReceiptText,
+  Briefcase,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/prospection', label: 'Prospection', icon: PhoneCall },
   { href: '/models', label: 'Modèles', icon: PieChart },
+  { href: '/proposition', label: 'Proposition', icon: Briefcase },
   { href: '/markets', label: 'Marchés', icon: TrendingUp },
   { href: '/valuation', label: 'Valorisation', icon: BarChart2 },
   { href: '/reports', label: 'Cours Cibles', icon: FileText },

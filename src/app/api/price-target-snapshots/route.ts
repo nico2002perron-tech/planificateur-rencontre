@@ -74,6 +74,15 @@ export async function POST(req: NextRequest) {
   const sourceKind: 'price_targets_pdf' | 'manual' =
     body.source_kind === 'manual' ? 'manual' : 'price_targets_pdf';
 
+  // Nature de l'entrée : un portefeuille modèle proposé à un client, ou un cours
+  // cible normal (défaut). Voir migration_snapshot_entry_type.sql.
+  // Valeur inconnue = 400 explicite (pas de dégradation silencieuse en cours cible).
+  if (body.entry_type != null && body.entry_type !== 'price_target' && body.entry_type !== 'model_portfolio') {
+    return NextResponse.json({ error: 'entry_type invalide' }, { status: 400 });
+  }
+  const entryType: 'price_target' | 'model_portfolio' =
+    body.entry_type === 'model_portfolio' ? 'model_portfolio' : 'price_target';
+
   // Coffre client : le nom n'arrive JAMAIS en clair. On reçoit seulement le nom
   // chiffré (name_enc) et l'index aveugle déterministe (name_idx). L'index est
   // obligatoire — c'est lui qui regroupe/dédoublonne les captures d'un client.
@@ -138,10 +147,25 @@ export async function POST(req: NextRequest) {
       .eq('predicted_at', today);
   }
 
+  // Même patron pour les portefeuilles modèles : la dernière proposition du jour
+  // pour un client REMPLACE la précédente (deux clics « Enregistrer » ne créent
+  // jamais de doublons). Sûr : ce chemin exige la colonne entry_type (voir la
+  // garde du repli plus bas — sans migration, le POST modèle échoue en 400).
+  if (entryType === 'model_portfolio') {
+    await supabase
+      .from('price_target_snapshots')
+      .delete()
+      .eq('advisor_id', advisorId)
+      .eq('entry_type', 'model_portfolio')
+      .eq('name_idx', nameIdx)
+      .eq('predicted_at', today);
+  }
+
   const toInsert = rows.map((r) => ({
     advisor_id: advisorId,
     batch_id: batchId,
     source_kind: sourceKind,
+    entry_type: entryType,
     client_name: '', // plus jamais de nom en clair
     name_enc: nameEnc,
     name_idx: nameIdx,
@@ -151,24 +175,31 @@ export async function POST(req: NextRequest) {
     ...r,
   }));
 
-  let { data, error } = await supabase
-    .from('price_target_snapshots')
-    .insert(toInsert)
-    .select();
-
-  // Compatibilité : si la colonne PBR (average_cost) n'est pas encore migrée,
-  // on réessaie SANS elle pour que la capture passe quand même. Le PBR
-  // s'enregistrera automatiquement une fois `migration_snapshot_pbr.sql` exécuté.
-  if (error && /average_cost/i.test(error.message)) {
-    const withoutPbr = toInsert.map((row) => {
+  // Compatibilité migrations : si une colonne optionnelle n'est pas encore
+  // migrée (average_cost -> migration_snapshot_pbr, entry_type ->
+  // migration_snapshot_entry_type), on la retire et on réessaie pour que la
+  // capture passe quand même. La colonne se remplira une fois la migration
+  // exécutée. On boucle pour couvrir le cas où les deux manquent.
+  let attempt: Record<string, unknown>[] = toInsert;
+  let { data, error } = await supabase.from('price_target_snapshots').insert(attempt).select();
+  let guard = 0;
+  while (error && guard < 2 && /(average_cost|entry_type)/i.test(error.message)) {
+    const col = /entry_type/i.test(error.message) ? 'entry_type' : 'average_cost';
+    // Un portefeuille modèle SANS colonne entry_type serait reclassé « cours
+    // cible » pour toujours (le DEFAULT de la future migration l'écraserait).
+    // On refuse explicitement plutôt que de perdre le tag en silence.
+    if (col === 'entry_type' && entryType === 'model_portfolio') {
+      return NextResponse.json({
+        error: 'La colonne entry_type n’existe pas encore. Exécute supabase/migration_snapshot_entry_type.sql dans Supabase avant d’enregistrer un portefeuille modèle.',
+      }, { status: 400 });
+    }
+    attempt = attempt.map((row) => {
       const copy = { ...row };
-      delete (copy as { average_cost?: number | null }).average_cost;
+      delete copy[col];
       return copy;
     });
-    ({ data, error } = await supabase
-      .from('price_target_snapshots')
-      .insert(withoutPbr)
-      .select());
+    ({ data, error } = await supabase.from('price_target_snapshots').insert(attempt).select());
+    guard += 1;
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

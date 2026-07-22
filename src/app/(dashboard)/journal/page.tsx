@@ -15,6 +15,7 @@ type Snapshot = {
   id: string;
   batch_id: string;
   source_kind: 'price_targets_pdf' | 'manual';
+  entry_type?: 'price_target' | 'model_portfolio' | null;
   client_name: string;
   name_enc: string | null;
   name_idx: string | null;
@@ -212,7 +213,8 @@ function JournalInner() {
       const gains = rows.map(r => r.expected_gain_pct).filter((g): g is number => g != null && Number.isFinite(g));
       const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null;
       const lastDate = rows.reduce((acc, r) => (r.predicted_at > acc ? r.predicted_at : acc), rows[0].predicted_at);
-      return { key, name: displayNameOf(rows[0]), legacy: isLegacy(rows[0]), positions: symbols.size, predictions: rows.length, avgGain, lastDate };
+      const hasModel = rows.some(r => r.entry_type === 'model_portfolio');
+      return { key, name: displayNameOf(rows[0]), legacy: isLegacy(rows[0]), positions: symbols.size, predictions: rows.length, avgGain, lastDate, hasModel };
     }).sort((a, b) => (a.lastDate < b.lastDate ? 1 : -1));
   }, [snapshots, displayNameOf]);
 
@@ -537,9 +539,10 @@ function JournalInner() {
                     <User className="h-4 w-4 text-brand-primary" />
                   </div>
                   <div>
-                    <div className="font-bold text-text-main flex items-center gap-1.5">
+                    <div className="font-bold text-text-main flex items-center gap-1.5 flex-wrap">
                       {c.name}
                       {c.legacy && <span title="Nom encore en clair — à sécuriser"><ShieldAlert className="h-3.5 w-3.5 text-amber-500" /></span>}
+                      {c.hasModel && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#58CC02]/10 text-[#45a300]">Portefeuille modèle</span>}
                     </div>
                     <div className="text-xs text-text-muted">{c.positions} position{c.positions > 1 ? 's' : ''} · {c.predictions} prédiction{c.predictions > 1 ? 's' : ''}</div>
                   </div>

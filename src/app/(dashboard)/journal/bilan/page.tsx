@@ -19,6 +19,7 @@ type Snapshot = {
   id: string;
   symbol: string;
   name: string;
+  entry_type?: 'price_target' | 'model_portfolio' | null;
   conviction: number | null;
   horizon_months: number;
   current_price: number | null;
@@ -86,13 +87,20 @@ export default function BilanPage() {
     })();
   }, [toast]);
 
-  const resolved = useMemo(
-    () => snapshots.filter(s => s.resolved_at && s.hit != null),
+  // Le bilan mesure la CALIBRATION du conseiller : ses vraies convictions
+  // montrées en rencontre. Les portefeuilles modèles (page Proposition) sont
+  // des propositions commerciales — exclus des statistiques par défaut.
+  const scoped = useMemo(
+    () => snapshots.filter(s => s.entry_type !== 'model_portfolio'),
     [snapshots]
   );
+  const resolved = useMemo(
+    () => scoped.filter(s => s.resolved_at && s.hit != null),
+    [scoped]
+  );
   const pending = useMemo(
-    () => snapshots.filter(s => !s.resolved_at),
-    [snapshots]
+    () => scoped.filter(s => !s.resolved_at),
+    [scoped]
   );
 
   // ── KPIs globaux ───────────────────────────────────────────────────────
