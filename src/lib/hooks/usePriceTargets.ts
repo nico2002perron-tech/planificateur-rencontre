@@ -33,6 +33,9 @@ export function usePriceTargetConsensus(symbols: string[], cdrMap?: Record<strin
   const { data, error, isLoading } = useSWR<Record<string, PriceTargetConsensus>>(key, fetcher, {
     refreshInterval: 300_000,
     dedupingInterval: 60_000,
+    // Ajouter un symbole change la clé : garder les cibles déjà affichées
+    // pendant le rechargement (pas de « clignotement »).
+    keepPreviousData: true,
   });
 
   return { targets: data || {}, error, isLoading };

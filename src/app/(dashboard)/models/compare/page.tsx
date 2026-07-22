@@ -12,10 +12,10 @@ import { useToast } from '@/components/ui/Toast';
 import { useModels, type ModelPortfolio } from '@/lib/hooks/useModels';
 import { useQuotes } from '@/lib/hooks/useQuotes';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
-import { useSymbolSearch } from '@/lib/hooks/useQuotes';
+import { SymbolSearchInline } from '@/components/models/SymbolSearchInline';
 import {
   ArrowLeft, Search, Plus, Trash2, TrendingUp, TrendingDown,
-  Target, DollarSign, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp, X,
+  Target, DollarSign, BarChart3, Trophy, Briefcase, ChevronDown, ChevronUp,
   CalendarDays,
 } from 'lucide-react';
 
@@ -105,57 +105,6 @@ interface PortfolioHistoryData {
 }
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
-
-// ── Symbol Search Inline ────────────────────────────────────────────────
-
-function InlineSymbolSearch({ onSelect }: { onSelect: (symbol: string, name: string) => void }) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const { results, isLoading } = useSymbolSearch(query);
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl border-[3px] border-dashed border-gray-200 bg-gray-50/50 hover:border-[#1CB0F6] transition-all">
-        <Search className="h-4 w-4 text-text-muted flex-shrink-0" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => query && setOpen(true)}
-          placeholder="Ajouter un titre (ex: AAPL, RY.TO)..."
-          className="flex-1 bg-transparent text-sm font-semibold text-text-main placeholder:text-text-muted/50 focus:outline-none"
-        />
-        {query && (
-          <button onClick={() => { setQuery(''); setOpen(false); }} className="text-text-muted hover:text-text-main">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      {open && query.length >= 1 && (
-        <div className="absolute z-30 top-full mt-1 w-full bg-white rounded-2xl shadow-xl border-[3px] border-gray-100 max-h-64 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex justify-center py-4"><Spinner size="sm" /></div>
-          ) : results.length === 0 ? (
-            <p className="text-sm text-text-muted text-center py-4">Aucun résultat</p>
-          ) : (
-            results.map((r: { symbol: string; name: string; exchangeShortName: string }) => (
-              <button key={r.symbol}
-                className="w-full text-left px-4 py-3 hover:bg-[#1CB0F6]/5 transition-colors flex items-center justify-between"
-                onClick={() => { onSelect(r.symbol, r.name); setQuery(''); setOpen(false); }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="px-2 py-0.5 rounded-lg bg-[#1CB0F6]/10 text-[#1CB0F6] font-extrabold text-xs">{r.symbol}</span>
-                  <span className="text-sm font-semibold text-text-main truncate max-w-[200px]">{r.name}</span>
-                </div>
-                <span className="text-[10px] font-bold text-text-muted bg-gray-100 px-2 py-0.5 rounded-lg">{r.exchangeShortName}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Duo Stat Card ───────────────────────────────────────────────────────
 
@@ -486,7 +435,7 @@ export default function ComparePage() {
 
             {/* Search */}
             <div className="px-5 pt-4">
-              <InlineSymbolSearch onSelect={addHolding} />
+              <SymbolSearchInline onSelect={addHolding} />
             </div>
 
             {/* Holdings list */}

@@ -99,8 +99,12 @@ export async function POST(req: NextRequest) {
 
   // On ne garde que les lignes avec un symbole ET une cible réelle : ce sont
   // les seules qui constituent une prédiction.
+  // Plafond raisonnable (un portefeuille réel < 200 lignes) : protège le cron
+  // de résolution, qui suit au plus quelques milliers de prédictions ouvertes.
+  const MAX_ROWS = 200;
   const rows = incoming
     .filter((r) => r && typeof r.symbol === 'string' && r.symbol.trim() && num(r.targetPrice) && Number(r.targetPrice) > 0)
+    .slice(0, MAX_ROWS)
     .map((r) => {
       const current = num(r.currentPrice);
       const target = num(r.targetPrice)!;
@@ -110,18 +114,19 @@ export async function POST(req: NextRequest) {
           : current && current > 0
             ? ((target - current) / current) * 100
             : null;
+      const text = (v: unknown) => (v ?? '').toString().slice(0, 120);
       return {
-        symbol: r.symbol!.trim().toUpperCase(),
-        name: (r.name ?? '').toString(),
-        asset_type: (r.assetType ?? '').toString(),
+        symbol: r.symbol!.trim().toUpperCase().slice(0, 24),
+        name: text(r.name),
+        asset_type: text(r.assetType),
         quantity: num(r.quantity) ?? 0,
         average_cost: num(r.averageCost),
         current_price: current,
         target_price: target,
         expected_gain_pct: expectedGain,
-        target_source: (r.targetSource ?? '').toString(),
-        account_type: (r.accountType ?? body.account_type ?? '').toString(),
-        account_label: (r.accountLabel ?? body.account_label ?? '').toString(),
+        target_source: text(r.targetSource),
+        account_type: text(r.accountType ?? body.account_type),
+        account_label: text(r.accountLabel ?? body.account_label),
       };
     });
 

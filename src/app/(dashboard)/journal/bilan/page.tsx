@@ -89,9 +89,19 @@ export default function BilanPage() {
 
   // Le bilan mesure la CALIBRATION du conseiller : ses vraies convictions
   // montrées en rencontre. Les portefeuilles modèles (page Proposition) sont
-  // des propositions commerciales — exclus des statistiques par défaut.
+  // des propositions commerciales — exclus des statistiques par défaut ;
+  // un sélecteur permet de les regarder à part ou de tout mélanger.
+  const [scope, setScope] = useState<'targets' | 'models' | 'all'>('targets');
   const scoped = useMemo(
-    () => snapshots.filter(s => s.entry_type !== 'model_portfolio'),
+    () => scope === 'all'
+      ? snapshots
+      : snapshots.filter(s => scope === 'models'
+          ? s.entry_type === 'model_portfolio'
+          : s.entry_type !== 'model_portfolio'),
+    [snapshots, scope]
+  );
+  const hasModelRows = useMemo(
+    () => snapshots.some(s => s.entry_type === 'model_portfolio'),
     [snapshots]
   );
   const resolved = useMemo(
@@ -189,6 +199,29 @@ export default function BilanPage() {
         title="Bilan des cours cibles"
         description="Ta feuille de route : ce que tu as prédit, ce qui s'est réalisé. La conviction tient-elle ses promesses?"
       />
+
+      {/* Portée : par défaut les vrais cours cibles seulement — les portefeuilles
+          modèles (propositions) se consultent à part pour ne pas fausser la calibration */}
+      {hasModelRows && (
+        <div className="inline-flex items-center gap-1 rounded-xl bg-gray-100 p-1 mb-4">
+          {([
+            { v: 'targets' as const, label: 'Cours cibles' },
+            { v: 'models' as const, label: 'Portefeuilles modèles' },
+            { v: 'all' as const, label: 'Tout' },
+          ]).map(opt => (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => setScope(opt.v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                scope === opt.v ? 'bg-white text-text-main shadow-sm' : 'text-text-muted hover:text-text-main'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {resolved.length === 0 ? (
         <Card className="text-center py-16">

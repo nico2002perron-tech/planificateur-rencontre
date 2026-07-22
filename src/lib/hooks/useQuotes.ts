@@ -25,6 +25,9 @@ export function useQuotes(symbols: string[]) {
   const { data, error, isLoading } = useSWR<QuoteData[]>(key, fetcher, {
     refreshInterval: 60_000, // Refresh every 60s
     dedupingInterval: 30_000,
+    // Ajouter un symbole change la clé : garder les données déjà affichées
+    // pendant le rechargement (pas de « clignotement » des prix existants).
+    keepPreviousData: true,
   });
 
   const safeData = Array.isArray(data) ? data : [];

@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
 import { VaultGate } from '@/components/security/VaultGate';
 import { useVault } from '@/components/security/VaultProvider';
-import { Plus, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight, ShieldAlert, Lock, BarChart3, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, TrendingUp, Trash2, Search, ChevronLeft, User, ChevronRight, ArrowRight, ShieldAlert, Lock, BarChart3, CheckCircle2, XCircle, Briefcase } from 'lucide-react';
 
 type Snapshot = {
   id: string;
@@ -210,11 +210,16 @@ function JournalInner() {
     }
     return Array.from(map.entries()).map(([key, rows]) => {
       const symbols = new Set(rows.map(r => r.symbol));
-      const gains = rows.map(r => r.expected_gain_pct).filter((g): g is number => g != null && Number.isFinite(g));
+      // « Visé (moy.) » = les VRAIS cours cibles seulement ; les portefeuilles
+      // modèles (propositions) ne diluent pas la moyenne. Repli : s'il n'y a
+      // QUE des propositions, on moyenne celles-ci.
+      const targetRows = rows.filter(r => r.entry_type !== 'model_portfolio');
+      const gainSource = targetRows.length > 0 ? targetRows : rows;
+      const gains = gainSource.map(r => r.expected_gain_pct).filter((g): g is number => g != null && Number.isFinite(g));
       const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null;
       const lastDate = rows.reduce((acc, r) => (r.predicted_at > acc ? r.predicted_at : acc), rows[0].predicted_at);
-      const hasModel = rows.some(r => r.entry_type === 'model_portfolio');
-      return { key, name: displayNameOf(rows[0]), legacy: isLegacy(rows[0]), positions: symbols.size, predictions: rows.length, avgGain, lastDate, hasModel };
+      const modelBatches = new Set(rows.filter(r => r.entry_type === 'model_portfolio').map(r => r.batch_id)).size;
+      return { key, name: displayNameOf(rows[0]), legacy: isLegacy(rows[0]), positions: symbols.size, predictions: rows.length, avgGain, lastDate, modelBatches };
     }).sort((a, b) => (a.lastDate < b.lastDate ? 1 : -1));
   }, [snapshots, displayNameOf]);
 
@@ -240,6 +245,19 @@ function JournalInner() {
     }
     for (const arr of map.values()) arr.sort((a, b) => (a.predicted_at < b.predicted_at ? 1 : -1));
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [selectedRows]);
+
+  // Lots « portefeuille modèle » du client (suppression du lot en un clic).
+  const modelBatchGroups = useMemo(() => {
+    const map = new Map<string, { batchId: string; date: string; count: number }>();
+    for (const s of selectedRows) {
+      if (s.entry_type !== 'model_portfolio') continue;
+      const g = map.get(s.batch_id) ?? { batchId: s.batch_id, date: s.predicted_at, count: 0 };
+      g.count += 1;
+      if (s.predicted_at > g.date) g.date = s.predicted_at;
+      map.set(s.batch_id, g);
+    }
+    return Array.from(map.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [selectedRows]);
 
   // Prix live à l'ouverture d'un client
@@ -319,6 +337,24 @@ function JournalInner() {
     }
   }
 
+  // Supprime un LOT complet (portefeuille modèle) en un clic — au lieu de N
+  // suppressions ligne par ligne.
+  async function handleDeleteBatch(batchId: string, count: number) {
+    if (!confirm(`Supprimer ce portefeuille modèle (${count} titre${count > 1 ? 's' : ''}) du journal? Cette action est irréversible.`)) return;
+    setDeleting(batchId);
+    setSnapshots(prev => prev.filter(s => s.batch_id !== batchId));
+    try {
+      const res = await fetch(`/api/price-target-snapshots?batch_id=${encodeURIComponent(batchId)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast('success', 'Portefeuille modèle supprimé');
+    } catch {
+      toast('error', 'Erreur lors de la suppression');
+      load();
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // Vue détail d'un client
   // ─────────────────────────────────────────────────────────────────────
@@ -343,6 +379,25 @@ function JournalInner() {
           saving={saving} onSave={handleSave} onCancel={() => setShowForm(false)}
         />}
 
+        {/* Portefeuilles modèles enregistrés (page Proposition) : un lot = un clic pour tout retirer */}
+        {modelBatchGroups.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {modelBatchGroups.map(g => (
+              <div key={g.batchId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#58CC02]/25 bg-[#58CC02]/[0.05] px-3 py-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Briefcase className="h-3.5 w-3.5 text-[#45a300]" />
+                  <span className="font-bold text-text-main">Portefeuille modèle du {fmtDate(g.date)}</span>
+                  <span className="text-text-muted">· {g.count} titre{g.count > 1 ? 's' : ''}</span>
+                </div>
+                <button onClick={() => handleDeleteBatch(g.batchId, g.count)} disabled={deleting === g.batchId}
+                  className="flex items-center gap-1 text-[11px] font-bold text-text-muted hover:text-red-600 disabled:opacity-40">
+                  <Trash2 className="h-3.5 w-3.5" /> Supprimer ce portefeuille
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {bySymbol.map(([symbol, rows]) => {
             const latest = rows[0];
@@ -366,6 +421,9 @@ function JournalInner() {
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
                     <span className="text-sm font-bold text-text-main">{symbol}</span>
+                    {latest.entry_type === 'model_portfolio' && (
+                      <span className="text-[8px] font-extrabold px-1 py-0.5 rounded bg-[#58CC02]/10 text-[#45a300] uppercase">Modèle</span>
+                    )}
                     {latest.name && <span className="text-xs text-text-muted truncate max-w-[160px]">{latest.name}</span>}
                     <span className="text-[10px] text-text-muted">
                       {latest.account_type ? `${latest.account_type} · ` : ''}cible {latest.horizon_months} mois · {fmtDate(latest.predicted_at)}
@@ -448,7 +506,7 @@ function JournalInner() {
                     <div className="mt-2 space-y-1">
                       {history.map(h => (
                         <div key={h.id} className="flex items-center justify-between text-xs text-text-muted border-t border-gray-50 pt-1">
-                          <span>{fmtDate(h.predicted_at)}</span>
+                          <span>{fmtDate(h.predicted_at)}{h.entry_type === 'model_portfolio' ? ' · modèle' : ''}</span>
                           <span>{fmtMoney(h.current_price)} <ArrowRight className="inline h-3 w-3" /> {fmtMoney(h.target_price)} ({fmtPct(h.expected_gain_pct)})</span>
                           <button onClick={() => handleDelete(h.id)} disabled={deleting === h.id} className="text-gray-300 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
@@ -542,7 +600,11 @@ function JournalInner() {
                     <div className="font-bold text-text-main flex items-center gap-1.5 flex-wrap">
                       {c.name}
                       {c.legacy && <span title="Nom encore en clair — à sécuriser"><ShieldAlert className="h-3.5 w-3.5 text-amber-500" /></span>}
-                      {c.hasModel && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#58CC02]/10 text-[#45a300]">Portefeuille modèle</span>}
+                      {c.modelBatches > 0 && (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-[#58CC02]/10 text-[#45a300]">
+                          {c.modelBatches} portefeuille{c.modelBatches > 1 ? 's' : ''} modèle{c.modelBatches > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-text-muted">{c.positions} position{c.positions > 1 ? 's' : ''} · {c.predictions} prédiction{c.predictions > 1 ? 's' : ''}</div>
                   </div>
