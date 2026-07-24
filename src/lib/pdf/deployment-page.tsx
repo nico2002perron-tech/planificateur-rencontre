@@ -364,10 +364,12 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const restValueHeld = restHeld.reduce((s, l) => s + (l.currentValue ?? 0), 0);
   const restDeltaHeld = restHeld.reduce((s, l) => s + (l.deltaAbs ?? 0), 0);
 
-  // ── Ruban (page 2) ──
-  const ribbon = d.lines.slice(0, MAX_RIBBON_SEGMENTS);
-  const ribbonRest = d.lines.slice(MAX_RIBBON_SEGMENTS);
-  const ribbonRestWeight = ribbonRest.reduce((s, l) => s + l.weightPct, 0);
+  // ── Ruban (page 2) : CONCENTRATION RÉELLE du portefeuille (poids par titre =
+  // valeur actuelle / valeur totale, données des cours cibles), PAS les achats. ──
+  const ribbon = d.concentration.slice(0, MAX_RIBBON_SEGMENTS);
+  const ribbonRest = d.concentration.slice(MAX_RIBBON_SEGMENTS);
+  const ribbonRestWeight = ribbonRest.reduce((s, c) => s + c.weightPct, 0);
+  const ribbonRestValue = ribbonRest.reduce((s, c) => s + c.marketValue, 0);
 
   const r = d.reconciliation;
   const usdPhrase = d.usdCadRate && d.usdCadRate > 0
@@ -651,7 +653,8 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           accent="#FF9600"
         />
 
-        {/* ─ Ruban : où l'argent est allé ─ */}
+        {/* ─ Ruban : concentration RÉELLE du portefeuille (poids par titre) ─ */}
+        {d.concentration.length > 0 && (
         <View
           wrap={false}
           style={{
@@ -665,18 +668,16 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
-              Où l&apos;argent est allé
+              Concentration du portefeuille
             </Text>
-            {d.firstBuyDate && d.lastBuyDate && (
-              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                Du {fmtDateCourt(d.firstBuyDate)} au {fmtDateCourt(d.lastBuyDate)}
-              </Text>
-            )}
+            <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              Poids réel aujourd&apos;hui · {fmt(d.portfolioTotalValue)}
+            </Text>
           </View>
 
           <View style={{ height: 16, borderRadius: 8, overflow: 'hidden', flexDirection: 'row', marginTop: 8 }}>
-            {ribbon.map((l, i) => (
-              <View key={`${l.symbol}-${i}`} style={{ width: `${l.weightPct}%`, backgroundColor: lineColor(i) }} />
+            {ribbon.map((c, i) => (
+              <View key={`${c.symbol || 'cash'}-${i}`} style={{ width: `${c.weightPct}%`, backgroundColor: c.isCash ? '#94a3b8' : lineColor(i) }} />
             ))}
             {ribbonRestWeight > 0 && (
               <View style={{ width: `${ribbonRestWeight}%`, backgroundColor: RESIDUAL_COLOR }} />
@@ -684,22 +685,23 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           </View>
 
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 7 }}>
-            {ribbon.map((l, i) => (
-              <View key={`${l.symbol}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: lineColor(i) }} />
+            {ribbon.map((c, i) => (
+              <View key={`${c.symbol || 'cash'}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: c.isCash ? '#94a3b8' : lineColor(i) }} />
                 <Text style={{ fontSize: 7, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>
-                  {l.weightPct > 80 ? `${l.symbol} — ${l.name}` : l.symbol} {l.weightPct.toFixed(0)} % · {fmt(l.totalCostCad)}
+                  {c.isCash ? 'Encaisse' : (c.weightPct > 80 ? `${c.symbol} — ${c.name}` : c.symbol)} {c.weightPct.toFixed(0)} % · {fmt(c.marketValue)}
                 </Text>
               </View>
             ))}
             {ribbonRestWeight > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: RESIDUAL_COLOR }} />
-                <Text style={{ fontSize: 7, color: '#64748b' }}>Autres achats {ribbonRestWeight.toFixed(0)} %</Text>
+                <Text style={{ fontSize: 7, color: '#64748b' }}>Autres {ribbonRestWeight.toFixed(0)} % · {fmt(ribbonRestValue)}</Text>
               </View>
             )}
           </View>
         </View>
+        )}
 
         {/* ─ Tableau « chaque achat, aujourd'hui » ─ */}
         <View style={[styles.tablePremium, { marginTop: 10, marginBottom: 0 }]}>
@@ -745,8 +747,14 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                     {l.status === 'closed' && <Text style={styles.badgeNeutral}>Revendu</Text>}
                   </View>
                   <Text style={{ marginTop: 1, fontSize: 6.5, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>{l.name}</Text>
-                  {l.status === 'partial' && (
-                    <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>revendu en partie</Text>
+                  {(l.status === 'partial' || l.status === 'unmatched' || l.status === 'unpriceable') && (
+                    <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>
+                      {l.status === 'partial'
+                        ? 'revendu en partie'
+                        : l.status === 'unmatched'
+                        ? 'non retrouvé au portefeuille'
+                        : 'prix actuel indisponible'}
+                    </Text>
                   )}
                 </View>
                 <View style={{ width: COL.prix, paddingHorizontal: 4 }}>
@@ -822,18 +830,25 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
               <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase', letterSpacing: 0.8 }}>
                 Total des achats
               </Text>
-              <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>écart sur les parts encore détenues</Text>
+              <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>
+                {hasHeld
+                  ? `valeur et écart sur les ${fmt(d.costEvaluated)} détenus au complet (${d.coveragePct.toFixed(0)} %)`
+                  : 'aucune part suivie au complet'}
+              </Text>
             </View>
             <Text style={{ width: COL.prix }} />
-            <Text style={{ width: COL.investi, textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', paddingHorizontal: 4 }}>
-              {fmt(d.totalBuys)}
-            </Text>
+            <View style={{ width: COL.investi, paddingHorizontal: 4 }}>
+              <Text style={{ textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                {fmt(d.totalBuys)}
+              </Text>
+              <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>investi au total</Text>
+            </View>
             <View style={{ width: COL.vaut, paddingHorizontal: 4 }}>
               <Text style={{ textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#fdba74' }}>
                 {hasHeld ? fmt(d.valueEvaluated) : '—'}
               </Text>
               {hasHeld && (
-                <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>coût : {fmt(d.costEvaluated)}</Text>
+                <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>des {fmt(d.costEvaluated)} détenus</Text>
               )}
             </View>
             <View style={{ width: COL.ecart, paddingHorizontal: 4, alignItems: 'flex-end' }}>

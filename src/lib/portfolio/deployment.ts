@@ -117,6 +117,17 @@ export function accountLabel(code: string): string | null {
   return ACCOUNT_TYPE_MAP[c] ?? ACCOUNT_TYPE_MAP[c[0]] ?? null;
 }
 
+/** Poids RÉEL d'une position dans le portefeuille AUJOURD'HUI = valeur marchande
+ *  actuelle / valeur totale du portefeuille (données des cours cibles). N'a AUCUN
+ *  rapport avec les achats de l'année — c'est la concentration réelle du compte. */
+export interface PortfolioConcentrationSlice {
+  symbol: string;      // '' pour l'encaisse
+  name: string;        // « Encaisse » pour le comptant
+  marketValue: number; // CAD (valeur actuelle)
+  weightPct: number;   // marketValue / portfolioTotalValue × 100
+  isCash: boolean;
+}
+
 export interface DeploymentSummary {
   period: ActivityPeriod;
   periodLabel: string;
@@ -154,6 +165,12 @@ export interface DeploymentSummary {
   /** Ancienneté moyenne des dépôts, pondérée par les montants, en mois (30,44 j). */
   avgDepositAgeMonths: number | null;
   lines: DeploymentLine[]; // triées par totalCostCad décroissant
+  /** Valeur marchande TOTALE du portefeuille (Σ |marketValue| des positions), CAD. */
+  portfolioTotalValue: number;
+  /** Concentration RÉELLE du portefeuille aujourd'hui (poids par titre = valeur
+   *  actuelle / valeur totale), triée par valeur décroissante. Indépendante des
+   *  achats de l'année — c'est le poids réel dans le compte, pas la part achetée. */
+  concentration: PortfolioConcentrationSlice[];
   heldCount: number;
   partialCount: number;
   closedCount: number;
@@ -630,6 +647,38 @@ export function buildDeploymentSummary(
     };
   }
 
+  // ── Concentration RÉELLE du portefeuille : poids = valeur actuelle / valeur
+  // totale (données des cours cibles), SANS rapport avec les achats de l'année.
+  // Dénominateur = portefeuille au complet (encaisse incluse) pour coller aux
+  // poids affichés dans le rapport de cours cibles. Multi-comptes agrégés. ──
+  const concByKey = new Map<string, { symbol: string; name: string; marketValue: number; isCash: boolean }>();
+  let portfolioTotalValue = 0;
+  for (const p of positions) {
+    const mv = Math.abs(p.marketValue);
+    if (!(mv > 0)) continue;
+    portfolioTotalValue += mv;
+    const isCash = (p.assetType ?? '').trim().toUpperCase() === 'CASH';
+    const sym = p.symbol.trim().toUpperCase();
+    const key = isCash ? '__ENCAISSE__' : (canonKey(p.symbol) || sym);
+    const cur = concByKey.get(key) ?? {
+      symbol: isCash ? '' : sym,
+      name: isCash ? 'Encaisse' : (p.name?.trim() || sym),
+      marketValue: 0,
+      isCash,
+    };
+    cur.marketValue += mv;
+    concByKey.set(key, cur);
+  }
+  const concentration: PortfolioConcentrationSlice[] = [...concByKey.values()]
+    .map(c => ({
+      symbol: c.symbol,
+      name: c.name,
+      marketValue: c.marketValue,
+      weightPct: portfolioTotalValue > 0 ? (c.marketValue / portfolioTotalValue) * 100 : 0,
+      isCash: c.isCash,
+    }))
+    .sort((a, b) => b.marketValue - a.marketValue);
+
   return {
     period,
     periodLabel,
@@ -661,6 +710,8 @@ export function buildDeploymentSummary(
       ? depositAgeWeighted / contrib.total / 30.44
       : null,
     lines,
+    portfolioTotalValue,
+    concentration,
     heldCount: held.length,
     partialCount: lines.filter(l => l.status === 'partial').length,
     closedCount: lines.filter(l => l.status === 'closed').length,

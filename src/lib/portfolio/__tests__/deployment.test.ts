@@ -395,6 +395,35 @@ describe("buildDeploymentSummary — données réelles (partie double)", () => {
   });
 });
 
+describe("buildDeploymentSummary — concentration RÉELLE du portefeuille", () => {
+  const d = resume()!;
+
+  it("poids = valeur actuelle / valeur totale (PAS les achats), multi-comptes agrégés", () => {
+    // 24 000 RY (deux comptes fusionnés) + 4 800 XEQT + 3 000 AAPL = 31 800
+    expect(d.portfolioTotalValue).toBeCloseTo(31800, 2);
+    const top = d.concentration[0];
+    expect(top.symbol).toBe("RY.TO");
+    expect(top.marketValue).toBeCloseTo(24000, 2);
+    expect(top.weightPct).toBeCloseTo(75.47, 1);
+    // trié par valeur décroissante ; somme des poids = 100 %
+    expect(d.concentration.map(c => c.symbol)).toEqual(["RY.TO", "XEQT.TO", "AAPL"]);
+    expect(d.concentration.reduce((s, c) => s + c.weightPct, 0)).toBeCloseTo(100, 6);
+  });
+
+  it("l'encaisse (assetType CASH) est une tranche « Encaisse » dans le dénominateur", () => {
+    const dc = buildDeploymentSummary(
+      parseCroesusActivity(PASTE), "year_to_date",
+      [{ symbol: "RY.TO", quantity: 100, marketValue: 8000, currentPrice: 80 },
+       { symbol: "CASH", assetType: "CASH", quantity: 2000, marketValue: 2000 }],
+      { usdCadRate: 1.35, endDate: END })!;
+    expect(dc.portfolioTotalValue).toBeCloseTo(10000, 2);
+    const cash = dc.concentration.find(c => c.isCash)!;
+    expect(cash.name).toBe("Encaisse");
+    expect(cash.symbol).toBe("");
+    expect(cash.weightPct).toBeCloseTo(20, 2);
+  });
+});
+
 describe("canonKey — rapprochement de symboles", () => {
   it("retire les suffixes de bourse et unifie les séparateurs", () => {
     expect(canonKey("RY.TO")).toBe("RY");
