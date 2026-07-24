@@ -42,9 +42,18 @@ export interface DeploymentLine {
   soldQty: number;
   currentQty: number | null;        // position AGRÉGÉE multi-comptes ; null si introuvable
   currentUnitValue: number | null;
-  currentValue: number | null;      // boughtQty × currentUnitValue — SEULEMENT 'held'
-  deltaAbs: number | null;          // SEULEMENT 'held'
-  deltaPct: number | null;          // SEULEMENT 'held'
+  /** « Valeur aujourd'hui » = ce que l'argent est devenu : parts de l'année encore
+   *  détenues (au marché) + argent encaissé aux ventes. Renseignée pour 'held',
+   *  'partial' ET 'closed' ; null pour 'unmatched'/'unpriceable'. */
+  currentValue: number | null;
+  /** Valeur marchande des seules parts ENCORE détenues (composante « détenu » de
+   *  currentValue) — pour le sous-libellé « détenu X + encaissé Y ». */
+  heldMarketValue: number | null;
+  /** Argent ENCAISSÉ aux ventes RÉELLEMENT inclus dans currentValue (composante
+   *  « encaissé ») ; 0 quand la vente visait des parts d'avant la période. */
+  soldProceeds: number;
+  deltaAbs: number | null;          // currentValue − coût — latent (détenu) + réalisé (vendu)
+  deltaPct: number | null;
   realizedFromCroesus: number | null; // Σ colonne Gains/Pertes des VENTES — fait du relevé
   status: DeploymentLineStatus;
   /** Obligation : la « quantité » est une valeur NOMINALE ($) et le prix se cote
@@ -319,6 +328,7 @@ export function buildDeploymentSummary(
     totalCostCad: number;
     sellCount: number;
     soldQty: number;
+    soldProceeds: number; // Σ montant net encaissé aux ventes (CAD) — l'argent ressorti
     sellQtyUnknown: boolean; // une vente sans quantité rend le suivi invérifiable
     realizedSum: number;
     realizedSeen: boolean;
@@ -361,7 +371,7 @@ export function buildDeploymentSummary(
         symbol: t.symbol.trim().toUpperCase() || 'INCONNU',
         name: t.name || t.symbol || 'Inconnu',
         buyCount: 0, boughtQty: 0, boughtQtyKnown: true, totalCostCad: 0,
-        sellCount: 0, soldQty: 0, sellQtyUnknown: false, realizedSum: 0, realizedSeen: false,
+        sellCount: 0, soldQty: 0, soldProceeds: 0, sellQtyUnknown: false, realizedSum: 0, realizedSeen: false,
         firstBuy: null, lastBuy: null,
       };
       const amountCad = Math.abs(toCad(t, t.amount));
@@ -382,6 +392,7 @@ export function buildDeploymentSummary(
       } else {
         rec.sellCount += 1;
         acc.sellCount += 1;
+        acc.soldProceeds += amountCad;
         totalSells += amountCad;
         sellEvents.push({ date: t.transactionDate, amountCad });
         if (t.quantity != null) acc.soldQty += Math.abs(t.quantity);
@@ -406,7 +417,7 @@ export function buildDeploymentSummary(
     const acc = bySymbol.get(key) ?? {
       symbol: s.symbol || 'INCONNU', name: s.name || s.symbol || 'Inconnu',
       buyCount: 0, boughtQty: 0, boughtQtyKnown: true, totalCostCad: 0,
-      sellCount: 0, soldQty: 0, sellQtyUnknown: false, realizedSum: 0, realizedSeen: false,
+      sellCount: 0, soldQty: 0, soldProceeds: 0, sellQtyUnknown: false, realizedSum: 0, realizedSeen: false,
       firstBuy: null, lastBuy: null,
     };
     rec.buyCount += 1;
@@ -475,7 +486,31 @@ export function buildDeploymentSummary(
       else if (a.sellQtyUnknown) status = 'partial';
       else status = 'held';
 
-      const currentValue = status === 'held' ? a.boughtQty * (currentUnitValue as number) : null;
+      // « Valeur aujourd'hui » = ce que l'argent est devenu : parts de l'année ENCORE
+      // détenues (au marché) + argent ENCAISSÉ aux ventes. Attribuer les parts
+      // détenues au coût MOYEN (PBR) est exact au Canada — pas une invention. L'écart
+      // qui en découle = latent (sur le détenu) + réalisé (sur le vendu), en un chiffre.
+      const heldQty = currentQty != null ? Math.min(currentQty, a.boughtQty) : null;
+      const heldMarketValue =
+        currentUnitValue != null && heldQty != null && heldQty > 0
+          ? heldQty * currentUnitValue
+          : status === 'closed' ? 0 : null;
+      // On n'ajoute l'argent ENCAISSÉ que si des parts DE L'ANNÉE ont vraiment été
+      // vendues (position < achats) ou si tout est revendu ('closed'). Une vente à
+      // quantité inconnue avec position ≥ achats vise des parts d'AVANT → ignorée.
+      const soldThisYear = status === 'closed'
+        || (status === 'partial' && currentQty != null && currentQty < a.boughtQty);
+      const proceedsCounted = soldThisYear ? a.soldProceeds : 0;
+      let currentValue: number | null;
+      if (status === 'held') {
+        currentValue = a.boughtQty * (currentUnitValue as number);
+      } else if (status === 'partial') {
+        currentValue = heldMarketValue != null ? heldMarketValue + proceedsCounted : null;
+      } else if (status === 'closed') {
+        currentValue = proceedsCounted; // = soldProceeds : l'argent est ressorti en encaisse
+      } else {
+        currentValue = null; // unmatched / unpriceable : rien de fiable à afficher
+      }
       const deltaAbs = currentValue != null ? currentValue - a.totalCostCad : null;
       const deltaPct = deltaAbs != null && a.totalCostCad > 0 ? (deltaAbs / a.totalCostCad) * 100 : null;
 
@@ -499,6 +534,8 @@ export function buildDeploymentSummary(
         currentQty,
         currentUnitValue,
         currentValue,
+        heldMarketValue,
+        soldProceeds: proceedsCounted, // le montant réellement inclus dans currentValue
         deltaAbs,
         deltaPct,
         realizedFromCroesus: a.realizedSeen ? a.realizedSum : null,

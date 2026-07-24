@@ -103,17 +103,23 @@ describe("buildDeploymentSummary — statuts (la garde d'honnêteté)", () => {
     expect(ry.deltaAbs).toBeCloseTo(1000, 6);
   });
 
-  it("XEQT : 150 détenues < 200 achetées → partial, AUCUN écart affiché", () => {
+  it("XEQT : 150 détenues < 200 achetées → partial, valeur = détenu + encaissé", () => {
     const x = ligne("XEQT");
     expect(x.status).toBe("partial");
-    expect(x.currentValue).toBeNull();
-    expect(x.deltaAbs).toBeNull();
+    // détenu 150 × 32 = 4800  +  encaissé (vente 50 @ 36) 1800  =  6600
+    expect(x.heldMarketValue).toBeCloseTo(4800, 6);
+    expect(x.soldProceeds).toBeCloseTo(1800, 6);
+    expect(x.currentValue).toBeCloseTo(6600, 6);
+    expect(x.deltaAbs).toBeCloseTo(600, 6); // 6600 − 6000 = latent + réalisé
   });
 
-  it("TD : absent du portefeuille + ventes → closed, réalisé = FAIT Croesus (400)", () => {
+  it("TD : absent du portefeuille + ventes → closed, valeur = argent encaissé (3600)", () => {
     const td = ligne("TD");
     expect(td.status).toBe("closed");
-    expect(td.currentValue).toBeNull();
+    expect(td.heldMarketValue).toBe(0);
+    expect(td.soldProceeds).toBeCloseTo(3600, 6);
+    expect(td.currentValue).toBeCloseTo(3600, 6); // tout revendu → 3600 encaissé
+    expect(td.deltaAbs).toBeCloseTo(400, 6);       // 3600 − 3200 = réalisé Croesus 400
     expect(td.realizedFromCroesus).toBe(400);
   });
 
@@ -198,7 +204,7 @@ describe("buildDeploymentSummary — gardes d'honnêteté supplémentaires", () 
     expect(d.lines[0].status).toBe("unmatched");
   });
 
-  it("vente à quantité inconnue → held dégradé en partial (écart invérifiable)", () => {
+  it("vente à quantité inconnue mais position ≥ achats → parts de l'année détenues, encaissé ignoré", () => {
     const tx = parseCroesusActivity(
       ["Nom\tDate de transaction\tType\tSymbole\tQuantité\tDevise\tTotal",
        "GOO\t2026-02-01\tAchat\tGOO\t10\tCAD\t1000",
@@ -208,7 +214,11 @@ describe("buildDeploymentSummary — gardes d'honnêteté supplémentaires", () 
       [{ symbol: "GOO", quantity: 10, marketValue: 1200, currentPrice: 120 }],
       { endDate: END })!;
     expect(d.lines[0].status).toBe("partial");
-    expect(d.lines[0].deltaAbs).toBeNull();
+    // les 10 parts de l'année sont toutes encore détenues → 10 × 120 = 1200 ; la
+    // vente (quantité inconnue) visait des parts d'AVANT → encaissé NON compté.
+    expect(d.lines[0].soldProceeds).toBe(0);
+    expect(d.lines[0].currentValue).toBeCloseTo(1200, 6);
+    expect(d.lines[0].deltaAbs).toBeCloseTo(200, 6);
   });
 });
 

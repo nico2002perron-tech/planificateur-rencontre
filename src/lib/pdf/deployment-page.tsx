@@ -275,6 +275,8 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const hasHeld = d.heldCount > 0;
   const totalTitres = d.lines.length;
   const nonHeldCount = d.partialCount + d.closedCount + d.unmatchedCount + d.unpriceableCount;
+  const tradedCount = d.partialCount + d.closedCount;        // achetés ET revendus (valeur = détenu + encaissé)
+  const noValueCount = d.unmatchedCount + d.unpriceableCount; // seuls titres encore à « — »
   const allSold = d.closedCount === totalTitres;
   const top = d.lines[0];
   const zeroOverride = d.contributionsOverridden && d.contributions === 0;
@@ -360,9 +362,11 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const rest = d.lines.slice(shown.length);
   const restCost = rest.reduce((s, l) => s + l.totalCostCad, 0);
   const restWeight = rest.reduce((s, l) => s + l.weightPct, 0);
-  const restHeld = rest.filter(l => l.status === 'held');
-  const restValueHeld = restHeld.reduce((s, l) => s + (l.currentValue ?? 0), 0);
-  const restDeltaHeld = restHeld.reduce((s, l) => s + (l.deltaAbs ?? 0), 0);
+  // « Valeur aujourd'hui » de tous les titres agrégés qui en ont une (détenus,
+  // partiels ET revendus) — même modèle que les lignes individuelles.
+  const restValued = rest.filter(l => l.currentValue != null);
+  const restValue = restValued.reduce((s, l) => s + (l.currentValue ?? 0), 0);
+  const restDelta = restValued.reduce((s, l) => s + (l.deltaAbs ?? 0), 0);
 
   // ── Ruban (page 2) : CONCENTRATION RÉELLE du portefeuille (poids par titre =
   // valeur actuelle / valeur totale, données des cours cibles), PAS les achats. ──
@@ -768,21 +772,27 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                 <Text style={{ width: COL.investi, textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, paddingHorizontal: 4 }}>
                   {fmt(l.totalCostCad)}
                 </Text>
-                <Text style={{ width: COL.vaut, textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: l.status === 'held' ? C.navy : '#94a3b8', paddingHorizontal: 4 }}>
-                  {l.status === 'held' && l.currentValue != null ? fmt(l.currentValue) : '—'}
-                </Text>
+                <View style={{ width: COL.vaut, paddingHorizontal: 4 }}>
+                  <Text style={{ textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: l.currentValue != null ? C.navy : '#94a3b8' }}>
+                    {l.currentValue != null ? fmt(l.currentValue) : '—'}
+                  </Text>
+                  {/* Titre acheté ET revendu (partiellement/complètement) : d'où vient la valeur. */}
+                  {l.currentValue != null && l.soldProceeds > 0 && (
+                    <Text style={{ textAlign: 'right', fontSize: 6, color: '#94a3b8' }}>
+                      {l.heldMarketValue != null && l.heldMarketValue > 0
+                        ? `détenu ${fmt(l.heldMarketValue)} + encaissé ${fmt(l.soldProceeds)}`
+                        : 'encaissé (revendu)'}
+                    </Text>
+                  )}
+                </View>
                 <View style={{ width: COL.ecart, paddingHorizontal: 4, alignItems: 'flex-end' }}>
-                  {l.status === 'held' && l.deltaPct != null && l.deltaAbs != null ? (
+                  {l.deltaPct != null && l.deltaAbs != null ? (
                     <>
                       <PctPill value={l.deltaPct} />
                       <Text style={{ marginTop: 1, fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(l.deltaAbs) }}>
                         {fmt(l.deltaAbs)}
                       </Text>
                     </>
-                  ) : l.status === 'closed' && l.realizedFromCroesus != null ? (
-                    <Text style={{ fontSize: 6.5, color: gc(l.realizedFromCroesus) }}>
-                      à la revente : {fmt(l.realizedFromCroesus)}
-                    </Text>
                   ) : (
                     <Text style={{ fontSize: 8, color: '#94a3b8' }}>—</Text>
                   )}
@@ -804,10 +814,10 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                 {fmt(restCost)}
               </Text>
               <Text style={{ width: COL.vaut, textAlign: 'right', fontSize: 8, color: '#64748b', paddingHorizontal: 4 }}>
-                {restHeld.length > 0 ? fmt(restValueHeld) : '—'}
+                {restValued.length > 0 ? fmt(restValue) : '—'}
               </Text>
-              <Text style={{ width: COL.ecart, textAlign: 'right', fontSize: 7, color: restHeld.length > 0 ? gc(restDeltaHeld) : '#94a3b8', paddingHorizontal: 4 }}>
-                {restHeld.length > 0 ? fmt(restDeltaHeld) : '—'}
+              <Text style={{ width: COL.ecart, textAlign: 'right', fontSize: 7, color: restValued.length > 0 ? gc(restDelta) : '#94a3b8', paddingHorizontal: 4 }}>
+                {restValued.length > 0 ? fmt(restDelta) : '—'}
               </Text>
             </View>
           )}
@@ -868,15 +878,22 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           </View>
         </View>
 
-        {/* Le tiret expliqué là où le client le voit */}
+        {/* Comment lire la valeur et le tiret, là où le client le voit */}
         <Text style={{ marginTop: 6, fontSize: 7.5, color: '#475569', lineHeight: 1.4 }}>
-          {hasHeld && nonHeldCount > 0
-            ? `Un tiret (—) indique qu'une partie des parts a été revendue ou que le suivi complet n'est pas possible : aucun écart n'est alors affiché. L'écart de ${fmt(d.deltaAbs)} porte sur les ${d.heldCount} titre${plur(d.heldCount)} détenus au complet (${d.coveragePct.toFixed(0)} % de l'argent investi) ; les revenus encaissés figurent à la page Activité et n'y sont pas inclus.`
-            : hasHeld
-              ? `L'écart de ${fmt(d.deltaAbs)} porte sur l'ensemble des titres achetés, tous encore détenus ; les revenus encaissés figurent à la page Activité et n'y sont pas inclus.`
+          {[
+            hasHeld
+              ? `Écart de ${fmt(d.deltaAbs)} sur les ${d.heldCount} titre${plur(d.heldCount)} détenus au complet (${d.coveragePct.toFixed(0)} % de l'investi).`
               : allSold
-                ? "Toutes les parts achetées ont été revendues : aucun écart n'est affiché. Les revenus encaissés figurent à la page Activité."
-                : "Un tiret (—) indique que le suivi complet n'est pas possible (parts revendues en partie ou position non retrouvée) : aucun écart n'est affiché. Les revenus encaissés figurent à la page Activité."}
+                ? 'Toutes les parts achetées ont été revendues durant la période.'
+                : null,
+            tradedCount > 0
+              ? "Un titre revendu en partie affiche la valeur des parts détenues + l'argent encaissé (écart = latent + réalisé) ; il n'entre pas dans le total, pour ne pas compter deux fois l'argent réinvesti."
+              : null,
+            noValueCount > 0
+              ? 'Un tiret (—) : titre non retrouvé au portefeuille ou sans prix actuel.'
+              : null,
+            'Revenus encaissés : voir la page Activité (non inclus ici).',
+          ].filter(Boolean).join(' ')}
         </Text>
 
         {/* Note méthodologique complète — l'arithmétique boucle */}
