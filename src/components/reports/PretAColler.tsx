@@ -1308,6 +1308,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         marketValue: 0,
         currency: h.currency,
         currentPrice: undefined,
+        assetType: h.assetType, // ex. FIXED_INCOME → cotation par 100 $ nominal
       };
       cur.quantity += h.quantity;
       cur.marketValue += h.marketValue * symFx;

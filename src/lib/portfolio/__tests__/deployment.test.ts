@@ -382,6 +382,17 @@ describe("buildDeploymentSummary — données réelles (partie double)", () => {
     expect(d.deposits).toBeCloseTo(43500, 2);
     expect(d.cashOnHand).toBeCloseTo(17535.52, 2);
   });
+
+  it("garde-fou : 1 transfert en nature détecté et compté une seule fois", () => {
+    expect(d.mirrorsDropped).toBe(1); // le miroir encaisse du FIRM CAP est écarté
+  });
+
+  it("obligation : FC.DB.M marquée isBond (cotée par 100 $ nominal)", () => {
+    const fc = d.lines.find(l => l.symbol === "FC.DB.M")!;
+    expect(fc.isBond).toBe(true);
+    // avgUnitCost ≈ 1,009 (4035,20 / 4000 nominal) → l'affichage ×100 donne ~100,9
+    expect(fc.avgUnitCost).toBeCloseTo(1.0088, 3);
+  });
 });
 
 describe("canonKey — rapprochement de symboles", () => {

@@ -27,6 +27,7 @@ export interface DeploymentPosition {
   marketValue: number;
   currency?: string;
   currentPrice?: number; // déjà en CAD document quand fourni
+  assetType?: string;    // ex. 'FIXED_INCOME' → cotation par tranche de 100 $ nominal
 }
 
 export interface DeploymentLine {
@@ -46,6 +47,9 @@ export interface DeploymentLine {
   deltaPct: number | null;          // SEULEMENT 'held'
   realizedFromCroesus: number | null; // Σ colonne Gains/Pertes des VENTES — fait du relevé
   status: DeploymentLineStatus;
+  /** Obligation : la « quantité » est une valeur NOMINALE ($) et le prix se cote
+   *  par tranche de 100 $ — l'affichage multiplie le prix unitaire par 100. */
+  isBond: boolean;
 }
 
 export interface DeploymentReconciliation {
@@ -142,6 +146,9 @@ export interface DeploymentSummary {
   /** Nombre et total des acquisitions faites en nature (cotisation en titres). */
   inKindCount: number;
   inKindTotal: number;
+  /** Transferts EN NATURE détectés et comptés une seule fois (jambes miroir écartées).
+   *  > 0 → à signaler visiblement (garde-fou anti-double-compte). */
+  mirrorsDropped: number;
   /** Date ISO du premier dépôt de la fenêtre (fait de dates, idée bonus). */
   firstContributionDate: string | null;
   /** Ancienneté moyenne des dépôts, pondérée par les montants, en mois (30,44 j). */
@@ -211,6 +218,7 @@ interface AggregatedPosition {
   marketValue: number;
   currentPrice: number | null;
   name?: string;
+  assetType?: string;
 }
 
 /** Agrège les positions multi-comptes (CELI + REER du même titre) AVANT le join. */
@@ -224,12 +232,13 @@ function aggregatePositions(positions: DeploymentPosition[]): {
   const byBase = new Map<string, AggregatedPosition>();
   const fold = (map: Map<string, AggregatedPosition>, key: string, p: DeploymentPosition) => {
     if (!key) return;
-    const cur = map.get(key) ?? { quantity: 0, marketValue: 0, currentPrice: null, name: p.name };
+    const cur = map.get(key) ?? { quantity: 0, marketValue: 0, currentPrice: null, name: p.name, assetType: p.assetType };
     cur.quantity += p.quantity;
     cur.marketValue += Math.abs(p.marketValue);
     if (cur.currentPrice == null && typeof p.currentPrice === 'number' && p.currentPrice > 0) {
       cur.currentPrice = p.currentPrice;
     }
+    if (!cur.assetType && p.assetType) cur.assetType = p.assetType;
     map.set(key, cur);
   };
   for (const p of positions) {
@@ -453,9 +462,16 @@ export function buildDeploymentSummary(
       const deltaAbs = currentValue != null ? currentValue - a.totalCostCad : null;
       const deltaPct = deltaAbs != null && a.totalCostCad > 0 ? (deltaAbs / a.totalCostCad) * 100 : null;
 
+      // Obligation : via le type d'actif de la position, ou à défaut le nom qui
+      // porte un coupon (« 5.5% ») et/ou une échéance. Sa « quantité » = nominal.
+      const nomLigne = pos?.name || a.name;
+      const isBond = pos?.assetType === 'FIXED_INCOME'
+        || /\d[.,]?\d*\s*%/.test(nomLigne)
+        || a.symbol.includes('.DB.');
+
       return {
         symbol: a.symbol,
-        name: pos?.name || a.name,
+        name: nomLigne,
         buyCount: a.buyCount,
         boughtQty: a.boughtQty,
         totalCostCad: a.totalCostCad,
@@ -470,6 +486,7 @@ export function buildDeploymentSummary(
         deltaPct,
         realizedFromCroesus: a.realizedSeen ? a.realizedSum : null,
         status,
+        isBond,
       };
     })
     .sort((x, y) => y.totalCostCad - x.totalCostCad);
@@ -637,6 +654,7 @@ export function buildDeploymentSummary(
     cashOnHand: opts.cashBalance ?? null,
     inKindCount,
     inKindTotal,
+    mirrorsDropped: overridden ? 0 : contrib.mirrorsDropped,
     firstContributionDate,
     // L'ancienneté moyenne n'est un fait que sur les dépôts DÉTECTÉS (pas l'override).
     avgDepositAgeMonths: contrib.count > 0 && contrib.total > 0 && !overridden

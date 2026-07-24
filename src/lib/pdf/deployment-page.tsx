@@ -522,11 +522,14 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
             </View>
           </View>
         )}
-        {/* Note d'honnêteté condensée */}
+        {/* Note d'honnêteté condensée + garde-fou : dédup des transferts en nature. */}
         <Text style={{ marginTop: 4, fontSize: 6.5, color: '#94a3b8', lineHeight: 1.4 }}>
           {d.contributionsSecurities > 0
             ? 'Les apports en titres sont aussi comptés dans les achats ci-dessous. Une partie des dépôts peut demeurer en encaisse.'
             : 'Une partie des dépôts peut demeurer en encaisse ; les achats ci-dessous puisent aussi dans les ventes et l’argent déjà au compte.'}
+          {d.mirrorsDropped > 0
+            ? ` ${d.mirrorsDropped} transfert${d.mirrorsDropped > 1 ? 's' : ''} en nature compté${d.mirrorsDropped > 1 ? 's' : ''} une seule fois (jambe comptable miroir écartée).`
+            : ''}
         </Text>
 
         {/* ─ La timeline, généreuse ─ */}
@@ -710,9 +713,15 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
 
           {shown.map((l: DeploymentLine, i: number) => {
             const isBoundary = (i + 1) % 5 === 0 && i < shown.length - 1;
+            // Obligation : « quantité » = valeur nominale ($), prix coté par tranche
+            // de 100 $ → on multiplie le prix unitaire par 100 pour l'affichage.
+            const px = l.isBond ? 100 : 1;
+            const prixAffiche = l.avgUnitCost > 0 ? fmtFull(l.avgUnitCost * px) : '—';
             const sousLignePrix = [
-              l.boughtQty > 0 ? `${l.boughtQty.toLocaleString('fr-CA')} parts` : '',
-              l.currentUnitValue != null && l.status !== 'closed' ? `auj. ${fmtFull(l.currentUnitValue)}` : '',
+              l.boughtQty > 0
+                ? (l.isBond ? `${l.boughtQty.toLocaleString('fr-CA')} $ nom.` : `${l.boughtQty.toLocaleString('fr-CA')} parts`)
+                : '',
+              l.currentUnitValue != null && l.status !== 'closed' ? `auj. ${fmtFull(l.currentUnitValue * px)}` : '',
             ].filter(Boolean).join(' · ');
             return (
               <View
@@ -742,7 +751,7 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                 </View>
                 <View style={{ width: COL.prix, paddingHorizontal: 4 }}>
                   <Text style={{ textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
-                    {l.avgUnitCost > 0 ? fmtFull(l.avgUnitCost) : '—'}
+                    {prixAffiche}
                   </Text>
                   {sousLignePrix !== '' && (
                     <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>{sousLignePrix}</Text>

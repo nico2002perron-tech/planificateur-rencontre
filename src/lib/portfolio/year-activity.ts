@@ -568,6 +568,9 @@ export interface ContributionAnalysis {
   securityList: ContributionSecurity[];
   byAccount: { label: string; amountCad: number }[];
   events: ContributionEvent[]; // triés par date
+  /** Jambes encaisse miroir écartées (= transferts EN NATURE comptés une seule fois).
+   *  > 0 signale qu'une dédup a été appliquée — à rendre visible. */
+  mirrorsDropped: number;
 }
 
 /**
@@ -644,6 +647,7 @@ export function analyzeContributions(
       .map(([label, amountCad]) => ({ label, amountCad }))
       .sort((a, b) => b.amountCad - a.amountCad),
     events,
+    mirrorsDropped: cashLegs.length - survivingCash.length,
   };
 }
 
