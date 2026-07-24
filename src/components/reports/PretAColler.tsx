@@ -1322,6 +1322,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     return [...map.values()];
   }, [holdings, targetData, convertUsdToCad, usdCadRate]);
 
+  // Encaisse actuelle = somme des lignes « Solde du compte » (assetType CASH) du
+  // portefeuille (USD converti au taux du document quand la conversion est active).
+  const deploymentCashBalance = useMemo(() => {
+    const fx = convertUsdToCad && usdCadRate ? usdCadRate : 1;
+    return holdings
+      .filter(h => h.assetType === 'CASH')
+      .reduce((s, h) => s + h.marketValue * (h.currency === 'USD' ? fx : 1), 0);
+  }, [holdings, convertUsdToCad, usdCadRate]);
+
   const deploymentSummary = useMemo(() => {
     if (activityParsing.transactions.length === 0) return null;
     // portfolioValues : MÊMES valeurs que celles passées à buildPortfolioActivitySummary
@@ -1339,12 +1348,16 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         portfolioValues: starting != null && activityCurrentValue > 0
           ? { starting, current: activityCurrentValue }
           : undefined,
+        // Encaisse actuelle = somme des lignes « Solde du compte » (assetType CASH)
+        // du portefeuille collé — le raccourci de Nicolas, pas un calcul.
+        cashBalance: deploymentCashBalance,
       }
     );
   }, [
     activityParsing.transactions,
     activityPeriod,
     deploymentPositions,
+    deploymentCashBalance,
     convertUsdToCad,
     usdCadRate,
     activityContributionsOverride,

@@ -11,8 +11,8 @@
 //   un FAIT du relevé) est exposé — jamais un réalisé calculé maison.
 // - Aucune I/O : les positions actuelles et le taux USD sont injectés.
 
-import type { CroesusActivityTransaction, ActivityPeriod, MonthlyPortfolioActivity } from './year-activity';
-import { getActivityWindow, parseDate, buildMonthBuckets } from './year-activity';
+import type { CroesusActivityTransaction, ActivityPeriod, MonthlyPortfolioActivity, ContributionSecurity } from './year-activity';
+import { getActivityWindow, parseDate, buildMonthBuckets, analyzeContributions } from './year-activity';
 // Import sans cycle (croesus-parser n'importe rien de lib/portfolio) ; si un
 // cycle apparaît un jour, extraire la map vers lib/portfolio/account-labels.ts.
 import { ACCOUNT_TYPE_MAP } from '@/lib/parsers/croesus-parser';
@@ -52,6 +52,7 @@ export interface DeploymentReconciliation {
   windowTransactionCount: number;
   incomeCount: number;
   contributionCount: number;
+  depositCount: number;
   withdrawalCount: number;
   buyCount: number;
   sellCount: number;
@@ -124,9 +125,23 @@ export interface DeploymentSummary {
   totalSells: number; // CAD
   firstBuyDate: string | null; // ISO
   lastBuyDate: string | null;  // ISO
-  contributions: number;
+  contributions: number;      // total des cotisations (argent + titres)
   contributionCount: number;
   contributionsOverridden: boolean;
+  /** Cotisations EN ARGENT (comptant) — jambes encaisse retenues. */
+  contributionsCash: number;
+  /** Cotisations EN TITRES (en nature) — apports portant un titre. */
+  contributionsSecurities: number;
+  /** Les apports en titres (= acquisitions), pour le détail. */
+  contributedSecurities: ContributionSecurity[];
+  /** Argent frais réellement DÉPOSÉ (type « Dépôt »), distinct des cotisations. */
+  deposits: number;
+  /** Encaisse ACTUELLE au compte (somme des lignes « Solde du compte » du
+   *  portefeuille), injectée via opts.cashBalance ; null si non fournie. */
+  cashOnHand: number | null;
+  /** Nombre et total des acquisitions faites en nature (cotisation en titres). */
+  inKindCount: number;
+  inKindTotal: number;
   /** Date ISO du premier dépôt de la fenêtre (fait de dates, idée bonus). */
   firstContributionDate: string | null;
   /** Ancienneté moyenne des dépôts, pondérée par les montants, en mois (30,44 j). */
@@ -240,6 +255,8 @@ export function buildDeploymentSummary(
      *  « Valeur au début de la période » de l'onglet Activité) — un starting
      *  d'une autre date fausserait le plancher en silence. */
     portfolioValues?: { starting: number; current: number };
+    /** Encaisse actuelle = somme des lignes « Solde du compte » du portefeuille. */
+    cashBalance?: number;
   } = {}
 ): DeploymentSummary | null {
   const { start, end } = getActivityWindow(period, opts.endDate ?? new Date());
@@ -259,6 +276,7 @@ export function buildDeploymentSummary(
     windowTransactionCount: inWindow.length,
     incomeCount: 0,
     contributionCount: 0,
+    depositCount: 0,
     withdrawalCount: 0,
     buyCount: 0,
     sellCount: 0,
@@ -282,14 +300,8 @@ export function buildDeploymentSummary(
     lastBuy: string | null;
   }
   const bySymbol = new Map<string, Accum>();
-  let contributions = 0;
-  let contributionCount = 0;
-  let firstContributionDate: string | null = null;
-  let depositAgeWeighted = 0; // Σ (montant × jours écoulés depuis le dépôt)
   let withdrawalsDetected = 0;
-  // Matière première de la timeline : chaque dépôt (date, montant, code de compte)
-  // et chaque achat (date, symbole, montant) — partition chronologique après la boucle.
-  const depositEvents: { date: string; amountCad: number; code: string }[] = [];
+  let deposits = 0; // type « Dépôt » (argent frais), distinct des cotisations
   const buyEvents: { date: string; symbol: string; name: string; amountCad: number }[] = [];
   const sellEvents: { date: string; amountCad: number }[] = [];
   let totalBuys = 0;
@@ -298,30 +310,25 @@ export function buildDeploymentSummary(
   let lastBuyDate: string | null = null;
   const monthly = new Map<string, number>();
 
+  // Cotisations : partie double Croesus → analyseur partagé (jambes négatives,
+  // split argent/titres, dédup des miroirs). Les jambes de cotisation sont donc
+  // SORTIES de la boucle ci-dessous (sinon elles gonflaient cotisations ET retraits).
+  const contrib = analyzeContributions(inWindow, toCad);
+  const isCotis = (t: CroesusActivityTransaction) => t.type.toLowerCase().includes('cotisation');
+  const isDepot = (t: CroesusActivityTransaction) =>
+    t.type.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes('depot');
+
   for (const t of inWindow) {
+    if (isCotis(t)) { rec.contributionCount += 1; continue; } // totaux via `contrib`
+    if (isDepot(t)) { deposits += Math.abs(toCad(t, t.amount)); rec.depositCount += 1; continue; }
     if (t.category === 'income') { rec.incomeCount += 1; continue; }
-    if (t.category === 'contribution') {
-      rec.contributionCount += 1;
-      contributionCount += 1;
-      const amt = Math.abs(toCad(t, t.amount));
-      contributions += amt;
-      if (!firstContributionDate || t.transactionDate < firstContributionDate) {
-        firstContributionDate = t.transactionDate;
-      }
-      const dDate = parseDate(t.transactionDate);
-      if (dDate) {
-        depositAgeWeighted += amt * Math.max(0, (end.getTime() - dDate.getTime()) / 86_400_000);
-      }
-      depositEvents.push({ date: t.transactionDate, amountCad: amt, code: t.accountCode });
-      continue;
-    }
     if (t.category === 'withdrawal') {
       rec.withdrawalCount += 1;
       withdrawalsDetected += Math.abs(toCad(t, t.amount));
       continue;
     }
 
-    // category === 'other' : achats / ventes / vraiment autres
+    // achats / ventes / vraiment autres
     if (t.tradeKind === 'buy' || t.tradeKind === 'sell') {
       const key = t.symbol.trim().toUpperCase() || t.name.trim().toUpperCase() || 'INCONNU';
       const acc = bySymbol.get(key) ?? {
@@ -364,7 +371,42 @@ export function buildDeploymentSummary(
     }
   }
 
-  if (rec.buyCount === 0) return null; // aucun achat : la page ne se rend pas
+  // Apports en TITRES (cotisation en nature) = acquisitions : le client a bien
+  // acquis ces titres → ils rejoignent les achats, la timeline et le tableau.
+  let inKindTotal = 0;
+  let inKindCount = 0;
+  for (const s of contrib.securityList) {
+    const key = s.symbol || s.name.trim().toUpperCase() || 'INCONNU';
+    const acc = bySymbol.get(key) ?? {
+      symbol: s.symbol || 'INCONNU', name: s.name || s.symbol || 'Inconnu',
+      buyCount: 0, boughtQty: 0, boughtQtyKnown: true, totalCostCad: 0,
+      sellCount: 0, soldQty: 0, sellQtyUnknown: false, realizedSum: 0, realizedSeen: false,
+      firstBuy: null, lastBuy: null,
+    };
+    rec.buyCount += 1;
+    inKindCount += 1;
+    inKindTotal += s.amountCad;
+    acc.buyCount += 1;
+    acc.totalCostCad += s.amountCad;
+    if (s.quantity != null && s.quantity > 0) acc.boughtQty += s.quantity;
+    else acc.boughtQtyKnown = false;
+    if (!acc.firstBuy || s.date < acc.firstBuy) acc.firstBuy = s.date;
+    if (!acc.lastBuy || s.date > acc.lastBuy) acc.lastBuy = s.date;
+    if (!firstBuyDate || s.date < firstBuyDate) firstBuyDate = s.date;
+    if (!lastBuyDate || s.date > lastBuyDate) lastBuyDate = s.date;
+    totalBuys += s.amountCad;
+    const d = parseDate(s.date);
+    if (d) monthly.set(monthKey(d), (monthly.get(monthKey(d)) ?? 0) + s.amountCad);
+    buyEvents.push({ date: s.date, symbol: acc.symbol, name: acc.name, amountCad: s.amountCad });
+    bySymbol.set(key, acc);
+  }
+
+  if (rec.buyCount === 0) return null; // aucune acquisition : la page ne se rend pas
+
+  // Événements datés de cotisation (pour la timeline).
+  const depositEvents = contrib.events.map(e => ({
+    date: e.date, amountCad: e.amountCad, accountLabel: e.accountLabel,
+  }));
 
   // ── Jointure avec le portefeuille actuel (agrégé multi-comptes d'abord) ──
   const { byExact, byCanon, byBase } = aggregatePositions(positions);
@@ -464,15 +506,14 @@ export function buildDeploymentSummary(
   let depositsWithoutFollowingBuy = 0;
   let depositCadenceRegular: boolean | null = null;
 
-  if (!overridden && contributionCount > 0) {
-    // Fusion de TOUS les dépôts d'un même jour en UN chapitre (attribuer les
-    // achats entre deux dépôts du même jour serait arbitraire).
+  if (!overridden && contrib.count > 0) {
+    // Fusion de TOUTES les cotisations d'un même jour en UN chapitre (attribuer les
+    // achats entre deux du même jour serait arbitraire).
     const parJour = new Map<string, { amountCad: number; accounts: Map<string | null, number> }>();
     for (const dep of depositEvents) {
       const jour = parJour.get(dep.date) ?? { amountCad: 0, accounts: new Map() };
       jour.amountCad += dep.amountCad;
-      const label = accountLabel(dep.code);
-      jour.accounts.set(label, (jour.accounts.get(label) ?? 0) + dep.amountCad);
+      jour.accounts.set(dep.accountLabel, (jour.accounts.get(dep.accountLabel) ?? 0) + dep.amountCad);
       parJour.set(dep.date, jour);
     }
     const jours = [...parJour.keys()].sort();
@@ -516,10 +557,10 @@ export function buildDeploymentSummary(
       topSymbols: [...preTitres.entries()].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([s]) => s),
     };
 
-    // Dépôts par LIBELLÉ de compte (jamais par numéro) ; non mappés → « Autre compte ».
+    // Cotisations par LIBELLÉ de compte ; non mappés → « Autre compte ».
     const parCompte = new Map<string, AccountContribution>();
     for (const dep of depositEvents) {
-      const label = accountLabel(dep.code) ?? 'Autre compte';
+      const label = dep.accountLabel ?? 'Autre compte';
       const cur = parCompte.get(label) ?? { label, amountCad: 0, count: 0 };
       cur.amountCad += dep.amountCad;
       cur.count += 1;
@@ -542,9 +583,18 @@ export function buildDeploymentSummary(
     }
   }
 
+  // Ancienneté moyenne des cotisations (fait de dates, jamais sous override).
+  const firstContributionDate = contrib.events.length > 0
+    ? contrib.events.reduce((min, e) => (e.date < min ? e.date : min), contrib.events[0].date)
+    : null;
+  const depositAgeWeighted = contrib.events.reduce((s, e) => {
+    const d = parseDate(e.date);
+    return d ? s + e.amountCad * Math.max(0, (end.getTime() - d.getTime()) / 86_400_000) : s;
+  }, 0);
+
   // ── Plancher de croissance (toujours renvoyé quand portfolioValues est fourni,
   // Q4 inclus — c'est la PAGE qui décide de l'omission, frontière moteur/rendu) ──
-  const contributionsRetenues = overridden ? (opts.contributionsOverride as number) : contributions;
+  const contributionsRetenues = overridden ? (opts.contributionsOverride as number) : contrib.total;
   const retraitsRetenus = opts.withdrawalsOverride ?? withdrawalsDetected;
   let growthFloor: GrowthFloor | null = null;
   if (opts.portfolioValues) {
@@ -576,12 +626,21 @@ export function buildDeploymentSummary(
     firstBuyDate,
     lastBuyDate,
     contributions: contributionsRetenues,
-    contributionCount,
+    contributionCount: contrib.count,
     contributionsOverridden: overridden,
+    // Cotisations scindées argent vs titres (partie double Croesus) + apports en nature.
+    contributionsCash: overridden ? 0 : contrib.cash,
+    contributionsSecurities: overridden ? 0 : contrib.securities,
+    contributedSecurities: contrib.securityList,
+    // Argent frais (type « Dépôt ») et encaisse actuelle (portefeuille), distincts.
+    deposits,
+    cashOnHand: opts.cashBalance ?? null,
+    inKindCount,
+    inKindTotal,
     firstContributionDate,
     // L'ancienneté moyenne n'est un fait que sur les dépôts DÉTECTÉS (pas l'override).
-    avgDepositAgeMonths: contributionCount > 0 && contributions > 0 && !overridden
-      ? depositAgeWeighted / contributions / 30.44
+    avgDepositAgeMonths: contrib.count > 0 && contrib.total > 0 && !overridden
+      ? depositAgeWeighted / contrib.total / 30.44
       : null,
     lines,
     heldCount: held.length,

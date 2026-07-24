@@ -9,7 +9,7 @@ const ROWS: string[][] = [
   ["Nom", "Note", "Date de transaction", "Type", "Symbole", "Quantité", "Prix", "Devise", "Total", "Commission", "Gains/Pertes"],
   // hors fenêtre (2025) — doit être ignoré partout
   ["Vieux Titre", "", "2025-12-01", "Achat", "OLD", "10", "100", "CAD", "1000", "9.99", ""],
-  ["Cotisation REER", "", "2026-01-15", "Cotisation", "", "", "", "CAD", "10000", "", ""],
+  ["Cotisation REER", "", "2026-01-15", "Cotisation", "", "", "", "CAD", "-10000", "", ""],
   ["Banque Royale", "", "2026-02-01", "Achat", "RY", "100", "150", "CAD", "15000", "9.99", ""],
   ["FNB tout en actions", "", "2026-02-15", "Achat", "XEQT", "200", "30", "CAD", "6000", "", ""],
   ["Banque Royale", "", "2026-03-01", "Achat", "RY", "50", "160", "CAD", "8000", "9.99", ""],
@@ -212,17 +212,18 @@ describe("buildDeploymentSummary — gardes d'honnêteté supplémentaires", () 
   });
 });
 
-// ── Fixture TIMELINE : dépôts datés avec codes de compte, achats avant/entre/même-jour ──
+// ── Fixture TIMELINE : cotisations COMPTANT (jambes négatives, format Croesus)
+//    avec comptes, achats avant/entre/même-jour ──
 const TL_ROWS: string[][] = [
   ["Nom", "Date de transaction", "Type", "Symbole", "Quantité", "Code de CP", "Devise", "Total"],
   ["Pré-période", "2026-01-05", "Achat", "PRE", "10", "S", "CAD", "1000"],   // AVANT le 1er dépôt
-  ["Dépôt REER", "2026-01-15", "Cotisation", "", "", "S", "CAD", "10000"],
-  ["Dépôt CELI", "2026-01-15", "Cotisation", "", "", "W", "CAD", "2000"],    // même jour → UN chapitre
+  ["Dépôt REER", "2026-01-15", "Cotisation", "", "", "S", "CAD", "-10000"],
+  ["Dépôt CELI", "2026-01-15", "Cotisation", "", "", "W", "CAD", "-2000"],   // même jour → UN chapitre
   ["Titre AAA", "2026-02-01", "Achat", "AAA", "10", "S", "CAD", "3000"],
   ["Titre BBB", "2026-02-20", "Achat", "BBB", "5", "S", "CAD", "2000"],
-  ["Dépôt mystère", "2026-04-10", "Cotisation", "", "", "Z", "CAD", "5000"], // code non mappé
-  ["Titre CCC", "2026-04-10", "Achat", "CCC", "8", "S", "CAD", "4000"],      // MÊME JOUR que le dépôt
-  ["Dépôt sans code", "2026-06-01", "Cotisation", "", "", "", "CAD", "1000"],// aucun achat ne suivra
+  ["Dépôt mystère", "2026-04-10", "Cotisation", "", "", "Z", "CAD", "-5000"], // code non mappé
+  ["Titre CCC", "2026-04-10", "Achat", "CCC", "8", "S", "CAD", "4000"],       // MÊME JOUR que le dépôt
+  ["Dépôt sans code", "2026-06-01", "Cotisation", "", "", "", "CAD", "-1000"],// aucun achat ne suivra
 ];
 const TL_PASTE = TL_ROWS.map(r => r.join(T)).join("\n");
 
@@ -332,6 +333,54 @@ describe("buildDeploymentSummary — plancher de croissance (4 quadrants)", () =
     }, END);
     const g = build({ starting: 100000, current: 130000 }).growthFloor!;
     expect(g.residual).toBe((activite.investmentGrowth ?? 0) + activite.income);
+  });
+});
+
+// ── Fixture RÉELLE (Nicolas) : partie double Croesus, 18 colonnes sans en-têtes ──
+// 3 événements de cotisation : 9 000 comptant (CELI), 5 900 TRI (conjoint),
+// 4 035,20 FIRM CAP en nature (CELI) — + un dépôt de 43 500 et des achats.
+const REEL: string[][] = [
+  // [Nom, Note, Trait, Txn, CodeCP, Type, Sym, Qté, Prix, Dev, Total, Comm, G/P, Int, Frais, PBR, Solde, NoCompte]
+  ['SOLDE DU COMPTE CAD','COTISATION','2026/07/17','2026/07/17','SA1H','Cotisation','1CAD','0','0','CAD','9 000,00','0','0','0','0','0','0','37-3B8V-W'],
+  ['SOLDE DU COMPTE CAD','COTIS AU CELI 37-3B8V-W','2026/07/17','2026/07/17','SA1H','Cotisation','1CAD','0','0','CAD','(9 000,00)','0','0','0','0','0','0','37-3B8V-A'],
+  ['THOMSON REUTERS CORP','COTISATION-CONJOINT','2026/07/17','2026/07/17','SA1H','Cotisation','TRI','43','137,209','CAD','(5 900,00)','0','0','0','0','0','0','37-3B8V-R'],
+  ['SOLDE DU COMPTE CAD','THOMSON REUTERS CORP COTISATION-CONJOINT','2026/07/17','2026/07/17','SA1H','Cotisation','1CAD','0','137','CAD','5 900,00','0','0','0','0','0','0','37-3B8V-R'],
+  ['FIRM CAP C28','COTISATION','2026/01/20','2026/01/19','SA1H','Cotisation','FC.DB.M','4 000','100,88','CAD','(4 035,20)','0','0','0','0','0','0','37-3B8V-W'],
+  ['SOLDE DU COMPTE CAD','FIRM CAP C28 COTISATION','2026/01/20','2026/01/19','SA1H','Cotisation','1CAD','0','100','CAD','4 035,20','0','0','0','0','0','0','37-3B8V-W'],
+  ['SOLDE DU COMPTE CAD','FIRM CAP C28 CONT AU CELI 37-3B8V-W','2026/01/20','2026/01/19','SA1H','Cotisation','1CAD','0','100','CAD','(4 035,20)','0','0','0','0','0','0','37-3B8V-A'],
+  ['SOLDE DU COMPTE CAD','BNC INTERNET PMT','2026/06/29','2026/06/26','SA1H','Dépôt','1CAD','0','0','CAD','43 500,00','0','0','0','0','0','0','37-3B8V-A'],
+  ['MICROSOFT CORP CDR','HSW1','2026/07/15','2026/07/15','SA1H','Achat','MSFT','325','27,81','CAD','(9 188,25)','0','0','0','0','0','0','37-3B8V-A'],
+];
+
+describe("buildDeploymentSummary — données réelles (partie double)", () => {
+  const tx = parseCroesusActivity(REEL.map(r => r.join(T)).join("\n"));
+  const d = buildDeploymentSummary(tx, "year_to_date",
+    [{ symbol: "MSFT", quantity: 325, marketValue: 8710, currentPrice: 26.8 },
+     { symbol: "TRI", quantity: 43, marketValue: 5190.96, currentPrice: 120.72 },
+     { symbol: "FC.DB.M", quantity: 4000, marketValue: 4112, currentPrice: 1.028 }],
+    { endDate: END, cashBalance: 17535.52 })!;
+
+  it("cotisations : 9 000 en argent + 9 935,20 en titres = 18 935,20 (FIRM CAP dédupliqué)", () => {
+    expect(d.contributionsCash).toBeCloseTo(9000, 2);       // −9000 (le miroir FIRM CAP −4035,20 est écarté)
+    expect(d.contributionsSecurities).toBeCloseTo(9935.20, 2); // TRI 5900 + FC.DB.M 4035,20
+    expect(d.contributions).toBeCloseTo(18935.20, 2);
+  });
+
+  it("apports EN TITRES = acquisitions (TRI, FC.DB.M dans le tableau)", () => {
+    expect(d.inKindCount).toBe(2);
+    expect(d.contributedSecurities.map(s => s.symbol).sort()).toEqual(["FC.DB.M", "TRI"]);
+    expect(d.lines.map(l => l.symbol)).toEqual(expect.arrayContaining(["TRI", "FC.DB.M", "MSFT"]));
+  });
+
+  it("cotisations par compte : CELI 13 046,65 + REER conjoint 5 900 (destination via note)", () => {
+    const byAcct = Object.fromEntries((d.contributionsByAccount ?? []).map(a => [a.label, a.amountCad]));
+    expect(byAcct["CELI"]).toBeCloseTo(13035.20, 2);          // 9000 comptant + 4035,20 FC.DB.M
+    expect(byAcct["REER conjoint"]).toBeCloseTo(5900, 2);
+  });
+
+  it("dépôt (43 500) et encaisse (17 535,52) distincts des cotisations", () => {
+    expect(d.deposits).toBeCloseTo(43500, 2);
+    expect(d.cashOnHand).toBeCloseTo(17535.52, 2);
   });
 });
 

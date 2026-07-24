@@ -1,3 +1,6 @@
+// Sans cycle : croesus-parser n'importe rien de lib/portfolio.
+import { ACCOUNT_TYPE_MAP } from '@/lib/parsers/croesus-parser';
+
 export type ActivityPeriod = 'six_months' | 'year_to_date' | 'one_year';
 
 export type ActivityCategory = 'income' | 'contribution' | 'withdrawal' | 'other';
@@ -496,6 +499,154 @@ function resolveIncomeCategory(
     ?? 'other';
 }
 
+// ── Comptes ───────────────────────────────────────────────────────────────
+// Le vrai type de compte est le SUFFIXE du numéro (37-3B8V-W → W = CELI), pas le
+// « Code CP » (souvent un code de foyer identique partout, ex. « SA1H »).
+const ACCOUNT_SUFFIX_MAP: Record<string, string> = {
+  ...ACCOUNT_TYPE_MAP,
+  R: 'REER conjoint', // observé sur les cotisations-conjoint
+  B: 'Devises',       // compte en devises (USD)
+};
+
+/** Libellé depuis un numéro de compte (37-3B8V-W → W → CELI). */
+function accountLabelFromNumber(num: string): string | null {
+  const suffix = (num.trim().split('-').pop() ?? '').toUpperCase();
+  return suffix ? (ACCOUNT_SUFFIX_MAP[suffix] ?? null) : null;
+}
+
+/** Libellé de compte : suffixe du numéro d'abord, sinon le Code CP ; null si non mappé. */
+export function accountLabelForTransaction(t: CroesusActivityTransaction): string | null {
+  const byNumber = accountLabelFromNumber(t.accountNumber);
+  if (byNumber) return byNumber;
+  const code = t.accountCode.trim().toUpperCase();
+  return code ? (ACCOUNT_TYPE_MAP[code] ?? ACCOUNT_TYPE_MAP[code[0]] ?? null) : null;
+}
+
+/** Compte d'une COTISATION = destination. Pour une jambe encaisse, la destination
+ *  figure dans la note (« COTIS AU CELI 37-3B8V-W ») ; sinon le compte de la ligne. */
+function contributionAccountLabel(t: CroesusActivityTransaction): string | null {
+  const m = t.note.match(/(\d{2}-[A-Z0-9]+-[A-Z])\b/i);
+  if (m) {
+    const byNote = accountLabelFromNumber(m[1]);
+    if (byNote) return byNote;
+  }
+  return accountLabelForTransaction(t);
+}
+
+/** Symbole de trésorerie (1CAD, 1USD…) ou vide — pas un vrai titre. */
+function isCashSymbol(symbol: string): boolean {
+  const s = symbol.trim();
+  return s === '' || /^1[A-Z]{3}$/i.test(s);
+}
+
+/** Un apport en titres = une acquisition (la jambe négative décrit ce qui a été acquis). */
+export interface ContributionSecurity {
+  symbol: string;
+  name: string;
+  amountCad: number;
+  quantity: number | null;
+  date: string;
+  accountLabel: string | null;
+}
+
+/** Événement daté de cotisation (jambe retenue) — pour la timeline. */
+export interface ContributionEvent {
+  date: string;
+  amountCad: number;
+  kind: 'cash' | 'security';
+  accountLabel: string | null;
+  symbol?: string;
+  name?: string;
+  quantity?: number | null;
+}
+
+export interface ContributionAnalysis {
+  cash: number;        // cotisations EN ARGENT (jambes encaisse retenues)
+  securities: number;  // cotisations EN TITRES
+  total: number;       // cash + securities
+  count: number;       // nombre de jambes retenues
+  securityList: ContributionSecurity[];
+  byAccount: { label: string; amountCad: number }[];
+  events: ContributionEvent[]; // triés par date
+}
+
+/**
+ * Cotisations selon la partie double Croesus. On ne retient que les jambes
+ * NÉGATIVES (celles qui décrivent l'apport réel), scindées en :
+ *  - EN TITRES : jambe portant un vrai symbole + quantité (= une acquisition) ;
+ *  - EN ARGENT : jambe encaisse « 1CAD » / « SOLDE DU COMPTE ».
+ * Les jambes encaisse qui ne font que refléter un apport en titres (même jour +
+ * même |montant|) sont écartées : un transfert en nature n'est PAS compté deux fois.
+ */
+export function analyzeContributions(
+  txns: CroesusActivityTransaction[],
+  toCad: (t: CroesusActivityTransaction, v: number) => number,
+): ContributionAnalysis {
+  const negs = txns.filter(
+    t => normalizeText(t.type).includes('cotisation') && toCad(t, t.amount) < 0,
+  );
+  const secLegs = negs.filter(t => !isCashSymbol(t.symbol) && (t.quantity ?? 0) !== 0);
+  const cashLegs = negs.filter(t => isCashSymbol(t.symbol) || (t.quantity ?? 0) === 0);
+
+  // Dédup : jambe encaisse miroir d'un apport en titres (même jour + |montant| ≈).
+  const survivingCash = cashLegs.filter(cl => {
+    const amt = Math.abs(toCad(cl, cl.amount));
+    return !secLegs.some(
+      sl => sl.transactionDate === cl.transactionDate
+        && Math.abs(Math.abs(toCad(sl, sl.amount)) - amt) < 0.5,
+    );
+  });
+
+  const securityList: ContributionSecurity[] = secLegs.map(t => ({
+    symbol: t.symbol.trim().toUpperCase(),
+    name: t.name,
+    amountCad: Math.abs(toCad(t, t.amount)),
+    quantity: t.quantity != null ? Math.abs(t.quantity) : null,
+    date: t.transactionDate,
+    accountLabel: contributionAccountLabel(t),
+  }));
+  const securities = securityList.reduce((s, x) => s + x.amountCad, 0);
+  const cash = survivingCash.reduce((s, t) => s + Math.abs(toCad(t, t.amount)), 0);
+
+  const byAccountMap = new Map<string, number>();
+  const add = (label: string | null, amt: number) => {
+    const k = label ?? 'Autre compte';
+    byAccountMap.set(k, (byAccountMap.get(k) ?? 0) + amt);
+  };
+  for (const t of survivingCash) add(contributionAccountLabel(t), Math.abs(toCad(t, t.amount)));
+  for (const s of securityList) add(s.accountLabel, s.amountCad);
+
+  const events: ContributionEvent[] = [
+    ...survivingCash.map((t): ContributionEvent => ({
+      date: t.transactionDate,
+      amountCad: Math.abs(toCad(t, t.amount)),
+      kind: 'cash',
+      accountLabel: contributionAccountLabel(t),
+    })),
+    ...securityList.map((s): ContributionEvent => ({
+      date: s.date,
+      amountCad: s.amountCad,
+      kind: 'security',
+      accountLabel: s.accountLabel,
+      symbol: s.symbol,
+      name: s.name,
+      quantity: s.quantity,
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    cash,
+    securities,
+    total: cash + securities,
+    count: survivingCash.length + secLegs.length,
+    securityList,
+    byAccount: [...byAccountMap.entries()]
+      .map(([label, amountCad]) => ({ label, amountCad }))
+      .sort((a, b) => b.amountCad - a.amountCad),
+    events,
+  };
+}
+
 export function buildPortfolioActivitySummary(
   transactions: CroesusActivityTransaction[],
   period: ActivityPeriod,
@@ -518,6 +669,13 @@ export function buildPortfolioActivitySummary(
   const monthlyIncome = buildMonthBuckets(start, end);
   const monthMap = new Map(monthlyIncome.map(month => [month.key, month]));
 
+  // Cotisations : partie double Croesus → analyseur partagé (mêmes règles que la
+  // page Parcours : jambes négatives, argent + titres, dédup des miroirs).
+  const contribAnalysis = analyzeContributions(
+    inWindow,
+    (t, v) => usdCadRate && usdCadRate > 0 && t.currency.trim().toUpperCase() === 'USD' ? v * usdCadRate : v,
+  );
+
   let income = 0;
   let dividendIncome = 0;
   let fixedIncomeIncome = 0;
@@ -538,6 +696,9 @@ export function buildPortfolioActivitySummary(
   }>();
 
   for (const transaction of inWindow) {
+    // Cotisations traitées par contribAnalysis — hors de cette boucle (sinon les
+    // jambes négatives gonflaient les retraits et les positives les cotisations).
+    if (normalizeText(transaction.type).includes('cotisation')) continue;
     const absoluteAmount = Math.abs(toCad(transaction));
     if (transaction.category === 'income') {
       income += absoluteAmount;
@@ -589,6 +750,7 @@ export function buildPortfolioActivitySummary(
     }
   }
 
+  detectedContributions = contribAnalysis.total; // partie double : jambes négatives (argent + titres)
   const contributions = overrides.contributions ?? detectedContributions;
   const withdrawals = overrides.withdrawals ?? detectedWithdrawals;
   const netContributions = contributions - withdrawals;
