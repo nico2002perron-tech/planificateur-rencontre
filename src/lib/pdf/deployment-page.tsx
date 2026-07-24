@@ -1,0 +1,842 @@
+// « LE PARCOURS DE VOTRE ARGENT » — DEUX pages, chacune racontant UNE chose :
+//
+//   PAGE 1 · LE RÉCIT : trois chiffres géants (déposé → investi → ça vaut),
+//            la timeline des dépôts, un résumé en deux phrases. Aérée, présentable
+//            à un client en la tendant.
+//   PAGE 2 · LA PREUVE : où l'argent est allé (ruban), chaque achat au tableau,
+//            la note méthodologique complète.
+//
+// Décision propriétaire 2026-07-23 : la contrainte « tout sur une page » écrasait
+// la clarté — on choisit deux pages qui respirent plutôt qu'une page compressée.
+//
+// Identité de page : accent ORANGE #FF9600 (texte orange sur clair = #b45309).
+// Dépôts = #2563eb. duoGreen/duoBlue INTERDITS ici. Vert/rouge réservés aux
+// écarts. Vocabulaire : « investi/achat/écart/valeur » — jamais « déployé/
+// rendement/profit/performance » ; « suivi de », jamais « financé par » (dépôts).
+//
+// Gardes d'honnêteté (héritées des audits) :
+// - écart affiché SEULEMENT si toutes les parts achetées sont encore détenues ;
+// - « toutes revendues » affirmé SEULEMENT si closedCount === totalTitres ;
+// - « à la revente » = gains/pertes inscrit par Croesus (portée divulguée) ;
+// - la note méthodologique boucle : chaque transaction comptée UNE fois ;
+// - plancher rendu pour Q1/Q2/Q3 (l'omission sélective est interdite), Q4 omis.
+
+import React from 'react';
+import { Page, Text, View, Svg, Path } from '@react-pdf/renderer';
+import { styles, C } from './styles';
+import { SectionHeader, PageFooterV12 } from './year-activity-pages';
+import type { DeploymentSummary, DeploymentLine, DepositChapter, GrowthFloor } from '@/lib/portfolio/deployment';
+
+// ── Helpers locaux (copies volontaires : price-targets-template importera cette
+// page — importer ses helpers créerait un cycle de modules) ──
+function fmt(value: number): string {
+  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+}
+function fmtFull(value: number): string {
+  return new Intl.NumberFormat('fr-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(value);
+}
+function fmtDate(iso: string): string {
+  const formatted = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' })
+    .format(new Date(`${iso}T12:00:00`));
+  return formatted.replace(/^1 /, '1er ');
+}
+function fmtDateCourt(iso: string): string {
+  const formatted = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' })
+    .format(new Date(`${iso}T12:00:00`));
+  return formatted.replace(/^1 /, '1er ');
+}
+const fmtMois = (iso: string) =>
+  new Intl.DateTimeFormat('fr-CA', { month: 'long' }).format(new Date(`${iso}T12:00:00`));
+const plur = (n: number) => (n > 1 ? 's' : '');
+const fmtPctFr = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} %`;
+const fmtJours = (n: number) =>
+  Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',');
+/** Couleur de texte d'un écart : vert/rouge sémantiques, gris au neutre. */
+const gc = (v: number) => (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8');
+
+/** Rangée « ● Étiquette : montant » des bandeaux — point de couleur, étiquette
+ *  grise, montant semi-gras navy. Net et aligné. */
+function SourceRow({ dot, label, value }: { dot: string; label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1.5 }}>
+      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: dot }} />
+      <Text style={{ fontSize: 7.5, color: '#64748b' }}>
+        {label} : <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{value}</Text>
+      </Text>
+    </View>
+  );
+}
+
+/** Pastille de pourcentage (patron PctPill du template ; `big` = héros de page 1). */
+function PctPill({ value, big = false }: { value: number; big?: boolean }) {
+  const palette = value > 0
+    ? { bg: '#ecfdf5', text: '#059669' }
+    : value < 0
+      ? { bg: '#fef2f2', text: '#dc2626' }
+      : { bg: '#f1f5f9', text: '#94a3b8' };
+  return (
+    <View style={{ alignItems: 'flex-end' }}>
+      <View style={{ backgroundColor: palette.bg, borderRadius: 7, paddingHorizontal: big ? 6 : 4, paddingVertical: big ? 2.5 : 1.5 }}>
+        <Text style={{ fontSize: big ? 8.5 : 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: palette.text }}>
+          {fmtPctFr(value)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Rotation de teintes RÉSERVÉE aux achats (par rang de poids) ; résidu gris.
+const DEPLOY_COLORS = ['#FF9600', '#0077b6', '#00b4d8', '#CE82FF', '#48cae4', '#c5a365'];
+const RESIDUAL_COLOR = '#64748b';
+const MAX_TABLE_LINES = 9;
+const MAX_RIBBON_SEGMENTS = 6;
+/** Au-delà de ce nombre de dépôts, la timeline passe en bande « cadence ». */
+const MAX_CHAPTER_ROWS = 6;
+
+const COL = { titre: '34%', prix: '20%', investi: '15%', vaut: '15%', ecart: '16%' } as const;
+
+function lineColor(index: number): string {
+  return index < MAX_RIBBON_SEGMENTS ? DEPLOY_COLORS[index] : RESIDUAL_COLOR;
+}
+
+/** Chevron narratif du bandeau : la flèche porte l'identité orange et son
+ *  micro-mot — elle raconte elle-même dépôt → achats → valeur. */
+function Chevron({ label }: { label: string }) {
+  return (
+    <View style={{ width: 44, alignItems: 'center', alignSelf: 'center' }}>
+      <Svg width={16} height={22}>
+        <Path d="M4 4 L13 11 L4 18" stroke="#FF9600" strokeWidth={2.5} strokeLinecap="round" fill="none" />
+      </Svg>
+      <Text style={{ marginTop: 1, fontSize: 6, color: '#94a3b8', textAlign: 'center' }}>{label}</Text>
+    </View>
+  );
+}
+
+// ── L'axe du temps muet ───────────────────────────────────────────────────────
+/** Largeur utile : 595,28 (A4) − 2×36 (padding page) = 523,28 ; − 2×10 (padding
+ *  carte) − 2×1 (bordure) ≈ 501. Couvert par les harnais de rendu. */
+const AXIS_W = 501;
+
+function joursDepuis(depart: string, date: string): number {
+  return Math.round(
+    (new Date(`${date}T12:00:00`).getTime() - new Date(`${depart}T12:00:00`).getTime()) / 86_400_000,
+  );
+}
+
+/** Positions proportionnelles aux dates réelles — deux dépôts rapprochés se
+ *  touchent, c'est LE FAIT (aucun déplacement). Marqueurs bleus = dépôts,
+ *  marques orange = achats. */
+function TimelineAxe({ d, numeros }: { d: DeploymentSummary; numeros: boolean }) {
+  const totalJours = Math.max(1, joursDepuis(d.startDate, d.endDate));
+  const x = (date: string, largeur: number) =>
+    Math.max(0, Math.min(AXIS_W - largeur, (joursDepuis(d.startDate, date) / totalJours) * (AXIS_W - largeur)));
+  const chapitres = d.depositChapters ?? [];
+  const numPositions: { x: number; n: number }[] = [];
+  if (numeros) {
+    let dernier = -Infinity;
+    chapitres.forEach((c, i) => {
+      const px = x(c.date, 4);
+      if (px - dernier >= 8) {
+        numPositions.push({ x: px, n: i + 1 });
+        dernier = px;
+      }
+    });
+  }
+  return (
+    <View>
+      {/* Dépôts et achats AU-DESSUS de la ligne ; ventes SOUS la ligne (en vert) —
+          l'entrée et la sortie de titres se lisent d'un coup d'œil. */}
+      <View style={{ height: 26, position: 'relative' }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 8, height: 1, backgroundColor: '#e2e8f0' }} />
+        {d.buyDates.map(b => (
+          <View
+            key={`a-${b.date}`}
+            style={{ position: 'absolute', left: x(b.date, 2), bottom: 9, width: 2, height: 7, backgroundColor: '#FF9600' }}
+          />
+        ))}
+        {chapitres.map(c => (
+          <View
+            key={c.date}
+            style={{ position: 'absolute', left: x(c.date, 4), bottom: 9, width: 4, height: 11, borderRadius: 2, backgroundColor: '#2563eb' }}
+          />
+        ))}
+        {d.sellDates.map(s => (
+          <View
+            key={`v-${s.date}`}
+            style={{ position: 'absolute', left: x(s.date, 2), bottom: 2, width: 2, height: 6, backgroundColor: '#10b981' }}
+          />
+        ))}
+      </View>
+      {numeros && numPositions.length > 0 && (
+        <View style={{ height: 9, position: 'relative' }}>
+          {numPositions.map(p => (
+            <Text key={p.n} style={{ position: 'absolute', left: Math.max(0, p.x - 2), width: 12, fontSize: 6.5, color: '#94a3b8' }}>
+              {p.n}
+            </Text>
+          ))}
+        </View>
+      )}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }}>
+        <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>{fmtDateCourt(d.startDate)}</Text>
+        <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>
+          <Text style={{ color: '#2563eb' }}>▪</Text> dépôt   <Text style={{ color: '#FF9600' }}>▪</Text> achat
+          {d.sellDates.length > 0 ? <Text>   <Text style={{ color: '#10b981' }}>▪</Text> vente (sous la ligne)</Text> : null}
+        </Text>
+        <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>{fmtDateCourt(d.endDate)}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** Une rangée-chapitre, généreuse (page 1 n'a plus à se compresser). */
+function ChapitreRow({ c, index, dernier, sousLigneDelai }: {
+  c: DepositChapter;
+  index: number;
+  dernier: boolean;
+  sousLigneDelai: boolean;
+}) {
+  const labels = c.accounts.filter(a => a.label != null).map(a => a.label).join(' + ');
+  const syms = c.buys.slice(0, 3).map(b => b.symbol);
+  const extra = c.buys.length - syms.length;
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+        borderBottomWidth: dernier ? 0 : 0.5,
+        borderBottomColor: '#f1f5f9',
+        borderBottomStyle: 'solid',
+      }}
+    >
+      <Text style={{ width: 12, fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8' }}>
+        {index + 1}
+      </Text>
+      <Text style={{ width: 50, fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+        {fmtDateCourt(c.date)}
+      </Text>
+      <View style={{ flexGrow: 1, flexShrink: 1 }}>
+        <Text style={{ fontSize: 9.5, maxLines: 1, textOverflow: 'ellipsis' }}>
+          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: '#2563eb' }}>{fmt(c.amountCad)}</Text>
+          {labels !== '' && <Text style={{ fontSize: 8, color: '#475569' }}> au {labels}</Text>}
+        </Text>
+        {sousLigneDelai && c.daysToFirstBuy != null && c.daysToFirstBuy > 0 && (
+          <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>
+            premier achat {c.daysToFirstBuy} jour{plur(c.daysToFirstBuy)} plus tard
+          </Text>
+        )}
+      </View>
+      <View style={{ width: 36, alignItems: 'center' }}>
+        <Svg width={10} height={10}>
+          <Path d="M3 2 L8 5.5 L3 9" stroke="#FF9600" strokeWidth={2} strokeLinecap="round" fill="none" />
+        </Svg>
+        <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>suivi de</Text>
+      </View>
+      <View style={{ width: 175, alignItems: 'flex-end' }}>
+        {c.buys.length > 0 ? (
+          <>
+            <Text style={{ fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#b45309' }}>
+              {c.buyCount} achat{plur(c.buyCount)} · {fmt(c.totalFollowedCad)}
+            </Text>
+            <Text style={{ fontSize: 7, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>
+              {syms.join(', ')}{extra > 0 ? ` +${extra}` : ''}
+            </Text>
+          </>
+        ) : (
+          <Text style={{ fontSize: 7, color: '#94a3b8' }}>aucun achat n&apos;a suivi avant la fin de la période</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }) {
+  const d = deployment;
+  if (d.buyCount === 0) return null;
+
+  const hasHeld = d.heldCount > 0;
+  const totalTitres = d.lines.length;
+  const nonHeldCount = d.partialCount + d.closedCount + d.unmatchedCount + d.unpriceableCount;
+  const allSold = d.closedCount === totalTitres;
+  const top = d.lines[0];
+  const zeroOverride = d.contributionsOverridden && d.contributions === 0;
+
+  // ── Mode de la timeline ──
+  const chapters = d.depositChapters;
+  const nChap = chapters?.length ?? 0;
+  type TimelineMode = 'chapitres' | 'cadence' | 'strip' | 'absent';
+  const timelineMode: TimelineMode = d.contributionsOverridden
+    ? 'absent' // un montant saisi n'a ni date ni compte : pas de faits de dates à montrer
+    : chapters == null || nChap === 0
+      ? 'strip'
+      : nChap > MAX_CHAPTER_ROWS ? 'cadence' : 'chapitres';
+
+  // ── Plancher : la page choisit sa phrase par quadrant, sans re-déduire les signes ──
+  const floor = d.growthFloor;
+  const showFloor = floor != null && floor.quadrant <= 3;
+  const floorSuffix = d.contributionsOverridden && d.withdrawals > 0
+    ? ' (les dépôts nets combinent les cotisations saisies et les retraits de l’historique)'
+    : '';
+  const FloorText = ({ g }: { g: GrowthFloor }) => (
+    <>
+      {g.quadrant === 1 ? (
+        <>
+          Sur l&apos;ensemble du portefeuille, la valeur a augmenté de{' '}
+          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.totalChange)}</Text> ; vos dépôts nets en
+          expliquent <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> à eux seuls —
+          avant même tout écart de valeur sur ces sommes.
+        </>
+      ) : g.quadrant === 2 ? (
+        <>
+          Sur l&apos;ensemble du portefeuille, la valeur a augmenté de{' '}
+          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.totalChange)}</Text> alors que vos dépôts nets
+          totalisent <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> : sans ces
+          dépôts, sa valeur aurait diminué.
+        </>
+      ) : (
+        <>
+          Sur l&apos;ensemble du portefeuille, la valeur a diminué de{' '}
+          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(Math.abs(g.totalChange))}</Text> malgré{' '}
+          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> de dépôts nets.
+        </>
+      )}
+      {floorSuffix}
+    </>
+  );
+
+  // ── Tableau (page 2) : ≤ 9 titres → tous ; sinon top 8 + « Autres achats ». ──
+  const shown = totalTitres <= MAX_TABLE_LINES ? d.lines : d.lines.slice(0, MAX_TABLE_LINES - 1);
+  const rest = d.lines.slice(shown.length);
+  const restCost = rest.reduce((s, l) => s + l.totalCostCad, 0);
+  const restWeight = rest.reduce((s, l) => s + l.weightPct, 0);
+  const restHeld = rest.filter(l => l.status === 'held');
+  const restValueHeld = restHeld.reduce((s, l) => s + (l.currentValue ?? 0), 0);
+  const restDeltaHeld = restHeld.reduce((s, l) => s + (l.deltaAbs ?? 0), 0);
+
+  // ── Ruban (page 2) ──
+  const ribbon = d.lines.slice(0, MAX_RIBBON_SEGMENTS);
+  const ribbonRest = d.lines.slice(MAX_RIBBON_SEGMENTS);
+  const ribbonRestWeight = ribbonRest.reduce((s, l) => s + l.weightPct, 0);
+
+  const r = d.reconciliation;
+  const usdPhrase = d.usdCadRate && d.usdCadRate > 0
+    ? `Les montants en dollars américains sont convertis en dollars canadiens au taux de ${d.usdCadRate.toFixed(4).replace('.', ',')} appliqué à la date du rapport : l'écart reflète la variation des titres, non celle du change.`
+    : 'Les montants en dollars américains sont additionnés tels quels, sans conversion.';
+
+  return (
+    <>
+      {/* ════════════════ PAGE 1 · LE RÉCIT ════════════════ */}
+      <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fbfdff' }]}>
+        <SectionHeader
+          title="LE PARCOURS DE VOTRE ARGENT"
+          subtitle={`${d.periodLabel} — du dépôt à la valeur d'aujourd'hui, selon l'historique de vos transactions`}
+          accent="#FF9600"
+        />
+
+        {/* ─ Bandeau des trois chiffres, GRAND ─ */}
+        <View
+          wrap={false}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            gap: 10,
+            padding: 14,
+            borderRadius: 10,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#dbeafe',
+            borderStyle: 'solid',
+          }}
+        >
+          {/* 1 · Déposé — paddingTop 10 = padding interne de la carte marine :
+              les trois kickers partent du même y, zone de kicker à hauteur FIXE
+              (20 pt = 2 lignes) → les trois montants s'alignent sur la même ligne. */}
+          <View style={{ flex: 1, paddingTop: 10 }}>
+            <View style={{ height: 20 }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Ce que vous avez déposé
+              </Text>
+            </View>
+            {d.contributions > 0 ? (
+              <>
+                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#2563eb' }}>
+                  {fmt(d.contributions)}
+                </Text>
+                <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8' }}>
+                  {d.contributionsOverridden
+                    ? 'selon les cotisations saisies'
+                    : `${d.contributionCount} dépôt${plur(d.contributionCount)} — ${d.periodLabel.toLowerCase()}`}
+                </Text>
+                {/* Répartition par compte : « ● REER : 10 000 $ », une ligne chacune. */}
+                {d.contributionsByAccount != null
+                  && d.contributionsByAccount.some(a => a.label !== 'Autre compte') && (
+                  <View style={{ marginTop: 3 }}>
+                    {d.contributionsByAccount.slice(0, 3).map(a => (
+                      <SourceRow
+                        key={a.label}
+                        dot="#2563eb"
+                        label={a.label === 'Autre compte' ? 'Autre' : a.label}
+                        value={fmt(a.amountCad)}
+                      />
+                    ))}
+                    {d.contributionsByAccount.length > 3 && (
+                      <SourceRow
+                        dot="#2563eb"
+                        label="Autres"
+                        value={fmt(d.contributionsByAccount.slice(3).reduce((s, a) => s + a.amountCad, 0))}
+                      />
+                    )}
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800, color: '#64748b' }}>
+                  Aucun dépôt
+                </Text>
+                <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8' }}>
+                  {zeroOverride ? 'selon les cotisations saisies' : 'achats financés par le portefeuille'}
+                </Text>
+              </>
+            )}
+          </View>
+
+          <Chevron label="a servi à acheter" />
+
+          {/* 2 · Investi */}
+          <View style={{ flex: 1, paddingTop: 10 }}>
+            <View style={{ height: 20 }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Ce que nous avons acheté avec
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#b45309' }}>
+              {fmt(d.totalBuys)}
+            </Text>
+            <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8' }}>
+              en {d.buyCount} achat{plur(d.buyCount)} sur {totalTitres} titre{plur(totalTitres)}
+            </Text>
+            {/* D'où sortent ces achats : « ● Dépôts : X », une source par ligne
+                (la charnière dessous rappelle qu'une partie des dépôts peut être
+                restée en encaisse). */}
+            {(() => {
+              const duCompte = d.totalBuys - d.contributions - d.totalSells;
+              const sources: { label: string; value: string }[] = [];
+              if (d.contributions > 0) sources.push({ label: 'Dépôts', value: fmt(d.contributions) });
+              if (duCompte > 0) sources.push({ label: 'Solde au compte', value: fmt(duCompte) });
+              if (d.totalSells > 0) sources.push({ label: 'Ventes', value: fmt(d.totalSells) });
+              if (sources.length === 0) return null;
+              return (
+                <View style={{ marginTop: 3 }}>
+                  {sources.map(s => (
+                    <SourceRow key={s.label} dot="#FF9600" label={s.label} value={s.value} />
+                  ))}
+                </View>
+              );
+            })()}
+          </View>
+
+          <Chevron label="valent aujourd'hui" />
+
+          {/* 3 · Ça vaut aujourd'hui — le point focal */}
+          <View style={{ flex: 1.25, backgroundColor: C.navy, borderRadius: 8, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 10 }}>
+            <View style={{ height: 20 }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Valeur des parts encore détenues
+              </Text>
+            </View>
+            {hasHeld ? (
+              <>
+                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                  {fmt(d.valueEvaluated)}
+                </Text>
+                {/* flexWrap + flexShrink : le texte se replie DANS la carte, jamais
+                    coupé par son bord. */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                  <PctPill value={d.deltaPct} big />
+                  <Text style={{ flexShrink: 1, fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: d.deltaAbs >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                    {fmt(Math.abs(d.deltaAbs))} de {d.deltaAbs >= 0 ? 'plus' : 'moins'} que leur coût
+                  </Text>
+                </View>
+                <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8', lineHeight: 1.4 }}>
+                  coût d&apos;achat : {fmt(d.costEvaluated)}
+                  {nonHeldCount > 0 ? ` · ${d.heldCount} titre${plur(d.heldCount)} sur ${totalTitres}` : ''}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>—</Text>
+                <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8' }}>
+                  {allSold
+                    ? 'toutes les parts achetées ont été revendues — voir la page suivante'
+                    : "aucun titre n'est suivi au complet — voir la page suivante"}
+                </Text>
+              </>
+            )}
+          </View>
+        </View>
+
+        {/* ─ Charnière d'honnêteté : achats ≠ dépôts ─ */}
+        <Text style={{ marginTop: 8, fontSize: 7.5, color: '#475569', lineHeight: 1.45 }}>
+          {d.contributions > 0 ? (
+            <>
+              Achats (<Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(d.totalBuys)}</Text>) et
+              dépôts (<Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(d.contributions)}</Text>) sont
+              deux chiffres différents : les achats puisent aussi dans le produit des ventes, les revenus encaissés et
+              l&apos;argent déjà présent au compte, et une partie des dépôts peut demeurer en encaisse.
+            </>
+          ) : (
+            <>
+              {zeroOverride ? 'Selon les cotisations saisies, aucun dépôt n’est retenu pour la période' : 'Aucun dépôt pendant la période'} :
+              les achats (<Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(d.totalBuys)}</Text>) ont été
+              financés par le produit des ventes, les revenus encaissés et l&apos;argent déjà présent au compte.
+            </>
+          )}
+        </Text>
+
+        {/* ─ La timeline, généreuse ─ */}
+        {timelineMode !== 'absent' && (
+          <View
+            wrap={false}
+            style={{
+              marginTop: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: '#dbeafe',
+              borderStyle: 'solid',
+              backgroundColor: '#ffffff',
+              padding: 10,
+            }}
+          >
+            <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
+              Votre année, dans l&apos;ordre
+            </Text>
+
+            <View style={{ marginTop: 6 }}>
+              <TimelineAxe d={d} numeros={timelineMode === 'chapitres'} />
+            </View>
+
+            {timelineMode === 'strip' ? null : timelineMode === 'cadence' ? (
+              <View style={{ marginTop: 6 }}>
+                <Text style={{ fontSize: 9.5, color: '#475569', lineHeight: 1.5 }}>
+                  {d.depositCadenceRegular === true
+                    ? `${nChap} dépôts totalisant ${fmt(d.contributions)} — un chaque mois de ${fmtMois(chapters![0].date)} à ${fmtMois(chapters![nChap - 1].date)}.`
+                    : `${nChap} dépôts totalisant ${fmt(d.contributions)}, entre le ${fmtDateCourt(chapters![0].date)} et le ${fmtDateCourt(chapters![nChap - 1].date)}.`}
+                </Text>
+                {d.medianDaysDepositToNextBuy != null && (
+                  <Text style={{ marginTop: 2, fontSize: 9.5, color: '#475569', lineHeight: 1.5 }}>
+                    Chaque dépôt a été suivi d&apos;un achat dans un délai médian de {fmtJours(d.medianDaysDepositToNextBuy)} jours
+                    {d.depositsWithoutFollowingBuy > 0
+                      ? ` (${d.depositsWithoutFollowingBuy} dépôt${plur(d.depositsWithoutFollowingBuy)} de fin de période sans achat suivant)`
+                      : ''}.
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <View style={{ marginTop: 4 }}>
+                {d.preDepositBuys != null && d.preDepositBuys.buyCount > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' }}>
+                    <View style={{ width: 12, alignItems: 'flex-start' }}>
+                      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#64748b' }} />
+                    </View>
+                    <Text style={{ flexGrow: 1, fontSize: 7.5, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>
+                      Avant votre premier dépôt — {d.preDepositBuys.buyCount} achat{plur(d.preDepositBuys.buyCount)} ({fmt(d.preDepositBuys.totalCad)}) : la période a commencé déjà investie
+                    </Text>
+                    <Text style={{ fontSize: 7, color: '#94a3b8' }}>{d.preDepositBuys.topSymbols.join(', ')}</Text>
+                  </View>
+                )}
+                {chapters!.map((c, i) => (
+                  <ChapitreRow
+                    key={c.date}
+                    c={c}
+                    index={i}
+                    dernier={i === nChap - 1}
+                    sousLigneDelai={nChap <= 4}
+                  />
+                ))}
+              </View>
+            )}
+
+            <Text style={{ marginTop: 6, fontSize: 6.5, color: '#64748b', lineHeight: 1.4 }}>
+              « Suivi de » décrit l&apos;ordre des dates (même jour inclus), jamais l&apos;affectation d&apos;un dépôt à un achat précis.
+            </Text>
+          </View>
+        )}
+
+        {/* ─ En résumé ─ */}
+        {(showFloor || hasHeld) && (
+          <View
+            wrap={false}
+            style={{
+              marginTop: 10,
+              borderRadius: 10,
+              padding: 12,
+              backgroundColor: '#ffffff',
+              borderWidth: 1,
+              borderColor: '#dbeafe',
+              borderStyle: 'solid',
+              borderLeftWidth: 3,
+              borderLeftColor: '#FF9600',
+            }}
+          >
+            <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
+              En résumé
+            </Text>
+            <Text style={{ marginTop: 5, fontSize: 9.5, lineHeight: 1.6, color: '#475569' }}>
+              {hasHeld && (
+                <>
+                  Les parts achetées encore détenues aujourd&apos;hui valent{' '}
+                  <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(d.valueEvaluated)}</Text>, soit{' '}
+                  <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: gc(d.deltaAbs) }}>{fmt(Math.abs(d.deltaAbs))}</Text> de{' '}
+                  {d.deltaAbs >= 0 ? 'plus' : 'moins'} que leur coût d&apos;achat de {fmt(d.costEvaluated)}.{' '}
+                </>
+              )}
+              {showFloor && floor != null && <FloorText g={floor} />}
+            </Text>
+          </View>
+        )}
+
+        {/* ─ Renvoi vers la preuve ─ */}
+        <Text style={{ marginTop: 'auto', paddingTop: 8, fontSize: 6.5, color: '#94a3b8', lineHeight: 1.45 }}>
+          Ces montants sont des constats historiques : ils ne préjugent pas des résultats futurs et ne constituent ni une prévision,
+          ni une recommandation, ni un conseil en placement. Le détail titre par titre, la méthode de calcul et les mises en garde
+          complètes figurent à la page suivante.
+        </Text>
+        <PageFooterV12 />
+      </Page>
+
+      {/* ════════════════ PAGE 2 · LA PREUVE ════════════════ */}
+      <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fbfdff' }]}>
+        <SectionHeader
+          title="LE DÉTAIL, TITRE PAR TITRE"
+          subtitle={`${d.periodLabel} — chaque achat, son coût et sa valeur d'aujourd'hui`}
+          accent="#FF9600"
+        />
+
+        {/* ─ Ruban : où l'argent est allé ─ */}
+        <View
+          wrap={false}
+          style={{
+            borderRadius: 10,
+            padding: 10,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#dbeafe',
+            borderStyle: 'solid',
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
+              Où l&apos;argent est allé
+            </Text>
+            {d.firstBuyDate && d.lastBuyDate && (
+              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Du {fmtDateCourt(d.firstBuyDate)} au {fmtDateCourt(d.lastBuyDate)}
+              </Text>
+            )}
+          </View>
+
+          <View style={{ height: 16, borderRadius: 8, overflow: 'hidden', flexDirection: 'row', marginTop: 8 }}>
+            {ribbon.map((l, i) => (
+              <View key={`${l.symbol}-${i}`} style={{ width: `${l.weightPct}%`, backgroundColor: lineColor(i) }} />
+            ))}
+            {ribbonRestWeight > 0 && (
+              <View style={{ width: `${ribbonRestWeight}%`, backgroundColor: RESIDUAL_COLOR }} />
+            )}
+          </View>
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 7 }}>
+            {ribbon.map((l, i) => (
+              <View key={`${l.symbol}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: lineColor(i) }} />
+                <Text style={{ fontSize: 7, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>
+                  {l.weightPct > 80 ? `${l.symbol} — ${l.name}` : l.symbol} {l.weightPct.toFixed(0)} % · {fmt(l.totalCostCad)}
+                </Text>
+              </View>
+            ))}
+            {ribbonRestWeight > 0 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: RESIDUAL_COLOR }} />
+                <Text style={{ fontSize: 7, color: '#64748b' }}>Autres achats {ribbonRestWeight.toFixed(0)} %</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* ─ Tableau « chaque achat, aujourd'hui » ─ */}
+        <View style={[styles.tablePremium, { marginTop: 10, marginBottom: 0 }]}>
+          <View style={[styles.thPremium, { borderBottomColor: '#FF9600' }]} wrap={false}>
+            <Text style={[styles.thCellPremium, { width: COL.titre }]}>Titre</Text>
+            <Text style={[styles.thCellPremium, { width: COL.prix, textAlign: 'right' }]}>Prix moyen payé</Text>
+            <Text style={[styles.thCellPremium, { width: COL.investi, textAlign: 'right' }]}>Coût des achats</Text>
+            <Text style={[styles.thCellPremium, { width: COL.vaut, textAlign: 'right' }]}>Valeur aujourd&apos;hui</Text>
+            <Text style={[styles.thCellPremium, { width: COL.ecart, textAlign: 'right' }]}>Écart</Text>
+          </View>
+
+          {shown.map((l: DeploymentLine, i: number) => {
+            const isBoundary = (i + 1) % 5 === 0 && i < shown.length - 1;
+            const sousLignePrix = [
+              l.boughtQty > 0 ? `${l.boughtQty.toLocaleString('fr-CA')} parts` : '',
+              l.currentUnitValue != null && l.status !== 'closed' ? `auj. ${fmtFull(l.currentUnitValue)}` : '',
+            ].filter(Boolean).join(' · ');
+            return (
+              <View
+                key={`${l.symbol}-${i}`}
+                wrap={false}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 5,
+                  paddingHorizontal: 8,
+                  backgroundColor: '#ffffff',
+                  borderBottomWidth: isBoundary ? 1.2 : 0.5,
+                  borderBottomColor: isBoundary ? '#bae6fd' : '#f1f5f9',
+                  borderBottomStyle: 'solid',
+                }}
+              >
+                <View style={{ width: COL.titre, paddingHorizontal: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: lineColor(i) }} />
+                    <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{l.symbol}</Text>
+                    {l.status === 'closed' && <Text style={styles.badgeNeutral}>Revendu</Text>}
+                  </View>
+                  <Text style={{ marginTop: 1, fontSize: 6.5, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>{l.name}</Text>
+                  {l.status === 'partial' && (
+                    <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>revendu en partie</Text>
+                  )}
+                </View>
+                <View style={{ width: COL.prix, paddingHorizontal: 4 }}>
+                  <Text style={{ textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>
+                    {l.avgUnitCost > 0 ? fmtFull(l.avgUnitCost) : '—'}
+                  </Text>
+                  {sousLignePrix !== '' && (
+                    <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>{sousLignePrix}</Text>
+                  )}
+                </View>
+                <Text style={{ width: COL.investi, textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.text, paddingHorizontal: 4 }}>
+                  {fmt(l.totalCostCad)}
+                </Text>
+                <Text style={{ width: COL.vaut, textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: l.status === 'held' ? C.navy : '#94a3b8', paddingHorizontal: 4 }}>
+                  {l.status === 'held' && l.currentValue != null ? fmt(l.currentValue) : '—'}
+                </Text>
+                <View style={{ width: COL.ecart, paddingHorizontal: 4, alignItems: 'flex-end' }}>
+                  {l.status === 'held' && l.deltaPct != null && l.deltaAbs != null ? (
+                    <>
+                      <PctPill value={l.deltaPct} />
+                      <Text style={{ marginTop: 1, fontSize: 7.5, fontFamily: 'Open Sans', fontWeight: 600, color: gc(l.deltaAbs) }}>
+                        {fmt(l.deltaAbs)}
+                      </Text>
+                    </>
+                  ) : l.status === 'closed' && l.realizedFromCroesus != null ? (
+                    <Text style={{ fontSize: 6.5, color: gc(l.realizedFromCroesus) }}>
+                      à la revente : {fmt(l.realizedFromCroesus)}
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: 8, color: '#94a3b8' }}>—</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+
+          {rest.length > 0 && (
+            <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 8, backgroundColor: '#fafbfc' }}>
+              <View style={{ width: COL.titre, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: RESIDUAL_COLOR }} />
+                <Text style={{ fontSize: 7.5, color: '#64748b' }}>
+                  Autres achats ({rest.length} titre{plur(rest.length)} · {restWeight.toFixed(0)} %)
+                </Text>
+              </View>
+              <Text style={{ width: COL.prix }} />
+              <Text style={{ width: COL.investi, textAlign: 'right', fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', paddingHorizontal: 4 }}>
+                {fmt(restCost)}
+              </Text>
+              <Text style={{ width: COL.vaut, textAlign: 'right', fontSize: 8, color: '#64748b', paddingHorizontal: 4 }}>
+                {restHeld.length > 0 ? fmt(restValueHeld) : '—'}
+              </Text>
+              <Text style={{ width: COL.ecart, textAlign: 'right', fontSize: 7, color: restHeld.length > 0 ? gc(restDeltaHeld) : '#94a3b8', paddingHorizontal: 4 }}>
+                {restHeld.length > 0 ? fmt(restDeltaHeld) : '—'}
+              </Text>
+            </View>
+          )}
+
+          {/* TOTAL — la valeur posée en face de SON coût */}
+          <View
+            wrap={false}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 7,
+              paddingHorizontal: 8,
+              backgroundColor: C.navy,
+              borderTopWidth: 2.5,
+              borderTopColor: '#FF9600',
+              borderTopStyle: 'solid',
+            }}
+          >
+            <View style={{ width: COL.titre, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Total des achats
+              </Text>
+              <Text style={{ marginTop: 1, fontSize: 6.5, color: '#94a3b8' }}>écart sur les parts encore détenues</Text>
+            </View>
+            <Text style={{ width: COL.prix }} />
+            <Text style={{ width: COL.investi, textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff', paddingHorizontal: 4 }}>
+              {fmt(d.totalBuys)}
+            </Text>
+            <View style={{ width: COL.vaut, paddingHorizontal: 4 }}>
+              <Text style={{ textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#fdba74' }}>
+                {hasHeld ? fmt(d.valueEvaluated) : '—'}
+              </Text>
+              {hasHeld && (
+                <Text style={{ textAlign: 'right', fontSize: 6.5, color: '#94a3b8' }}>coût : {fmt(d.costEvaluated)}</Text>
+              )}
+            </View>
+            <View style={{ width: COL.ecart, paddingHorizontal: 4, alignItems: 'flex-end' }}>
+              {hasHeld ? (
+                <>
+                  <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: d.deltaAbs >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                    {fmtPctFr(d.deltaPct)}
+                  </Text>
+                  <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: d.deltaAbs >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                    {fmt(d.deltaAbs)}
+                  </Text>
+                </>
+              ) : (
+                <Text style={{ fontSize: 9, color: '#94a3b8' }}>—</Text>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* Le tiret expliqué là où le client le voit */}
+        <Text style={{ marginTop: 6, fontSize: 7.5, color: '#475569', lineHeight: 1.4 }}>
+          {hasHeld && nonHeldCount > 0
+            ? `Un tiret (—) indique qu'une partie des parts a été revendue ou que le suivi complet n'est pas possible : aucun écart n'est alors affiché. L'écart de ${fmt(d.deltaAbs)} porte sur les ${d.heldCount} titre${plur(d.heldCount)} détenus au complet (${d.coveragePct.toFixed(0)} % de l'argent investi) ; les revenus encaissés figurent à la page Activité et n'y sont pas inclus.`
+            : hasHeld
+              ? `L'écart de ${fmt(d.deltaAbs)} porte sur l'ensemble des titres achetés, tous encore détenus ; les revenus encaissés figurent à la page Activité et n'y sont pas inclus.`
+              : allSold
+                ? "Toutes les parts achetées ont été revendues : aucun écart n'est affiché. Les revenus encaissés figurent à la page Activité."
+                : "Un tiret (—) indique que le suivi complet n'est pas possible (parts revendues en partie ou position non retrouvée) : aucun écart n'est affiché. Les revenus encaissés figurent à la page Activité."}
+        </Text>
+
+        {/* Note méthodologique complète — l'arithmétique boucle */}
+        <View style={{ marginTop: 'auto', paddingTop: 8 }}>
+          <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>
+            Comment ces chiffres ont été comptés
+          </Text>
+          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
+            Sur {r.windowTransactionCount > 1 ? 'les' : 'la'} {r.windowTransactionCount} transaction{plur(r.windowTransactionCount)} de la période du {fmtDate(d.startDate)} au {fmtDate(d.endDate)}, {r.buyCount} achat{plur(r.buyCount)} totalisant {fmt(d.totalBuys)} {r.buyCount > 1 ? 'sont présentés' : 'est présenté'} sur ces pages{r.sellCount > 0 ? ` et ${r.sellCount} vente${plur(r.sellCount)} ${r.sellCount > 1 ? 'sont prises' : 'est prise'} en compte dans les statuts du tableau` : ''} ; {r.incomeCount} versement{plur(r.incomeCount)} de revenus, {r.contributionCount} cotisation{plur(r.contributionCount)} (dépôts) et {r.withdrawalCount} retrait{plur(r.withdrawalCount)} figurent aux pages précédentes, et {r.otherCount} autre{plur(r.otherCount)} opération{plur(r.otherCount)} (frais, transferts internes) {r.otherCount > 1 ? 'sont exclues' : 'est exclue'}. Une partie des dépôts peut demeurer en encaisse au compte.
+          </Text>
+          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
+            Le coût des achats correspond au montant net inscrit dans l&apos;historique Croesus ; lorsqu&apos;un titre a été acheté plusieurs fois, le prix moyen payé est pondéré par les quantités. La valeur d&apos;aujourd&apos;hui correspond à la quantité achetée multipliée par le dernier prix connu et n&apos;est affichée que lorsque la position détenue contient encore toutes les parts achetées ; elle n&apos;inclut ni les dividendes ni les intérêts encaissés. Pour les titres revendus, le montant « à la revente » est le gains/pertes inscrit par Croesus sur les ventes de la période ; il peut porter sur des parts acquises avant la période. {usdPhrase}{r.baseSymbolFallbackCount > 0 ? ' Lorsque le symbole de l’historique ne correspond pas exactement à celui du portefeuille, le rapprochement se fait sur la racine du symbole.' : ''}
+          </Text>
+          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
+            Ces écarts sont des constats historiques : ils ne préjugent pas des résultats futurs et ne constituent ni une prévision, ni une recommandation, ni un conseil en placement. Ce document ne remplace pas les relevés officiels ni le rapport annuel sur le rendement de votre courtier.
+          </Text>
+        </View>
+        <PageFooterV12 />
+      </Page>
+    </>
+  );
+}

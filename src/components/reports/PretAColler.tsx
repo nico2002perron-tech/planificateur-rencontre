@@ -3,14 +3,21 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import useSWR from 'swr';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { YearActivityBuilder } from '@/components/reports/YearActivityBuilder';
 import { Spinner } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
-import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult, type ParsedHolding, type AssetType } from '@/lib/parsers/croesus-parser';
+import { parseCroesusData, ASSET_TYPE_CONFIG, ACCOUNT_TYPE_MAP, type ParseResult, type AssetType } from '@/lib/parsers/croesus-parser';
 import { usePriceTargetConsensus } from '@/lib/hooks/usePriceTargets';
 import { useSymbolLogos } from '@/lib/hooks/useLogos';
 import { useVault } from '@/components/security/VaultProvider';
+import { parseMoneyLoose } from '@/lib/money/parse-loose';
 import { buildEvolution, groupMeetings, type SnapshotRow, type MeetingEvolution } from '@/lib/journal/compare-meetings';
+import {
+  buildPortfolioActivitySummary,
+  parseCroesusActivity,
+  type ActivityPeriod,
+} from '@/lib/portfolio/year-activity';
+import { buildDeploymentSummary, type DeploymentPosition } from '@/lib/portfolio/deployment';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
@@ -31,6 +38,12 @@ function formatCurrencyFull(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+}
+
+function parseOptionalMoney(value: string): number | undefined {
+  // Heuristique partagée de l'app (virgules/points milliers vs décimale,
+  // parenthèses comptables) — voir src/lib/money/parse-loose.ts.
+  return parseMoneyLoose(value, { allowNegative: true });
 }
 
 // Variantes tolérant null (pour l'évolution entre rencontres)
@@ -484,17 +497,23 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   // Enregistrer ce lot au Journal des cibles (prédiction datée) ? Désactiver =
   // cours cible « sur le coup » : le PDF est généré sans rien sauvegarder, et le
   // nom du client devient optionnel (il n'apparaît alors que sur le PDF).
-  const [saveToJournal, setSaveToJournal] = useState(true);
+  const [saveToJournal, setSaveToJournal] = useState(false);
 
   // Historique du client : captures des rencontres passées (regroupées par index
   // aveugle). Alimente l'évolution entre rencontres. Best-effort, non bloquant.
   const [priorSnapshots, setPriorSnapshots] = useState<SnapshotRow[]>([]);
   const [historyDetailOpen, setHistoryDetailOpen] = useState(false);
 
+  useEffect(() => {
+    if (vault.status !== 'unlocked') setSaveToJournal(false);
+  }, [vault.status]);
+
   // PDF builder state
   const [showPdfBuilder, setShowPdfBuilder] = useState(false);
   const [pdfOptions, setPdfOptions] = useState({
     includeCover: true,
+    includeYearActivity: true,
+    includeDeployment: true,
     includeEquities: true,
     includeFixedIncome: true,
     includeDescriptions: true,
@@ -504,6 +523,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   });
   const [fundUploading, setFundUploading] = useState<Record<string, boolean>>({});
   const [fundDragOver, setFundDragOver] = useState<string | null>(null);
+  const [activityPeriod, setActivityPeriod] = useState<ActivityPeriod>('year_to_date');
+  const [activityPaste, setActivityPaste] = useState('');
+  const [activityStartValue, setActivityStartValue] = useState('');
+  const [activityContributionsOverride, setActivityContributionsOverride] = useState('');
+  const [activityWithdrawalsOverride, setActivityWithdrawalsOverride] = useState('');
 
   // Upload a fund report PDF inline from the builder
   const handleFundUpload = useCallback(async (fundCode: string, file: File) => {
@@ -900,7 +924,13 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         const res = await fetch(`/api/price-target-snapshots?nameIdx=${encodeURIComponent(nameIdx)}`);
         if (!res.ok) throw new Error();
         const rows = await res.json();
-        if (!cancelled) setPriorSnapshots(Array.isArray(rows) ? rows : []);
+        // Les PORTEFEUILLES MODÈLES (page Proposition) ne sont pas des rencontres :
+        // sans ce filtre, une proposition deviendrait une fausse « dernière
+        // rencontre » dans le récap d'évolution du PDF remis au client.
+        const meetingsOnly = (Array.isArray(rows) ? rows : []).filter(
+          (r: { entry_type?: string | null }) => r.entry_type !== 'model_portfolio'
+        );
+        if (!cancelled) setPriorSnapshots(meetingsOnly);
       } catch {
         if (!cancelled) setPriorSnapshots([]);
       }
@@ -1188,6 +1218,141 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     return { totalCurrent, totalTarget, gain, gainPct, withTargets, total: priceableSymbols.length, analystCount, historicalCount, manualCount, cdrCount, noTargetCount, equityGain, equityGainPct, fixedIncomeAnnualIncome, fixedIncomeMarketValue, fixedIncomeGainPct, totalEstimated, totalEstimatedPct };
   }, [showTargets, targetData, holdings, excludedRows, priceableSymbols.length]);
 
+  const activityParsing = useMemo(() => {
+    if (!activityPaste.trim()) {
+      return { transactions: [], error: null as string | null };
+    }
+    try {
+      return { transactions: parseCroesusActivity(activityPaste), error: null as string | null };
+    } catch (error) {
+      return {
+        transactions: [],
+        error: error instanceof Error ? error.message : 'Historique Croesus non reconnu',
+      };
+    }
+  }, [activityPaste]);
+
+  const activityCurrentValue = useMemo(
+    () => holdings
+      .filter(holding => !excludedRows.has(holding._key))
+      .reduce((sum, holding) => sum + holding.marketValue, 0),
+    [holdings, excludedRows]
+  );
+
+  const activityIncomeCategories = useMemo(() => {
+    const categories: Record<string, 'dividend' | 'fixed_income'> = {};
+    for (const holding of holdings) {
+      if (excludedRows.has(holding._key)) continue;
+      const category = holding.assetType === 'FIXED_INCOME'
+        ? 'fixed_income'
+        : ['EQUITY', 'ETF', 'FUND', 'PREFERRED'].includes(holding.assetType)
+          ? 'dividend'
+          : null;
+      if (!category) continue;
+      const symbol = holding.symbol.trim().toUpperCase();
+      categories[symbol] = category;
+      categories[symbol.split('.')[0]] = category;
+    }
+    return categories;
+  }, [holdings, excludedRows]);
+
+  const activitySummary = useMemo(() => {
+    if (activityParsing.transactions.length === 0) return null;
+
+    return buildPortfolioActivitySummary(
+      activityParsing.transactions,
+      activityPeriod,
+      {
+        currentPortfolioValue: activityCurrentValue,
+        startingPortfolioValue: parseOptionalMoney(activityStartValue),
+        contributions: parseOptionalMoney(activityContributionsOverride),
+        withdrawals: parseOptionalMoney(activityWithdrawalsOverride),
+        incomeCategoriesBySymbol: activityIncomeCategories,
+        // Convertit les revenus en USD si la conversion USD→CAD est active pour
+        // le rapport (cohérent avec le reste du document).
+        usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : undefined,
+      }
+    );
+  }, [
+    activityParsing.transactions,
+    activityPeriod,
+    activityCurrentValue,
+    activityStartValue,
+    activityContributionsOverride,
+    activityWithdrawalsOverride,
+    activityIncomeCategories,
+    convertUsdToCad,
+    usdCadRate,
+  ]);
+
+  // Positions actuelles injectées au moteur de déploiement : agrégées par symbole
+  // (multi-comptes), prix courant = celui du document (fx déjà appliqué).
+  // ⚠ On inclut AUSSI les lignes exclues du rapport : l'exclusion vise l'affichage
+  // du portefeuille, pas les faits — sinon un titre exclu mais encore détenu
+  // s'imprimerait faussement « Revendu » sur la page Parcours.
+  const deploymentPositions = useMemo<DeploymentPosition[]>(() => {
+    const fx = convertUsdToCad && usdCadRate ? usdCadRate : 1;
+    const map = new Map<string, DeploymentPosition>();
+    for (const h of holdings) {
+      const sym = h.symbol.trim().toUpperCase();
+      if (!sym) continue;
+      const td = targetData.get(h.symbol);
+      // Même règle de change que targetData : titres USD non-CDR convertis en CAD
+      // document — le coût des achats l'est déjà via toCad, l'écart doit isoler la
+      // variation du titre, pas celle du change (promesse de la note méthodologique).
+      const symFx = !h.isCDR && h.currency === 'USD' ? fx : 1;
+      const cur = map.get(sym) ?? {
+        symbol: sym,
+        name: h.name,
+        quantity: 0,
+        marketValue: 0,
+        currency: h.currency,
+        currentPrice: undefined,
+      };
+      cur.quantity += h.quantity;
+      cur.marketValue += h.marketValue * symFx;
+      if (cur.currentPrice == null) {
+        // td.currentPrice est DÉJÀ en CAD document (fx appliqué dans targetData) ;
+        // le repli marketPrice, lui, est en devise native → même symFx.
+        const p = td?.currentPrice || h.marketPrice * symFx;
+        if (p > 0) cur.currentPrice = p;
+      }
+      map.set(sym, cur);
+    }
+    return [...map.values()];
+  }, [holdings, targetData, convertUsdToCad, usdCadRate]);
+
+  const deploymentSummary = useMemo(() => {
+    if (activityParsing.transactions.length === 0) return null;
+    // portfolioValues : MÊMES valeurs que celles passées à buildPortfolioActivitySummary
+    // (cohérence de fenêtre PAR CONSTRUCTION — le moteur recalcule dépôts/retraits
+    // sur le même inWindow avec le même toCad).
+    const starting = parseOptionalMoney(activityStartValue);
+    return buildDeploymentSummary(
+      activityParsing.transactions,
+      activityPeriod,
+      deploymentPositions,
+      {
+        usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : undefined,
+        contributionsOverride: parseOptionalMoney(activityContributionsOverride),
+        withdrawalsOverride: parseOptionalMoney(activityWithdrawalsOverride),
+        portfolioValues: starting != null && activityCurrentValue > 0
+          ? { starting, current: activityCurrentValue }
+          : undefined,
+      }
+    );
+  }, [
+    activityParsing.transactions,
+    activityPeriod,
+    deploymentPositions,
+    convertUsdToCad,
+    usdCadRate,
+    activityContributionsOverride,
+    activityWithdrawalsOverride,
+    activityStartValue,
+    activityCurrentValue,
+  ]);
+
   const handleDownloadPdf = useCallback(async () => {
     setGeneratingPdf(true);
     try {
@@ -1239,10 +1404,16 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         // Évolution depuis la dernière rencontre (récapitulatif PDF). Absent si
         // pas d'historique → PDF identique à aujourd'hui.
         evolution: evolution ?? undefined,
+        yearActivity: pdfOptions.includeYearActivity ? activitySummary ?? undefined : undefined,
+        deployment: pdfOptions.includeYearActivity && pdfOptions.includeDeployment
+          ? deploymentSummary ?? undefined
+          : undefined,
         usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : null,
         fundCodes: pdfOptions.fundCodesToInclude,
         options: {
           includeCover: pdfOptions.includeCover,
+          includeYearActivity: pdfOptions.includeYearActivity,
+          includeDeployment: pdfOptions.includeDeployment,
           includeEquities: pdfOptions.includeEquities,
           includeFixedIncome: pdfOptions.includeFixedIncome,
           includeDescriptions: pdfOptions.includeDescriptions,
@@ -1335,7 +1506,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
             accountType: h.accountType,
             accountLabel: h.accountLabel,
           }));
-        if (saveToJournal && snapshotRows.length > 0 && clientName.trim()) {
+        if (saveToJournal && vault.status === 'unlocked' && snapshotRows.length > 0 && clientName.trim()) {
           // Coffre client : le nom est chiffré DANS le navigateur. On n'envoie
           // au serveur que le nom chiffré (name_enc) + l'index aveugle (name_idx).
           const trimmed = clientName.trim();
@@ -1360,7 +1531,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, result.summary, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution, saveToJournal]);
+  }, [holdings, targetData, prices, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution, activitySummary, deploymentSummary, saveToJournal, convertUsdToCad, usdCadRate]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -2948,6 +3119,32 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               </div>
             </div>
 
+            <YearActivityBuilder
+              enabled={pdfOptions.includeYearActivity}
+              onEnabledChange={enabled => setPdfOptions(previous => ({ ...previous, includeYearActivity: enabled }))}
+              deploymentEnabled={pdfOptions.includeDeployment}
+              onDeploymentEnabledChange={enabled => setPdfOptions(previous => ({ ...previous, includeDeployment: enabled }))}
+              deploymentDetected={!!deploymentSummary && deploymentSummary.buyCount > 0}
+              period={activityPeriod}
+              onPeriodChange={setActivityPeriod}
+              paste={activityPaste}
+              onPasteChange={setActivityPaste}
+              startValue={activityStartValue}
+              onStartValueChange={setActivityStartValue}
+              contributionsOverride={activityContributionsOverride}
+              onContributionsOverrideChange={setActivityContributionsOverride}
+              withdrawalsOverride={activityWithdrawalsOverride}
+              onWithdrawalsOverrideChange={setActivityWithdrawalsOverride}
+              summary={activitySummary}
+              error={activityParsing.error}
+              onClear={() => {
+                setActivityPaste('');
+                setActivityStartValue('');
+                setActivityContributionsOverride('');
+                setActivityWithdrawalsOverride('');
+              }}
+            />
+
             {/* Fund reports section with inline upload */}
             {fundCheckResults.length > 0 && (
               <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
@@ -3125,7 +3322,9 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               <div className="flex flex-col pl-2">
                 <span className="text-xs font-bold text-gray-700">Enregistrer au Journal des cibles</span>
                 <span className="text-[10px] text-text-muted">
-                  {saveToJournal
+                  {vault.status !== 'unlocked'
+                    ? 'Le coffre est requis seulement pour le Journal. Le PDF reste disponible sans mot de passe.'
+                    : saveToJournal
                     ? 'Ce lot est gardé comme prédiction datée — nom du client requis.'
                     : 'Cours cible « sur le coup » — rien n’est enregistré, nom optionnel.'}
                 </span>
@@ -3134,10 +3333,13 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                 type="button"
                 role="switch"
                 aria-checked={saveToJournal}
+                disabled={vault.status !== 'unlocked'}
                 onClick={() => setSaveToJournal(v => !v)}
-                className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0 mr-1"
+                className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0 mr-1 disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: saveToJournal ? DUO.green : '#d1d5db' }}
-                title={saveToJournal ? 'Enregistrement activé' : 'Enregistrement désactivé'}
+                title={vault.status !== 'unlocked'
+                  ? 'Déverrouillez le coffre depuis le Journal pour activer cet enregistrement'
+                  : saveToJournal ? 'Enregistrement activé' : 'Enregistrement désactivé'}
               >
                 <span
                   className="absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform"
@@ -3210,6 +3412,13 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                   const rowsPerEqPage = pdfOptions.orientation === 'landscape' ? 16 : 20;
                   let pages = 0;
                   if (pdfOptions.includeCover) pages += 1;
+                  if (pdfOptions.includeYearActivity && activitySummary) {
+                    pages += 2;
+                    if (activitySummary.startingPortfolioValue != null) pages += 1;
+                    // « Le parcours de votre argent » = 2 pages (récit + détail).
+                    if (pdfOptions.includeDeployment && deploymentSummary && deploymentSummary.buyCount > 0) pages += 2;
+                  }
+                  if (evolution && (evolution.held.length + evolution.exited.length + evolution.added.length) > 0) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
                   if (pdfOptions.includeIncomeDetail && incomeCount > 0) pages += 1;
                   if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
@@ -3232,7 +3441,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                 </button>
                 <button
                   onClick={handleDownloadPdf}
-                  disabled={generatingPdf || (saveToJournal && !clientName.trim()) || (!pdfOptions.includeCover && !pdfOptions.includeEquities && !pdfOptions.includeFixedIncome && !pdfOptions.includeDescriptions && pdfOptions.fundCodesToInclude.length === 0)}
+                  disabled={generatingPdf || (saveToJournal && (vault.status !== 'unlocked' || !clientName.trim())) || (
+                    !pdfOptions.includeCover &&
+                    !(pdfOptions.includeYearActivity && activitySummary) &&
+                    !pdfOptions.includeEquities &&
+                    !pdfOptions.includeFixedIncome &&
+                    !pdfOptions.includeDescriptions &&
+                    !pdfOptions.includeIncomeDetail &&
+                    pdfOptions.fundCodesToInclude.length === 0
+                  )}
                   className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
                     transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: DUO.green, boxShadow: `0 4px 0 0 ${DUO.greenDark}` }}

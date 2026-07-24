@@ -185,14 +185,15 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Les deux outils manipulent des noms de clients → coffre déverrouillé requis */}
-      <VaultGate>
-        {/* Tab: Prospect */}
-        {activeTab === 'prospect' && <ProspectReport />}
+      {/* Le prospect enregistre des données client et demeure protégé par le coffre. */}
+      {activeTab === 'prospect' && (
+        <VaultGate>
+          <ProspectReport />
+        </VaultGate>
+      )}
 
-        {/* Tab: Prêt à coller */}
-        {activeTab === 'paste' && <PretAColler />}
-      </VaultGate>
+      {/* La génération locale du PDF reste accessible sans mot de passe. */}
+      {activeTab === 'paste' && <PretAColler />}
     </div>
   );
 }

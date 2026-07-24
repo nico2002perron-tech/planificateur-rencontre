@@ -8,6 +8,20 @@ import {
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import type { MeetingEvolution } from '@/lib/journal/compare-meetings';
+import type { PortfolioActivitySummary } from '@/lib/portfolio/year-activity';
+import type { DeploymentSummary } from '@/lib/portfolio/deployment';
+import {
+  AnnualIncomeProgression,
+  GrowthSourcesPage,
+  PortfolioAllocationPage,
+  YearActivityPage,
+  YearSummaryPanel,
+} from './year-activity-pages';
+import { DeploymentPage } from './deployment-page';
+import {
+  SECTOR_META, ASSET_CLASS_META, SectorIcon, SectorDonut,
+  buildEquitySectorSlices, buildAssetClassSlices, type SectorSlice,
+} from './sectors';
 
 const FONTS_DIR = path.join(process.cwd(), 'public', 'fonts');
 
@@ -87,6 +101,10 @@ export interface PriceTargetHolding {
 
 export interface PdfRenderOptions {
   includeCover?: boolean;
+  /** Pages Bilan, Activité, Croissance et Répartition enrichie. */
+  includeYearActivity?: boolean;
+  /** Page « Le parcours de votre argent » (dépôts → achats → valeur des parts achetées). */
+  includeDeployment?: boolean;
   includeEquities?: boolean;
   includeFixedIncome?: boolean;
   /** "Descriptions des titres" section (replaces the old cash/other table). */
@@ -119,6 +137,10 @@ export interface PriceTargetReportData {
   usdCadRate?: number | null;
   /** Évolution depuis la dernière rencontre (récapitulatif). Absent = pas d'historique. */
   evolution?: MeetingEvolution;
+  /** Résumé agrégé des transactions Croesus pour la version 1.2. */
+  yearActivity?: PortfolioActivitySummary;
+  /** Déploiement des dépôts (page « Le parcours de votre argent »). */
+  deployment?: DeploymentSummary;
   /** Calendrier des revenus 12 mois (12 entrées, janvier→décembre). Absent = pas de calendrier. */
   incomeCalendar?: IncomeMonth[];
   summary: {
@@ -298,114 +320,234 @@ function ScenarioGauge({ low, mid, high, width = 210, height = 12 }: {
 // de moyenne + split dividendes/coupons + top payeurs. Barres empilées :
 // dividendes (vert, bas) + coupons (bleu, haut), séparées par un liseré blanc
 // (2 px de surface) et bout arrondi côté valeur, façon dataviz.
-function IncomeDashboard({ months, dividendsTotal, couponsTotal, yieldPct, topPayers, year }: {
+function IncomeDashboard({ months, dividendsTotal, couponsTotal, yieldPct, topPayers, year, activity, generatedAt }: {
   months: IncomeMonth[];
   dividendsTotal: number;
   couponsTotal: number;
   yieldPct: number;
   topPayers: { symbols: string[]; pct: number } | null;
   year?: string;
+  activity?: PortfolioActivitySummary;
+  generatedAt: string;
 }) {
-  const totals = months.map(m => Math.max(0, m.dividends) + Math.max(0, m.coupons));
-  const max = Math.max(...totals, 1);
-  const annual = dividendsTotal + couponsTotal;
-  const avg = annual / 12;
-  const bestIdx = annual > 0 ? totals.indexOf(Math.max(...totals)) : -1;
-  const chartH = 56;
+  const reportDate = new Date(generatedAt);
+  // Année civile de référence + revenus de l'ANNÉE COMPLÈTE (pas la fenêtre de
+  // période) : sinon un revenu de janvier serait montré à 0 quand la période
+  // choisie est « 6 mois »/« 1 an », en contradiction avec la page « Revenus ».
+  const reportYear = activity?.currentYear ?? reportDate.getFullYear();
+  const currentMonth = reportDate.getFullYear() === reportYear ? reportDate.getMonth() : 11;
+  const actualByMonth = new Map(
+    (activity?.currentYearMonthlyIncome ?? [])
+      .filter(month => month.key.startsWith(String(reportYear) + '-'))
+      .map(month => [month.key, month])
+  );
+
+  const progressMonths = months.map((month, index) => {
+    const key = String(reportYear) + '-' + String(index + 1).padStart(2, '0');
+    const actual = actualByMonth.get(key);
+    const actualDividends = Math.max(0, actual?.dividends ?? 0);
+    const actualCoupons = Math.max(0, actual?.fixedIncome ?? 0);
+    const projectedDividends = Math.max(0, month.dividends);
+    const projectedCoupons = Math.max(0, month.coupons);
+    const remainingDividends = activity
+      ? index < currentMonth
+        ? 0
+        : index === currentMonth
+          ? Math.max(projectedDividends - actualDividends, 0)
+          : projectedDividends
+      : projectedDividends;
+    const remainingCoupons = activity
+      ? index < currentMonth
+        ? 0
+        : index === currentMonth
+          ? Math.max(projectedCoupons - actualCoupons, 0)
+          : projectedCoupons
+      : projectedCoupons;
+
+    return {
+      ...month,
+      actualDividends,
+      actualCoupons,
+      remainingDividends,
+      remainingCoupons,
+      total: actualDividends + actualCoupons + remainingDividends + remainingCoupons,
+    };
+  });
+
+  const actualDividends = progressMonths.reduce((sum, month) => sum + month.actualDividends, 0);
+  const actualCoupons = progressMonths.reduce((sum, month) => sum + month.actualCoupons, 0);
+  const remainingDividends = progressMonths.reduce((sum, month) => sum + month.remainingDividends, 0);
+  const remainingCoupons = progressMonths.reduce((sum, month) => sum + month.remainingCoupons, 0);
+  const accumulated = actualDividends + actualCoupons;
+  const remaining = remainingDividends + remainingCoupons;
+  const expected = activity ? accumulated + remaining : dividendsTotal + couponsTotal;
+  const completion = expected > 0 ? Math.min((accumulated / expected) * 100, 100) : 0;
+  const avg = expected / 12;
+  const max = Math.max(...progressMonths.map(month => month.total), 1);
+  const bestIdx = expected > 0
+    ? progressMonths.map(month => month.total).indexOf(Math.max(...progressMonths.map(month => month.total)))
+    : -1;
+  const chartH = 58;
   const labelH = 11;
   const barRegion = chartH - labelH;
-  const avgBottom = max > 0 ? (avg / max) * barRegion : 0;
+  const otherIncome = activity?.otherIncome ?? 0;
+
+  const categoryProgress = [
+    {
+      label: 'Dividendes',
+      actual: actualDividends,
+      remaining: activity ? remainingDividends : dividendsTotal,
+      color: '#059669',
+      pale: '#bbf7d0',
+      background: '#f0fdf4',
+    },
+    {
+      label: 'Revenus fixes',
+      actual: actualCoupons,
+      remaining: activity ? remainingCoupons : couponsTotal,
+      color: '#0891b2',
+      pale: '#bae6fd',
+      background: '#ecfeff',
+    },
+  ];
 
   return (
     <View style={{
-      borderRadius: 12, padding: 13,
+      borderRadius: 10, padding: 11,
       backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' as const,
     }} wrap={false}>
-      {/* En-tête */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 9 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
         <View style={{ width: 3, height: 12, backgroundColor: C.duoGreen, borderRadius: 1.5, marginRight: 8 }} />
         <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase' as const, letterSpacing: 0.8 }}>
-          Vos revenus{year ? ` ${year}` : ''}
+          Calendrier des revenus{year ? ' ' + year : ''}
         </Text>
-        <Text style={{ fontSize: 6, color: '#94a3b8', marginLeft: 8 }}>ce que votre portefeuille vous verse</Text>
+        <Text style={{ fontSize: 6, color: '#94a3b8', marginLeft: 8 }}>
+          {activity ? 'encaissé à date et revenus encore attendus' : 'projection des dividendes et coupons'}
+        </Text>
       </View>
 
-      {/* Corps : héros (gauche) + graphique (droite) */}
-      <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
-        {/* Héros de revenu */}
-        <View style={{ width: 134, paddingRight: 14, borderRightWidth: 1, borderRightColor: '#eef2f7', borderRightStyle: 'solid' as const }}>
-          <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 3 }}>Revenu annuel</Text>
-          <Text style={{ fontSize: 23, fontFamily: 'Montserrat', fontWeight: 800, color: '#059669', marginBottom: 4 }}>{fmt(annual)}</Text>
-          <Text style={{ fontSize: 8, color: '#64748b', marginBottom: 7 }}>≈ <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.text }}>{fmt(avg)}</Text> / mois</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ backgroundColor: '#ecfeff', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-              <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2' }}>{yieldPct.toFixed(1)} %</Text>
-            </View>
-            <Text style={{ fontSize: 6.5, color: '#94a3b8' }}>de rendement</Text>
-          </View>
-        </View>
-
-        {/* Graphique 12 mois */}
-        <View style={{ flex: 1 }}>
-          <View style={{ position: 'relative' as const, height: chartH }}>
-            {/* Ligne de moyenne mensuelle (référence) — expliquée dans la légende du pied */}
-            {avg > 0 && (
-              <View style={{ position: 'absolute' as const, left: 0, right: 0, bottom: avgBottom, borderTopWidth: 0.8, borderTopColor: '#cbd5e1', borderTopStyle: 'dashed' as const }} />
-            )}
-            {/* Barres */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: chartH, gap: 3 }}>
-              {months.map((m, i) => {
-                const div = Math.max(0, m.dividends), coup = Math.max(0, m.coupons);
-                const t = div + coup;
-                const hTot = (t / max) * barRegion;
-                const hDiv = t > 0 ? (div / t) * hTot : 0;
-                const hCoup = hTot - hDiv;
-                const best = i === bestIdx;
-                return (
-                  <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: chartH }}>
-                    {t > 0 && (
-                      <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: best ? 700 : 400, color: best ? C.navy : '#94a3b8', marginBottom: 2 }}>{fmtK(t)}</Text>
-                    )}
-                    {t > 0 && (
-                      <View style={{ width: '66%', height: Math.max(hTot, 1) }}>
-                        {hCoup > 0 && <View style={{ height: hCoup, backgroundColor: C.duoBlue, borderTopLeftRadius: 2, borderTopRightRadius: 2, borderBottomLeftRadius: hDiv > 0 ? 0 : 2, borderBottomRightRadius: hDiv > 0 ? 0 : 2 }} />}
-                        {hCoup > 0 && hDiv > 0 && <View style={{ height: 1.5 }} />}
-                        {hDiv > 0 && <View style={{ height: hDiv, backgroundColor: C.duoGreen, borderTopLeftRadius: hCoup > 0 ? 1.5 : 2, borderTopRightRadius: hCoup > 0 ? 1.5 : 2 }} />}
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-          {/* Étiquettes de mois */}
-          <View style={{ flexDirection: 'row', marginTop: 4 }}>
-            {months.map((m, i) => (
-              <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: i === bestIdx ? 700 : 400, color: i === bestIdx ? C.navy : '#94a3b8' }}>{m.label}</Text>
+      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+        <View style={{ width: 142, paddingRight: 12, borderRightWidth: 1, borderRightColor: '#eef2f7', borderRightStyle: 'solid' as const }}>
+          <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.7, marginBottom: 2 }}>
+            {activity ? 'Encaissé à date' : 'Revenu annuel projeté'}
+          </Text>
+          <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#059669', marginBottom: 3 }}>
+            {fmt(activity ? accumulated : expected)}
+          </Text>
+          {activity ? (
+            <>
+              <Text style={{ fontSize: 7, color: '#64748b', marginBottom: 5 }}>
+                Reste prévu <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{fmt(remaining)}</Text>
+              </Text>
+              <View style={{ height: 5, borderRadius: 2.5, backgroundColor: '#e2e8f0', overflow: 'hidden' as const }}>
+                <View style={{ width: String(completion) + '%', height: 5, borderRadius: 2.5, backgroundColor: '#10b981' }} />
               </View>
-            ))}
+              <Text style={{ fontSize: 5.5, color: '#94a3b8', marginTop: 3 }}>
+                {completion.toFixed(0)} % du revenu attendu déjà encaissé
+              </Text>
+            </>
+          ) : (
+            <Text style={{ fontSize: 7, color: '#64748b', marginBottom: 5 }}>
+              ≈ <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: C.text }}>{fmt(avg)}</Text> / mois
+            </Text>
+          )}
+          <View style={{ marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ backgroundColor: '#ecfeff', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#0891b2' }}>{yieldPct.toFixed(1)} %</Text>
+            </View>
+            <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>rendement annuel</Text>
+          </View>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: chartH, gap: 3 }}>
+            {progressMonths.map((month, index) => {
+              const height = (month.total / max) * barRegion;
+              const segments = [
+                { value: month.remainingCoupons, color: '#bae6fd' },
+                { value: month.remainingDividends, color: '#bbf7d0' },
+                { value: month.actualCoupons, color: C.duoBlue },
+                { value: month.actualDividends, color: C.duoGreen },
+              ].filter(segment => segment.value > 0);
+              return (
+                <View key={month.label} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: chartH }}>
+                  {month.total > 0 && (
+                    <Text style={{ fontSize: 5.5, fontFamily: 'Open Sans', fontWeight: index === bestIdx ? 700 : 400, color: index === bestIdx ? C.navy : '#94a3b8', marginBottom: 2 }}>
+                      {fmtK(month.total)}
+                    </Text>
+                  )}
+                  {month.total > 0 && (
+                    <View style={{ width: '66%', height: Math.max(height, 1), borderRadius: 2, overflow: 'hidden' as const, justifyContent: 'flex-end' }}>
+                      {segments.map((segment, segmentIndex) => (
+                        <View
+                          key={segmentIndex}
+                          style={{
+                            height: Math.max((segment.value / month.total) * height, 0.7),
+                            backgroundColor: segment.color,
+                          }}
+                        />
+                      ))}
+                    </View>
+                  )}
+                  <Text style={{
+                    marginTop: 3,
+                    fontSize: 6.5,
+                    fontFamily: 'Open Sans',
+                    fontWeight: index === currentMonth ? 700 : 400,
+                    color: index === currentMonth ? C.navy : '#94a3b8',
+                  }}>
+                    {month.label}
+                  </Text>
+                  {index === currentMonth && <View style={{ marginTop: 1, width: 10, height: 1.5, borderRadius: 1, backgroundColor: C.duoGreen }} />}
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>
 
-      {/* Pied : split dividendes/coupons + top payeurs */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingTop: 7, borderTopWidth: 0.5, borderTopColor: '#f1f5f9', borderTopStyle: 'solid' as const, gap: 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: C.duoGreen }} />
-          <Text style={{ fontSize: 7, color: '#64748b' }}>Dividendes <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: '#059669' }}>{fmt(dividendsTotal)}</Text></Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 9 }}>
+        {categoryProgress.map(category => {
+          const total = category.actual + category.remaining;
+          const pct = total > 0 ? Math.min((category.actual / total) * 100, 100) : 0;
+          return (
+            <View key={category.label} style={{ flex: 1, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: category.background }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: category.color }} />
+                  <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 700, color: C.navy }}>{category.label}</Text>
+                </View>
+                <Text style={{ fontSize: 7, fontFamily: 'Montserrat', fontWeight: 800, color: category.color }}>{fmt(total)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ fontSize: 5.5, color: '#64748b' }}>
+                  Encaissé <Text style={{ fontWeight: 700, color: category.color }}>{fmt(category.actual)}</Text>
+                </Text>
+                <Text style={{ fontSize: 5.5, color: '#64748b' }}>
+                  À venir <Text style={{ fontWeight: 700, color: C.navy }}>{fmt(category.remaining)}</Text>
+                </Text>
+              </View>
+              <View style={{ height: 4, borderRadius: 2, backgroundColor: category.pale, overflow: 'hidden' as const }}>
+                <View style={{ width: String(pct) + '%', height: 4, borderRadius: 2, backgroundColor: category.color }} />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: '#10b981' }} />
+          <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>couleur pleine = encaissé</Text>
+          <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: '#d9f5e4', marginLeft: 5 }} />
+          <Text style={{ fontSize: 5.5, color: '#94a3b8' }}>teinte claire = à venir</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: C.duoBlue }} />
-          <Text style={{ fontSize: 7, color: '#64748b' }}>Coupons <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: '#0891b2' }}>{fmt(couponsTotal)}</Text></Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 12, borderTopWidth: 0.8, borderTopColor: '#cbd5e1', borderTopStyle: 'dashed' as const }} />
-          <Text style={{ fontSize: 7, color: '#94a3b8' }}>Moyenne mensuelle</Text>
-        </View>
+        {otherIncome > 0 && (
+          <Text style={{ fontSize: 5.5, color: '#94a3b8', marginLeft: 10 }}>Autres revenus encaissés : {fmt(otherIncome)}</Text>
+        )}
         {topPayers && topPayers.symbols.length > 0 && (
-          <Text style={{ fontSize: 7, color: '#94a3b8', marginLeft: 'auto' as const }}>
-            Top payeurs : <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: '#334155' }}>{topPayers.symbols.join(' · ')}</Text> = {topPayers.pct.toFixed(0)} % du revenu
+          <Text style={{ fontSize: 5.5, color: '#94a3b8', marginLeft: 'auto' as const }}>
+            Principaux payeurs : <Text style={{ fontFamily: 'Open Sans', fontWeight: 700, color: '#334155' }}>{topPayers.symbols.join(' · ')}</Text>
           </Text>
         )}
       </View>
@@ -572,211 +714,6 @@ function PaleGradientBox({
 // Sector codes match /api/models/stock-sector (Yahoo → internal codes).
 // Full French labels (never truncated) + a distinct colour per sector.
 
-// Highly-distinct categorical palette (max hue separation) so no two sectors
-// look alike in the donut. Common sectors get the most separated colours.
-const SECTOR_META: Record<string, { label: string; color: string }> = {
-  TECHNOLOGY:       { label: 'Technologie',                  color: '#4363d8' }, // royal blue
-  HEALTHCARE:       { label: 'Santé',                        color: '#e6194b' }, // red
-  FINANCIALS:       { label: 'Finance',                      color: '#3cb44b' }, // green
-  ENERGY:           { label: 'Énergie',                      color: '#f58231' }, // orange
-  CONSUMER_DISC:    { label: 'Consommation discrétionnaire', color: '#911eb4' }, // purple
-  UTILITIES:        { label: 'Services publics',             color: '#42d4f4' }, // cyan
-  REAL_ESTATE:      { label: 'Immobilier',                   color: '#f032e6' }, // magenta
-  CONSUMER_STAPLES: { label: 'Consommation de base',         color: '#469990' }, // teal
-  MATERIALS:        { label: 'Matériaux',                    color: '#9a6324' }, // brown
-  INDUSTRIALS:      { label: 'Industrie',                    color: '#808000' }, // olive
-  TELECOM:          { label: 'Télécommunications',           color: '#000075' }, // navy
-  MILITARY:         { label: 'Défense',                      color: '#800000' }, // maroon
-  ETF:              { label: 'FNB diversifiés',              color: '#d4af37' }, // gold
-  OTHER:            { label: 'Autres',                       color: '#a9a9a9' }, // grey
-};
-
-interface SectorSlice { code: string; label: string; color: string; value: number; pct: number; }
-
-// One simple, recognizable line/fill icon per sector (24×24 viewBox, primitives only).
-function SectorIcon({ code, size = 11, color }: { code: string; size?: number; color: string }) {
-  const st = { stroke: color, strokeWidth: 2, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  const fl = { fill: color };
-  let body: React.ReactNode;
-  switch (code) {
-    case 'TECHNOLOGY': // microchip
-      body = (<>
-        <Rect x={6} y={6} width={12} height={12} rx={1.5} {...st} />
-        <Rect x={9.5} y={9.5} width={5} height={5} rx={0.5} {...st} />
-        <Line x1={9} y1={6} x2={9} y2={3} {...st} /><Line x1={15} y1={6} x2={15} y2={3} {...st} />
-        <Line x1={9} y1={18} x2={9} y2={21} {...st} /><Line x1={15} y1={18} x2={15} y2={21} {...st} />
-        <Line x1={6} y1={9} x2={3} y2={9} {...st} /><Line x1={6} y1={15} x2={3} y2={15} {...st} />
-        <Line x1={18} y1={9} x2={21} y2={9} {...st} /><Line x1={18} y1={15} x2={21} y2={15} {...st} />
-      </>); break;
-    case 'FINANCIALS': // bank
-      body = (<>
-        <Polygon points="12,3 21,8 3,8" {...fl} />
-        <Line x1={5} y1={9} x2={5} y2={18} {...st} /><Line x1={9.7} y1={9} x2={9.7} y2={18} {...st} />
-        <Line x1={14.3} y1={9} x2={14.3} y2={18} {...st} /><Line x1={19} y1={9} x2={19} y2={18} {...st} />
-        <Line x1={3} y1={21} x2={21} y2={21} {...st} />
-      </>); break;
-    case 'HEALTHCARE': // medical cross
-      body = (<>
-        <Line x1={12} y1={5} x2={12} y2={19} {...st} strokeWidth={3} />
-        <Line x1={5} y1={12} x2={19} y2={12} {...st} strokeWidth={3} />
-      </>); break;
-    case 'ENERGY': // lightning bolt
-      body = (<Polygon points="13,2 4,14 11,14 10,22 20,9 13,9" {...fl} />); break;
-    case 'MATERIALS': // cube
-      body = (<>
-        <Polygon points="12,3 20,7.5 20,16.5 12,21 4,16.5 4,7.5" {...st} />
-        <Line x1={4} y1={7.5} x2={12} y2={12} {...st} /><Line x1={20} y1={7.5} x2={12} y2={12} {...st} /><Line x1={12} y1={12} x2={12} y2={21} {...st} />
-      </>); break;
-    case 'INDUSTRIALS': // factory
-      body = (<Polygon points="3,21 3,13 8,16 8,13 13,16 13,10 21,10 21,21" {...fl} />); break;
-    case 'CONSUMER_DISC': // shopping cart
-      body = (<>
-        <Circle cx={9} cy={20} r={1.6} {...fl} /><Circle cx={17} cy={20} r={1.6} {...fl} />
-        <Polyline points="2,4 5,4 7,15 18,15 20,7 6,7" {...st} />
-      </>); break;
-    case 'CONSUMER_STAPLES': // basket
-      body = (<>
-        <Polygon points="5,8 19,8 17,20 7,20" {...st} />
-        <Line x1={9} y1={8} x2={10.5} y2={3} {...st} /><Line x1={15} y1={8} x2={13.5} y2={3} {...st} />
-      </>); break;
-    case 'UTILITIES': // light bulb
-      body = (<>
-        <Circle cx={12} cy={10} r={6} {...st} />
-        <Line x1={9} y1={19} x2={15} y2={19} {...st} /><Line x1={10} y1={22} x2={14} y2={22} {...st} />
-      </>); break;
-    case 'REAL_ESTATE': // house
-      body = (<>
-        <Polyline points="3,11 12,3 21,11" {...st} />
-        <Path d="M5 10 V20 H19 V10" {...st} />
-        <Rect x={10} y={14} width={4} height={6} {...st} />
-      </>); break;
-    case 'TELECOM': // signal bars
-      body = (<>
-        <Rect x={3} y={15} width={3} height={5} rx={0.5} {...fl} />
-        <Rect x={8} y={11} width={3} height={9} rx={0.5} {...fl} />
-        <Rect x={13} y={7} width={3} height={13} rx={0.5} {...fl} />
-        <Rect x={18} y={3} width={3} height={17} rx={0.5} {...fl} />
-      </>); break;
-    case 'MILITARY': // shield
-      body = (<Polygon points="12,3 20,6 20,12 12,21 4,12 4,6" {...fl} />); break;
-    case 'ETF': // diversified grid
-      body = (<>
-        <Rect x={4} y={4} width={7} height={7} rx={1} {...fl} /><Rect x={13} y={4} width={7} height={7} rx={1} {...fl} />
-        <Rect x={4} y={13} width={7} height={7} rx={1} {...fl} /><Rect x={13} y={13} width={7} height={7} rx={1} {...fl} />
-      </>); break;
-    case 'FIXED_INCOME': // bond certificate
-      body = (<>
-        <Rect x={4} y={5} width={16} height={14} rx={1.5} {...st} />
-        <Line x1={7} y1={9} x2={17} y2={9} {...st} /><Line x1={7} y1={12} x2={17} y2={12} {...st} /><Line x1={7} y1={15} x2={13} y2={15} {...st} />
-      </>); break;
-    case 'CASH': // banknote
-      body = (<>
-        <Rect x={3} y={7} width={18} height={10} rx={2} {...st} />
-        <Circle cx={12} cy={12} r={2.4} {...st} />
-      </>); break;
-    case 'FUND': // stacked layers
-      body = (<>
-        <Polygon points="12,3 21,8 12,13 3,8" {...st} />
-        <Polyline points="3,12 12,17 21,12" {...st} />
-        <Polyline points="3,16 12,21 21,16" {...st} />
-      </>); break;
-    case 'PREFERRED': // sparkle
-      body = (<Polygon points="12,2 14,10 22,12 14,14 12,22 10,14 2,12 10,10" {...fl} />); break;
-    default: // OTHER — dot
-      body = (<Circle cx={12} cy={12} r={5} {...fl} />); break;
-  }
-  return (<Svg width={size} height={size} viewBox="0 0 24 24">{body}</Svg>);
-}
-
-// Aggregate equity + ETF market value by sector → slices (desc, tail grouped into "Autres").
-function buildEquitySectorSlices(holdings: PriceTargetHolding[]): SectorSlice[] {
-  const buckets = new Map<string, number>();
-  for (const h of holdings) {
-    if (h.assetType !== 'EQUITY' && h.assetType !== 'ETF') continue;
-    const mv = Math.abs(h.marketValue);
-    if (mv <= 0) continue;
-    const code = (h.sector && SECTOR_META[h.sector]) ? h.sector : (h.assetType === 'ETF' ? 'ETF' : 'OTHER');
-    buckets.set(code, (buckets.get(code) || 0) + mv);
-  }
-  const total = Array.from(buckets.values()).reduce((a, b) => a + b, 0);
-  if (total <= 0) return [];
-  let slices: SectorSlice[] = Array.from(buckets.entries())
-    .map(([code, value]) => ({
-      code, value, pct: (value / total) * 100,
-      label: SECTOR_META[code]?.label || code,
-      color: SECTOR_META[code]?.color || SECTOR_META.OTHER.color,
-    }))
-    .sort((a, b) => b.value - a.value);
-  if (slices.length > 8) {
-    const head = slices.slice(0, 7);
-    const tailVal = slices.slice(7).reduce((s, x) => s + x.value, 0);
-    // Merge the tail into an existing "Autres" slice if one already ranks in the
-    // head (unknown-sector holdings), otherwise create one. Without this guard a
-    // pre-existing OTHER bucket + a tail OTHER produce TWO "Autres" slices.
-    const existingOther = head.find(s => s.code === 'OTHER');
-    if (existingOther) {
-      existingOther.value += tailVal;
-      existingOther.pct = (existingOther.value / total) * 100;
-    } else {
-      head.push({ code: 'OTHER', value: tailVal, pct: (tailVal / total) * 100, label: 'Autres', color: SECTOR_META.OTHER.color });
-    }
-    slices = head;
-  }
-  return slices;
-}
-
-// Asset-class buckets (computed from existing data — no API needed).
-const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
-  EQUITY:       { label: 'Actions',      color: '#2563eb' },
-  ETF:          { label: 'FNB',          color: '#8b5cf6' },
-  FIXED_INCOME: { label: 'Revenu fixe',  color: '#c5a365' },
-  PREFERRED:    { label: 'Privilégiées', color: '#ec4899' },
-  FUND:         { label: 'Fonds',        color: '#14b8a6' },
-  CASH:         { label: 'Liquidités',   color: '#64748b' },
-  OTHER:        { label: 'Autre',        color: '#94a3b8' },
-};
-
-function buildAssetClassSlices(holdings: PriceTargetHolding[]): SectorSlice[] {
-  const buckets = new Map<string, number>();
-  for (const h of holdings) {
-    const mv = Math.abs(h.marketValue);
-    if (mv <= 0) continue;
-    const code = ASSET_CLASS_META[h.assetType] ? h.assetType : 'OTHER';
-    buckets.set(code, (buckets.get(code) || 0) + mv);
-  }
-  const total = Array.from(buckets.values()).reduce((a, b) => a + b, 0);
-  if (total <= 0) return [];
-  return Array.from(buckets.entries())
-    .map(([code, value]) => ({
-      code, value, pct: (value / total) * 100,
-      label: ASSET_CLASS_META[code]?.label || code,
-      color: ASSET_CLASS_META[code]?.color || ASSET_CLASS_META.OTHER.color,
-    }))
-    .sort((a, b) => b.value - a.value);
-}
-
-// Donut ring (no center text) built from sector slices.
-function SectorDonut({ slices, size = 92 }: { slices: SectorSlice[]; size?: number }) {
-  const cx = size / 2, cy = size / 2, r = size / 2 - 2, innerR = r * 0.6;
-  const visible = slices.filter(s => s.pct > 0);
-  if (visible.length === 0) return null;
-  let cum = 0;
-  const arcs = visible.map(s => {
-    const a0 = cum * 3.6 * (Math.PI / 180); cum += s.pct; const a1 = cum * 3.6 * (Math.PI / 180);
-    const x1 = cx + r * Math.sin(a0), y1 = cy - r * Math.cos(a0);
-    const x2 = cx + r * Math.sin(a1), y2 = cy - r * Math.cos(a1);
-    const ix1 = cx + innerR * Math.sin(a0), iy1 = cy - innerR * Math.cos(a0);
-    const ix2 = cx + innerR * Math.sin(a1), iy2 = cy - innerR * Math.cos(a1);
-    const large = (a1 - a0) > Math.PI ? 1 : 0;
-    return { d: `M${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} L${ix2},${iy2} A${innerR},${innerR} 0 ${large} 0 ${ix1},${iy1} Z`, color: s.color };
-  });
-  return (
-    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {arcs.map((a, i) => <Path key={i} d={a.d} fill={a.color} />)}
-    </Svg>
-  );
-}
-
 // "Répartition du portefeuille" block: a compact asset-class donut (left) +
 // the sector donut with icon legend (right). Sector names are shown in full,
 // one line each — never wrapped or cut.
@@ -858,6 +795,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
   const hasTargets = s.totalTargetValue > 0;
   const eqDiv = s.equityDividends ?? 0;
   const fiIncome = s.fixedIncomeAnnualIncome ?? 0;
+  const yearActivity = data.options?.includeYearActivity !== false
+    ? data.yearActivity : undefined;
 
   // Allocation donuts on the cover: asset classes (all holdings) + sectors (equities/ETFs)
   const sectorSlices = buildEquitySectorSlices(data.holdings);
@@ -1005,7 +944,7 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
                 <Rect x={0} y={0} width={300} height={100} fill="url(#projGrad)" />
               </Svg>
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.8, marginBottom: 5 }}>
-                Portefeuille projeté 12 mois — consensus
+                Portefeuille projeté 12 mois - Consensus des analystes
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 7, marginBottom: hasRange ? 8 : 6 }}>
                 <Text style={{ fontSize: 21, fontFamily: 'Montserrat', fontWeight: 800, color: scen.mid >= 0 ? '#059669' : '#dc2626' }}>
@@ -1048,15 +987,19 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
         );
       })()}
 
+      {yearActivity && (
+        <YearSummaryPanel activity={yearActivity} />
+      )}
+
       {/* Répartition — classes d'actifs (mini-donut) + secteurs (donut + légende à icônes) */}
-      {(assetClassSlices.length > 0 || sectorSlices.length > 0) && (
+      {!yearActivity && (assetClassSlices.length > 0 || sectorSlices.length > 0) && (
         <RepartitionBlock assetClassSlices={assetClassSlices} sectorSlices={sectorSlices} />
       )}
 
       {/* Tableau de bord de revenu — pièce maîtresse du bas de la couverture */}
       {data.options?.includeIncomeCalendar !== false && data.incomeCalendar &&
         data.incomeCalendar.some(m => (m.dividends || 0) + (m.coupons || 0) > 0) && (
-        <View style={{ marginTop: 26 }}>
+        <View style={{ marginTop: yearActivity ? 0 : 26 }}>
           <IncomeDashboard
             months={data.incomeCalendar}
             dividendsTotal={eqDiv}
@@ -1064,6 +1007,8 @@ function CoverPage({ data, orientation }: { data: PriceTargetReportData; orienta
             yieldPct={s.totalMarketValue > 0 ? ((eqDiv + fiIncome) / s.totalMarketValue) * 100 : 0}
             topPayers={computeTopPayers(data.holdings, eqDiv + fiIncome)}
             year={String(new Date(data.generatedAt).getFullYear())}
+            activity={yearActivity}
+            generatedAt={data.generatedAt}
           />
         </View>
       )}
@@ -1952,10 +1897,11 @@ function fmtQ(value: number): string {
   return value > 0 ? fmt(value) : '—';
 }
 
-function IncomeDetailPage({ holdings, orientation, logos }: {
+function IncomeDetailPage({ holdings, orientation, logos, yearActivity }: {
   holdings: PriceTargetHolding[];
   orientation: 'portrait' | 'landscape';
   logos: Record<string, string>;
+  yearActivity?: PortfolioActivitySummary;
 }) {
   const effMv = (h: PriceTargetHolding): number => {
     if (h.marketValue > 0) return h.marketValue;
@@ -2018,6 +1964,8 @@ function IncomeDetailPage({ holdings, orientation, logos }: {
           <Text style={{ fontSize: 6, color: '#cbd5e1', marginTop: 2 }}>≈ {fmt(monthly)} par mois en moyenne</Text>
         </View>
       </View>
+
+      <AnnualIncomeProgression activity={yearActivity} />
 
       {/* ── Dividendes — détail par titre ── */}
       {divs.length > 0 && (
@@ -2162,6 +2110,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const showEquities = opts.includeEquities !== false;
   const showFixedIncome = opts.includeFixedIncome !== false;
   const showDescriptions = opts.includeDescriptions !== false;
+  const yearActivity = opts.includeYearActivity !== false ? data.yearActivity : undefined;
+  const deployment = opts.includeDeployment !== false ? data.deployment : undefined;
   const orientation: 'portrait' | 'landscape' = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
 
   const equities = showEquities
@@ -2186,6 +2136,26 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
     <Document>
       {showCover && <CoverPage data={data} orientation={orientation} />}
 
+      {yearActivity && (
+        <YearActivityPage
+          activity={yearActivity}
+          orientation={orientation}
+          montreParcours={!!deployment && deployment.buyCount > 0}
+        />
+      )}
+
+      {yearActivity && deployment && deployment.buyCount > 0 && (
+        <DeploymentPage deployment={deployment} />
+      )}
+
+      {yearActivity && (
+        <GrowthSourcesPage activity={yearActivity} orientation={orientation} />
+      )}
+
+      {yearActivity && (
+        <PortfolioAllocationPage holdings={data.holdings} orientation={orientation} />
+      )}
+
       {data.evolution && (data.evolution.held.length + data.evolution.exited.length + data.evolution.added.length) > 0 && (
         <RecapPage evolution={data.evolution} orientation={orientation} />
       )}
@@ -2200,7 +2170,12 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
       )}
 
       {showIncomeDetail && (
-        <IncomeDetailPage holdings={data.holdings} orientation={orientation} logos={logos} />
+        <IncomeDetailPage
+          holdings={data.holdings}
+          orientation={orientation}
+          logos={logos}
+          yearActivity={yearActivity}
+        />
       )}
 
       {fixedIncome.length > 0 && (
