@@ -22,7 +22,7 @@
 // - plancher rendu pour Q1/Q2/Q3 (l'omission sélective est interdite), Q4 omis.
 
 import React from 'react';
-import { Page, Text, View, Svg, Path } from '@react-pdf/renderer';
+import { Page, Text, View, Svg, Path, Defs, LinearGradient, Stop, Rect } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { DeploymentSummary, DeploymentLine, DepositChapter, GrowthFloor } from '@/lib/portfolio/deployment';
@@ -97,6 +97,24 @@ const COL = { titre: '34%', prix: '20%', investi: '15%', vaut: '15%', ecart: '16
 
 function lineColor(index: number): string {
   return index < MAX_RIBBON_SEGMENTS ? DEPLOY_COLORS[index] : RESIDUAL_COLOR;
+}
+
+/** Fond dégradé SVG doux — LE motif « carte-vedette » de la couverture du
+ *  document (Svg absolu plein cadre + Rect). `id` unique dans le document.
+ *  Le dégradé descend vers le blanc : de la profondeur, jamais un bloc plat. */
+function GradientBg({ id, from, mid }: { id: string; from: string; mid: string }) {
+  return (
+    <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 300 200" preserveAspectRatio="none">
+      <Defs>
+        <LinearGradient id={id} x1="0" y1="0" x2="300" y2="200" gradientUnits="userSpaceOnUse">
+          <Stop offset="0" stopColor={from} />
+          <Stop offset="0.55" stopColor={mid} />
+          <Stop offset="1" stopColor="#ffffff" />
+        </LinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={300} height={200} fill={`url(#${id})`} />
+    </Svg>
+  );
 }
 
 /** Chevron narratif du bandeau : la flèche porte l'identité orange et son
@@ -260,6 +278,17 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const allSold = d.closedCount === totalTitres;
   const top = d.lines[0];
   const zeroOverride = d.contributionsOverridden && d.contributions === 0;
+
+  // Carte-vedette « valeur aujourd'hui » : dégradé doux (motif couverture),
+  // teinté selon le SIGNE (gain vert, perte rouge doux, neutre bleu de marque).
+  // Plus de bloc bleu foncé ; le focal tient au dégradé, à la bordure teintée et
+  // au plus gros chiffre.
+  const focalState = !hasHeld ? 'none' : d.deltaAbs > 0 ? 'gain' : d.deltaAbs < 0 ? 'loss' : 'flat';
+  const focalGrad = focalState === 'gain'
+    ? { from: '#d1fae5', mid: '#ecfdf5', border: '#a7f3d0' }
+    : focalState === 'loss'
+      ? { from: '#fee2e2', mid: '#fef2f2', border: '#fecaca' }
+      : { from: '#e0eefb', mid: '#eef5fc', border: '#dbeafe' };
 
   // ── Mode de la timeline ──
   const chapters = d.depositChapters;
@@ -438,23 +467,24 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
 
           <Chevron label="valent aujourd'hui" />
 
-          {/* 3 · Ça vaut aujourd'hui — le point focal */}
-          <View style={{ flex: 1.25, backgroundColor: C.navy, borderRadius: 8, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 10 }}>
+          {/* 3 · Ça vaut aujourd'hui — carte-vedette à dégradé (motif couverture) */}
+          <View style={{ flex: 1.25, borderRadius: 8, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: focalGrad.border, borderStyle: 'solid', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10 }}>
+            <GradientBg id="focalGrad" from={focalGrad.from} mid={focalGrad.mid} />
             <View style={{ height: 20 }}>
-              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
                 Valeur des parts encore détenues
               </Text>
             </View>
             {hasHeld ? (
               <>
-                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
                   {fmt(d.valueEvaluated)}
                 </Text>
                 {/* flexWrap + flexShrink : le texte se replie DANS la carte, jamais
                     coupé par son bord. */}
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 3 }}>
                   <PctPill value={d.deltaPct} big />
-                  <Text style={{ flexShrink: 1, fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: d.deltaAbs >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                  <Text style={{ flexShrink: 1, fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: gc(d.deltaAbs) }}>
                     {fmt(Math.abs(d.deltaAbs))} de {d.deltaAbs >= 0 ? 'plus' : 'moins'} que leur coût
                   </Text>
                 </View>
@@ -465,7 +495,7 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
               </>
             ) : (
               <>
-                <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>—</Text>
+                <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>—</Text>
                 <Text style={{ marginTop: 3, fontSize: 7, color: '#94a3b8' }}>
                   {allSold
                     ? 'toutes les parts achetées ont été revendues — voir la page suivante'

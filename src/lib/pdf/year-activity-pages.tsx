@@ -6,6 +6,10 @@ import {
   Svg,
   Path,
   Circle,
+  Defs,
+  LinearGradient,
+  Stop,
+  Rect,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectorIcon, SectorDonut, buildEquitySectorSlices, buildAssetClassSlices, type SectorSlice } from './sectors';
@@ -478,32 +482,48 @@ export function YearActivityPage({ activity, montreParcours = false }: {
           </View>
         </View>
 
+        {/* Panneau à dégradé (motif carte-vedette de la couverture), brume cyan de
+            l'identité Activité : plus de bloc bleu foncé, de la profondeur sans dureté. */}
         <View
           style={{
             flex: 0.8,
             borderRadius: 10,
-            padding: 16,
-            backgroundColor: C.navy,
+            overflow: 'hidden',
+            position: 'relative',
+            padding: 14,
+            borderWidth: 1,
+            borderColor: '#cfeef6',
+            borderStyle: 'solid',
           }}
         >
-          <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+          <Svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} viewBox="0 0 200 300" preserveAspectRatio="none">
+            <Defs>
+              <LinearGradient id="statsGrad" x1="0" y1="0" x2="0" y2="300" gradientUnits="userSpaceOnUse">
+                <Stop offset="0" stopColor="#e2f5fb" />
+                <Stop offset="0.5" stopColor="#eefafd" />
+                <Stop offset="1" stopColor="#ffffff" />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width={200} height={300} fill="url(#statsGrad)" />
+          </Svg>
+          <Text style={{ fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase', letterSpacing: 0.6 }}>
             Statistiques
           </Text>
-          <View style={{ marginTop: 10 }}>
+          <View style={{ marginTop: 8 }}>
             {statRows.map((stat, index) => (
               <View
                 key={stat.label}
                 style={{
-                  paddingVertical: 8,
+                  paddingVertical: 7,
                   borderBottomWidth: index < statRows.length - 1 ? 0.5 : 0,
-                  borderBottomColor: '#334e68',
+                  borderBottomColor: '#dbeafe',
                   borderBottomStyle: 'solid',
                 }}
               >
-                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
                   {stat.value}
                 </Text>
-                <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>{stat.label}</Text>
+                <Text style={{ marginTop: 1, fontSize: 6.5, color: '#64748b' }}>{stat.label}</Text>
               </View>
             ))}
           </View>
