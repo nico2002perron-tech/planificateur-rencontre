@@ -4,6 +4,7 @@ import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchTournamentState, type TournamentMatch } from '@/lib/tournament/state';
+import { fetchTeamCaptains } from '@/lib/tournament/recipients';
 import { sendMatchResultEmails, type NextMatchInfo } from '@/lib/email';
 
 export const maxDuration = 60;
@@ -79,11 +80,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     };
   };
 
-  const { data: members } = await supabase
-    .from('event_team_members')
-    .select('team_id, first_name, email')
-    .in('team_id', [match.team_a_id, match.team_b_id])
-    .eq('status', 'confirmed');
+  // Capitaine seulement, un par équipe (décidé avec Nicolas — volume minimal).
+  const captains = await fetchTeamCaptains(supabase, [match.team_a_id, match.team_b_id]);
 
   const appUrl = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
   const hasPlayoffs = state.matches.some(m => m.phase !== 'garantie');
@@ -99,17 +97,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let emailsSent = 0;
   const notified: string[] = [];
   for (const side of sides) {
-    const recipients = new Map<string, { email: string; firstName: string }>();
-    for (const m of members || []) {
-      if (m.team_id !== side.teamId || !m.email || m.email.endsWith('.sans-courriel')) continue;
-      recipients.set(m.email.toLowerCase(), { email: m.email, firstName: m.first_name || '' });
-    }
-    if (recipients.size === 0) continue;
+    const captain = captains.get(side.teamId);
+    if (!captain) continue;
 
     const sent = await sendMatchResultEmails(
       { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone },
       teamNames.get(side.teamId) || '',
-      [...recipients.values()],
+      [captain],
       { opponent: teamNames.get(side.opponentId) || '', scoreFor: side.scoreFor, scoreAgainst: side.scoreAgainst },
       nextFor(side.teamId),
       `${appUrl}/tournoi/${eventId}?equipe=${side.teamId}`,

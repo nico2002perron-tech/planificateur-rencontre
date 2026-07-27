@@ -4,6 +4,7 @@ import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchTournamentState } from '@/lib/tournament/state';
+import { fetchTeamCaptains } from '@/lib/tournament/recipients';
 import { sendTournamentSchedule, type TeamScheduleMatch } from '@/lib/email';
 
 // L'envoi à toutes les équipes peut représenter ~100 courriels (par lots de 100,
@@ -45,13 +46,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .single();
   if (!event) return NextResponse.json({ error: 'Événement introuvable' }, { status: 404 });
 
-  // Membres confirmés de chaque équipe
+  // Un seul destinataire par équipe : le CAPITAINE (décidé avec Nicolas — volume minimal).
   const teamIds = state.teams.map(t => t.id);
-  const { data: members } = await supabase
-    .from('event_team_members')
-    .select('team_id, first_name, email')
-    .in('team_id', teamIds)
-    .eq('status', 'confirmed');
+  const captains = await fetchTeamCaptains(supabase, teamIds);
 
   const teamNames = new Map(state.teams.map(t => [t.id, t.name]));
   const appUrl = process.env.NEXTAUTH_URL || 'https://planificateur-rencontre.vercel.app';
@@ -90,18 +87,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       continue;
     }
 
-    // Dédupliqués par courriel (un capitaine aussi joueur ne reçoit qu'un envoi)
-    const recipients = new Map<string, { email: string; firstName: string }>();
-    for (const m of members || []) {
-      if (m.team_id !== team.id || !m.email) continue;
-      recipients.set(m.email.toLowerCase(), { email: m.email, firstName: m.first_name || '' });
-    }
-    if (recipients.size === 0) continue;
+    // Capitaine seulement — 1 courriel par équipe.
+    const captain = captains.get(team.id);
+    if (!captain) continue;
 
     const sent = await sendTournamentSchedule(
       { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, contact_email: event.contact_email, contact_phone: event.contact_phone },
       team.name,
-      [...recipients.values()],
+      [captain],
       teamMatches,
       `${liveUrl}?equipe=${team.id}`,
     );
