@@ -6,10 +6,17 @@
  * ?equipe=<id> : met l'équipe du joueur en vedette (sa prochaine partie en gros).
  */
 
-import { useState, useEffect, useMemo, useCallback, use, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, use, Suspense, Fragment } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, MapPin, CalendarDays, Radio, Medal, Clock3 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
+import { computeQualification, type QualStatus } from '@/lib/tournament/qualification';
+import type { TournamentMatch } from '@/lib/tournament/state';
+
+const QUAL_COLOR: Record<QualStatus, string> = {
+  champion: '#b45309', finalist: '#0f2a4a', bronze: '#b45309', qualified: '#15803d',
+  contention: '#64748b', eliminated: '#94a3b8', none: '#64748b',
+};
 
 const BRAND = {
   navy: '#03045e',
@@ -114,6 +121,15 @@ function LivePageInner({ eventId }: { eventId: string }) {
 
   const multiDay = byDay.length > 1;
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
+
+  // Qui passe / qui sort / champion — le config public inclut playoffs_* (type élargi ici).
+  const pconf = state?.config as { status: string; playoffs_enabled?: boolean; playoffs_team_count?: number } | null;
+  const qual = useMemo(() => computeQualification(
+    state?.standings || [],
+    (state?.matches || []) as unknown as TournamentMatch[],
+    { playoffsEnabled: !!pconf?.playoffs_enabled, playoffSize: pconf?.playoffs_team_count ?? 0 },
+  ), [state?.standings, state?.matches, pconf?.playoffs_enabled, pconf?.playoffs_team_count]);
+  const showCut = qual.guaranteedComplete && qual.playoffSize > 0 && qual.cutRank < (state?.standings.length ?? 0);
 
   // Prochaine partie de l'équipe sélectionnée — la plus tôt en JOUR + HEURE
   // (pas en numéro de partie : l'organisateur peut déplacer des matchs)
@@ -351,15 +367,28 @@ function LivePageInner({ eventId }: { eventId: string }) {
                         <th className="text-center py-1.5 px-1.5">N</th>
                         <th className="text-center py-1.5 px-1.5">D</th>
                         <th className="text-center py-1.5 px-1.5">+/−</th>
-                        <th className="text-center py-1.5 pl-1.5">Pts</th>
+                        <th className="text-center py-1.5 px-1.5">Pts</th>
+                        <th className="text-right py-1.5 pl-1.5">Statut</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {state.standings.map(r => {
+                      {state.standings.map((r, i) => {
                         const highlighted = r.teamId === selectedTeam;
+                        const tq = qual.byTeam.get(r.teamId);
+                        const out = qual.guaranteedComplete && tq && !tq.inPlayoffs && qual.playoffSize > 0;
                         return (
-                          <tr key={r.teamId} className="border-t border-slate-100"
-                            style={{ backgroundColor: highlighted ? '#eff9ff' : 'transparent' }}>
+                        <Fragment key={r.teamId}>
+                          {showCut && i === qual.cutRank && (
+                            <tr><td colSpan={9} className="py-1">
+                              <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide" style={{ color: BRAND.blue }}>
+                                <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${BRAND.blue}66` }} />
+                                Ligne des séries · les {qual.playoffSize} premières passent
+                                <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${BRAND.blue}66` }} />
+                              </div>
+                            </td></tr>
+                          )}
+                          <tr className="border-t border-slate-100"
+                            style={{ backgroundColor: highlighted ? '#eff9ff' : 'transparent', opacity: out ? 0.6 : 1 }}>
                             <td className="py-2 pr-2 font-extrabold text-slate-400">
                               {r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank}
                             </td>
@@ -369,8 +398,12 @@ function LivePageInner({ eventId }: { eventId: string }) {
                             <td className="py-2 px-1.5 text-center font-bold text-slate-500">{r.ties}</td>
                             <td className="py-2 px-1.5 text-center font-bold" style={{ color: BRAND.red }}>{r.losses}</td>
                             <td className="py-2 px-1.5 text-center font-bold text-slate-500">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
-                            <td className="py-2 pl-1.5 text-center font-extrabold text-slate-800">{r.points}</td>
+                            <td className="py-2 px-1.5 text-center font-extrabold text-slate-800">{r.points}</td>
+                            <td className="py-2 pl-1.5 text-right text-[11px] font-extrabold whitespace-nowrap" style={{ color: QUAL_COLOR[tq?.status ?? 'none'] }}>
+                              {tq && tq.status !== 'none' ? tq.label : ''}
+                            </td>
                           </tr>
+                        </Fragment>
                         );
                       })}
                     </tbody>

@@ -67,6 +67,13 @@ export default function Bracket({ matches, teamName, highlightTeam, multiDay, ac
   const phases = ['quart', 'demi', 'bronze', 'finale'].filter(p => matches.some(m => m.phase === p));
   if (phases.length === 0) return null;
 
+  // Champion : gagnant de la finale terminée (sans égalité). Bannière festive.
+  const finale = matches.find(m => m.phase === 'finale');
+  const champId = finale && finale.status === 'finished' && finale.score_a !== null && finale.score_b !== null && finale.score_a !== finale.score_b
+    ? (finale.score_a > finale.score_b ? finale.team_a_id : finale.team_b_id)
+    : null;
+  const championName = champId ? teamName(champId, '') : null;
+
   // Bronze et finale partagent la dernière colonne (empilés)
   const columns: { title: string; items: BracketMatch[] }[] = [];
   for (const p of phases) {
@@ -83,6 +90,16 @@ export default function Bracket({ matches, teamName, highlightTeam, multiDay, ac
   }
 
   return (
+    <div>
+      {championName && (
+        <div className="flex items-center justify-center gap-2 rounded-xl px-4 py-3 mb-3 text-center"
+          style={{ background: 'linear-gradient(90deg,#fffbeb,#fef3c7,#fffbeb)', border: '1.5px solid #f59e0b' }}>
+          <span className="text-2xl" aria-hidden>🏆</span>
+          <span className="text-base font-extrabold" style={{ color: '#b45309' }}>
+            Champion : <span style={{ color: '#92400e' }}>{championName}</span>
+          </span>
+        </div>
+      )}
     <div className="overflow-x-auto pb-1 -mx-1 px-1">
       <div className="flex gap-3 items-stretch w-max min-w-full">
         {columns.map(col => (
@@ -123,6 +140,7 @@ export default function Bracket({ matches, teamName, highlightTeam, multiDay, ac
           </div>
         ))}
       </div>
+    </div>
     </div>
   );
 }

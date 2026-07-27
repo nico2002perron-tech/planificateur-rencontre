@@ -9,12 +9,20 @@
  * 4. Pendant le tournoi : saisis les pointages, le classement se met à jour seul.
  */
 
-import { useState, useEffect, useMemo, useCallback, use } from 'react';
+import { useState, useEffect, useMemo, useCallback, use, Fragment } from 'react';
 import {
   Loader2, ArrowLeft, Trophy, CalendarClock, Send, RefreshCw, Eye, Copy, Check,
-  AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe, Tv, Mail,
+  AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe, Tv, Mail, FileText,
 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
+import { computeQualification, type QualStatus } from '@/lib/tournament/qualification';
+import type { TournamentMatch } from '@/lib/tournament/state';
+
+// Couleur d'étiquette de qualification (qui passe / qui sort / champion)
+const QUAL_COLOR: Record<QualStatus, string> = {
+  champion: '#b45309', finalist: '#0f2a4a', bronze: '#b45309', qualified: '#15803d',
+  contention: '#64748b', eliminated: '#94a3b8', none: '#64748b',
+};
 
 const PHASE_LABELS: Record<string, string> = {
   quart: 'Quart', demi: 'Demi-finale', bronze: 'Bronze', finale: 'FINALE',
@@ -208,6 +216,14 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
 
   const finishedCount = (state?.matches || []).filter(m => m.status === 'finished').length;
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
+
+  // Qui passe / qui sort / champion — recalculé à chaque pointage (moteur pur).
+  const qual = useMemo(() => computeQualification(
+    state?.standings || [],
+    (state?.matches || []) as unknown as TournamentMatch[],
+    { playoffsEnabled: !!state?.config?.playoffs_enabled, playoffSize: state?.config?.playoffs_team_count ?? 0 },
+  ), [state?.standings, state?.matches, state?.config?.playoffs_enabled, state?.config?.playoffs_team_count]);
+  const showCut = qual.guaranteedComplete && qual.playoffSize > 0 && qual.cutRank < (state?.standings.length ?? 0);
   const liveUrl = typeof window !== 'undefined' ? `${window.location.origin}/tournoi/${eventId}` : `/tournoi/${eventId}`;
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -530,6 +546,14 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             title="Grand écran à projeter au gymnase (rotation classement/séries automatique)">
             <Tv className="h-3.5 w-3.5" /> Mode TV
           </a>
+          {hasSchedule && (
+            <a href={`/api/events/${eventId}/tournament/pdf`} target="_blank" rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-all"
+              style={{ backgroundColor: `${DUO.orange}18`, color: DUO.orangeDark }}
+              title="Feuille de tournoi PDF : horaire avec cases de pointage, classement (qui passe/qui sort), bracket et champion — à imprimer vierge ou en direct">
+              <FileText className="h-3.5 w-3.5" /> Feuille PDF
+            </a>
+          )}
         </div>
       </div>
 
@@ -947,24 +971,43 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                   <th className="text-center py-1.5 px-1.5">N</th>
                   <th className="text-center py-1.5 px-1.5">D</th>
                   <th className="text-center py-1.5 px-1.5">+/−</th>
-                  <th className="text-center py-1.5 pl-1.5">Pts</th>
+                  <th className="text-center py-1.5 px-1.5">Pts</th>
+                  <th className="text-right py-1.5 pl-1.5">Statut</th>
                 </tr>
               </thead>
               <tbody>
-                {state.standings.map(r => (
-                  <tr key={r.teamId} className="border-t border-gray-100">
-                    <td className="py-2 pr-2 font-extrabold" style={{ color: r.rank <= 3 ? DUO.orangeDark : '#9ca3af' }}>
-                      {r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank}
-                    </td>
-                    <td className="py-2 pr-2 font-extrabold text-text-main">{r.teamName}</td>
-                    <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.played}</td>
-                    <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.greenDark }}>{r.wins}</td>
-                    <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.ties}</td>
-                    <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.red }}>{r.losses}</td>
-                    <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
-                    <td className="py-2 pl-1.5 text-center font-extrabold text-text-main">{r.points}</td>
-                  </tr>
-                ))}
+                {state.standings.map((r, i) => {
+                  const tq = qual.byTeam.get(r.teamId);
+                  const out = qual.guaranteedComplete && tq && !tq.inPlayoffs && qual.playoffSize > 0;
+                  return (
+                  <Fragment key={r.teamId}>
+                    {showCut && i === qual.cutRank && (
+                      <tr><td colSpan={9} className="py-1">
+                        <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide" style={{ color: DUO.blue }}>
+                          <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${DUO.blue}66` }} />
+                          Ligne des séries · les {qual.playoffSize} premières passent
+                          <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${DUO.blue}66` }} />
+                        </div>
+                      </td></tr>
+                    )}
+                    <tr className="border-t border-gray-100" style={{ opacity: out ? 0.6 : 1 }}>
+                      <td className="py-2 pr-2 font-extrabold" style={{ color: r.rank <= 3 ? DUO.orangeDark : '#9ca3af' }}>
+                        {r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank}
+                      </td>
+                      <td className="py-2 pr-2 font-extrabold text-text-main">{r.teamName}</td>
+                      <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.played}</td>
+                      <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.greenDark }}>{r.wins}</td>
+                      <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.ties}</td>
+                      <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.red }}>{r.losses}</td>
+                      <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
+                      <td className="py-2 px-1.5 text-center font-extrabold text-text-main">{r.points}</td>
+                      <td className="py-2 pl-1.5 text-right text-[11px] font-extrabold whitespace-nowrap" style={{ color: QUAL_COLOR[tq?.status ?? 'none'] }}>
+                        {tq && tq.status !== 'none' ? tq.label : ''}
+                      </td>
+                    </tr>
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
