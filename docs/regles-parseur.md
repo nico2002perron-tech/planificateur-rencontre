@@ -1,0 +1,186 @@
+# Les règles du parseur Croesus
+
+> Établies le 4 août 2026, à partir de mesures sur le livre réel (1 003 041
+> lignes, 1998-2026). Chaque règle est née d'un écart mesuré, pas d'une
+> intuition. **Elles doivent survivre à ce chantier** : si le parseur est
+> réécrit, ces quatre règles restent vraies et leurs tests avec.
+
+## Pourquoi ce document existe
+
+Un export Croesus se lit mal naïvement. Quatre pièges produisent des chiffres
+faux *qui ont l'air justes* — c'est ce qui les rend dangereux. Un montant de
+cotisation CELI surestimé mène à un conseil de cotisation excédentaire, donc à
+une pénalité fiscale pour le client.
+
+---
+
+## Règle 1 — L'échelle par 100 des obligations
+
+**Le prix et le PBR unitaires d'une obligation sont exprimés pour 100 $ de
+valeur nominale, pas par unité détenue.**
+
+| Instrument | Quantité | PBR unitaire | Coût total | `coût ÷ q` |
+|---|---|---|---|---|
+| `IEI` (FNB) | 206 | 170,298 | 35 081,41 $ | **170,298** ✓ |
+| `Q273A4` (obligation municipale) | 39 000 | 100,000 | 39 000,00 $ | **1,000** ⚠ |
+
+Multiplier 39 000 × 100 donnerait 3,9 M$ pour une position de 39 000 $.
+
+### La règle
+
+> **Toujours dériver l'unitaire du total : `valeur ÷ quantité`. Ne jamais lire
+> la colonne unitaire directement.**
+
+Vrai pour le PBR (colonne 8 ÷ quantité) comme pour le prix (colonne 9 ÷
+quantité). La division porte l'échelle en elle et fonctionne pour tous les
+types d'instruments sans avoir à les distinguer.
+
+### Mesure de couverture
+
+Sur les relevés de positions complets : **83 positions sur 83 portent la valeur
+comptable** — 50 actions et 8 fonds cohérents à l'unité, 25 obligations toutes
+à l'échelle par 100. Aucune exception.
+
+### Ce que ça a coûté avant d'être compris
+
+Trois fois : une obligation valorisée 2 075 900 $ au lieu de 20 759 $ ; le
+facteur d'échelle global du moteur ; et un portefeuille affiché à **21,9 M$**
+pour une valeur réelle de 725 254 $.
+
+---
+
+## Règle 2 — La partie double des cotisations
+
+**Une cotisation en nature s'écrit deux fois : une jambe argent et une jambe
+titre, de montants opposés, même compte, même date.** Les additionner double le
+montant.
+
+Pire : une jambe argent appariée à une jambe titre **n'est pas de l'argent
+neuf**. C'est un apport de titres — souvent un transfert de régime, qui ne
+consomme aucun droit de cotisation.
+
+```
+2026-01-14   Cotisation   1CAD   total = +20 177,90     ← jambe argent
+2026-01-14   Cotisation   TD     q=155  total = −20 177,90   ← jambe titre
+```
+
+### La règle
+
+> **`cotisationsAnnee` ne compte que les jambes argent NON APPARIÉES** à une
+> jambe titre de même compte, même date et montant opposé (tolérance 0,02 $).
+> Une jambe appariée est un apport en nature : elle relève de la règle 4.
+
+### Mesure sur le livre
+
+| | Montant |
+|---|---|
+| Somme brute des jambes argent (comptes CELI) | 27 292 537 $ |
+| dont **appariées** à une jambe titre | **12 677 663 $ (46 %)** |
+| Cotisations en argent neuf | 14 614 875 $ |
+
+**552 comptes CELI, dont 363 avec des apports en nature.**
+
+### Le cas qui prouve la règle
+
+Un compte CELI ouvert le **14 janvier 2026** affiche 300 221 $ de cotisations
+brutes. Le plafond cumulatif à vie d'un CELI tourne autour de 102 000 $ : le
+chiffre est impossible. Après appariement, il s'agit d'un transfert de régime.
+
+Autre cas : un compte à 94 722 $ bruts dont 94 408 $ appariés — sa cotisation
+réelle en argent neuf est de **314 $**.
+
+---
+
+## Règle 3 — Virement interne contre transfert externe
+
+**Un transfert entrant peut venir d'un autre compte du même client (virement
+interne) ou d'une autre institution (transfert externe).** Les deux s'écrivent
+pareil, sauf que le virement interne porte une note d'appariement.
+
+```
+« ... ARTICLE 146(16) LIR TRSF I »      → apparié, virement interne
+« TRANSFERE A 37-XXXX-S »               → apparié, virement interne
+« VIRE DE 373CUVS »                     → apparié, virement interne
+```
+
+### La règle
+
+> **Un transfert entrant dont la note désigne un autre compte du même client
+> est un virement interne : il ne prouve rien sur l'existence d'un compte
+> externe.** Motifs reconnus : `TRANSFERE A`, `VIRE DE`, `TRSF`, `ARTICLE
+> 146(16) LIR`.
+
+### Pourquoi c'est critique
+
+Le schéma (section 2, règle des droits CELI) exige
+`transfertEntrantDetecte = false` pour calculer les droits réels. Une détection
+trop large rétrograderait en simple borne des clients dont les droits sont
+parfaitement calculables.
+
+### Mesure
+
+| | Lignes |
+|---|---|
+| Transferts entrants **avec** note d'appariement | 2 865 |
+| Transferts entrants **sans** note | 15 110 |
+
+---
+
+## Règle 4 — Dans le doute, la borne
+
+**Un transfert entrant non apparié est traité comme EXTERNE par défaut.**
+
+### La règle
+
+> **L'absence de preuve d'appariement n'est pas une preuve d'absence de compte
+> externe.** Un transfert orphelin met `transfertEntrantDetecte = true`, donc
+> les droits CELI sortent en **borne supérieure théorique**, statut
+> `montant-a-confirmer`, jamais en montant calculé.
+
+### Pourquoi cette asymétrie est voulue
+
+Décision explicite du planificateur, 4 août 2026 :
+
+> « Dans le doute on rétrograde vers la borne, jamais l'inverse, parce qu'un
+> chiffre de droits CELI faux est pire qu'une borne prudente. »
+
+Un droit surestimé mène à une cotisation excédentaire, donc à une pénalité de
+1 % par mois pour le client. Une borne prudente ne coûte qu'une question de
+plus en rencontre — et cette question est justement le produit (voir la section
+« Angle mort » du schéma).
+
+### Conséquence assumée
+
+Une partie des clients verront leurs droits en borne alors qu'ils seraient
+calculables. C'est le bon côté sur lequel se tromper.
+
+---
+
+## Les quatre cas de test permanents
+
+Ils vivent dans `src/lib/parseur-croesus/__tests__/`. Les fixtures reproduisent
+fidèlement les motifs réels **avec des noms fictifs** — les tests sont
+versionnés sur GitHub, aucun nom de client ne doit y apparaître.
+
+| # | Cas | Ce qu'il prouve |
+|---|---|---|
+| 1 | Obligation à 39 000 nominal, PBR unitaire 100,000, coût 39 000 $ | Le PBR unitaire dérivé vaut 1,00 et non 100,00 |
+| 1b | FNB `IEI`, 206 parts, coût 35 081,41 $ | Le même calcul donne 170,298 — une seule formule pour les deux |
+| 2 | Cotisation 1CAD +20 177,90 appariée à une jambe titre −20 177,90 | `cotisationsAnnee` = 0, pas 20 177,90 |
+| 3 | Transfert entrant avec note `TRANSFERE A <compte>` | `transfertEntrantDetecte` reste `false` |
+| 4 | Transfert entrant sans note | `transfertEntrantDetecte` passe à `true` |
+
+---
+
+## Règles héritées du moteur du grand livre
+
+Le parseur reprend aussi les règles déjà éprouvées sur le livre complet, dont
+les trois qui touchent la lecture brute :
+
+- **Antichronologie intra-journée** : à une date donnée, la première ligne vue
+  porte le solde de fin de journée. L'export n'est pas trié comme on le croit.
+- **Clé de position = symbole + devise** : le CDR canadien et l'action
+  américaine partagent le même symbole (65 470 $ d'erreur avant correction).
+- **Dédoublonnage multi-ensemble** : le maximum d'occurrences par fichier,
+  jamais l'union — les exports se chevauchent et un vrai achat peut légitimement
+  apparaître deux fois le même jour.
