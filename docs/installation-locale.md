@@ -82,3 +82,40 @@ leurs documents. La page répond 404 hors exécution locale.
 
 19 tests couvrent la normalisation des noms, la traversée de chemin, le refus
 d'écrire sur Vercel et la non-divulgation de l'inventaire.
+
+---
+
+## Lancer l'app d'un double-clic
+
+Trois scripts à la racine du projet.
+
+| Script | À quoi il sert |
+|---|---|
+| `creer-raccourci-bureau.bat` | **Une seule fois** : pose « Planificateur » sur le Bureau |
+| `lancer-planificateur.bat` | Démarre le serveur et ouvre la fenêtre d'application |
+| `arreter-planificateur.bat` | Arrête le serveur (port 3000) |
+
+### Ce que fait le lanceur
+
+1. Affiche la **branche courante** — et ne la change jamais. Aucun `checkout`,
+   aucun `pull` : ce qui est sur le disque est ce qui tourne.
+2. Vérifie que `node_modules` existe, sinon dit quoi faire.
+3. Démarre le serveur dans une fenêtre minimisée, **s'il ne tourne pas déjà**.
+4. Attend qu'il réponde — jusqu'à 90 secondes, le premier démarrage compile
+   tout le projet.
+5. Ouvre **Edge ou Chrome en mode application** : une fenêtre dédiée, sans
+   barre d'adresse ni onglets. À défaut, le navigateur par défaut.
+
+Relancer le raccourci pendant que le serveur tourne **rouvre simplement la
+fenêtre** — rien n'est redémarré.
+
+### L'icône
+
+Le raccourci prend l'icône par défaut d'un fichier `.bat`. Pour mettre celle de
+GFSF : déposer le fichier dans `public\planificateur.ico` et relancer
+`creer-raccourci-bureau.bat`.
+
+### Si le projet déménage
+
+Relancer `creer-raccourci-bureau.bat` : le raccourci pointe vers un chemin
+absolu, il ne suit pas le dossier.
