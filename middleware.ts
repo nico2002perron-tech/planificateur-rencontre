@@ -2,9 +2,9 @@ import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// /api/qr/checkin : les clients courriel chargent l'image du laissez-passer sans session
 // /tournoi : page publique en direct des tournois (horaire + classement, lien envoyé aux joueurs)
-const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/setup', '/api/test-email', '/api/portfolio', '/api/qr/checkin', '/api/tool-feedback', '/tournoi'];
+// /analyse : outil public d'analyse de portefeuille (constats, sans auth) + ses routes API
+const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/setup', '/api/test-email', '/api/portfolio', '/api/tool-feedback', '/tournoi', '/analyse', '/api/diagnostic', '/api/fonds', '/api/rapport', '/api/transmission'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:literals": "node tools/check-literals.js src/lib/film/cover-css.ts src/lib/film/client-script.ts",
+    "check:glyphes": "node tools/check-glyphes.mjs"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
@@ -18,13 +20,11 @@
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "groq-sdk": "^0.37.0",
-    "jsqr": "^1.4.0",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
     "next-auth": "^4.24.13",
     "pdf-lib": "^1.17.1",
     "pg": "^8.19.0",
-    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
@@ -46,6 +46,7 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "sharp": "^0.34.1"
   }
 }

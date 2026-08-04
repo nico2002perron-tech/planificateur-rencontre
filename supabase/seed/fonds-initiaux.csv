@@ -1,0 +1,6 @@
+code,nom,type,categorie,rfg,rfg_median_categorie,source,verifie_le
+XEQT,iShares Core Equity ETF Portfolio,fnb,Répartition d'actifs — croissance,0.0020,,manuel,
+VBAL,Vanguard Balanced ETF Portfolio,fnb,Répartition d'actifs — équilibré,0.0024,,manuel,
+ZAG,BMO Aggregate Bond Index ETF,fnb,Revenu fixe canadien,0.0009,,manuel,
+XIU,iShares S&P/TSX 60 Index ETF,fnb,Actions canadiennes,0.0018,,manuel,
+VFV,Vanguard S&P 500 Index ETF,fnb,Actions américaines,0.0009,,manuel,

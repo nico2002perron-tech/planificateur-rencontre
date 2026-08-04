@@ -4,6 +4,7 @@ import { authOptions } from '@/features/auth/config';
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchTournamentState } from '@/lib/tournament/state';
+import { normaliserSport } from '@/lib/tournament/terrains';
 
 async function checkPermission(supabase: SupabaseClient, eventId: string, userId: string, role: string): Promise<boolean> {
   if (role === 'admin') return true;
@@ -77,12 +78,28 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (body.points_tie !== undefined) patch.points_tie = int(body.points_tie, 0, 10, 1);
   if (body.points_loss !== undefined) patch.points_loss = int(body.points_loss, 0, 10, 0);
   if (body.status !== undefined && ['draft', 'published'].includes(String(body.status))) patch.status = String(body.status);
+  if (body.sport !== undefined) patch.sport = normaliserSport(body.sport);
 
-  const { error } = await supabase
-    .from('event_tournaments')
-    .upsert({ event_id: eventId, ...patch }, { onConflict: 'event_id' });
+  const enregistrer = (p: Record<string, unknown>) =>
+    supabase.from('event_tournaments').upsert({ event_id: eventId, ...p }, { onConflict: 'event_id' });
+
+  let { error } = await enregistrer(patch);
+
+  // La colonne « sport » n'existe qu'à partir de la migration v4 : tant qu'elle
+  // n'est pas passée, on enregistre tout le reste et on le dit clairement,
+  // plutôt que de faire échouer la sauvegarde de la configuration.
+  let sportIgnore = false;
+  if (error && patch.sport !== undefined && /sport/i.test(error.message)) {
+    const { sport: _sport, ...sansSport } = patch;
+    ({ error } = await enregistrer(sansSport));
+    sportIgnore = !error;
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const state = await fetchTournamentState(supabase, eventId, true);
-  return NextResponse.json(state);
+  return NextResponse.json(
+    sportIgnore
+      ? { ...state, avertissement: 'Le sport n’a pas été enregistré : exécute la migration supabase/migration_event_tournament_v4.sql.' }
+      : state,
+  );
 }

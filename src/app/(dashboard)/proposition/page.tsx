@@ -16,7 +16,7 @@ import { parseMoneyLoose } from '@/lib/money/parse-loose';
 import {
   Briefcase, User, DollarSign, TrendingUp, TrendingDown, BookmarkPlus,
   Sparkles, MapPin, Scale, Trash2, History, ArrowRight, PiggyBank,
-  CheckCircle2, RotateCcw, AlertTriangle, Search,
+  CheckCircle2, RotateCcw, AlertTriangle, Search, Download,
 } from 'lucide-react';
 
 // ── Formatage — fr-CA partout (virgule décimale, $ suffixe, % insécable) ──
@@ -233,10 +233,13 @@ export default function PropositionPage() {
       const fx = p.currency === 'USD' ? (usdCadRate ?? 0) : 1;
       const price = rawPrice * fx;
       const target = rawTarget * fx;
+      // Cibles basse/haute des analystes (pour l'éventail Prudent/Optimiste du PDF).
+      const targetLow = (t?.targetLow || 0) * fx;
+      const targetHigh = (t?.targetHigh || 0) * fx;
       const alloc = (weight / 100) * amount;
       const qty = price > 0 ? alloc / price : 0;
       const gainPct = price > 0 && target > 0 ? ((target - price) / price) * 100 : null;
-      return { ...p, weight, price, target, alloc, qty, gainPct, source: t?.source as string | undefined };
+      return { ...p, weight, price, target, targetLow, targetHigh, alloc, qty, gainPct, source: t?.source as string | undefined };
     });
   }, [positions, quotesMap, targets, amount, usdCadRate]);
 
@@ -307,6 +310,48 @@ export default function PropositionPage() {
       setSaving(false);
     }
   }, [clientName, snapshotRows, vault, toast]);
+
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const canDownloadPdf = clientName.trim().length > 0 && amount > 0 && rows.length > 0;
+  const handleDownloadPdf = useCallback(async () => {
+    if (!clientName.trim() || amount <= 0 || rows.length === 0) return;
+    setDownloadingPdf(true);
+    try {
+      const res = await fetch('/api/proposition/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: clientName.trim(),
+          context,
+          amount,
+          generatedAt: new Date().toISOString(),
+          rows: rows.map((r) => ({
+            symbol: r.symbol, name: r.name, currency: r.currency, weight: r.weight,
+            price: r.price, target: r.target, targetLow: r.targetLow, targetHigh: r.targetHigh,
+            alloc: r.alloc, gainPct: r.gainPct, source: r.source,
+            pe: quotesMap.get(r.symbol)?.pe_ratio,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error || 'Erreur lors de la génération du PDF');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Proposition-${clientName.trim().replace(/\s+/g, '-')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Échec de la génération du PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [clientName, context, amount, rows, quotesMap, toast]);
 
   const resetAll = useCallback(() => {
     setPositions([]);
@@ -518,9 +563,17 @@ export default function PropositionPage() {
       {/* 3. Gain projeté + enregistrement — visible dès qu'il y a des titres */}
       {positions.length > 0 && (
         <div className="rounded-3xl border-[3px] bg-white p-5 space-y-5" style={{ borderColor: `${STEP.trois}30`, boxShadow: `0 3px 0 0 ${STEP.trois}20` }}>
-          <div className="flex items-center gap-2">
-            <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.trois }}>3</span>
-            <h2 className="font-extrabold text-text-main">Le résultat</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-lg text-white text-xs font-extrabold flex items-center justify-center" style={{ backgroundColor: STEP.trois }}>3</span>
+              <h2 className="font-extrabold text-text-main">Le résultat</h2>
+            </div>
+            <button type="button" onClick={handleDownloadPdf} disabled={!canDownloadPdf || downloadingPdf}
+              title={canDownloadPdf ? 'Proposition client en PDF (3 pages)' : 'Nom du client, montant et au moins un titre requis'}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold border transition disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ color: STEP.un, borderColor: `${STEP.un}40`, backgroundColor: `${STEP.un}0d` }}>
+              {downloadingPdf ? <Spinner size="sm" /> : <Download className="h-3.5 w-3.5" />} Proposition PDF
+            </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 flex flex-col justify-between min-h-[72px]">

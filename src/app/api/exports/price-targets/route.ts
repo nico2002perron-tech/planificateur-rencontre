@@ -5,10 +5,7 @@ import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
-import { fetchLogoDataUris } from '@/lib/pdf/fetch-logos';
-import { fetchHoldingMeta } from '@/lib/pdf/fetch-sectors';
-import { describeHoldings } from '@/lib/pdf/describe-holdings';
-import { buildIncomeCalendar } from '@/lib/pdf/fetch-income-calendar';
+import { enrichReportData } from '@/lib/pdf/enrich-report-data';
 
 export async function POST(req: NextRequest) {
   // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
@@ -20,74 +17,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { fundCodes, options, clientName, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
-    const reportData: PriceTargetReportData = { ...rest, options, clientName };
+    const base: PriceTargetReportData = { ...rest, options, clientName };
 
-    if (!reportData.holdings || reportData.holdings.length === 0) {
+    if (!base.holdings || base.holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
     }
 
-    // Pre-fetch company logos as base64 PNG data URIs for all equity-like holdings
-    // that have a price target. Failures are silent: missing logos fall back to
-    // category dots in the template.
-    const logoSymbols = Array.from(new Set(
-      reportData.holdings
-        .filter(h => !['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType) && h.targetPrice)
-        .map(h => h.symbol)
-    ));
-    reportData.logos = await fetchLogoDataUris(logoSymbols);
-
-    // Enrich equity/ETF holdings with sector (cover donut) + the REAL official
-    // business description (Descriptions section). One Yahoo call per symbol
-    // returns both the sector and the official English summary; Groq translates
-    // that summary faithfully to French (no rewriting/inventing).
-    // Best-effort: any failure leaves the PDF renderable without the extra data.
-    try {
-      const eqEtf = reportData.holdings.filter(h => h.assetType === 'EQUITY' || h.assetType === 'ETF');
-      if (eqEtf.length > 0) {
-        const meta = await fetchHoldingMeta(eqEtf.map(h => h.symbol));
-        reportData.holdings = reportData.holdings.map(h => {
-          const m = meta[h.symbol];
-          return (h.assetType === 'EQUITY' || h.assetType === 'ETF') && m?.sector
-            ? { ...h, sector: m.sector }
-            : h;
-        });
-        // French descriptions only when the Descriptions section is included.
-        if (options?.includeDescriptions !== false) {
-          const desc = await describeHoldings(eqEtf.map(h => ({
-            symbol: h.symbol,
-            name: h.name,
-            sector: meta[h.symbol]?.sector ?? undefined,
-            summary: meta[h.symbol]?.summary ?? undefined,
-          })));
-          reportData.holdings = reportData.holdings.map(h =>
-            desc[h.symbol] ? { ...h, description: desc[h.symbol] } : h
-          );
-        }
-      }
-    } catch (e) {
-      console.error('Holding enrichment failed (non-fatal):', e);
-    }
-
-    // Calendrier des revenus 12 mois (couverture) + fréquence de versement par
-    // titre (page « Revenus du portefeuille »). Les MOIS viennent des dates de
-    // dividendes Yahoo ; les MONTANTS restent ceux (déjà en CAD) sur les holdings —
-    // aucune double conversion FX. Coupons dérivés du mois d'échéance, sans réseau.
-    // Best-effort ; sauté seulement si les deux sections sont explicitement désactivées.
-    if (options?.includeIncomeCalendar !== false || options?.includeIncomeDetail !== false) {
-      try {
-        const { calendar, frequencies, quarterlyBySymbol } = await buildIncomeCalendar(reportData.holdings);
-        reportData.incomeCalendar = calendar;
-        reportData.holdings = reportData.holdings.map(h => {
-          const freq = frequencies[h.symbol];
-          const quarterly = quarterlyBySymbol[h.symbol];
-          return (freq || quarterly)
-            ? { ...h, ...(freq ? { dividendFrequency: freq } : {}), ...(quarterly ? { quarterlyDividends: quarterly } : {}) }
-            : h;
-        });
-      } catch (e) {
-        console.error('Income calendar build failed (non-fatal):', e);
-      }
-    }
+    // Enrichissements serveur (logos, secteurs/descriptions, calendrier des
+    // revenus) — PARTAGÉS avec l'export HTML interactif pour que les deux
+    // formats partent exactement des mêmes données. Voir enrich-report-data.ts.
+    const reportData = await enrichReportData(base);
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

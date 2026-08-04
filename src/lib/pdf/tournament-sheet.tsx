@@ -8,15 +8,23 @@
  * sans émoji (Helvetica ne les rend pas) : les statuts sont en toutes lettres.
  */
 import React from 'react';
-import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { Document, Page, View, Text, StyleSheet, Svg, Rect, Line, Circle, Path, renderToBuffer } from '@react-pdf/renderer';
 import type { StandingRow } from '../tournament/standings';
 import type { TournamentMatch } from '../tournament/state';
 import { computeQualification, type QualStatus } from '../tournament/qualification';
+import {
+  construireGrilleParJour, schemaTerrain, accentTerrain, nomTerrain, libelleTerrain,
+  normaliserSport, LIBELLE_CASE_LIBRE, type SportId, type Forme,
+} from '../tournament/terrains';
 
 export interface SheetInput {
   event: { title: string; date: string; location: string };
   config: {
     guaranteed_games: number;
+    /** Nombre de terrains — une colonne d'horaire par terrain. */
+    courts?: number;
+    /** Sport du tournoi — dessin du terrain en tête de colonne. */
+    sport?: SportId;
     playoffs_enabled: boolean;
     playoffs_team_count: number;
     points_win: number;
@@ -29,6 +37,9 @@ export interface SheetInput {
   /** « mis à jour le … » ; absent = feuille vierge à imprimer. */
   updatedLabel?: string;
 }
+
+/** Largeur de la colonne d'heures — le bandeau des terrains s'aligne dessus. */
+const LARGEUR_HEURES = 30;
 
 const NAVY = '#0f2a4a';
 const BLUE = '#2563eb';
@@ -48,7 +59,25 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: NAVY, marginTop: 6, marginBottom: 6 },
   sectionNote: { fontSize: 8, color: GREY, fontFamily: 'Helvetica' },
   dayHeader: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: BLUE, marginTop: 8, marginBottom: 3, textTransform: 'uppercase' },
-  // Rangée de partie
+  // Bandeau des terrains, puis UNE grille : colonne d'heures + une colonne par terrain
+  bandeau: { flexDirection: 'row', gap: 8, marginBottom: 5 },
+  colonne: { flex: 1 },
+  enteteTerrain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 6, padding: 5 },
+  nomTerrain: { fontSize: 10, fontFamily: 'Helvetica-Bold' },
+  sousTerrain: { fontSize: 6.5, marginTop: 1 },
+  ligneHeure: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 3 },
+  heure: { width: 30, fontFamily: 'Helvetica-Bold', fontSize: 8.5, paddingTop: 6, textAlign: 'right' },
+  // Pas de `flex: 1` ici : la case est empilée dans une colonne, où `flex`
+  // agirait sur la HAUTEUR et l'écraserait à zéro (les équipes se superposent).
+  cellule: { borderWidth: 0.7, borderColor: LINE, borderRadius: 4, paddingVertical: 2, paddingHorizontal: 5, marginBottom: 2 },
+  celluleLibre: { flex: 1, borderWidth: 0.7, borderColor: '#eef2f7', borderRadius: 4, paddingVertical: 7, alignItems: 'center' },
+  texteLibre: { fontSize: 7, color: '#cbd5e1', fontFamily: 'Helvetica-Bold' },
+  // Hauteur explicite : react-pdf ne réserve pas la place d'une case de
+  // pointage (Text à hauteur fixe) dans le calcul de la rangée.
+  ligneEquipe: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 18 },
+  nomEquipe: { flex: 1, fontSize: 8, paddingRight: 4 },
+  etiquettePhase: { fontSize: 6, color: BLUE, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', marginBottom: 1 },
+  // Rangée de partie (séries)
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 3.5, borderBottomWidth: 0.5, borderBottomColor: LINE },
   time: { width: 34, fontFamily: 'Helvetica-Bold', fontSize: 8.5 },
   court: { width: 26, fontSize: 7.5, color: GREY },
@@ -94,6 +123,43 @@ function ScoreBox({ value, win }: { value: number | null; win: boolean }) {
   );
 }
 
+/**
+ * Le terrain dessiné — exactement les mêmes formes que le web
+ * (`lib/tournament/terrains.ts`), pour que le terrain A soit reconnaissable
+ * autant sur la feuille imprimée qu'à l'écran.
+ */
+function TerrainPdf({ sport, court, largeur = 44 }: { sport: SportId; court: number; largeur?: number }) {
+  const schema = schemaTerrain(sport);
+  const accent = accentTerrain(court);
+  const hauteur = (largeur * schema.hauteur) / schema.largeur;
+  const peinture = (f: Forme) => {
+    switch (f.role) {
+      case 'surface': return { fill: accent.pale, stroke: accent.base, strokeWidth: 1.2 };
+      case 'zone': return { fill: '#dde5ee', stroke: 'none', strokeWidth: 0 };
+      case 'trait': return { fill: 'none', stroke: '#9aa8b8', strokeWidth: 0.9 };
+      case 'filet': return { fill: 'none', stroke: '#64748b', strokeWidth: 1.4 };
+      case 'objet': return { fill: '#64748b', stroke: 'none', strokeWidth: 0 };
+    }
+  };
+  return (
+    <Svg viewBox={`0 0 ${schema.largeur} ${schema.hauteur}`} width={largeur} height={hauteur}>
+      {schema.formes.map((f, i) => {
+        const p = peinture(f);
+        switch (f.forme) {
+          case 'rect':
+            return <Rect key={i} x={f.x} y={f.y} width={f.l} height={f.h} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
+          case 'ligne':
+            return <Line key={i} x1={f.x1} y1={f.y1} x2={f.x2} y2={f.y2} stroke={p.stroke === 'none' ? p.fill : p.stroke} strokeWidth={p.strokeWidth || 1} />;
+          case 'cercle':
+            return <Circle key={i} cx={f.cx} cy={f.cy} r={f.r} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
+          case 'chemin':
+            return <Path key={i} d={f.d} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth} />;
+        }
+      })}
+    </Svg>
+  );
+}
+
 export function TournamentSheet({ input }: { input: SheetInput }) {
   const { event, config, teams, matches, standings } = input;
   const nameOf = (id: string | null) => (id ? teams.find(t => t.id === id)?.name ?? '—' : '—');
@@ -105,8 +171,11 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
   const garantie = matches.filter(m => m.phase === 'garantie').sort((a, b) => a.match_number - b.match_number);
   const playoffs = matches.filter(m => m.phase !== 'garantie' && m.status !== 'cancelled').sort((a, b) => a.match_number - b.match_number);
 
-  // Regroupe l'horaire garanti par journée (date '' = journée de l'événement).
-  const days = [...new Set(garantie.map(m => m.scheduled_date || ''))];
+  // Regroupe l'horaire garanti par journée (date '' = journée de l'événement),
+  // puis par TERRAIN : une colonne chacun, avec la même échelle d'heures.
+  const sport = normaliserSport(config.sport);
+  const grilles = construireGrilleParJour(garantie, config.courts ?? 1);
+  const days = grilles.map(g => g.date);
   const multiDay = days.filter(Boolean).length > 1;
 
   const sideLabel = (m: TournamentMatch, side: 'a' | 'b') => {
@@ -119,10 +188,33 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
     m.status === 'finished' && m.score_a !== null && m.score_b !== null && m.score_a !== m.score_b &&
     (side === 'a' ? m.score_a > m.score_b : m.score_b > m.score_a);
 
+  /** Une partie dans la colonne de son terrain : deux équipes empilées, une
+      case de pointage chacune — on écrit au crayon directement dessus. */
+  const CelluleMatch = ({ m }: { m: TournamentMatch }) => (
+    <View style={s.cellule}>
+      {m.phase !== 'garantie' && PHASE_SHORT[m.phase] && (
+        <Text style={s.etiquettePhase}>{PHASE_SHORT[m.phase]}</Text>
+      )}
+      <View style={s.ligneEquipe}>
+        <Text style={[s.nomEquipe, win(m, 'a') ? { fontFamily: 'Helvetica-Bold', color: GREEN } : {}]}>
+          {sideLabel(m, 'a')}
+        </Text>
+        <ScoreBox value={m.score_a} win={win(m, 'a')} />
+      </View>
+      <View style={[s.ligneEquipe, { borderTopWidth: 0.5, borderTopColor: '#f1f5f9' }]}>
+        <Text style={[s.nomEquipe, win(m, 'b') ? { fontFamily: 'Helvetica-Bold', color: GREEN } : {}]}>
+          {sideLabel(m, 'b')}
+        </Text>
+        <ScoreBox value={m.score_b} win={win(m, 'b')} />
+      </View>
+      {m.status === 'cancelled' && <Text style={{ fontSize: 6, color: GREY, marginTop: 1 }}>Partie annulée</Text>}
+    </View>
+  );
+
   const MatchRow = ({ m, showPhase }: { m: TournamentMatch; showPhase?: boolean }) => (
     <View style={s.row} wrap={false}>
       <Text style={s.time}>{m.scheduled_time || '—'}</Text>
-      <Text style={s.court}>T{m.court}</Text>
+      <Text style={s.court}>{libelleTerrain(m.court)}</Text>
       {showPhase && <Text style={s.phaseTag}>{PHASE_SHORT[m.phase] ?? ''}</Text>}
       <Text style={[s.teamR, win(m, 'a') ? { fontFamily: 'Helvetica-Bold', color: GREEN } : {}]}>{sideLabel(m, 'a')}</Text>
       <ScoreBox value={m.score_a} win={win(m, 'a')} />
@@ -133,35 +225,89 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
   );
 
   const dayLabel = (d: string) => (d ? frDate(d) : (event.date ? frDate(event.date) : 'Journée du tournoi'));
+  const plageJours = multiDay
+    // « au » et non « → » : Helvetica ne code pas la flèche (sortait en apostrophe).
+    ? `${dayLabel(days.filter(Boolean)[0])} au ${dayLabel(days.filter(Boolean).slice(-1)[0])}`
+    : dayLabel(days[0] ?? '');
+
+  // Fonctions (et non composants) : ces morceaux ne portent aucun état, et
+  // React n'aime pas voir naître un composant pendant le rendu.
+  /** Le même bandeau en tête de chaque page : on sait toujours quelle feuille on tient. */
+  const enTete = (sousTitre: string) => (
+    <View style={s.header}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.kicker}>FEUILLE DE TOURNOI</Text>
+        <Text style={s.title}>{event.title}</Text>
+        <Text style={s.sub}>
+          {sousTitre}
+          {event.location ? `  ·  ${event.location}` : ''}
+          {`  ·  ${config.guaranteed_games} partie${config.guaranteed_games > 1 ? 's' : ''} garantie${config.guaranteed_games > 1 ? 's' : ''}`}
+        </Text>
+      </View>
+      <Text style={s.updated}>{input.updatedLabel ?? 'Feuille à remplir'}</Text>
+    </View>
+  );
+
+  /** Les terrains en bandeau, l'horaire dessous : UNE colonne d'heures pour tous. */
+  const horaireDuJour = (grille: (typeof grilles)[number]['grille']) => (
+    <>
+      <View style={s.bandeau}>
+        <View style={{ width: LARGEUR_HEURES }} />
+        {grille.colonnes.map(col => {
+          const accent = accentTerrain(col.terrain);
+          return (
+            <View key={`b-${col.terrain}`}
+              style={[s.enteteTerrain, { backgroundColor: accent.pale, borderWidth: 0.8, borderColor: accent.base }]}
+              wrap={false}>
+              <TerrainPdf sport={sport} court={col.terrain} />
+              <View>
+                <Text style={[s.nomTerrain, { color: accent.fonce }]}>{nomTerrain(col.terrain)}</Text>
+                <Text style={[s.sousTerrain, { color: accent.fonce }]}>
+                  {col.nbParties === 0 ? 'Aucune partie' : `${col.nbParties} partie${col.nbParties > 1 ? 's' : ''}`}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+      {grille.heures.map((h, i) => (
+        <View key={`h-${h}`} style={s.ligneHeure} wrap={false}>
+          <Text style={s.heure}>{h}</Text>
+          {grille.colonnes.map(col => (
+            <View key={`c-${col.terrain}-${h}`} style={s.colonne}>
+              {col.cases[i].length === 0 ? (
+                <View style={s.celluleLibre}>
+                  <Text style={s.texteLibre}>{LIBELLE_CASE_LIBRE}</Text>
+                </View>
+              ) : (
+                col.cases[i].map(m => <CelluleMatch key={m.id} m={m} />)
+              )}
+            </View>
+          ))}
+        </View>
+      ))}
+    </>
+  );
 
   return (
     <Document title={`Feuille de tournoi — ${event.title}`}>
-      <Page size="A4" style={s.page}>
-        {/* En-tête */}
-        <View style={s.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.kicker}>FEUILLE DE TOURNOI</Text>
-            <Text style={s.title}>{event.title}</Text>
-            <Text style={s.sub}>
-              {multiDay ? `${dayLabel(days.filter(Boolean)[0])} → ${dayLabel(days.filter(Boolean).slice(-1)[0])}` : dayLabel(days[0] ?? '')}
-              {event.location ? `  ·  ${event.location}` : ''}
-              {`  ·  ${config.guaranteed_games} partie${config.guaranteed_games > 1 ? 's' : ''} garantie${config.guaranteed_games > 1 ? 's' : ''}`}
-            </Text>
-          </View>
-          <Text style={s.updated}>{input.updatedLabel ?? 'Feuille à remplir'}</Text>
-        </View>
+      {/* UNE PAGE PAR JOURNÉE : la feuille du vendredi reste la feuille du vendredi */}
+      {grilles.map(({ date, grille }) => (
+        <Page key={`page-${date}`} size="A4" style={s.page}>
+          {enTete(dayLabel(date))}
+          <Text style={s.sectionTitle}>
+            Horaire &amp; pointages{' '}
+            <Text style={s.sectionNote}>(un terrain par colonne — « Libre » = rien de prévu à cette heure)</Text>
+          </Text>
+          {horaireDuJour(grille)}
+        </Page>
+      ))}
 
-        {/* HORAIRE */}
-        <Text style={s.sectionTitle}>Horaire &amp; pointages</Text>
-        {garantie.length === 0 ? (
+      {/* Classement et séries : leur propre page, à afficher à la table des pointages */}
+      <Page size="A4" style={s.page}>
+        {enTete(plageJours)}
+        {garantie.length === 0 && (
           <Text style={s.sectionNote}>Aucune partie générée pour l&apos;instant.</Text>
-        ) : (
-          days.map(d => (
-            <View key={`day-${d}`}>
-              {(multiDay || d) && <Text style={s.dayHeader}>{dayLabel(d)}</Text>}
-              {garantie.filter(m => (m.scheduled_date || '') === d).map(m => <MatchRow key={m.id} m={m} />)}
-            </View>
-          ))
         )}
 
         {/* CLASSEMENT */}

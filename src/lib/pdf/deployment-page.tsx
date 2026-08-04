@@ -1,13 +1,24 @@
-// « LE PARCOURS DE VOTRE ARGENT » — DEUX pages, chacune racontant UNE chose :
+﻿// « CE QUE NOUS AVONS ACHETÉ CETTE ANNÉE » — UNE page, UNE question.
 //
-//   PAGE 1 · LE RÉCIT : trois chiffres géants (déposé → investi → ça vaut),
-//            la timeline des dépôts, un résumé en deux phrases. Aérée, présentable
-//            à un client en la tendant.
-//   PAGE 2 · LA PREUVE : où l'argent est allé (ruban), chaque achat au tableau,
-//            la note méthodologique complète.
+//   Acheté → vaut aujourd'hui · la frise des dépôts · le ruban de concentration ·
+//   le tableau titre par titre · la note méthodologique.
 //
-// Décision propriétaire 2026-07-23 : la contrainte « tout sur une page » écrasait
-// la clarté — on choisit deux pages qui respirent plutôt qu'une page compressée.
+// Décision propriétaire 2026-07-29 (Nicolas : « je ne les aime pas, c'est pas
+// clair ») : les deux pages précédentes refaisaient le BILAN de l'année, que la
+// couverture établit déjà et où il boucle. Ici il ne bouclait pas — la page
+// donnait trois réponses à « combien j'ai mis » (dépôts bruts 25 000 $,
+// cotisations 20 000 $, dépôts nets 17 000 $) sans jamais dire que c'étaient
+// trois questions différentes, et le vrai chiffre du document (la création de
+// valeur) réapparaissait noyé dans un paragraphe.
+//
+// RETIRÉS, volontairement : les tuiles « déposé » / « cotisé » / « encaisse », le
+// tableau des cotisations, le bloc « En résumé » et son plancher de croissance.
+// Tout ça vit sur la couverture. Ne pas les réintroduire ici : c'est ce qui
+// rendait la page illisible.
+//
+// Décision antérieure 2026-07-23 (périmée) : deux pages qui respirent plutôt
+// qu'une page compressée. La respiration n'était pas le problème — la
+// redondance l'était.
 //
 // Identité de page : accent ORANGE #FF9600 (texte orange sur clair = #b45309).
 // Dépôts = #2563eb. duoGreen/duoBlue INTERDITS ici. Vert/rouge réservés aux
@@ -18,14 +29,15 @@
 // - écart affiché SEULEMENT si toutes les parts achetées sont encore détenues ;
 // - « toutes revendues » affirmé SEULEMENT si closedCount === totalTitres ;
 // - « à la revente » = gains/pertes inscrit par Croesus (portée divulguée) ;
-// - la note méthodologique boucle : chaque transaction comptée UNE fois ;
-// - plancher rendu pour Q1/Q2/Q3 (l'omission sélective est interdite), Q4 omis.
+// - la note méthodologique boucle : chaque transaction comptée UNE fois.
+// (Le plancher de croissance Q1/Q2/Q3 est parti avec « En résumé » — il reste
+//  calculé au moteur, simplement plus rendu ici.)
 
 import React from 'react';
 import { Page, Text, View, Svg, Path, Defs, LinearGradient, Stop, Rect } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
-import type { DeploymentSummary, DeploymentLine, DepositChapter, GrowthFloor } from '@/lib/portfolio/deployment';
+import type { DeploymentSummary, DeploymentLine, DepositChapter } from '@/lib/portfolio/deployment';
 
 // ── Helpers locaux (copies volontaires : price-targets-template importera cette
 // page — importer ses helpers créerait un cycle de modules) ──
@@ -54,20 +66,7 @@ const fmtJours = (n: number) =>
 /** Couleur de texte d'un écart : vert/rouge sémantiques, gris au neutre. */
 const gc = (v: number) => (v > 0 ? '#10b981' : v < 0 ? '#ef4444' : '#94a3b8');
 
-/** Rangée « ● Étiquette : montant » des bandeaux — point de couleur, étiquette
- *  grise, montant semi-gras navy. Net et aligné. */
-function SourceRow({ dot, label, value }: { dot: string; label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1.5 }}>
-      <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: dot }} />
-      <Text style={{ fontSize: 7.5, color: '#64748b' }}>
-        {label} : <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{value}</Text>
-      </Text>
-    </View>
-  );
-}
-
-/** Pastille de pourcentage (patron PctPill du template ; `big` = héros de page 1). */
+/** Pastille de pourcentage (patron PctPill du template ; `big` = héros du bandeau). */
 function PctPill({ value, big = false }: { value: number; big?: boolean }) {
   const palette = value > 0
     ? { bg: '#ecfdf5', text: '#059669' }
@@ -278,30 +277,6 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const tradedCount = d.partialCount + d.closedCount;        // achetés ET revendus (valeur = détenu + encaissé)
   const noValueCount = d.unmatchedCount + d.unpriceableCount; // seuls titres encore à « — »
   const allSold = d.closedCount === totalTitres;
-  const top = d.lines[0];
-  const zeroOverride = d.contributionsOverridden && d.contributions === 0;
-
-  // ── Tableau clair des cotisations : « En argent » + une ligne par titre apporté,
-  // avec le compte de destination. Simple à lire pour le client. ──
-  const secByAcct = new Map<string, number>();
-  for (const s of d.contributedSecurities) {
-    const k = s.accountLabel ?? 'Autre compte';
-    secByAcct.set(k, (secByAcct.get(k) ?? 0) + s.amountCad);
-  }
-  const cotisRows: { label: string; detail?: string; amountCad: number; account: string }[] = [];
-  for (const a of d.contributionsByAccount ?? []) {
-    const cash = a.amountCad - (secByAcct.get(a.label) ?? 0);
-    if (cash > 0.5) cotisRows.push({ label: 'En argent', amountCad: cash, account: a.label });
-  }
-  for (const s of d.contributedSecurities) {
-    cotisRows.push({
-      label: 'En titres',
-      detail: `${s.symbol}${s.quantity ? ` · ${s.quantity.toLocaleString('fr-CA')} u.` : ''}`,
-      amountCad: s.amountCad,
-      account: s.accountLabel ?? 'Autre compte',
-    });
-  }
-  const compte = (a: string) => (a === 'Autre compte' ? 'Autre' : a);
 
   // Carte-vedette « valeur aujourd'hui » : dégradé doux (motif couverture),
   // teinté selon le SIGNE (gain vert, perte rouge doux, neutre bleu de marque).
@@ -324,40 +299,7 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
       ? 'strip'
       : nChap > MAX_CHAPTER_ROWS ? 'cadence' : 'chapitres';
 
-  // ── Plancher : la page choisit sa phrase par quadrant, sans re-déduire les signes ──
-  const floor = d.growthFloor;
-  const showFloor = floor != null && floor.quadrant <= 3;
-  const floorSuffix = d.contributionsOverridden && d.withdrawals > 0
-    ? ' (les dépôts nets combinent les cotisations saisies et les retraits de l’historique)'
-    : '';
-  const FloorText = ({ g }: { g: GrowthFloor }) => (
-    <>
-      {g.quadrant === 1 ? (
-        <>
-          Sur l&apos;ensemble du portefeuille, la valeur a augmenté de{' '}
-          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.totalChange)}</Text> ; vos dépôts nets en
-          expliquent <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> à eux seuls —
-          avant même tout écart de valeur sur ces sommes.
-        </>
-      ) : g.quadrant === 2 ? (
-        <>
-          Sur l&apos;ensemble du portefeuille, la valeur a augmenté de{' '}
-          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.totalChange)}</Text> alors que vos dépôts nets
-          totalisent <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> : sans ces
-          dépôts, sa valeur aurait diminué.
-        </>
-      ) : (
-        <>
-          Sur l&apos;ensemble du portefeuille, la valeur a diminué de{' '}
-          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(Math.abs(g.totalChange))}</Text> malgré{' '}
-          <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(g.netDeposits)}</Text> de dépôts nets.
-        </>
-      )}
-      {floorSuffix}
-    </>
-  );
-
-  // ── Tableau (page 2) : ≤ 9 titres → tous ; sinon top 8 + « Autres achats ». ──
+  // ── Tableau : ≤ 9 titres → tous ; sinon top 8 + « Autres achats ». ──
   const shown = totalTitres <= MAX_TABLE_LINES ? d.lines : d.lines.slice(0, MAX_TABLE_LINES - 1);
   const rest = d.lines.slice(shown.length);
   const restCost = rest.reduce((s, l) => s + l.totalCostCad, 0);
@@ -368,12 +310,10 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
   const restValue = restValued.reduce((s, l) => s + (l.currentValue ?? 0), 0);
   const restDelta = restValued.reduce((s, l) => s + (l.deltaAbs ?? 0), 0);
 
-  // ── Ruban (page 2) : CONCENTRATION RÉELLE du portefeuille (poids par titre =
-  // valeur actuelle / valeur totale, données des cours cibles), PAS les achats. ──
-  const ribbon = d.concentration.slice(0, MAX_RIBBON_SEGMENTS);
-  const ribbonRest = d.concentration.slice(MAX_RIBBON_SEGMENTS);
-  const ribbonRestWeight = ribbonRest.reduce((s, c) => s + c.weightPct, 0);
-  const ribbonRestValue = ribbonRest.reduce((s, c) => s + c.marketValue, 0);
+  // Le ruban « Concentration du portefeuille » a été retiré à la fusion : il
+  // répondait à « à quel point mon portefeuille est concentré AUJOURD'HUI »,
+  // une autre question que celle de la page, et le document a déjà une page de
+  // répartition. `d.concentration` reste calculé au moteur pour qui en aura besoin.
 
   const r = d.reconciliation;
   const usdPhrase = d.usdCadRate && d.usdCadRate > 0
@@ -382,22 +322,27 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
 
   return (
     <>
-      {/* ════════════════ PAGE 1 · LE RÉCIT ════════════════ */}
+      {/* ════════════════ UNE SEULE PAGE · UNE SEULE QUESTION ════════════════
+          Le bilan de l'année (déposé, cotisé, retraits, croissance) appartient à
+          la COUVERTURE, où il boucle déjà. Le répéter ici avec d'autres bornes
+          — dépôts bruts vs cotisations vs dépôts nets — donnait trois réponses
+          à « combien j'ai mis » et aucune addition vérifiable. Cette page ne
+          répond plus qu'à : qu'est-ce qui a été acheté, et ça vaut quoi. */}
       <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fbfdff' }]}>
         <SectionHeader
-          title="LE PARCOURS DE VOTRE ARGENT"
-          subtitle={`${d.periodLabel} — du dépôt à la valeur d'aujourd'hui, selon l'historique de vos transactions`}
+          title="CE QUE NOUS AVONS ACHETÉ CETTE ANNÉE"
+          subtitle={`${d.periodLabel} — chaque achat, son coût et sa valeur d'aujourd'hui`}
           accent="#FF9600"
         />
 
-        {/* ─ Bandeau à 4 chiffres : Déposé → Cotisé → Encaisse → Valeur ─ */}
+        {/* ─ Bandeau à 2 chiffres : Acheté → Vaut aujourd'hui ─ */}
         <View
           wrap={false}
           style={{
             flexDirection: 'row',
             alignItems: 'stretch',
             gap: 8,
-            padding: 12,
+            padding: 10,
             borderRadius: 10,
             backgroundColor: '#ffffff',
             borderWidth: 1,
@@ -405,63 +350,20 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
             borderStyle: 'solid',
           }}
         >
-          {/* 1 · Déposé (argent frais) */}
-          <View style={{ flex: 1, paddingTop: 8 }}>
-            <View style={{ height: 20 }}>
-              <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                Ce que vous avez déposé
-              </Text>
-            </View>
-            {d.deposits > 0 ? (
-              <>
-                <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: '#2563eb' }}>{fmt(d.deposits)}</Text>
-                <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>
-                  {d.reconciliation.depositCount} dépôt{plur(d.reconciliation.depositCount)} — {d.periodLabel.toLowerCase()}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>Aucun dépôt</Text>
-                <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>pour la période</Text>
-              </>
-            )}
-          </View>
-
-          {/* 2 · Cotisé aux comptes (argent + titres) */}
+          {/* 1 · Acheté — le seul point de départ dont la page a besoin.
+              Les tuiles « déposé », « cotisé » et « encaisse » ont été retirées :
+              elles refaisaient le bilan de la couverture, avec d'autres bornes. */}
           <View style={{ flex: 1.15, paddingTop: 8 }}>
             <View style={{ height: 20 }}>
               <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                Cotisé à vos comptes
+                Acheté cette année
               </Text>
             </View>
-            {d.contributions > 0 ? (
-              <>
-                <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: '#2563eb' }}>{fmt(d.contributions)}</Text>
-                {d.contributionsSecurities > 0 ? (
-                  <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>
-                    {fmt(d.contributionsCash)} en argent · {fmt(d.contributionsSecurities)} en titres
-                  </Text>
-                ) : (
-                  <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>en argent — détail ci-dessous</Text>
-                )}
-              </>
-            ) : (
-              <Text style={{ fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>—</Text>
-            )}
+            <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: '#2563eb' }}>{fmt(d.totalBuys)}</Text>
+            <Text style={{ marginTop: 2, fontSize: 7, color: '#94a3b8' }}>
+              {d.buyCount} achat{plur(d.buyCount)} · {totalTitres} titre{plur(totalTitres)}
+            </Text>
           </View>
-
-          {/* 3 · Encaisse actuelle (conditionnelle) */}
-          {d.cashOnHand != null && d.cashOnHand > 0 && (
-            <View style={{ flex: 0.95, paddingTop: 8 }}>
-              <View style={{ height: 20 }}>
-                <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  Encaisse au compte
-                </Text>
-              </View>
-              <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: '#475569' }}>{fmt(d.cashOnHand)}</Text>
-              <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>disponible aujourd&apos;hui</Text>
-            </View>
-          )}
 
           <Chevron label="valent aujourd'hui" />
 
@@ -491,48 +393,19 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
               <>
                 <Text style={{ fontSize: 18, fontFamily: 'Montserrat', fontWeight: 800, color: '#94a3b8' }}>—</Text>
                 <Text style={{ marginTop: 2, fontSize: 6.5, color: '#94a3b8' }}>
-                  {allSold ? 'toutes les parts revendues — voir p. 2' : 'aucun titre suivi au complet — voir p. 2'}
+                  {allSold ? 'toutes les parts revendues — voir le tableau' : 'aucun titre suivi au complet — voir le tableau'}
                 </Text>
               </>
             )}
           </View>
         </View>
-        {/* ─ Tableau clair des cotisations : nature · montant · compte ─ */}
-        {d.contributions > 0 && cotisRows.length > 0 && (
-          <View
-            wrap={false}
-            style={{ marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', borderStyle: 'solid', backgroundColor: '#ffffff', overflow: 'hidden' }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f9ff', paddingVertical: 5, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#dbeafe', borderBottomStyle: 'solid' }}>
-              <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>Vos cotisations de l&apos;année</Text>
-              <Text style={{ width: 70, textAlign: 'right', fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6 }}>Montant</Text>
-              <Text style={{ width: 82, textAlign: 'right', fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6 }}>Compte</Text>
-            </View>
-            {cotisRows.map((r, i) => (
-              <View key={`${r.label}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 10, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' }}>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: r.label === 'En argent' ? '#2563eb' : '#0891b2' }} />
-                  <Text style={{ fontSize: 8, color: C.text }}>
-                    {r.label}
-                    {r.detail ? <Text style={{ color: '#94a3b8' }}> · {r.detail}</Text> : null}
-                  </Text>
-                </View>
-                <Text style={{ width: 70, textAlign: 'right', fontSize: 8.5, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(r.amountCad)}</Text>
-                <Text style={{ width: 82, textAlign: 'right', fontSize: 7.5, color: '#475569' }}>{compte(r.account)}</Text>
-              </View>
-            ))}
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: '#f8fbff', borderTopWidth: 1.5, borderTopColor: '#2563eb', borderTopStyle: 'solid' }}>
-              <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy, textTransform: 'uppercase', letterSpacing: 0.6 }}>Total cotisé</Text>
-              <Text style={{ width: 70, textAlign: 'right', fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#2563eb' }}>{fmt(d.contributions)}</Text>
-              <Text style={{ width: 82 }} />
-            </View>
-          </View>
-        )}
-        {/* Note d'honnêteté condensée + garde-fou : dédup des transferts en nature. */}
-        <Text style={{ marginTop: 4, fontSize: 6.5, color: '#94a3b8', lineHeight: 1.4 }}>
+        {/* Une seule note ici : d'où vient l'argent des achats. Le détail des
+            cotisations vivait dans un tableau qui refaisait le bilan de la couverture. */}
+        <Text style={{ marginTop: 6, fontSize: 7, color: '#94a3b8', lineHeight: 1.4 }}>
+          Les achats puisent dans vos cotisations, dans vos ventes et dans l’argent déjà au compte.
           {d.contributionsSecurities > 0
-            ? 'Les apports en titres sont aussi comptés dans les achats ci-dessous. Une partie des dépôts peut demeurer en encaisse.'
-            : 'Une partie des dépôts peut demeurer en encaisse ; les achats ci-dessous puisent aussi dans les ventes et l’argent déjà au compte.'}
+            ? ' Les apports en titres y sont aussi comptés.'
+            : ''}
           {d.mirrorsDropped > 0
             ? ` ${d.mirrorsDropped} transfert${d.mirrorsDropped > 1 ? 's' : ''} en nature compté${d.mirrorsDropped > 1 ? 's' : ''} une seule fois (jambe comptable miroir écartée).`
             : ''}
@@ -543,13 +416,13 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           <View
             wrap={false}
             style={{
-              marginTop: 10,
+              marginTop: 5,
               borderRadius: 10,
               borderWidth: 1,
               borderColor: '#dbeafe',
               borderStyle: 'solid',
               backgroundColor: '#ffffff',
-              padding: 10,
+              padding: 8,
             }}
           >
             <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
@@ -595,120 +468,27 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                     c={c}
                     index={i}
                     dernier={i === nChap - 1}
-                    sousLigneDelai={nChap <= 4}
+                    // Le délai « premier achat N jours plus tard » ne tient plus
+                    // qu'à deux dépôts : au-delà, la page fusionnée n'a plus la
+                    // hauteur, et la légende « suivi de » porte déjà l'idée.
+                    // Seuil calibré au RENDU sur la fixture complète (6 titres,
+                    // 3 dépôts), jamais estimé au modèle.
+                    sousLigneDelai={nChap <= 2}
                   />
                 ))}
               </View>
             )}
 
-            <Text style={{ marginTop: 6, fontSize: 6.5, color: '#64748b', lineHeight: 1.4 }}>
+            <Text style={{ marginTop: 4, fontSize: 6.5, color: '#64748b', lineHeight: 1.4 }}>
               « Suivi de » décrit l&apos;ordre des dates (même jour inclus), jamais l&apos;affectation d&apos;un dépôt à un achat précis.
             </Text>
           </View>
         )}
 
-        {/* ─ En résumé ─ */}
-        {(showFloor || hasHeld) && (
-          <View
-            wrap={false}
-            style={{
-              marginTop: 10,
-              borderRadius: 10,
-              padding: 12,
-              backgroundColor: '#ffffff',
-              borderWidth: 1,
-              borderColor: '#dbeafe',
-              borderStyle: 'solid',
-              borderLeftWidth: 3,
-              borderLeftColor: '#FF9600',
-            }}
-          >
-            <Text style={{ fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
-              En résumé
-            </Text>
-            <Text style={{ marginTop: 5, fontSize: 9.5, lineHeight: 1.6, color: '#475569' }}>
-              {hasHeld && (
-                <>
-                  Les parts achetées encore détenues aujourd&apos;hui valent{' '}
-                  <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>{fmt(d.valueEvaluated)}</Text>, soit{' '}
-                  <Text style={{ fontFamily: 'Open Sans', fontWeight: 600, color: gc(d.deltaAbs) }}>{fmt(Math.abs(d.deltaAbs))}</Text> de{' '}
-                  {d.deltaAbs >= 0 ? 'plus' : 'moins'} que leur coût d&apos;achat de {fmt(d.costEvaluated)}.{' '}
-                </>
-              )}
-              {showFloor && floor != null && <FloorText g={floor} />}
-            </Text>
-          </View>
-        )}
 
-        {/* ─ Renvoi vers la preuve ─ */}
-        <Text style={{ marginTop: 'auto', paddingTop: 8, fontSize: 6.5, color: '#94a3b8', lineHeight: 1.45 }}>
-          Ces montants sont des constats historiques : ils ne préjugent pas des résultats futurs et ne constituent ni une prévision,
-          ni une recommandation, ni un conseil en placement. Le détail titre par titre, la méthode de calcul et les mises en garde
-          complètes figurent à la page suivante.
-        </Text>
-        <PageFooterV12 />
-      </Page>
-
-      {/* ════════════════ PAGE 2 · LA PREUVE ════════════════ */}
-      <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fbfdff' }]}>
-        <SectionHeader
-          title="LE DÉTAIL, TITRE PAR TITRE"
-          subtitle={`${d.periodLabel} — chaque achat, son coût et sa valeur d'aujourd'hui`}
-          accent="#FF9600"
-        />
-
-        {/* ─ Ruban : concentration RÉELLE du portefeuille (poids par titre) ─ */}
-        {d.concentration.length > 0 && (
-        <View
-          wrap={false}
-          style={{
-            borderRadius: 10,
-            padding: 10,
-            backgroundColor: '#ffffff',
-            borderWidth: 1,
-            borderColor: '#dbeafe',
-            borderStyle: 'solid',
-          }}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
-              Concentration du portefeuille
-            </Text>
-            <Text style={{ fontSize: 6.5, fontFamily: 'Open Sans', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-              Poids réel aujourd&apos;hui · {fmt(d.portfolioTotalValue)}
-            </Text>
-          </View>
-
-          <View style={{ height: 16, borderRadius: 8, overflow: 'hidden', flexDirection: 'row', marginTop: 8 }}>
-            {ribbon.map((c, i) => (
-              <View key={`${c.symbol || 'cash'}-${i}`} style={{ width: `${c.weightPct}%`, backgroundColor: c.isCash ? '#94a3b8' : lineColor(i) }} />
-            ))}
-            {ribbonRestWeight > 0 && (
-              <View style={{ width: `${ribbonRestWeight}%`, backgroundColor: RESIDUAL_COLOR }} />
-            )}
-          </View>
-
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 7 }}>
-            {ribbon.map((c, i) => (
-              <View key={`${c.symbol || 'cash'}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: c.isCash ? '#94a3b8' : lineColor(i) }} />
-                <Text style={{ fontSize: 7, color: '#64748b', maxLines: 1, textOverflow: 'ellipsis' }}>
-                  {c.isCash ? 'Encaisse' : (c.weightPct > 80 ? `${c.symbol} — ${c.name}` : c.symbol)} {c.weightPct.toFixed(0)} % · {fmt(c.marketValue)}
-                </Text>
-              </View>
-            ))}
-            {ribbonRestWeight > 0 && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <View style={{ width: 7, height: 7, borderRadius: 2, backgroundColor: RESIDUAL_COLOR }} />
-                <Text style={{ fontSize: 7, color: '#64748b' }}>Autres {ribbonRestWeight.toFixed(0)} % · {fmt(ribbonRestValue)}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        )}
 
         {/* ─ Tableau « chaque achat, aujourd'hui » ─ */}
-        <View style={[styles.tablePremium, { marginTop: 10, marginBottom: 0 }]}>
+        <View style={[styles.tablePremium, { marginTop: 5, marginBottom: 0 }]}>
           <View style={[styles.thPremium, { borderBottomColor: '#FF9600' }]} wrap={false}>
             <Text style={[styles.thCellPremium, { width: COL.titre }]}>Titre</Text>
             <Text style={[styles.thCellPremium, { width: COL.prix, textAlign: 'right' }]}>Prix moyen payé</Text>
@@ -736,7 +516,7 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingVertical: 5,
+                  paddingVertical: 4,
                   paddingHorizontal: 8,
                   backgroundColor: '#ffffff',
                   borderBottomWidth: isBoundary ? 1.2 : 0.5,
@@ -802,7 +582,7 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           })}
 
           {rest.length > 0 && (
-            <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 8, backgroundColor: '#fafbfc' }}>
+            <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#fafbfc' }}>
               <View style={{ width: COL.titre, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: RESIDUAL_COLOR }} />
                 <Text style={{ fontSize: 7.5, color: '#64748b' }}>
@@ -878,36 +658,34 @@ export function DeploymentPage({ deployment }: { deployment: DeploymentSummary }
           </View>
         </View>
 
-        {/* Comment lire la valeur et le tiret, là où le client le voit */}
-        <Text style={{ marginTop: 6, fontSize: 7.5, color: '#475569', lineHeight: 1.4 }}>
-          {[
-            hasHeld
-              ? `Écart de ${fmt(d.deltaAbs)} sur les ${d.heldCount} titre${plur(d.heldCount)} détenus au complet (${d.coveragePct.toFixed(0)} % de l'investi).`
-              : allSold
-                ? 'Toutes les parts achetées ont été revendues durant la période.'
-                : null,
-            tradedCount > 0
-              ? "Un titre revendu en partie affiche la valeur des parts détenues + l'argent encaissé (écart = latent + réalisé) ; il n'entre pas dans le total, pour ne pas compter deux fois l'argent réinvesti."
-              : null,
-            noValueCount > 0
-              ? 'Un tiret (—) : titre non retrouvé au portefeuille ou sans prix actuel.'
-              : null,
-            'Revenus encaissés : voir la page Activité (non inclus ici).',
-          ].filter(Boolean).join(' ')}
-        </Text>
+        {/* Le paragraphe d'explication qui vivait ici a été replié dans la note
+            méthodologique ci-dessous : c'ÉTAIT de la méthodologie, et l'avoir en
+            double — au-dessus en 7,5 pt puis en dessous en 6,5 — était le signe
+            que le tableau avait besoin de se justifier deux fois.
+            Seule exception gardée en clair : « toutes revendues », qui change la
+            lecture du tableau lui-même. */}
+        {!hasHeld && allSold && (
+          <Text style={{ marginTop: 5, fontSize: 7.5, color: '#475569', lineHeight: 1.4 }}>
+            Toutes les parts achetées ont été revendues durant la période.
+          </Text>
+        )}
 
-        {/* Note méthodologique complète — l'arithmétique boucle */}
-        <View style={{ marginTop: 'auto', paddingTop: 8 }}>
+        {/* Note méthodologique — l'arithmétique boucle toujours : chaque
+            transaction de la période est comptée UNE fois, ici ou ailleurs.
+            Resserrée à la fusion du 2026-07-29 : aucun fait retiré, seulement
+            les mots en trop. `marginTop: 'auto'` a été abandonné — pousser la
+            note au bas d'une page déjà pleine garantissait la cassure. */}
+        <View style={{ marginTop: 3 }}>
           <Text style={{ fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>
             Comment ces chiffres ont été comptés
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
-            Sur {r.windowTransactionCount > 1 ? 'les' : 'la'} {r.windowTransactionCount} transaction{plur(r.windowTransactionCount)} de la période du {fmtDate(d.startDate)} au {fmtDate(d.endDate)}, {r.buyCount} achat{plur(r.buyCount)} totalisant {fmt(d.totalBuys)} {r.buyCount > 1 ? 'sont présentés' : 'est présenté'} sur ces pages{r.sellCount > 0 ? ` et ${r.sellCount} vente${plur(r.sellCount)} ${r.sellCount > 1 ? 'sont prises' : 'est prise'} en compte dans les statuts du tableau` : ''} ; {r.incomeCount} versement{plur(r.incomeCount)} de revenus, {r.contributionCount} cotisation{plur(r.contributionCount)} (dépôts) et {r.withdrawalCount} retrait{plur(r.withdrawalCount)} figurent aux pages précédentes, et {r.otherCount} autre{plur(r.otherCount)} opération{plur(r.otherCount)} (frais, transferts internes) {r.otherCount > 1 ? 'sont exclues' : 'est exclue'}. Une partie des dépôts peut demeurer en encaisse au compte.
+          <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.34 }}>
+            Sur les {r.windowTransactionCount} transaction{plur(r.windowTransactionCount)} du {fmtDate(d.startDate)} au {fmtDate(d.endDate)} : {r.buyCount} achat{plur(r.buyCount)} totalisant {fmt(d.totalBuys)} {r.buyCount > 1 ? 'sont présentés' : 'est présenté'} ici{r.sellCount > 0 ? `, ${r.sellCount} vente${plur(r.sellCount)} ${r.sellCount > 1 ? 'apparaissent' : 'apparaît'} dans les statuts du tableau` : ''} ; {r.incomeCount} versement{plur(r.incomeCount)} de revenus, {r.contributionCount} cotisation{plur(r.contributionCount)} et {r.withdrawalCount} retrait{plur(r.withdrawalCount)} figurent aux pages précédentes ; {r.otherCount} autre{plur(r.otherCount)} opération{plur(r.otherCount)} (frais, transferts internes) {r.otherCount > 1 ? 'sont exclues' : 'est exclue'}. Une partie des dépôts peut demeurer en encaisse.
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
-            Le coût des achats correspond au montant net inscrit dans l&apos;historique Croesus ; lorsqu&apos;un titre a été acheté plusieurs fois, le prix moyen payé est pondéré par les quantités. La valeur d&apos;aujourd&apos;hui correspond à la quantité achetée multipliée par le dernier prix connu et n&apos;est affichée que lorsque la position détenue contient encore toutes les parts achetées ; elle n&apos;inclut ni les dividendes ni les intérêts encaissés. Pour les titres revendus, le montant « à la revente » est le gains/pertes inscrit par Croesus sur les ventes de la période ; il peut porter sur des parts acquises avant la période. {usdPhrase}{r.baseSymbolFallbackCount > 0 ? ' Lorsque le symbole de l’historique ne correspond pas exactement à celui du portefeuille, le rapprochement se fait sur la racine du symbole.' : ''}
+          <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.34 }}>
+            Le coût vient du montant net de l&apos;historique Croesus ; pour un titre acheté plusieurs fois, le prix moyen est pondéré par les quantités. La valeur d&apos;aujourd&apos;hui est la quantité achetée multipliée par le dernier prix connu — affichée seulement si toutes les parts achetées sont encore détenues, et hors dividendes et intérêts. Pour un titre revendu, « à la revente » est le gain ou la perte inscrit par Croesus, qui peut porter sur des parts acquises avant la période.{tradedCount > 0 ? " Un titre revendu en partie affiche la valeur des parts détenues + l'argent encaissé (écart = latent + réalisé) et n'entre pas dans le total, pour ne pas compter deux fois l'argent réinvesti." : ''}{noValueCount > 0 ? ' Un tiret (—) : titre non retrouvé au portefeuille ou sans prix actuel.' : ''} Les revenus encaissés ne sont pas inclus ici — voir la page Activité. {usdPhrase}{r.baseSymbolFallbackCount > 0 ? ' Quand le symbole de l’historique diffère de celui du portefeuille, le rapprochement se fait sur la racine du symbole.' : ''}
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 6.5, color: '#64748b', lineHeight: 1.45 }}>
+          <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.34 }}>
             Ces écarts sont des constats historiques : ils ne préjugent pas des résultats futurs et ne constituent ni une prévision, ni une recommandation, ni un conseil en placement. Ce document ne remplace pas les relevés officiels ni le rapport annuel sur le rendement de votre courtier.
           </Text>
         </View>

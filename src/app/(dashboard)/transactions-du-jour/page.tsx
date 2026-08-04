@@ -239,13 +239,15 @@ function transformRow(row: RawRow, index: number): TransactionRow | null {
   const isLargeTransfer = Math.abs(total) > 1000;
   const isRetirementPayment = normalizedNote.includes('paiement retraite');
 
+  if (isRetirementPayment) return null;
+
   let type: IncludedType | null = null;
   let inclusionReason = '';
 
   if (normalizedType.includes('depot') && total > 1000) {
     type = 'Dépôt';
     inclusionReason = 'Dépôt supérieur à 1 000 $';
-  } else if (normalizedType.includes('transfert') && !isRetirementPayment && (total > 0 || isLargeTransfer)) {
+  } else if (normalizedType.includes('transfert') && (total > 0 || isLargeTransfer)) {
     type = 'Transfert';
     inclusionReason = total > 0 ? 'Transfert positif' : 'Transfert de plus de 1 000 $';
   } else if (normalizedType.includes('remboursement')) {
@@ -298,7 +300,7 @@ function buildEmailBody(rows: TransactionRow[]) {
     headers.join(' | '),
     ...lines,
     '',
-    'Critères appliqués : dépôt > 1 000 $, transfert positif ou transfert de plus de 1 000 $, remboursement. Les transferts avec la note Paiement Retraite sont exclus.',
+    'Critères appliqués : dépôt > 1 000 $, transfert positif ou transfert de plus de 1 000 $, remboursement. Toute ligne avec la note Paiement Retraite est exclue.',
     '',
     'Merci.',
   ].join('\n');
@@ -378,7 +380,7 @@ function buildEmailHtml(rows: TransactionRow[], sourceRowCount: number, netAmoun
       </table>
 
       <p style="margin:14px 0 0;font-size:12px;color:#475569;">
-        Critères appliqués : dépôt &gt; 1 000 $, transfert positif ou transfert de plus de 1 000 $, remboursement. Les transferts avec la note Paiement Retraite sont exclus.
+        Critères appliqués : dépôt &gt; 1 000 $, transfert positif ou transfert de plus de 1 000 $, remboursement. Toute ligne avec la note Paiement Retraite est exclue.
       </p>
       <p style="margin:16px 0 0;">Merci.</p>
     </div>`;
@@ -524,7 +526,7 @@ export default function TransactionsDuJourPage() {
           <span className="text-xs font-bold uppercase text-text-light">Règles</span>
           <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">Dépôt &gt; 1 000 $</span>
           <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Transfert positif ou &gt; 1 000 $</span>
-          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">Sauf Paiement Retraite</span>
+          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">Exclure Paiement Retraite</span>
           <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">Remboursement</span>
         </div>
       </div>

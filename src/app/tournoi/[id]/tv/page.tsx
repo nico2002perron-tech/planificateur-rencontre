@@ -9,6 +9,8 @@
 
 import { useState, useEffect, useMemo, useCallback, use } from 'react';
 import { Loader2 } from 'lucide-react';
+import { DessinTerrain } from '@/components/tournament/SchemaTerrain';
+import { nombreTerrains, nomTerrain, normaliserSport, journeeCourante } from '@/lib/tournament/terrains';
 
 interface Team { id: string; name: string; logo_url: string | null }
 
@@ -35,7 +37,7 @@ interface Standing {
 
 interface TournamentState {
   event: { id: string; title: string; date: string; location: string };
-  config: { status: 'draft' | 'published' } | null;
+  config: { status: 'draft' | 'published'; sport?: string; courts?: number } | null;
   teams: Team[];
   matches: Match[];
   standings: Standing[];
@@ -83,25 +85,41 @@ export default function TournamentTvPage({ params }: { params: Promise<{ id: str
     return (id: string | null, source: string) => (id ? map.get(id) : '') || source || 'À déterminer';
   }, [state?.teams]);
 
-  // En cours = statut in_progress, sinon le premier créneau non joué
-  const { current, upcoming } = useMemo(() => {
-    const ms = state?.matches || [];
-    const matchDate = (m: Match) => m.scheduled_date || state?.event.date || '';
-    const key = (m: Match) => `${matchDate(m)}|${m.scheduled_time}`;
-    const pending = ms
-      .filter(m => m.status !== 'finished' && m.status !== 'cancelled')
-      .sort((a, b) => key(a).localeCompare(key(b)));
-    const inProgress = pending.filter(m => m.status === 'in_progress');
-    let cur: Match[];
-    if (inProgress.length > 0) {
-      cur = inProgress;
-    } else {
-      const firstKey = pending[0] ? key(pending[0]) : '';
-      cur = pending.filter(m => key(m) === firstKey);
-    }
-    const curIds = new Set(cur.map(m => m.id));
-    return { current: cur, upcoming: pending.filter(m => !curIds.has(m.id)).slice(0, 4) };
-  }, [state]);
+  // L'écran ne montre QUE la journée en cours : au gymnase, personne n'a
+  // besoin de voir le lendemain pendant que ça joue.
+  const sport = normaliserSport(state?.config?.sport);
+  const jourAffiche = useMemo(
+    () => journeeCourante(state?.matches || [], state?.event.date || ''),
+    [state?.matches, state?.event.date],
+  );
+
+  // Un tableau par TERRAIN : ce qui s'y joue maintenant, puis ce qui s'en vient
+  // SUR CE TERRAIN. Les terrains ne sont jamais fondus en une seule liste.
+  const parTerrain = useMemo(() => {
+    const ms = (state?.matches || []).filter(m => (m.scheduled_date || state?.event.date || '') === jourAffiche);
+    const nb = nombreTerrains(state?.matches || [], state?.config?.courts ?? 1);
+    return Array.from({ length: nb }, (_, i) => {
+      const court = i + 1;
+      const aJouer = ms
+        .filter(m => Math.max(Math.floor(m.court) || 1, 1) === court && m.status !== 'finished' && m.status !== 'cancelled')
+        .sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time));
+      const enCours = aJouer.find(m => m.status === 'in_progress') ?? aJouer[0] ?? null;
+      return {
+        court,
+        enCours,
+        suite: aJouer.filter(m => m.id !== enCours?.id).slice(0, 3),
+      };
+    });
+  }, [state, jourAffiche]);
+
+  // Sur plusieurs jours, l'écran dit clairement quelle journée il montre.
+  const joursTournoi = useMemo(
+    () => [...new Set((state?.matches || []).map(m => m.scheduled_date || state?.event.date || ''))].filter(Boolean).sort(),
+    [state],
+  );
+  const etiquetteJour = joursTournoi.length > 1 && jourAffiche
+    ? new Date(jourAffiche + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
 
   if (loading || !state) {
     return (
@@ -135,52 +153,66 @@ export default function TournamentTvPage({ params }: { params: Promise<{ id: str
         </div>
       ) : (
         <div className="flex-1 flex gap-8 px-10 pb-8 min-h-0">
-          {/* Colonne gauche : en cours + à venir */}
+          {/* Colonne gauche : UN TABLEAU PAR TERRAIN, jamais fondus ensemble */}
           <div className="flex-[3] flex flex-col gap-4 min-w-0">
-            <p className="text-sm font-extrabold uppercase tracking-widest opacity-70">🏟️ Sur les terrains</p>
-            {current.length === 0 ? (
-              <div className="rounded-3xl bg-white/10 p-8 text-center text-2xl font-extrabold">
-                🏁 Toutes les parties sont jouées !
-              </div>
-            ) : (
-              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(current.length, 2)}, 1fr)` }}>
-                {current.map(m => (
-                  <div key={m.id} className="rounded-3xl bg-white/10 backdrop-blur px-7 py-6">
-                    <div className="flex items-center justify-between text-sm font-extrabold opacity-75 mb-3">
-                      <span>TERRAIN {m.court}{m.phase !== 'garantie' ? ` · ${PHASE_LABELS[m.phase] || ''}` : ''}</span>
-                      <span>{m.scheduled_time}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-3xl font-extrabold truncate">{teamName(m.team_a_id, m.source_a)}</span>
-                      <span className="text-3xl font-extrabold tabular-nums flex-shrink-0 opacity-90">
-                        {m.score_a !== null && m.score_b !== null ? `${m.score_a} – ${m.score_b}` : 'VS'}
-                      </span>
-                      <span className="text-3xl font-extrabold truncate text-right">{teamName(m.team_b_id, m.source_b)}</span>
-                    </div>
+            <p className="text-sm font-extrabold uppercase tracking-widest opacity-70">
+              🏟️ Sur les terrains{etiquetteJour ? ` · ${etiquetteJour}` : ''}
+            </p>
+            <div className="grid gap-4 flex-1 min-h-0" style={{ gridTemplateColumns: `repeat(${Math.min(parTerrain.length, 2)}, minmax(0, 1fr))` }}>
+              {parTerrain.map(({ court, enCours, suite }) => (
+                <div key={court} className="rounded-3xl bg-white/10 backdrop-blur px-6 py-5 flex flex-col min-w-0">
+                  {/* En-tête : le terrain dessiné + son nom */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <DessinTerrain sport={sport} court={court} variante="sombre" style={{ width: 62, height: 'auto', flexShrink: 0 }} />
+                    <span className="text-2xl font-extrabold tracking-wide">{nomTerrain(court).toUpperCase()}</span>
                   </div>
-                ))}
-              </div>
-            )}
 
-            {upcoming.length > 0 && (
-              <>
-                <p className="text-sm font-extrabold uppercase tracking-widest opacity-70 mt-2">⏭️ À venir</p>
-                <div className="flex flex-col gap-2.5">
-                  {upcoming.map(m => (
-                    <div key={m.id} className="rounded-2xl bg-white/[0.06] px-6 py-3.5 flex items-center gap-5">
-                      <span className="text-2xl font-extrabold tabular-nums w-20 flex-shrink-0">{m.scheduled_time}</span>
-                      <span className="text-sm font-extrabold opacity-70 w-24 flex-shrink-0">Terrain {m.court}</span>
-                      <span className="text-xl font-extrabold truncate">
-                        {teamName(m.team_a_id, m.source_a)} <span className="opacity-50">vs</span> {teamName(m.team_b_id, m.source_b)}
-                      </span>
-                      {m.phase !== 'garantie' && (
-                        <span className="ml-auto text-xs font-extrabold px-3 py-1 rounded-full bg-white/15 flex-shrink-0">{PHASE_LABELS[m.phase]}</span>
-                      )}
+                  {/* Ce qui s'y joue maintenant */}
+                  {!enCours ? (
+                    <div className="rounded-2xl bg-white/[0.06] px-5 py-6 text-center text-xl font-extrabold opacity-60">
+                      🏁 Terrain libre
                     </div>
-                  ))}
+                  ) : (
+                    <div className="rounded-2xl bg-white/[0.10] px-5 py-4">
+                      <div className="flex items-center justify-between text-xs font-extrabold opacity-75 mb-2">
+                        <span>{enCours.status === 'in_progress' ? 'EN COURS' : 'PROCHAINE'}{enCours.phase !== 'garantie' ? ` · ${PHASE_LABELS[enCours.phase] || ''}` : ''}</span>
+                        <span className="tabular-nums">{enCours.scheduled_time}</span>
+                      </div>
+                      {/* Une équipe par ligne : les noms longs restent lisibles de loin */}
+                      {([
+                        { id: enCours.team_a_id, source: enCours.source_a, score: enCours.score_a },
+                        { id: enCours.team_b_id, source: enCours.source_b, score: enCours.score_b },
+                      ]).map((e, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3 py-0.5">
+                          <span className="text-3xl font-extrabold truncate">{teamName(e.id, e.source)}</span>
+                          <span className="text-3xl font-extrabold tabular-nums flex-shrink-0 opacity-90">
+                            {e.score === null ? '–' : e.score}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Puis la suite, sur CE terrain seulement */}
+                  {suite.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-3">
+                      <p className="text-[11px] font-extrabold uppercase tracking-widest opacity-60">⏭️ Ensuite ici</p>
+                      {suite.map(m => (
+                        <div key={m.id} className="rounded-xl bg-white/[0.06] px-4 py-2.5 flex items-center gap-4">
+                          <span className="text-xl font-extrabold tabular-nums flex-shrink-0 w-[70px]">{m.scheduled_time}</span>
+                          <span className="text-base font-extrabold truncate">
+                            {teamName(m.team_a_id, m.source_a)} <span className="opacity-50">vs</span> {teamName(m.team_b_id, m.source_b)}
+                          </span>
+                          {m.phase !== 'garantie' && (
+                            <span className="ml-auto text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-white/15 flex-shrink-0">{PHASE_LABELS[m.phase]}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
+              ))}
+            </div>
           </div>
 
           {/* Colonne droite : classement ⇄ séries */}

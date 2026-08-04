@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchTournamentState } from '@/lib/tournament/state';
 import { renderTournamentSheet } from '@/lib/pdf/tournament-sheet';
+import { normaliserSport } from '@/lib/tournament/terrains';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -42,6 +43,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     event: state.event,
     config: {
       guaranteed_games: state.config.guaranteed_games,
+      courts: state.config.courts,
+      sport: normaliserSport(state.config.sport),
       playoffs_enabled: state.config.playoffs_enabled,
       playoffs_team_count: state.config.playoffs_team_count,
       points_win: state.config.points_win,

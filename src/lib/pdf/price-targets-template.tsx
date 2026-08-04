@@ -7,6 +7,7 @@ import {
   Path, Line, Circle, Polygon, Polyline,
 } from '@react-pdf/renderer';
 import { styles, C } from './styles';
+import { computeScenarios } from './scenarios';
 import type { MeetingEvolution } from '@/lib/journal/compare-meetings';
 import type { PortfolioActivitySummary } from '@/lib/portfolio/year-activity';
 import type { DeploymentSummary } from '@/lib/portfolio/deployment';
@@ -577,22 +578,8 @@ function computeTopPayers(holdings: PriceTargetHolding[], incomeTotal: number, n
 // analystes, + revenus (dividendes + coupons) constants dans les 3 cas. Les
 // titres sans fourchette utilisent leur consensus pour les 3 (aucun écart
 // artificiel). Renvoie des GAINS (à additionner à la valeur du portefeuille).
-function computeScenarios(holdings: PriceTargetHolding[], income: number): { low: number; mid: number; high: number } {
-  let capLow = 0, capMid = 0, capHigh = 0;
-  for (const h of holdings) {
-    if (['CASH', 'FIXED_INCOME', 'OTHER'].includes(h.assetType)) continue;
-    if (!h.targetPrice) continue;
-    const cp = h.currentPrice || h.marketPrice;
-    if (!(cp > 0)) continue;
-    const mid = h.targetPrice;
-    const lo = h.targetLow ?? mid;
-    const hi = h.targetHigh ?? mid;
-    capLow += h.quantity * (Math.min(lo, mid, hi) - cp);
-    capMid += h.quantity * (mid - cp);
-    capHigh += h.quantity * (Math.max(lo, mid, hi) - cp);
-  }
-  return { low: capLow + income, mid: capMid + income, high: capHigh + income };
-}
+// computeScenarios vit maintenant dans `./scenarios` (fonction pure) : le PDF et
+// l'export HTML interactif doivent projeter EXACTEMENT la même chose.
 
 // ─── Maturity ────────────────────────────────────────────────────────────────
 

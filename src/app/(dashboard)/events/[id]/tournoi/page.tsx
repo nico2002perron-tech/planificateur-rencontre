@@ -15,8 +15,13 @@ import {
   AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe, Tv, Mail, FileText,
 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
+import GrilleHoraire from '@/components/tournament/GrilleHoraire';
 import { computeQualification, type QualStatus } from '@/lib/tournament/qualification';
 import type { TournamentMatch } from '@/lib/tournament/state';
+import {
+  construireGrilleParJour, journeeCourante, nomTerrain, libelleTerrain,
+  normaliserSport, SPORTS, SPORT_PAR_DEFAUT, type SportId,
+} from '@/lib/tournament/terrains';
 
 // Couleur d'étiquette de qualification (qui passe / qui sort / champion)
 const QUAL_COLOR: Record<QualStatus, string> = {
@@ -40,6 +45,7 @@ interface Day { date: string; start: string; end: string }
 interface Config {
   guaranteed_games: number;
   courts: number;
+  sport: SportId;
   start_time: string;
   days: Day[];
   game_minutes: number;
@@ -86,7 +92,7 @@ interface TournamentState {
 }
 
 const DEFAULT_CONFIG: Config = {
-  guaranteed_games: 2, courts: 2, start_time: '09:00', days: [],
+  guaranteed_games: 2, courts: 2, sport: SPORT_PAR_DEFAUT, start_time: '09:00', days: [],
   game_minutes: 25, break_minutes: 5, playoffs_enabled: true, playoffs_team_count: 4,
   status: 'draft', schedule_sent_at: null, published_at: null,
 };
@@ -127,6 +133,10 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const [notifyMatch, setNotifyMatch] = useState<Match | null>(null);
   // Décaler tout le reste (retard)
   const [confirmShift, setConfirmShift] = useState<number | null>(null);
+  // Journée affichée (tournoi de plusieurs jours) — fixée au chargement sur la
+  // journée en cours, puis elle ne bouge plus toute seule : saisir le dernier
+  // pointage du vendredi ne doit pas faire sauter l'écran au samedi.
+  const [jourChoisi, setJourChoisi] = useState<string>('');
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -135,12 +145,15 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
 
   const applyState = useCallback((s: TournamentState) => {
     setState(s);
+    // Première arrivée seulement (`prev ||`) : ensuite c'est Nicolas qui choisit.
+    setJourChoisi(prev => prev || journeeCourante(s.matches, s.event.date));
     const fallbackDays = [{ date: s.event.date || '', start: s.config?.start_time || '09:00', end: '17:00' }];
     if (s.config) {
       const c = s.config;
       setForm({
         guaranteed_games: c.guaranteed_games,
         courts: c.courts,
+        sport: normaliserSport(c.sport),
         start_time: c.start_time,
         days: Array.isArray(c.days) && c.days.length > 0 ? c.days : fallbackDays,
         game_minutes: c.game_minutes,
@@ -174,23 +187,22 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     return (id: string | null, source: string) => (id ? map.get(id) : '') || source || 'À déterminer';
   }, [state?.teams]);
 
-  // Horaire groupé par JOURNÉE puis par heure — tri chronologique partout
-  // ('' = partie d'avant la v3 → date de l'événement)
-  const byDay = useMemo(() => {
-    const days = new Map<string, Map<string, Match[]>>();
-    for (const m of state?.matches || []) {
-      const dk = m.scheduled_date || state?.event.date || '';
-      const tk = m.scheduled_time || '—';
-      const slots = days.get(dk) || new Map<string, Match[]>();
-      slots.set(tk, [...(slots.get(tk) || []), m]);
-      days.set(dk, slots);
-    }
-    return [...days.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, slots]) => ({ date, slots: [...slots.entries()].sort((a, b) => a[0].localeCompare(b[0])) }));
-  }, [state?.matches, state?.event.date]);
+  // Horaire groupé par JOURNÉE puis par TERRAIN : chaque terrain garde son
+  // propre fil d'heures, les deux fils partagent la même échelle (les trous
+  // restent visibles). ('' = partie d'avant la v3 → date de l'événement)
+  const grillesParJour = useMemo(
+    () => construireGrilleParJour(state?.matches || [], form.courts, state?.event.date || ''),
+    [state?.matches, form.courts, state?.event.date],
+  );
 
-  const multiDay = byDay.length > 1 || form.days.length > 1;
+  const multiDay = grillesParJour.length > 1 || form.days.length > 1;
+
+  // La journée réellement affichée : le choix de l'organisateur s'il tient
+  // encore (une régénération peut changer les dates), sinon la première.
+  const jourAffiche = useMemo(() => {
+    const dates = grillesParJour.map(j => j.date);
+    return dates.includes(jourChoisi) ? jourChoisi : (dates[0] ?? '');
+  }, [grillesParJour, jourChoisi]);
 
   // Conflits créés par des déplacements manuels — signalés en rouge, jamais
   // bloquants (inverser deux parties passe par un conflit temporaire).
@@ -206,8 +218,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
           map.set(a.id, 'équipe déjà en jeu à cette heure');
           map.set(b.id, 'équipe déjà en jeu à cette heure');
         } else if (a.court === b.court) {
-          map.set(a.id, `terrain ${a.court} en double à cette heure`);
-          map.set(b.id, `terrain ${b.court} en double à cette heure`);
+          map.set(a.id, `${nomTerrain(a.court)} en double à cette heure`);
+          map.set(b.id, `${nomTerrain(b.court)} en double à cette heure`);
         }
       }
     }
@@ -227,6 +239,30 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const liveUrl = typeof window !== 'undefined' ? `${window.location.origin}/tournoi/${eventId}` : `/tournoi/${eventId}`;
 
   // ── Actions ────────────────────────────────────────────────────────────────
+
+  /**
+   * Le sport ne change aucune règle : il choisit le dessin du terrain. On
+   * l'enregistre tout de suite (le reste de la config attend « Générer »),
+   * mais seulement si le tournoi existe déjà — sinon la réponse écraserait
+   * la configuration en cours de saisie.
+   */
+  const changerSport = useCallback(async (sport: SportId) => {
+    setForm(f => ({ ...f, sport }));
+    if (!state?.config) return;
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sport }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast('Le sport n\'a pas pu être enregistré.'); return; }
+      if (data?.avertissement) showToast(data.avertissement);
+      setState(s => (s && s.config ? { ...s, config: { ...s.config, sport } } : s));
+    } catch {
+      showToast('Le sport n\'a pas pu être enregistré.');
+    }
+  }, [eventId, state?.config, showToast]);
 
   async function generate(force = false) {
     setBusy('generate');
@@ -411,7 +447,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       if (!res.ok) { showToast('Erreur de déplacement.'); return; }
       applyState(await res.json());
       setEditing('');
-      showToast(`M${m.match_number} déplacée au ${formatDayLong(editDraft.date)} ${editDraft.time} · Terrain ${editDraft.court}.`);
+      showToast(`M${m.match_number} déplacée au ${formatDayLong(editDraft.date)} ${editDraft.time} · ${nomTerrain(editDraft.court)}.`);
     } finally {
       setBusy('');
     }
@@ -592,6 +628,28 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
               ))}
             </div>
           </div>
+          {/* Sport : ne change aucune règle, sert à dessiner le bon terrain */}
+          <div className="col-span-2">
+            <label className="text-xs font-extrabold text-text-muted block mb-1">
+              Sport <span className="font-bold text-text-light">(dessin du terrain)</span>
+            </label>
+            <div className="flex gap-1.5 flex-wrap">
+              {SPORTS.map(sp => {
+                const selected = form.sport === sp.id;
+                return (
+                  <button key={sp.id} onClick={() => changerSport(sp.id)}
+                    title={sp.apercu}
+                    className="px-3 py-2 rounded-xl text-xs font-extrabold transition-all"
+                    style={{
+                      backgroundColor: selected ? `${DUO.orange}15` : 'white',
+                      color: selected ? DUO.orangeDark : '#9ca3af',
+                      border: selected ? `2px solid ${DUO.orange}60` : '2px solid #e5e7eb',
+                    }}>{sp.label}</button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="col-span-2 grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs font-extrabold text-text-muted block mb-1">Partie (min)</label>
@@ -785,19 +843,36 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
               </button>
             ))}
           </div>
+          {/* Une journée à la fois : on ne gère pas samedi pendant vendredi */}
+          {multiDay && (
+            <div className="flex gap-1.5 mb-2.5 flex-wrap">
+              {grillesParJour.map(({ date, grille }) => {
+                const actif = date === jourAffiche;
+                const nb = grille.colonnes.reduce((t, c) => t + c.nbParties, 0);
+                return (
+                  <button key={date || 'sans-date'} onClick={() => setJourChoisi(date)}
+                    className="px-3 py-2 rounded-xl text-xs font-extrabold transition-all"
+                    style={{
+                      backgroundColor: actif ? `${DUO.blue}15` : 'white',
+                      color: actif ? DUO.blueDark : '#9ca3af',
+                      border: actif ? `2px solid ${DUO.blue}60` : '2px solid #e5e7eb',
+                    }}>
+                    <span className="capitalize">📆 {formatDayLong(date) || 'Journée à déterminer'}</span>
+                    <span className="font-bold opacity-70"> · {nb} partie{nb > 1 ? 's' : ''}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="space-y-3">
-            {byDay.map(({ date, slots }) => (
+            {grillesParJour.filter(({ date }) => date === jourAffiche).map(({ date, grille }) => (
               <div key={date || 'sans-date'}>
-                {multiDay && (
-                  <p className="text-sm font-extrabold text-text-main mt-4 mb-1.5 px-1 capitalize flex items-center gap-1.5">
-                    📆 {formatDayLong(date) || 'Journée à déterminer'}
-                  </p>
-                )}
-                {slots.map(([time, matches]) => (
-              <div key={`${date}|${time}`}>
-                <p className="text-xs font-extrabold text-text-muted mb-1.5 px-1">🕐 {time}</p>
-                <div className="space-y-1.5 mb-3">
-                  {matches.map(m => {
+                {/* Les terrains en bandeau, l'horaire dessous : une seule
+                    colonne d'heures, donc les deux terrains restent alignés. */}
+                <GrilleHoraire
+                  grille={grille}
+                  sport={form.sport}
+                  rendreCase={(m) => {
                     const d = drafts[m.id] ?? { a: m.score_a === null ? '' : String(m.score_a), b: m.score_b === null ? '' : String(m.score_b) };
                     const finished = m.status === 'finished';
                     const cancelled = m.status === 'cancelled';
@@ -808,8 +883,9 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                       <div key={m.id} className="rounded-2xl bg-white p-3"
                         style={{ border: finished ? `2px solid ${DUO.green}50` : '2px solid #e5e7eb', borderBottom: finished ? `4px solid ${DUO.green}50` : '4px solid #e5e7eb' }}>
                         <div className="flex items-center justify-between text-[11px] font-extrabold text-text-muted mb-1.5 gap-2">
+                          {/* Le terrain est déjà en tête de colonne : pas de répétition. */}
                           <span className="whitespace-nowrap">
-                            M{m.match_number} · Terrain {m.court}
+                            M{m.match_number}
                             {m.phase !== 'garantie' && (
                               <span style={{ color: DUO.orangeDark }}> · {PHASE_LABELS[m.phase] || m.phase}</span>
                             )}
@@ -857,7 +933,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                                     backgroundColor: editDraft.court === c ? `${DUO.blue}15` : 'white',
                                     color: editDraft.court === c ? DUO.blueDark : '#9ca3af',
                                     border: editDraft.court === c ? `2px solid ${DUO.blue}60` : '2px solid #e5e7eb',
-                                  }}>T{c}</button>
+                                  }}>{libelleTerrain(c)}</button>
                               ))}
                             </div>
                             <button onClick={() => saveTimeCourt(m)} disabled={busy !== ''}
@@ -892,46 +968,41 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                             </div>
                           </div>
                         )}
-                        <div className="flex items-center gap-2">
-                          {swapMode ? (
-                            <button onClick={() => handleSwapTap(m, 'a')} disabled={busy !== '' || finished}
-                              className="flex-1 text-sm font-extrabold truncate text-right px-2 py-1.5 rounded-lg transition-all disabled:opacity-40"
-                              style={{
-                                backgroundColor: swapSel?.matchId === m.id && swapSel?.side === 'a' ? DUO.blue : `${DUO.blue}0d`,
-                                color: swapSel?.matchId === m.id && swapSel?.side === 'a' ? 'white' : DUO.blueDark,
-                                border: `2px dashed ${DUO.blue}60`,
-                              }}>
-                              {teamName(m.team_a_id, m.source_a)}
-                            </button>
-                          ) : (
-                            <span className="flex-1 text-sm font-extrabold truncate text-right" style={{ color: aWins ? DUO.greenDark : '#334155' }}>
-                              {teamName(m.team_a_id, m.source_a)}
-                            </span>
-                          )}
-                          <input inputMode="numeric" value={d.a}
-                            onChange={e => setDrafts(prev => ({ ...prev, [m.id]: { ...d, a: e.target.value.replace(/\D/g, '') } }))}
-                            className="w-12 text-center rounded-lg border-2 border-gray-200 py-1.5 text-sm font-extrabold text-text-main focus:outline-none focus:border-[#1CB0F6]"
-                            placeholder="—" />
-                          <span className="text-xs font-extrabold text-text-light">vs</span>
-                          <input inputMode="numeric" value={d.b}
-                            onChange={e => setDrafts(prev => ({ ...prev, [m.id]: { ...d, b: e.target.value.replace(/\D/g, '') } }))}
-                            className="w-12 text-center rounded-lg border-2 border-gray-200 py-1.5 text-sm font-extrabold text-text-main focus:outline-none focus:border-[#1CB0F6]"
-                            placeholder="—" />
-                          {swapMode ? (
-                            <button onClick={() => handleSwapTap(m, 'b')} disabled={busy !== '' || finished}
-                              className="flex-1 text-sm font-extrabold truncate text-left px-2 py-1.5 rounded-lg transition-all disabled:opacity-40"
-                              style={{
-                                backgroundColor: swapSel?.matchId === m.id && swapSel?.side === 'b' ? DUO.blue : `${DUO.blue}0d`,
-                                color: swapSel?.matchId === m.id && swapSel?.side === 'b' ? 'white' : DUO.blueDark,
-                                border: `2px dashed ${DUO.blue}60`,
-                              }}>
-                              {teamName(m.team_b_id, m.source_b)}
-                            </button>
-                          ) : (
-                            <span className="flex-1 text-sm font-extrabold truncate" style={{ color: bWins ? DUO.greenDark : '#334155' }}>
-                              {teamName(m.team_b_id, m.source_b)}
-                            </span>
-                          )}
+                        {/* Une équipe par ligne, sa case de pointage à droite —
+                            même forme que la feuille PDF, et le nom au complet
+                            même dans une colonne étroite. */}
+                        <div>
+                          {(['a', 'b'] as const).map(cote => {
+                            const equipeId = cote === 'a' ? m.team_a_id : m.team_b_id;
+                            const source = cote === 'a' ? m.source_a : m.source_b;
+                            const gagne = cote === 'a' ? aWins : bWins;
+                            const choisi = swapSel?.matchId === m.id && swapSel?.side === cote;
+                            return (
+                              <div key={cote} className="flex items-center gap-2 py-0.5"
+                                style={cote === 'b' ? { borderTop: '1px solid #f1f5f9' } : undefined}>
+                                {swapMode ? (
+                                  <button onClick={() => handleSwapTap(m, cote)} disabled={busy !== '' || finished}
+                                    className="flex-1 min-w-0 text-sm font-extrabold truncate text-left px-2 py-1.5 rounded-lg transition-all disabled:opacity-40"
+                                    style={{
+                                      backgroundColor: choisi ? DUO.blue : `${DUO.blue}0d`,
+                                      color: choisi ? 'white' : DUO.blueDark,
+                                      border: `2px dashed ${DUO.blue}60`,
+                                    }}>
+                                    {teamName(equipeId, source)}
+                                  </button>
+                                ) : (
+                                  <span className="flex-1 min-w-0 text-sm font-extrabold truncate"
+                                    style={{ color: gagne ? DUO.greenDark : '#334155' }}>
+                                    {teamName(equipeId, source)}
+                                  </span>
+                                )}
+                                <input inputMode="numeric" value={d[cote]}
+                                  onChange={e => setDrafts(prev => ({ ...prev, [m.id]: { ...d, [cote]: e.target.value.replace(/\D/g, '') } }))}
+                                  className="w-12 flex-shrink-0 text-center rounded-lg border-2 border-gray-200 py-1.5 text-sm font-extrabold text-text-main focus:outline-none focus:border-[#1CB0F6]"
+                                  placeholder="—" />
+                              </div>
+                            );
+                          })}
                         </div>
                         {dirty && (
                           <button onClick={() => saveScore(m)} disabled={busy !== ''}
@@ -943,10 +1014,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                         )}
                       </div>
                     );
-                  })}
-                </div>
-              </div>
-                ))}
+                  }}
+                />
               </div>
             ))}
           </div>

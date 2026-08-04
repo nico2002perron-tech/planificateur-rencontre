@@ -1,0 +1,11 @@
+code_fonds,dimension,cle,poids
+XIU,geo,canada,1.0
+XIU,secteur,finance,0.36
+XIU,secteur,energie,0.18
+XIU,secteur,materiaux,0.11
+XIU,secteur,autre,0.35
+VFV,geo,usa,1.0
+VFV,secteur,technologie,0.30
+VFV,secteur,finance,0.13
+VFV,secteur,sante,0.12
+VFV,secteur,autre,0.45

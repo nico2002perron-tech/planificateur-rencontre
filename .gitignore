@@ -44,3 +44,15 @@ supabase/.temp/
 scripts/
 
 .vercel
+
+# Donnees clients — historique de transactions Croesus (noms en clair).
+# NE JAMAIS VERSIONNER. Voir PLAN-GRAND-LIVRE.md, lot -1.
+EXECEL A PLANIF/
+
+# Sorties locales de generation (PDF de validation, exports) — jamais versionnees.
+output/
+
+# Base locale du planificateur (profils fiscaux, documents par client,
+# historiques de transactions Croesus). Noms de clients en clair : NE JAMAIS
+# VERSIONNER. Voir docs/installation-locale.md.
+donnees-locales/

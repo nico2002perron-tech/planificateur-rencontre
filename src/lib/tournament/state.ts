@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeStandings, type StandingRow } from './standings';
 import { resolvePlayoffSlots } from './playoffs';
+import type { SportId } from './terrains';
 
 export interface TournamentDay {
   date: string;  // 'YYYY-MM-DD'
@@ -27,6 +28,8 @@ export interface TournamentConfig {
   event_id: string;
   guaranteed_games: number;
   courts: number;
+  /** Sport du tournoi — sert au dessin du terrain. Absent avant la migration v4. */
+  sport?: SportId | null;
   start_time: string;
   days: TournamentDay[] | null; // null = une seule journée (date de l'événement)
   game_minutes: number;

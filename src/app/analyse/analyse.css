@@ -1,0 +1,139 @@
+/* Langage visuel de l'outil public — calqué sur le site GFSF :
+   fond clair à voiles de dégradé, glassmorphism, cartes rondes codées couleur,
+   boutons dégradé cyan, mouvement discret. Polices Montserrat/Open Sans (globals). */
+
+.an-scope {
+  --navy: #03045e;
+  --mid: #0077b6;
+  --cyan: #00b4d8;
+  --ink: #12233b;
+  --muted: #5b6e84;
+  --light: #f3f6fa;
+  /* accents par axe (repris du code couleur de « Nos outils ») */
+  --a-frais: #0091c2;
+  --a-frais-bg: #e3f6fb;
+  --a-chev: #7c5cff;
+  --a-chev-bg: #eee9ff;
+  --a-conc: #f0930b;
+  --a-conc-bg: #fff2dc;
+  --a-geo: #1aa564;
+  --a-geo-bg: #e3f6ec;
+  color: var(--ink);
+}
+
+/* Fond ambiant : voiles de dégradé cyan/lavande très doux sur clair */
+.an-bg {
+  background:
+    radial-gradient(1100px 520px at 12% -6%, rgba(0, 180, 216, 0.13), transparent 60%),
+    radial-gradient(1000px 560px at 108% 8%, rgba(124, 92, 255, 0.10), transparent 55%),
+    linear-gradient(180deg, #eef3fa 0%, #f6f9fc 40%, #f3f6fa 100%);
+}
+
+/* Verre dépoli */
+.an-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Carte ronde généreuse */
+.an-card {
+  background: #fff;
+  border-radius: 22px;
+  border: 1px solid rgba(3, 4, 94, 0.07);
+  box-shadow: 0 12px 34px rgba(3, 30, 78, 0.07);
+  transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.25s;
+}
+.an-card.lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(3, 30, 78, 0.13);
+}
+
+/* Chip d'icône tintée */
+.an-chip {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Bouton dégradé en pilule */
+.an-btn {
+  background: linear-gradient(135deg, var(--mid), var(--cyan));
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(0, 119, 182, 0.32);
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+  cursor: pointer;
+}
+.an-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0, 119, 182, 0.42); }
+.an-btn:disabled { opacity: 0.6; transform: none; cursor: default; }
+
+.an-eyebrow {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Chiffre-vedette d'une carte : jamais coupé en deux lignes, chiffres alignés */
+.an-chiffre {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 800;
+  font-size: clamp(23px, 4.6vw, 30px);
+  line-height: 1.12;
+  color: var(--navy);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barre de progression : pousse à l'entrée */
+.an-bar { position: relative; height: 10px; border-radius: 999px; background: #eef2f7; overflow: hidden; }
+.an-bar > span { position: absolute; inset: 0 auto 0 0; height: 100%; border-radius: 999px; transform-origin: left center; animation: an-grow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--d, 120ms); }
+
+/* Survol d'une ligne : la barre se réveille (l'infobulle native donne le détail) */
+.an-ligne > .an-bar > span { transition: filter 0.18s ease; }
+.an-ligne:hover > .an-bar > span { filter: saturate(1.15) brightness(1.06); }
+
+/* Ligne de saisie : 4 colonnes sur large, 2 rangées sur téléphone */
+.an-saisie-ligne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 140px 38px;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .an-saisie-ligne {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+    grid-template-areas:
+      "fonds   fonds  retirer"
+      "montant compte compte";
+    row-gap: 8px;
+  }
+  .an-saisie-fonds { grid-area: fonds; }
+  .an-saisie-montant { grid-area: montant; }
+  .an-saisie-compte { grid-area: compte; }
+  .an-saisie-retirer { grid-area: retirer; }
+  /* Sur deux rangées, un filet dit où finit un fonds et où commence le suivant. */
+  .an-saisie-ligne + .an-saisie-ligne { border-top: 1px dashed #e3eaf3; padding-top: 12px; }
+}
+
+@keyframes an-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes an-fadeup { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes an-floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
+.an-fadeup { animation: an-fadeup 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+.an-floaty { animation: an-floaty 6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .an-fadeup, .an-floaty { animation: none !important; }
+  .an-bar > span { animation: none !important; transition: none; }
+  .an-card { transition: none; }
+}

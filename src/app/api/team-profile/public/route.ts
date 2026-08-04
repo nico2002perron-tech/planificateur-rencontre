@@ -8,7 +8,12 @@ export async function GET() {
     .from('team_profiles')
     .select('display_name, role_title, bio, photo_url, certifications, languages, years_experience, linkedin_url, instagram_url, facebook_url, twitter_url, website_url, badge, category, initials, sort_order, logo_id, quote, specialties, booking_url, phone, education')
     .eq('is_visible', true)
-    .order('sort_order', { ascending: true });
+    // Beaucoup de profils partagent le même sort_order (trois « 1 », quatre « 4 »…).
+    // Sans second critère, Postgres rend les ex æquo dans un ordre arbitraire qui change
+    // dès qu'une ligne est réécrite — les cartes du site public se replaçaient toutes
+    // seules. display_name départage : stable d'un appel à l'autre.
+    .order('sort_order', { ascending: true })
+    .order('display_name', { ascending: true });
 
   // Fetch logos for badge display
   const { data: logos } = await supabase

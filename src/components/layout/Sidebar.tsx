@@ -19,6 +19,7 @@ import {
   History,
   ReceiptText,
   Briefcase,
+  Inbox,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/prospection', label: 'Prospection', icon: PhoneCall },
+  { href: '/analyses-recues', label: 'Analyses reçues', icon: Inbox },
   { href: '/models', label: 'Modèles', icon: PieChart },
   { href: '/proposition', label: 'Proposition', icon: Briefcase },
   { href: '/markets', label: 'Marchés', icon: TrendingUp },

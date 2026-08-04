@@ -488,6 +488,8 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   const [convertUsdToCad, setConvertUsdToCad] = useState(true);
   const [excludedRows, setExcludedRows] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  // « Rapport vivant » : l'export HTML interactif (même payload que le PDF).
+  const [generatingHtml, setGeneratingHtml] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   // Conviction (1-5) du conseiller sur ce lot de cours cibles. Optionnelle.
   // Capturée dans le journal des cours cibles à la génération du PDF — c'est le
@@ -1367,10 +1369,14 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     activityCurrentValue,
   ]);
 
-  const handleDownloadPdf = useCallback(async () => {
-    setGeneratingPdf(true);
-    try {
-      // Build PDF data payload (exclude removed rows)
+  /**
+   * Le payload d'export — construit UNE seule fois, consommé par les DEUX
+   * exports (le PDF et le « rapport vivant » HTML interactif). C'est la garantie
+   * qu'un même client ne verra jamais deux chiffres différents selon le format
+   * qu'il ouvre. Voir PLAN-RAPPORT-VIVANT.md §1.1.
+   */
+  const buildExportPayload = useCallback(() => {
+      // Positions retenues (les lignes retirées sont exclues)
       const pdfHoldings = holdings.filter(h => !excludedRows.has(h._key)).map(h => {
         const td = targetData.get(h.symbol);
         const inc = incomeData.get(h._key);
@@ -1474,6 +1480,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         })(),
       };
 
+      return { payload, pdfHoldings };
+  }, [holdings, targetData, prices, pdfOptions, excludedRows, incomeTotals, incomeData,
+      clientName, evolution, activitySummary, deploymentSummary, convertUsdToCad, usdCadRate]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    setGeneratingPdf(true);
+    try {
+      const { payload, pdfHoldings } = buildExportPayload();
+
       const res = await fetch('/api/exports/price-targets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1545,7 +1560,48 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     } finally {
       setGeneratingPdf(false);
     }
-  }, [holdings, targetData, prices, toast, pdfOptions, excludedRows, incomeTotals, incomeData, clientName, conviction, vault, evolution, activitySummary, deploymentSummary, saveToJournal, convertUsdToCad, usdCadRate]);
+  }, [buildExportPayload, toast, clientName, conviction, vault, saveToJournal]);
+
+  /**
+   * « Rapport vivant » — l'export HTML interactif : un fichier autonome qui
+   * raconte l'année du client en scènes animées (présentable en rencontre,
+   * envoyable par courriel). Mêmes données que le PDF, à la virgule près.
+   *
+   * `priorSnapshots` part avec le payload : l'historique des prédictions n'est
+   * accessible QUE depuis le navigateur (l'index du coffre est calculé ici), le
+   * serveur ne peut pas aller le chercher lui-même.
+   */
+  const handleDownloadHtml = useCallback(async () => {
+    setGeneratingHtml(true);
+    try {
+      const { payload } = buildExportPayload();
+      const res = await fetch('/api/exports/price-targets/html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, priorSnapshots }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Erreur de génération');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Nom de fichier neutre, même posture que le PDF : le nom du client ne se
+      // retrouve pas dans le dossier Téléchargements (souvent synchronisé).
+      a.download = `rapport-vivant-${new Date().toISOString().split('T')[0]}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('success', 'Rapport vivant téléchargé — ouvre-le dans ton navigateur');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Erreur de génération du rapport vivant');
+    } finally {
+      setGeneratingHtml(false);
+    }
+  }, [buildExportPayload, priorSnapshots, toast]);
 
   // Copy target summary to clipboard
   const handleCopySummary = useCallback(() => {
@@ -3429,8 +3485,10 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                   if (pdfOptions.includeYearActivity && activitySummary) {
                     pages += 2;
                     if (activitySummary.startingPortfolioValue != null) pages += 1;
-                    // « Le parcours de votre argent » = 2 pages (récit + détail).
-                    if (pdfOptions.includeDeployment && deploymentSummary && deploymentSummary.buyCount > 0) pages += 2;
+                    // « Ce que nous avons acheté cette année » = 1 page depuis la
+                    // fusion du 2026-07-29 (le récit et la preuve tiennent ensemble
+                    // une fois le bilan de la couverture retiré).
+                    if (pdfOptions.includeDeployment && deploymentSummary && deploymentSummary.buyCount > 0) pages += 1;
                   }
                   if (evolution && (evolution.held.length + evolution.exited.length + evolution.added.length) > 0) pages += 1;
                   if (pdfOptions.includeEquities && eqCount > 0) pages += Math.ceil(eqCount / rowsPerEqPage);
@@ -3452,6 +3510,19 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                   style={{ border: '2px solid #e5e7eb', borderBottom: '3px solid #d1d5db' }}
                 >
                   Retour
+                </button>
+                {/* Rapport vivant : le même contenu, en film interactif autonome
+                    (présentable en rencontre, envoyable par courriel). */}
+                <button
+                  onClick={handleDownloadHtml}
+                  disabled={generatingHtml || generatingPdf}
+                  title="Un fichier HTML autonome et animé : votre année en revue, présentable en rencontre ou envoyable au client"
+                  className="flex items-center gap-2 px-5 py-3 rounded-2xl font-extrabold text-sm
+                    transition-all duration-150 active:translate-y-[2px] active:shadow-none hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: 'white', color: DUO.blueDark, border: `2px solid ${DUO.blue}55`, borderBottom: `4px solid ${DUO.blue}40` }}
+                >
+                  {generatingHtml ? <Spinner size="sm" /> : <Sparkles className="h-4 w-4" />}
+                  {generatingHtml ? 'Création...' : 'Rapport vivant'}
                 </button>
                 <button
                   onClick={handleDownloadPdf}

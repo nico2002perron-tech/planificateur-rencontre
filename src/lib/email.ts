@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { googleCalUrl, outlookCalUrl } from './calendar';
+import { nomTerrain } from './tournament/terrains';
 
 let _resend: Resend | null = null;
 function getResend(): Resend | null {
@@ -339,7 +340,7 @@ function scheduleTable(teamName: string, matches: TeamScheduleMatch[]): string {
     return `
       <tr>
         <td style="padding:9px 12px;border-top:1px solid #e7edf3;font-weight:bold;color:#03045e;font-size:15px;white-space:nowrap">${when}</td>
-        <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#475569;font-size:14px;white-space:nowrap">Terrain ${m.court}</td>
+        <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#475569;font-size:14px;white-space:nowrap">${nomTerrain(m.court)}</td>
         <td style="padding:9px 12px;border-top:1px solid #e7edf3;color:#334155;font-size:14px">vs <strong>${opponent}</strong>${phaseLabel ? ` <span style="color:#0077b6;font-size:12px;font-weight:bold">· ${phaseLabel}</span>` : ''}</td>
       </tr>`;
   }).join('');
@@ -450,7 +451,7 @@ export async function sendMatchResultEmails(
       <div style="background:linear-gradient(135deg,#0077b6,#00b4d8);border-radius:14px;padding:20px 22px;margin:0 0 18px;text-align:center">
         <p style="margin:0 0 4px;color:#ffffff;opacity:.9;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.06em">Votre prochaine partie${phaseLabel ? ` · ${phaseLabel}` : ''}</p>
         <p style="margin:0;color:#ffffff;font-size:34px;font-weight:800;line-height:1.1">${next.dayLabel ? `${next.dayLabel} · ` : ''}${next.time}</p>
-        <p style="margin:6px 0 0;color:#ffffff;font-size:15px;font-weight:bold">Terrain ${next.court} · vs ${next.opponent}</p>
+        <p style="margin:6px 0 0;color:#ffffff;font-size:15px;font-weight:bold">${nomTerrain(next.court)} · vs ${next.opponent}</p>
       </div>
       <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 15px;margin:0 0 18px">
         <p style="margin:0;color:#92400e;font-size:13px;line-height:1.5">⏱️ Les heures peuvent bouger — la page en direct fait toujours foi.</p>

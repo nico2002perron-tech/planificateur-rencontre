@@ -10,8 +10,13 @@ import { useState, useEffect, useMemo, useCallback, use, Suspense, Fragment } fr
 import { useSearchParams } from 'next/navigation';
 import { Loader2, MapPin, CalendarDays, Radio, Medal, Clock3 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
+import { DessinTerrain } from '@/components/tournament/SchemaTerrain';
+import GrilleHoraire from '@/components/tournament/GrilleHoraire';
 import { computeQualification, type QualStatus } from '@/lib/tournament/qualification';
 import type { TournamentMatch } from '@/lib/tournament/state';
+import {
+  construireGrilleParJour, journeeCourante, accentTerrain, nomTerrain, normaliserSport,
+} from '@/lib/tournament/terrains';
 
 const QUAL_COLOR: Record<QualStatus, string> = {
   champion: '#b45309', finalist: '#0f2a4a', bronze: '#b45309', qualified: '#15803d',
@@ -53,7 +58,14 @@ interface Standing {
 
 interface TournamentState {
   event: { id: string; title: string; date: string; location: string };
-  config: { status: 'draft' | 'published' } | null;
+  config: {
+    status: 'draft' | 'published';
+    // Renvoyés par l'API publique aussi — `sport` est absent avant la migration v4.
+    sport?: string;
+    courts?: number;
+    playoffs_enabled?: boolean;
+    playoffs_team_count?: number;
+  } | null;
   teams: Team[];
   matches: Match[];
   standings: Standing[];
@@ -77,6 +89,8 @@ function LivePageInner({ eventId }: { eventId: string }) {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'horaire' | 'series' | 'classement'>('horaire');
   const [selectedTeam, setSelectedTeam] = useState<string>(searchParams.get('equipe') || '');
+  // '' = pas encore choisi → on ouvre sur la journée en cours
+  const [jourChoisi, setJourChoisi] = useState<string>('');
 
   const load = useCallback(async () => {
     try {
@@ -103,23 +117,24 @@ function LivePageInner({ eventId }: { eventId: string }) {
     return (id: string | null, source: string) => (id ? map.get(id) : '') || source || 'À déterminer';
   }, [state?.teams]);
 
-  // Horaire groupé par JOURNÉE puis par heure — tri chronologique partout
+  // Horaire groupé par JOURNÉE puis par TERRAIN — chaque terrain garde son fil
+  // d'heures, les fils partagent la même échelle (les trous restent visibles).
   // ('' = partie d'avant la v3 → date de l'événement)
-  const byDay = useMemo(() => {
-    const days = new Map<string, Map<string, Match[]>>();
-    for (const m of state?.matches || []) {
-      const dk = m.scheduled_date || state?.event.date || '';
-      const tk = m.scheduled_time || '—';
-      const slots = days.get(dk) || new Map<string, Match[]>();
-      slots.set(tk, [...(slots.get(tk) || []), m]);
-      days.set(dk, slots);
-    }
-    return [...days.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, slots]) => ({ date, slots: [...slots.entries()].sort((a, b) => a[0].localeCompare(b[0])) }));
-  }, [state?.matches, state?.event.date]);
+  const sport = normaliserSport(state?.config?.sport);
+  const grillesParJour = useMemo(
+    () => construireGrilleParJour(state?.matches || [], state?.config?.courts ?? 1, state?.event.date || ''),
+    [state?.matches, state?.config?.courts, state?.event.date],
+  );
 
-  const multiDay = byDay.length > 1;
+  const multiDay = grillesParJour.length > 1;
+
+  // Onglet de journée : ouvert sur la journée en cours, puis au choix du joueur.
+  const jourAffiche = useMemo(() => {
+    const dates = grillesParJour.map(j => j.date);
+    if (dates.includes(jourChoisi)) return jourChoisi;
+    const auto = journeeCourante(state?.matches || [], state?.event.date || '');
+    return dates.includes(auto) ? auto : (dates[0] ?? '');
+  }, [grillesParJour, jourChoisi, state?.matches, state?.event.date]);
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
 
   // Qui passe / qui sort / champion — le config public inclut playoffs_* (type élargi ici).
@@ -178,7 +193,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
             <span className="inline-flex items-center gap-1 capitalize">
               <CalendarDays className="h-3.5 w-3.5" />
               {multiDay
-                ? `${formatEventDate(byDay[0].date)} au ${formatEventDate(byDay[byDay.length - 1].date)}`
+                ? `${formatEventDate(grillesParJour[0].date)} au ${formatEventDate(grillesParJour[grillesParJour.length - 1].date)}`
                 : formatEventDate(state.event.date)}
             </span>
             {state.event.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{state.event.location}</span>}
@@ -241,15 +256,19 @@ function LivePageInner({ eventId }: { eventId: string }) {
                         )}
                         <p className="text-3xl font-extrabold leading-none">{nextMatch.scheduled_time}</p>
                         <p className="text-sm font-bold mt-1.5 opacity-95">
-                          Terrain {nextMatch.court} · vs {teamName(
+                          {nomTerrain(nextMatch.court)} · vs {teamName(
                             nextMatch.team_a_id === selectedTeam ? nextMatch.team_b_id : nextMatch.team_a_id,
                             nextMatch.team_a_id === selectedTeam ? nextMatch.source_b : nextMatch.source_a,
                           )}
                         </p>
                       </div>
-                      {PHASE_LABELS[nextMatch.phase] && (
-                        <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-white/20">{PHASE_LABELS[nextMatch.phase]}</span>
-                      )}
+                      <div className="flex flex-col items-end gap-1.5">
+                        {PHASE_LABELS[nextMatch.phase] && (
+                          <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-white/20">{PHASE_LABELS[nextMatch.phase]}</span>
+                        )}
+                        {/* Le terrain où se rendre, dessiné */}
+                        <DessinTerrain sport={sport} court={nextMatch.court} variante="sombre" style={{ width: 74, height: 'auto' }} />
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -275,61 +294,91 @@ function LivePageInner({ eventId }: { eventId: string }) {
             {/* Horaire */}
             {tab === 'horaire' && (
               <div className="mt-3 space-y-4">
-                {byDay.map(({ date, slots }) => {
-                  const daySlots = slots
-                    .map(([time, matches]) => [time, selectedTeam
-                      ? matches.filter(m => m.team_a_id === selectedTeam || m.team_b_id === selectedTeam)
-                      : matches] as const)
-                    .filter(([, ms]) => ms.length > 0);
-                  if (daySlots.length === 0) return null;
-                  return (
-                    <div key={date || 'sans-date'}>
-                      {multiDay && (
-                        <p className="text-sm font-extrabold mt-5 mb-2 px-1 capitalize" style={{ color: BRAND.navy }}>
+                {selectedTeam && (
+                  <p className="text-[11px] font-extrabold text-slate-500 px-1">
+                    Vos parties sont encadrées en couleur — l&apos;horaire complet de chaque terrain reste visible.
+                  </p>
+                )}
+                {/* Une journée par onglet : le joueur ouvre sur la bonne */}
+                {multiDay && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {grillesParJour.map(({ date }) => {
+                      const actif = date === jourAffiche;
+                      return (
+                        <button key={date || 'sans-date'} onClick={() => setJourChoisi(date)}
+                          className="flex-1 px-3 py-2 rounded-xl text-xs font-extrabold transition-all capitalize border-2"
+                          style={{
+                            backgroundColor: actif ? 'white' : 'transparent',
+                            color: actif ? BRAND.navy : '#94a3b8',
+                            borderColor: actif ? `${BRAND.blue}50` : 'transparent',
+                          }}>
                           📆 {formatEventDate(date)}
-                        </p>
-                      )}
-                      {daySlots.map(([time, visible]) => (
-                    <div key={time} className="mb-4">
-                      <p className="text-xs font-extrabold text-slate-400 uppercase tracking-wide mb-1.5 px-1">{time}</p>
-                      <div className="space-y-1.5">
-                        {visible.map(m => {
-                          const finished = m.status === 'finished';
-                          const aWins = finished && m.score_a !== null && m.score_b !== null && m.score_a > m.score_b;
-                          const bWins = finished && m.score_a !== null && m.score_b !== null && m.score_b > m.score_a;
-                          return (
-                            <div key={m.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3">
-                              <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-400 mb-1">
-                                <span>Terrain {m.court}{PHASE_LABELS[m.phase] ? ` · ${PHASE_LABELS[m.phase]}` : ''}</span>
-                                {finished
-                                  ? <span style={{ color: BRAND.greenDark }}>Terminée</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {grillesParJour.filter(({ date }) => date === jourAffiche).map(({ date, grille }) => (
+                  <div key={date || 'sans-date'}>
+                    {/* Les terrains en bandeau, l'horaire dessous : une seule
+                        colonne d'heures pour les deux terrains. */}
+                    <GrilleHoraire
+                      grille={grille}
+                      sport={sport}
+                      rendreCase={(m, terrain) => {
+                        const accent = accentTerrain(terrain);
+                        const finished = m.status === 'finished';
+                        const aWins = finished && m.score_a !== null && m.score_b !== null && m.score_a > m.score_b;
+                        const bWins = finished && m.score_a !== null && m.score_b !== null && m.score_b > m.score_a;
+                        const mine = !!selectedTeam && (m.team_a_id === selectedTeam || m.team_b_id === selectedTeam);
+                        return (
+                          <div className="bg-white rounded-2xl shadow-sm px-3 py-2.5"
+                            style={{
+                              border: mine ? `2px solid ${accent.base}` : '1px solid #e2e8f0',
+                              boxShadow: mine ? `0 0 0 3px ${accent.base}22` : undefined,
+                            }}>
+                            <div className="flex items-center justify-between text-[10px] font-extrabold text-slate-400 mb-1 gap-1.5">
+                              {/* Le terrain est déjà en tête de colonne : on ne le répète pas. */}
+                              <span className="truncate">
+                                {PHASE_LABELS[m.phase] || (mine ? 'Votre partie' : '')}
+                              </span>
+                              {m.status === 'cancelled'
+                                ? <span className="whitespace-nowrap">Annulée</span>
+                                : finished
+                                  ? <span className="whitespace-nowrap" style={{ color: BRAND.greenDark }}>Terminée</span>
                                   : m.status === 'in_progress'
-                                    ? <span className="inline-flex items-center gap-1" style={{ color: BRAND.red }}><Radio className="h-3 w-3" /> En cours</span>
-                                    : <span>À venir</span>}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="flex-1 text-right text-sm font-extrabold truncate"
-                                  style={{ color: aWins ? BRAND.greenDark : '#1e293b', opacity: bWins ? 0.55 : 1 }}>
-                                  {teamName(m.team_a_id, m.source_a)}
-                                </span>
-                                <span className="text-base font-extrabold tabular-nums px-2.5 py-0.5 rounded-lg"
-                                  style={{ backgroundColor: finished ? '#f0fdf4' : '#f1f5f9', color: finished ? BRAND.greenDark : '#64748b' }}>
-                                  {m.score_a !== null && m.score_b !== null ? `${m.score_a} – ${m.score_b}` : 'vs'}
-                                </span>
-                                <span className="flex-1 text-sm font-extrabold truncate"
-                                  style={{ color: bWins ? BRAND.greenDark : '#1e293b', opacity: aWins ? 0.55 : 1 }}>
-                                  {teamName(m.team_b_id, m.source_b)}
-                                </span>
-                              </div>
+                                    ? <span className="inline-flex items-center gap-1 whitespace-nowrap" style={{ color: BRAND.red }}><Radio className="h-3 w-3" /> En cours</span>
+                                    : <span className="whitespace-nowrap">À venir</span>}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                      ))}
-                    </div>
-                  );
-                })}
+                            {/* Une équipe par ligne, le nom sur deux lignes au
+                                besoin : rien n'est coupé dans une colonne étroite. */}
+                            <div>
+                              {([
+                                { id: m.team_a_id, source: m.source_a, score: m.score_a, gagne: aWins, perd: bWins },
+                                { id: m.team_b_id, source: m.source_b, score: m.score_b, gagne: bWins, perd: aWins },
+                              ]).map((e, i) => (
+                                <div key={i} className="flex items-start gap-1.5 py-1"
+                                  style={i === 1 ? { borderTop: '1px solid #f1f5f9' } : undefined}>
+                                  <span className="flex-1 min-w-0 text-[13px] font-extrabold leading-tight break-words"
+                                    style={{ color: e.gagne ? BRAND.greenDark : '#1e293b', opacity: e.perd ? 0.55 : 1 }}>
+                                    {teamName(e.id, e.source)}
+                                  </span>
+                                  <span className="text-[13px] font-extrabold tabular-nums flex-shrink-0 w-7 text-center rounded-md"
+                                    style={{
+                                      backgroundColor: finished ? '#f0fdf4' : '#f1f5f9',
+                                      color: e.gagne ? BRAND.greenDark : '#64748b',
+                                    }}>
+                                    {e.score === null ? '—' : e.score}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
             )}
 
