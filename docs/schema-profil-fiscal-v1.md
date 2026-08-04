@@ -41,7 +41,25 @@ Version de travail — 4 août 2026. À faire réviser par un fiscaliste avant t
     "comptesExternes": "inconnu",        // oui | non | inconnu — LA question de rencontre n° 1
     "historiqueExterne": "inconnu",      // jamais | deja-eu | inconnu — a-t-il DÉJÀ eu des comptes ailleurs (même fermés)? Requis pour le calcul des droits CELI réels
     "detailsExternes": null,             // texte libre si oui ("CELI Banque X ~40k")
-    "dateConfirmation": null
+    "dateConfirmation": null,
+
+    // AJOUT DU 4 AOÛT 2026 — RÉSOLUTION MANUELLE DES TRANSFERTS ORPHELINS.
+    // La règle 4 du parseur présume EXTERNE tout transfert entrant non apparié :
+    // mesuré sur le livre, cela rétrograde 75 % des comptes CELI en borne. Le
+    // planificateur peut lever le doute un transfert à la fois, après en avoir
+    // parlé au client. C'est le levier principal pour faire fondre ces 75 %,
+    // avant même d'affiner la reconnaissance des notes d'appariement.
+    "transfertsResolus": [
+      {
+        "cle": "37-3CTN-W|2021-03-15|40000.00",  // compte|date|montant — identifie le transfert
+        "compte": "37-3CTN-W",
+        "date": "2021-03-15",
+        "montant": 40000,
+        "resolution": "interne",                  // interne | externe
+        "dateConfirmation": "2026-08-04",         // OBLIGATOIRE : une résolution non datée ne vaut rien
+        "note": "confirmé en rencontre : venait de son REER"
+      }
+    ]
   },
 
   "droits": {                            // source autoritaire : avis de cotisation / Mon dossier ARC
@@ -121,6 +139,14 @@ Le moteur peut calculer les droits CELI réels — plafond théorique selon l'â
 3. `historiqueVie.celi.transfertEntrantDetecte = false`.
 
 Trois conditions réunies → constat `calcule`, portée `complete`. Sinon → affichage de la **borne supérieure théorique** seulement, clairement étiquetée comme borne, statut `montant-a-confirmer`, avec la question de rencontre correspondante. Rappel à imprimer avec la question : le chiffre CELI de Mon dossier ARC n'est mis à jour qu'une fois l'an et n'inclut pas les cotisations récentes.
+
+**Effet des transferts résolus manuellement** (ajout du 4 août) : la condition 3
+se lit sur les transferts **encore douteux**, pas sur les transferts détectés.
+Un transfert orphelin marqué `interne` par le planificateur cesse de compter ;
+un transfert marqué `externe` fixe définitivement `historiqueExterne` à
+`deja-eu`. Un compte dont tous les transferts orphelins ont été résolus
+`interne` redevient donc calculable — c'est le chemin prévu pour sortir de la
+borne sans jamais relâcher la prudence par défaut.
 
 Les droits REER ne sont **jamais** calculables à l'interne (historique de revenus et facteur d'équivalence requis) : avis de cotisation seulement.
 
