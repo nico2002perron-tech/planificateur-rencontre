@@ -1500,6 +1500,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         throw new Error(err.error || 'Erreur de génération');
       }
 
+      // ARCHIVAGE LOCAL (base locale, phase 1) : en exécution locale, le serveur
+      // a rangé une copie du document dans le dossier du client et nous renvoie
+      // son chemin. Sur Vercel ces en-têtes sont absents, et rien ne change.
+      const cheminArchive = res.headers.get('X-Archive-Chemin');
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1513,7 +1518,12 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast('success', 'PDF téléchargé');
+      toast(
+        'success',
+        cheminArchive
+          ? `PDF téléchargé · archivé dans ${decodeURIComponent(cheminArchive)}`
+          : 'PDF téléchargé'
+      );
 
       // Journal des cours cibles : on enregistre en silence chaque cible comme
       // une prédiction datée. Best-effort, non bloquant — le PDF est déjà

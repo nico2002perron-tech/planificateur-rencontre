@@ -6,6 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions } from '@/lib/pdf/price-targets-template';
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { enrichReportData } from '@/lib/pdf/enrich-report-data';
+import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 
 export async function POST(req: NextRequest) {
   // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
@@ -46,10 +47,23 @@ export async function POST(req: NextRequest) {
     // uniquement \u00E0 l'int\u00E9rieur du PDF, qui est le livrable destin\u00E9 au client.
     const filename = `cours-cibles-${date}.pdf`;
 
+    // ARCHIVAGE LOCAL (phase 1 de la base locale) : en exécution locale, le
+    // document est aussi rangé dans C:\planificateur-donnees\documents\<Client>\.
+    // Sur Vercel, `archiverDocument` sort immédiatement et n'ajoute aucun
+    // en-tête : la réponse est identique à ce qu'elle était avant, au bit près.
+    // L'archivage ne peut jamais faire échouer la génération.
+    const archivage = await archiverDocument({
+      octets: finalPdfBytes,
+      nomClient: clientName,
+      type: 'cours-cibles',
+      date,
+    });
+
     return new NextResponse(Buffer.from(finalPdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,
+        ...entetesArchivage(archivage),
       },
     });
   } catch (err) {

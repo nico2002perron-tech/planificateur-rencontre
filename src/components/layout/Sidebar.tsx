@@ -20,8 +20,18 @@ import {
   ReceiptText,
   Briefcase,
   Inbox,
+  FolderOpen,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+// Entrées visibles UNIQUEMENT quand l'app tourne sur le poste du planificateur.
+// ⚠ Ceci n'est PAS une garde de sécurité — le navigateur peut mentir. La vraie
+// protection est côté serveur : la page /documents répond 404 hors local, et sa
+// route API aussi. Cette liste ne fait qu'éviter d'afficher un menu mort en
+// production.
+const navItemsLocaux = [
+  { href: '/documents', label: 'Documents', icon: FolderOpen },
+];
 
 const navItems = [
   { href: '/', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -44,6 +54,14 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  // Exécution locale ? Décidé après le montage pour ne pas casser l'hydratation
+  // (le serveur rend toujours la liste de base). Confort d'affichage seulement :
+  // la sécurité est le 404 côté serveur — voir navItemsLocaux ci-dessus.
+  const [local, setLocal] = useState(false);
+  useEffect(() => {
+    const h = window.location.hostname;
+    setLocal(h === 'localhost' || h === '127.0.0.1' || h === '[::1]');
+  }, []);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/';
@@ -73,7 +91,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {[...navItems, ...(local ? navItemsLocaux : [])].map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (

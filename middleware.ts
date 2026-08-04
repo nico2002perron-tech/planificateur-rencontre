@@ -4,7 +4,15 @@ import type { NextRequest } from 'next/server';
 
 // /tournoi : page publique en direct des tournois (horaire + classement, lien envoyé aux joueurs)
 // /analyse : outil public d'analyse de portefeuille (constats, sans auth) + ses routes API
-const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/setup', '/api/test-email', '/api/portfolio', '/api/tool-feedback', '/tournoi', '/analyse', '/api/diagnostic', '/api/fonds', '/api/rapport', '/api/transmission'];
+// ⚠ ATTENTION : la comparaison est un startsWith — un préfixe rend TOUTE son
+// arborescence publique. « /api/portfolio » ouvre donc aussi /api/portfolio/*.
+// Avant d'ajouter une entrée ici, vérifier ce qu'elle expose vraiment.
+// RETIRÉ le 4 août 2026 : '/api/setup' — route de bootstrap qui créait un compte
+// admin avec un mot de passe EN DUR et divulguait le courriel de l'admin à un
+// appelant anonyme. La route est supprimée du dépôt.
+// RETIRÉ le 4 août 2026 : '/api/test-email' — permettait d'envoyer des courriels
+// sans authentification.
+const publicPaths = ['/login', '/api/auth', '/api/cron', '/api/team-profile/public', '/api/events', '/api/portfolio', '/api/tool-feedback', '/tournoi', '/analyse', '/api/diagnostic', '/api/fonds', '/api/rapport', '/api/transmission'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
