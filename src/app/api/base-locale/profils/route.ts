@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/features/auth/config';
 import { estLocal } from '@/lib/base-locale/mode';
 import { listerProfils, lireProfil, ecrireProfil, profilPourClient } from '@/lib/profils/stockage';
 import type { ProfilClient } from '@/lib/profils/types';
@@ -10,11 +8,20 @@ import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/ba
 // on ne confirme même pas l'existence de la route.
 async function garde() {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   return null;
 }
 
+// GARDE : `estLocal()` SUFFIT, et c'est raisonne.
+//
+// Ces routes n'existent PAS hors de la machine du planificateur : `estLocal()`
+// renvoie 404 avant toute autre chose, et le mode est evalue cote serveur a
+// l'execution — le navigateur ne peut pas le forcer. En local, elles servent
+// les donnees de la machine a l'utilisateur de cette machine.
+//
+// Exiger EN PLUS une session next-auth n'ajoutait aucune protection (quiconque
+// atteint localhost a deja la machine) mais cassait l'usage : le 4 aout 2026,
+// « Unauthorized » au moment de coller des transactions, alors que l'ecran
+// s'affichait normalement.
 export async function GET(req: NextRequest) {
   const refus = await garde();
   if (refus) return refus;
