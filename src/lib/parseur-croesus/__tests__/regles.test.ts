@@ -11,7 +11,7 @@ import {
   estVirementInterne,
   analyserFluxCompte,
 } from '../regles';
-import type { LigneTransaction } from '../types';
+import { typeDeCompte, estCompteVMBL, type LigneTransaction } from '../types';
 
 function ligne(p: Partial<LigneTransaction>): LigneTransaction {
   return {
@@ -188,5 +188,37 @@ describe('RÈGLE 4 — dans le doute, la borne', () => {
     expect(flux.transfertEntrantDetecte).toBe(false);
     expect(flux.cotisations).toBe(7000);
     expect(flux.retraits).toBe(2000);
+  });
+});
+
+describe('typeDeCompte — deux conventions, iA et VMBL', () => {
+  it('lit le SUFFIXE d’un compte iA', () => {
+    expect(typeDeCompte('37-3DYJ-W')).toBe('celi');
+    expect(typeDeCompte('37-3DYJ-T')).toBe('ferr');
+    expect(typeDeCompte('37-3DYJ-E')).toBe('non-enregistre');
+  });
+
+  it('lit la LETTRE DU MILIEU d’un compte VMBL — le suffixe y est un chiffre', () => {
+    expect(typeDeCompte('4A-Y91I-7')).toBe('celi');          // « CONT AU CELI »
+    expect(typeDeCompte('6A-C5SR-7')).toBe('reer');          // « CONT TO RRSP »
+    expect(typeDeCompte('4A-YJQS-2')).toBe('reer-conjoint'); // « CONTCJ AU REER »
+    expect(typeDeCompte('4A-WV7O-1')).toBe('reee');          // « COTIS AU REEE »
+  });
+
+  it('ATTENTION : R et S sont INVERSÉS entre les deux conventions', () => {
+    expect(typeDeCompte('37-3ABC-R')).toBe('reer');           // iA : R = REER conjoint (même famille)
+    expect(typeDeCompte('4A-ABCR-1')).toBe('reer');           // VMBL : R = REER personnel
+    expect(typeDeCompte('4A-ABCS-1')).toBe('reer-conjoint');  // VMBL : S = REER conjoint
+  });
+
+  it('rend null sur une lettre VMBL non prouvée — jamais un régime deviné', () => {
+    for (const c of ['4A-ABCE-1', '4A-ABCQ-1', '4A-ABCT-1', '4A-ABCB-1']) {
+      expect(typeDeCompte(c)).toBeNull();
+    }
+  });
+
+  it('reconnaît le format VMBL', () => {
+    expect(estCompteVMBL('4A-Y91I-7')).toBe(true);
+    expect(estCompteVMBL('37-3DYJ-W')).toBe(false);
   });
 });
