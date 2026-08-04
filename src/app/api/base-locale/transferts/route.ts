@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { estLocal } from '@/lib/base-locale/mode';
-import { lireProfil, ecrireProfil } from '@/lib/profils/stockage';
+import { lireProfil, ecrireProfil, nomPour } from '@/lib/profils/stockage';
 import { lireHistorique } from '@/lib/profils/historique';
 import { observerTransferts } from '@/lib/profils/deriver';
 import { croiserTransferts } from '@/lib/profils/droits-celi';
@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
   const profil = await lireProfil(id);
   if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
 
-  const observes = observerTransferts(await lireHistorique(id), 'celi');
+  const nom = await nomPour(id);
+  if (!nom) return NextResponse.json({ error: 'Client inconnu' }, { status: 404 });
+  const observes = observerTransferts(await lireHistorique(nom), 'celi');
   return NextResponse.json({
     douteux: croiserTransferts(observes, profil.consolidation.transfertsResolus),
     apparies: observes.filter((t) => t.apparie).length,

@@ -17,8 +17,17 @@ les données clients ne doivent jamais y monter.
     │   └── Tremblay-Marc\
     │       ├── 2026-08-04_cours-cibles.pdf
     │       └── 2026-08-04_cours-cibles_2.pdf     (2e version du même jour)
-    ├── profils\          (phase 2 — profils fiscaux)
-    └── historiques\      (phase 2 — collages Croesus et grand livre)
+    ├── transactions    │   └── Tremblay-Marc\           ← LE MÊME NOM que ses documents
+    │       ├── 2026-08-04_brut.txt   chaque collage, tel quel, jamais modifié
+    │       └── transactions.json     le grand livre cumulatif, dédoublonné
+    └── profils        └── 4471.json                 le profil fiscal — SANS aucun nom
+
+**Un seul nom commande tout.** Celui que vous saisissez au moment de produire
+un rapport nomme le dossier de documents ET le dossier de transactions : dans
+l'explorateur, « Tremblay-Marc » se retrouve à l'identique des deux côtés. Seul
+le profil fiscal est rangé sous un pseudonyme — c'est le fichier qui porte les
+données sensibles, il n'a pas à porter aussi le nom. La table
+`correspondance.json` fait le lien, en local uniquement.
 
 **Ce dossier est volontairement HORS du projet.** Le dépôt vit sous
 « OneDrive - IA Private Wealth » : y ranger des documents clients les enverrait
@@ -28,7 +37,16 @@ Pour la déplacer, ajouter dans `.env.local` (jamais commité) :
 
     BASE_LOCALE_RACINE=D:\mes-donnees-planificateur
 
-Choisir un dossier **hors OneDrive, hors Google Drive, hors Dropbox**.
+Choisir un dossier **hors OneDrive, hors Google Drive, hors Dropbox**, et
+**toujours un chemin ABSOLU**.
+
+> ⚠ Un chemin relatif — ou un backslash perdu, comme `C:planificateur-donnees`
+> au lieu de `C:\planificateur-donnees` — se résoudrait depuis le dossier du
+> projet. Des documents et des profils clients atterriraient alors dans le
+> dépôt, sous OneDrive. **Le code refuse désormais toute racine située sous le
+> projet** et retombe sur le défaut en l'écrivant dans la console ; le
+> `.gitignore` couvre aussi ce cas en dernier recours. C'est arrivé une fois,
+> le 4 août 2026, pendant les essais.
 
 ## Comment les noms de dossiers sont formés
 

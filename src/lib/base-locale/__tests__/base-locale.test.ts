@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { nomDossierClient, nomFichierDocument, racineBaseLocale } from '../chemins';
+import { nomDossierClient, nomFichierDocument, racineBaseLocale, dossierTransactions } from '../chemins';
 import { archiverDocument } from '../archiver';
 import { inventorierDocuments } from '../inventaire';
 import { estLocal, modeFiscalActif } from '../mode';
@@ -109,9 +109,20 @@ describe('archiverDocument', () => {
 
   it('crée l’arborescence complète au premier appel', async () => {
     await archiverDocument({ octets, nomClient: 'Nouveau Client', type: 'cours-cibles' });
-    for (const sous of ['documents', 'profils', 'historiques']) {
+    for (const sous of ['documents', 'transactions', 'profils']) {
       await expect(fs.access(path.join(racineTest, sous))).resolves.toBeUndefined();
     }
+  });
+
+  it('LE MÊME NOM commande les documents ET les transactions', async () => {
+    // Le planificateur saisit un seul nom — celui du rapport — et il doit
+    // retrouver le même dossier des deux côtés dans son explorateur.
+    const r = await archiverDocument({ octets, nomClient: 'Tremblay Michel', type: 'cours-cibles' });
+    expect(r.archive).toBe(true);
+    if (!r.archive) return;
+    expect(r.chemin).toContain(path.join('documents', 'Tremblay-Michel'));
+    expect(dossierTransactions('Tremblay Michel'))
+      .toBe(path.join(racineTest, 'transactions', 'Tremblay-Michel'));
   });
 
   it('n’écrit RIEN sur Vercel', async () => {
@@ -153,5 +164,26 @@ describe('inventorierDocuments — la seconde couche de garde', () => {
   it('retourne une liste vide quand la base n’existe pas encore', async () => {
     process.env.BASE_LOCALE_RACINE = path.join(racineTest, 'jamais-cree');
     expect(await inventorierDocuments()).toEqual([]);
+  });
+});
+
+describe('racineBaseLocale — la base ne peut pas tomber dans le dépôt', () => {
+  it('refuse un chemin RELATIF, qui se résoudrait sous le projet', () => {
+    // Vécu : « C:planificateur-donnees » — un backslash perdu — devient relatif
+    // et écrit dans le dépôt, sous OneDrive, hors du .gitignore.
+    process.env.BASE_LOCALE_RACINE = 'C:planificateur-donnees';
+    const r = racineBaseLocale();
+    expect(r.startsWith(path.resolve(process.cwd()))).toBe(false);
+  });
+
+  it('refuse un sous-dossier explicite du projet', () => {
+    process.env.BASE_LOCALE_RACINE = path.join(process.cwd(), 'donnees');
+    expect(racineBaseLocale().startsWith(path.resolve(process.cwd()) + path.sep)).toBe(false);
+  });
+
+  it('accepte un chemin absolu hors du projet', () => {
+    const dehors = path.join(os.tmpdir(), 'base-hors-projet');
+    process.env.BASE_LOCALE_RACINE = dehors;
+    expect(racineBaseLocale()).toBe(path.resolve(dehors));
   });
 });

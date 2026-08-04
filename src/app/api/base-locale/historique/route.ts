@@ -2,28 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/features/auth/config';
 import { estLocal } from '@/lib/base-locale/mode';
+import { dossierTransactions } from '@/lib/base-locale/chemins';
 import { importerCollage, lireHistorique } from '@/lib/profils/historique';
-import { lireProfil, ecrireProfil, profilPourClient } from '@/lib/profils/stockage';
+import { ecrireProfil, profilPourClient } from '@/lib/profils/stockage';
 import { deriverHistoriqueRegime, observerTransferts } from '@/lib/profils/deriver';
 
-// Import de l'historique complet (point 3b) — LOCAL SEULEMENT.
+// Import de l'historique complet — LOCAL SEULEMENT.
+//
+// LE NOM DU CLIENT COMMANDE TOUT : le même nom que celui saisi pour le rapport
+// nomme le dossier de transactions, comme il nomme déjà le dossier de documents.
+// Le profil fiscal, lui, reste rangé sous un pseudonyme (schéma section 2) —
+// c'est le seul fichier qui porte des données fiscales, il n'a pas à porter
+// aussi le nom.
 export async function POST(req: NextRequest) {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, nom, texte } = (await req.json()) as { id?: string; nom?: string; texte?: string };
+  const { nom, texte } = (await req.json()) as { nom?: string; texte?: string };
+  if (!nom?.trim()) return NextResponse.json({ error: 'Nom du client requis' }, { status: 400 });
   if (!texte?.trim()) return NextResponse.json({ error: 'Aucun texte collé' }, { status: 400 });
 
   const date = new Date().toISOString().slice(0, 10);
-  const profil = id ? await lireProfil(id) : nom ? await profilPourClient(nom, date) : null;
-  if (!profil) return NextResponse.json({ error: 'Client inconnu' }, { status: 400 });
+  const resume = await importerCollage({ nomClient: nom, texte, horodatage: date });
 
-  const resume = await importerCollage({ id: profil.id, texte, horodatage: date });
-
-  // Dérivation : historiqueVie est RECALCULÉ depuis le grand livre complet,
-  // jamais incrémenté — c'est ce qui rend l'opération rejouable.
-  const livre = await lireHistorique(profil.id);
+  // Le profil est RECALCULÉ depuis le livre complet du client, jamais
+  // incrémenté : l'opération reste rejouable à l'identique.
+  const profil = await profilPourClient(nom, date);
+  const livre = await lireHistorique(nom);
   const annee = Number.parseInt(date.slice(0, 4), 10);
   profil.historiqueVie = {
     celi: deriverHistoriqueRegime(livre, 'celi', annee, date),
@@ -32,7 +38,7 @@ export async function POST(req: NextRequest) {
   const aJour = await ecrireProfil(profil, date);
 
   return NextResponse.json({
-    resume,
+    resume: { ...resume, dossier: dossierTransactions(nom) },
     profil: aJour,
     transferts: observerTransferts(livre, 'celi'),
   });

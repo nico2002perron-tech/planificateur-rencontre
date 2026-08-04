@@ -13,7 +13,8 @@ type TransfertDouteux = {
 
 type ResumeImport = {
   lues: number; nouvelles: number; doublons: number; ignorees: number;
-  totalApres: number; comptes: string[]; premiereDate: string | null; derniereDate: string | null;
+  totalApres: number; comptes: string[]; premiereDate: string | null;
+  derniereDate: string | null; dossier: string;
 };
 
 const argent = (n: number) => `${Math.round(n).toLocaleString('fr-CA')} $`;
@@ -95,9 +96,16 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
             type="text"
             value={nomClient}
             onChange={(e) => setNomClient(e.target.value)}
-            placeholder="Nom du client"
+            placeholder="Nom du client — le même que sur le rapport"
             className="w-full max-w-sm rounded-lg border border-border bg-bg-light px-3 py-2 text-sm"
           />
+          {nomClient.trim() && (
+            <p className="text-xs text-text-muted">
+              Sera rangé dans <code className="font-mono">transactions\{nomClient.trim()
+                .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .replace(/[\/:*?"<>|'’.,]/g, '').replace(/[\s_]+/g, '-')}</code>
+            </p>
+          )}
           <textarea
             value={colle}
             onChange={(e) => setColle(e.target.value)}
@@ -130,6 +138,9 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
                   Couverture : {resume.premiereDate} → {resume.derniereDate} ·{' '}
                   {resume.comptes.length} compte{resume.comptes.length > 1 ? 's' : ''}
                 </p>
+              )}
+              {resume.dossier && (
+                <p className="mt-1 font-mono text-xs text-text-muted">{resume.dossier}</p>
               )}
             </div>
           )}

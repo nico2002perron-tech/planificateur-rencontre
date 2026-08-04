@@ -14,14 +14,12 @@ import 'server-only';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { estLocal } from '@/lib/base-locale/mode';
-import { racineBaseLocale } from '@/lib/base-locale/chemins';
-import { estPseudonymeValide } from './stockage';
+import { dossierTransactions } from '@/lib/base-locale/chemins';
 import { nombre } from '@/lib/parseur-croesus/regles';
 import type { LigneTransaction } from '@/lib/parseur-croesus/types';
 
-function dossierHistorique(id: string): string {
-  return path.join(racineBaseLocale(), 'historiques', id);
-}
+// Le dossier est nommé PAR LE NOM DU CLIENT, comme ses documents : un seul nom
+// saisi au moment du rapport commande tout le rangement. Voir dossierTransactions.
 
 /**
  * LA CLÉ DE DÉDOUBLONNAGE, reprise du moteur du grand livre.
@@ -85,14 +83,14 @@ export type ResultatImport = {
  * périodes qui se recouvrent. Seul l'inédit est ajouté.
  */
 export async function importerCollage(params: {
-  id: string;
+  nomClient: string;
   texte: string;
   horodatage: string;          // AAAA-MM-JJ, pour nommer l'archive brute
 }): Promise<ResultatImport> {
   if (!estLocal()) throw new Error('Import refusé hors exécution locale');
-  if (!estPseudonymeValide(params.id)) throw new Error(`Pseudonyme invalide : ${params.id}`);
+  if (!params.nomClient?.trim()) throw new Error('Nom du client requis');
 
-  const dossier = dossierHistorique(params.id);
+  const dossier = dossierTransactions(params.nomClient);
   await fs.mkdir(dossier, { recursive: true });
 
   // (a) LE BRUT, TEL QUEL — jamais modifié, re-parsable plus tard.
@@ -142,10 +140,11 @@ export async function importerCollage(params: {
 }
 
 /** Relit le grand livre cumulatif d'un client. */
-export async function lireHistorique(id: string): Promise<LigneTransaction[]> {
-  if (!estLocal() || !estPseudonymeValide(id)) return [];
+export async function lireHistorique(nomClient: string): Promise<LigneTransaction[]> {
+  if (!estLocal() || !nomClient?.trim()) return [];
   try {
-    const brut = await fs.readFile(path.join(dossierHistorique(id), 'transactions.json'), 'utf8');
+    const brut = await fs.readFile(
+      path.join(dossierTransactions(nomClient), 'transactions.json'), 'utf8');
     return JSON.parse(brut) as LigneTransaction[];
   } catch {
     return [];
