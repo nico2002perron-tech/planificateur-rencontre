@@ -21,6 +21,7 @@ import {
   Briefcase,
   Inbox,
   FolderOpen,
+  UserCog,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -31,6 +32,7 @@ import { useEffect, useState } from 'react';
 // production.
 const navItemsLocaux = [
   { href: '/documents', label: 'Documents', icon: FolderOpen },
+  { href: '/profils', label: 'Profils fiscaux', icon: UserCog },
 ];
 
 const navItems = [
