@@ -117,12 +117,41 @@ Le schéma (section 2, règle des droits CELI) exige
 trop large rétrograderait en simple borne des clients dont les droits sont
 parfaitement calculables.
 
+### Le numéro de compte dans la note — ajouté le 4 août 2026
+
+Le planificateur : « ça commence toujours par 37 normalement, et ceux qui font
+genre 4A et 6A c'est les vieux numéros de compte ». Une note qui **nomme** un
+compte désigne une contrepartie identifiée.
+
+```
+« A 37-AEF9-R - 146(16) »   « 4A-Y3VI-6 »   « 6A-CDTR-9 »
+```
+
+### Volontairement NON reconnus, malgré leur fréquence
+
+| Note | Lignes | Pourquoi on la refuse |
+|---|---|---|
+| `TFR-146(16)` | 256 | L'article 146(16) autorise le transfert direct entre REER **y compris entre institutions** : le citer ne prouve rien |
+| `TFR-146.3(2)(E)` | 78 | Idem, pour les FERR |
+| `TRANSFERT DE FONDS` | 226 | Trop vague |
+| `PAIEMENT RETRAITE` | 907 | Trop vague |
+
+Accompagnés d'un numéro de compte, ils deviennent probants — et c'est alors le
+motif du numéro qui tranche, pas l'article.
+
 ### Mesure
 
 | | Lignes |
 |---|---|
-| Transferts entrants **avec** note d'appariement | 2 865 |
-| Transferts entrants **sans** note | 15 110 |
+| Transferts entrants **reconnus** (avant le numéro de compte) | 5 069 / 18 001 — 28 % |
+| Transferts entrants **reconnus** (après) | 6 625 / 18 001 — **37 %** |
+| Gain | **+1 556 lignes** |
+
+**Leçon à ne pas oublier** : ce gain de 1 556 lignes ne débloque que **6 comptes
+CELI sur 267** (95 % → 93 % de comptes rétrogradés). Il suffit d'**un seul**
+transfert orphelin pour bloquer un compte, et la plupart en ont plusieurs.
+Affiner l'appariement ne remplacera donc **jamais** la résolution manuelle : le
+vrai gain ici est 1 556 lignes de bruit en moins à trancher à la main.
 
 ---
 

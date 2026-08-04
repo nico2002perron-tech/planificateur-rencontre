@@ -113,10 +113,34 @@ describe('RÈGLE 3 — le virement interne se reconnaît à sa note', () => {
     }
   });
 
+  it('CAS 3b · une note qui NOMME un compte désigne une contrepartie interne', () => {
+    // Motifs réels du livre. Format iA « 37-XXXX-L », vieux VMBL « 4A/6A-XXXX-N ».
+    for (const note of [
+      'A 37-AEF9-R - 146(16)',
+      'A 37-3BQW-T - 146(16)',
+      '4A-Y3VI-6',
+      '6A-CDTR-9',
+    ]) {
+      expect(estVirementInterne(note)).toBe(true);
+    }
+  });
+
   it('ne reconnaît pas une note quelconque', () => {
     expect(estVirementInterne('')).toBe(false);
     expect(estVirementInterne('DEPOT CLIENT')).toBe(false);
     expect(estVirementInterne('SOLLICITE INT FLAT PROCHAIN COUPON')).toBe(false);
+  });
+
+  it('RÈGLE 4 · les articles de loi SEULS ne prouvent rien', () => {
+    // L'article 146(16) autorise le transfert direct entre REER, y compris
+    // ENTRE INSTITUTIONS : le citer ne prouve pas l'internalité. 256 lignes du
+    // livre portent « TFR-146(16) » sans autre indice — elles restent douteuses.
+    expect(estVirementInterne('TFR-146(16)')).toBe(false);
+    expect(estVirementInterne('TFR-146.3(2)(E)')).toBe(false);
+    expect(estVirementInterne('TRANSFERT DE FONDS')).toBe(false);
+    expect(estVirementInterne('PAIEMENT RETRAITE')).toBe(false);
+    // …mais accompagnés d'un numéro de compte, ils deviennent probants.
+    expect(estVirementInterne('A 37-CT9M-T - 146(16)')).toBe(true);
   });
 
   it('un transfert apparié NE déclenche PAS la borne', () => {

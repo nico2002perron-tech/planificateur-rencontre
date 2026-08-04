@@ -95,14 +95,42 @@ export function separerCotisations(lignes: LigneTransaction[]): {
 
 /**
  * Motifs de note qui désignent un AUTRE COMPTE DU MÊME CLIENT.
- * Relevés sur le livre réel : 2 865 transferts entrants les portent.
+ * Relevés sur le livre réel : 5 069 transferts entrants les portent.
  */
 const NOTE_VIREMENT_INTERNE =
   /TRANSFERE?\s+A\b|VIRE\s+DE\b|\bTRSF\b|ARTICLE\s+146\s*\(\s*16\s*\)/i;
 
+/**
+ * UN NUMÉRO DE COMPTE DANS LA NOTE — ajouté le 4 août 2026.
+ *
+ * Nicolas : « ça commence toujours par 37 normalement, et ceux qui font genre
+ * 4A et 6A c'est les vieux numéros de compte [VMBL] ». Une note qui NOMME un
+ * compte désigne une contrepartie identifiée : c'est un virement interne.
+ * Motifs réels : « A 37-AEF9-R - 146(16) », « 4A-Y3VI-6 », « 6A-CDTR-9 ».
+ *
+ * MESURE : +1 556 lignes reconnues (28 % → 37 % des transferts entrants).
+ * Effet sur les comptes débloqués : 253 → 247 sur 267, soit 2 points. Modeste,
+ * et c'est instructif — il suffit d'UN orphelin pour bloquer un compte, donc
+ * affiner l'appariement ne remplacera jamais la résolution manuelle. Le gain
+ * réel est ailleurs : 1 556 lignes de bruit en moins à trancher à la main.
+ */
+const NOTE_NUMERO_COMPTE =
+  /\b\d{2}-[A-Z0-9]{4}-[A-Z0-9]\b|\b[0-9][A-Z]-[A-Z0-9]{4}-[0-9]\b/i;
+
+/**
+ * VOLONTAIREMENT NON RECONNUS, malgré leur fréquence — règle 4 :
+ *   « TFR-146(16) » (256 lignes), « TFR-146.3(2)(E) » (78) : l'article 146(16)
+ *   autorise le transfert direct entre REER, Y COMPRIS ENTRE INSTITUTIONS. Le
+ *   citer ne prouve donc RIEN sur l'internalité — sauf quand un numéro de
+ *   compte l'accompagne, et là c'est le motif ci-dessus qui tranche.
+ *   « TRANSFERT DE FONDS » (226), « PAIEMENT RETRAITE » (907) : trop vagues.
+ * Dans le doute, la borne.
+ */
+
 /** Règle 3 : la note prouve-t-elle un virement interne ? */
 export function estVirementInterne(note: string): boolean {
-  return NOTE_VIREMENT_INTERNE.test(note ?? '');
+  const n = note ?? '';
+  return NOTE_VIREMENT_INTERNE.test(n) || NOTE_NUMERO_COMPTE.test(n);
 }
 
 const TYPES_ENTREE = new Set(['Transfert', 'Réception']);
