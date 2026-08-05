@@ -185,7 +185,48 @@ calculables. C'est le bon côté sur lequel se tromper.
 
 ---
 
-## Les quatre cas de test permanents
+## Règle 5 — un apport en nature est classé par son étiquette, pas par son appariement
+
+**Le motif.** Une cotisation en titres est normalement étiquetée comme telle
+dans Croesus. La règle 2 apparie les deux jambes et écarte la jambe titre du
+total d'argent neuf — mais elle ne dit rien de ce que l'apport *est*. Or les
+deux cas ne se ressemblent pas du tout :
+
+- un client qui verse 12 000 $ de FNB dans son CELI **consomme ses droits** ;
+- un client dont le CELI d'un autre courtier arrive en bloc **n'en consomme
+  aucun ici** — il les a consommés là-bas, dans un historique que nous ne
+  voyons pas.
+
+**Ce que fait le parseur.** `etiquetteApportEnNature(note)` rend trois valeurs :
+
+| Étiquette | Déclencheur | Conséquence |
+|---|---|---|
+| `transfert` | un numéro de compte est cité dans la note, ou la note dit « transféré de » | écarté des cotisations **et** versé dans les transferts à trancher |
+| `cotisation` | la note dit franchement « cotisation » sans citer de compte | compté dans les cotisations, consomme des droits |
+| `ambigu` | ni l'un ni l'autre | versé à trancher ; **aucun droit « calculé »** tant qu'il reste non classé |
+
+**Le trou que ça comble.** Avant la règle 5, la détection d'origine externe ne
+regardait que les transferts **en argent**. Une arrivée en nature — un régime
+entier qui traverse en titres — passait inaperçue : le client apparaissait avec
+un montant de droits calculé, alors que tout son historique de cotisations chez
+l'autre courtier nous était invisible. Un transfert en nature est une preuve
+d'origine externe exactement au même titre qu'un transfert en argent.
+
+**Ce que ça a mesuré.** Sur un client témoin, 17 lignes de cotisation CELI
+totalisant 57 773 $ d'« argent neuf ». La règle 5 en a reclassé 22 273 $ : la
+note portait `CONTRIBUTION REF: <compte>`, le mot « contribution » masquant un
+transfert. Argent neuf réel : **35 500 $**, soit 38 % de moins. Les 8 lignes
+reclassées partent maintenant à trancher avec le client.
+
+**Le piège de lecture.** Le numéro de compte cité l'est parfois **sans tirets**
+(`6AAZCI0` pour `6A-AZCI-0`, `373CUVS` pour `37-3CUV-S`). La reconnaissance qui
+n'acceptait que la forme à tirets voyait ces notes comme du texte libre et les
+classait « cotisation ». C'est cette seule omission de format qui produisait
+l'écart de 22 273 $.
+
+---
+
+## Les cas de test permanents
 
 Ils vivent dans `src/lib/parseur-croesus/__tests__/`. Les fixtures reproduisent
 fidèlement les motifs réels **avec des noms fictifs** — les tests sont
@@ -198,6 +239,10 @@ versionnés sur GitHub, aucun nom de client ne doit y apparaître.
 | 2 | Cotisation 1CAD +20 177,90 appariée à une jambe titre −20 177,90 | `cotisationsAnnee` = 0, pas 20 177,90 |
 | 3 | Transfert entrant avec note `TRANSFERE A <compte>` | `transfertEntrantDetecte` reste `false` |
 | 4 | Transfert entrant sans note | `transfertEntrantDetecte` passe à `true` |
+| 5a | Apport en nature, note `CONTRIBUTION REF: 6AAZCI0` | Étiquette `transfert` : écarté des cotisations, versé à trancher |
+| 5b | Apport en nature, note `COTISATION EN TITRES` | Étiquette `cotisation` : consomme des droits |
+| 5c | Apport en nature sans note | Étiquette `ambigu` : aucun droit « calculé » tant qu'il n'est pas tranché |
+| 5d | Compte cité sans tirets (`373CUVS`, `6AAZCI0`) | Reconnu comme numéro de compte au même titre que `37-AEF9-R` |
 
 ---
 

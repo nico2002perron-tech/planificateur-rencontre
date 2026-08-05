@@ -66,13 +66,25 @@ export async function resumeCeli(
   let apportsEnNature = 0;
   for (const [, ls] of parCompte) apportsEnNature += separerCotisations(ls).apportsEnNature;
 
-  const h = profil.historiqueVie.celi;
+  // ON RECALCULE, on ne lit pas le profil figé.
+  //
+  // `historiqueVie` a été écrit au moment de l'import, avec les règles de ce
+  // jour-là. Quand une règle change — et elles changent, la 5e est née le
+  // 4 août — un profil importé la veille porterait un chiffre périmé sans
+  // que rien ne le signale. C'est la leçon du grand livre : recalculer depuis
+  // la source, toujours.
+  const { deriverHistoriqueRegime } = await import('./deriver');
+  const h = lignesCeli.length
+    ? deriverHistoriqueRegime(livre, 'celi', anneeCourante,
+        profil.historiqueVie.celi.dateImport ?? '')
+    : profil.historiqueVie.celi;
+
   return {
     cotisationsTotales: h.cotisationsTotales,
     apportsEnNature: lignesCeli.length ? apportsEnNature : null,
     retraitsAnneesPassees: h.retraitsAnneesPassees,
     dateOuverture: h.dateOuverture,
-    dateImport: h.dateImport,
+    dateImport: profil.historiqueVie.celi.dateImport,
     plafond: plafond.montant,
     plafondDepuis: plafond.depuis,
     plafondMaximalFauteDage: plafond.parDefautMaximal,

@@ -58,6 +58,13 @@ export function estEncaisse(symbole: string): boolean {
 export function separerCotisations(lignes: LigneTransaction[]): {
   argentNeuf: number;
   apportsEnNature: number;
+  /** Les apports en nature, ventilés par étiquette (règle 5). */
+  parEtiquette: Record<EtiquetteApport, number>;
+  /** Les apports à trancher : transferts et ambigus, un par ligne. */
+  apportsATrancher: Array<{
+    date: string; compte: string; montant: number; note: string;
+    etiquette: EtiquetteApport; compteOrigine: string | null;
+  }>;
 } {
   const cotisations = lignes.filter((l) => l.type === 'Cotisation');
   const jambesTitre = cotisations.filter(
@@ -70,6 +77,11 @@ export function separerCotisations(lignes: LigneTransaction[]): {
   const restants = [...jambesTitre];
   let apportsEnNature = 0;
   let argentNeuf = 0;
+  const parEtiquette: Record<EtiquetteApport, number> = { cotisation: 0, transfert: 0, ambigu: 0 };
+  const apportsATrancher: Array<{
+    date: string; compte: string; montant: number; note: string;
+    etiquette: EtiquetteApport; compteOrigine: string | null;
+  }> = [];
 
   for (const argent of jambesArgent) {
     const montant = argent.total as number;
@@ -79,14 +91,44 @@ export function separerCotisations(lignes: LigneTransaction[]): {
         t.noCompte === argent.noCompte &&
         Math.abs(Math.abs(t.total as number) - montant) < 0.02
     );
-    if (i >= 0) {
-      apportsEnNature += montant;
-      restants.splice(i, 1);
-    } else {
+    if (i < 0) {
+      // Pas de contrepartie titre : de l'argent. Mais la NOTE peut quand même
+      // le désigner comme venant d'un autre compte (l'encaisse d'un transfert
+      // de régime arrive ainsi : « CONTRIBUTION REF: 6AAZCI0 »).
+      const etiq = etiquetteApportEnNature(argent.note);
+      if (etiq === 'transfert') {
+        parEtiquette.transfert += montant;
+        apportsATrancher.push({
+          date: argent.date, compte: argent.noCompte, montant, note: argent.note,
+          etiquette: 'transfert', compteOrigine: compteCiteDansNote(argent.note),
+        });
+      } else {
+        argentNeuf += montant;
+        parEtiquette.cotisation += montant;
+      }
+      continue;
+    }
+
+    // Apport EN NATURE : c'est l'étiquette de la JAMBE TITRE qui fait foi,
+    // c'est elle qui porte la référence au compte d'origine.
+    const titre = restants[i];
+    restants.splice(i, 1);
+    apportsEnNature += montant;
+    const etiq = etiquetteApportEnNature(titre.note || argent.note);
+    parEtiquette[etiq] += montant;
+
+    if (etiq === 'cotisation') {
+      // Des titres apportés depuis un compte NON enregistré : ça consomme des
+      // droits, exactement comme de l'argent.
       argentNeuf += montant;
+    } else {
+      apportsATrancher.push({
+        date: titre.date, compte: titre.noCompte, montant, note: titre.note || argent.note,
+        etiquette: etiq, compteOrigine: compteCiteDansNote(titre.note || argent.note),
+      });
     }
   }
-  return { argentNeuf, apportsEnNature };
+  return { argentNeuf, apportsEnNature, parEtiquette, apportsATrancher };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,7 +157,25 @@ const NOTE_VIREMENT_INTERNE =
  * réel est ailleurs : 1 556 lignes de bruit en moins à trancher à la main.
  */
 const NOTE_NUMERO_COMPTE =
+  // avec tirets : « 37-AEF9-R », « 4A-Y3VI-6 »
   /\b\d{2}-[A-Z0-9]{4}-[A-Z0-9]\b|\b[0-9][A-Z]-[A-Z0-9]{4}-[0-9]\b/i;
+
+/**
+ * LE MÊME NUMÉRO, ÉCRIT SANS TIRETS — trouvé le 4 août 2026 chez M.C.
+ *
+ * Croesus écrit aussi les comptes en continu : « CONTRIBUTION REF: 6AAZCI0 »
+ * pour 6A-AZCI-0, « VIRE DE 373CUVS » pour 37-3CUV-S. Sans ce motif, un
+ * transfert de régime entier passait pour de l'argent neuf.
+ */
+const NOTE_NUMERO_COMPTE_COLLE =
+  /\b37[A-Z0-9]{4}[A-Z]\b|\b[0-9][A-Z][A-Z0-9]{4}[0-9]\b/i;
+
+/** Le numéro de compte cité dans une note, s'il y en a un. */
+export function compteCiteDansNote(note: string): string | null {
+  const n = note ?? '';
+  const m = NOTE_NUMERO_COMPTE.exec(n) || NOTE_NUMERO_COMPTE_COLLE.exec(n);
+  return m ? m[0].toUpperCase() : null;
+}
 
 /**
  * VOLONTAIREMENT NON RECONNUS, malgré leur fréquence — règle 4 :
@@ -130,7 +190,43 @@ const NOTE_NUMERO_COMPTE =
 /** Règle 3 : la note prouve-t-elle un virement interne ? */
 export function estVirementInterne(note: string): boolean {
   const n = note ?? '';
-  return NOTE_VIREMENT_INTERNE.test(n) || NOTE_NUMERO_COMPTE.test(n);
+  return NOTE_VIREMENT_INTERNE.test(n) || compteCiteDansNote(n) !== null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RÈGLE 5 · L'ÉTIQUETTE D'UN APPORT EN NATURE (4 août 2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ce qu'est vraiment un apport de titres dans un compte enregistré.
+ *
+ * Décision du planificateur : « une cotisation en titres est normalement
+ * étiquetée comme telle dans Croesus — classe-les par leur type/note, pas par
+ * le seul appariement ».
+ *
+ *   cotisation  le client a apporté des titres qu'il possédait ailleurs en
+ *               non-enregistré : ça CONSOMME des droits, ça compte.
+ *   transfert   les titres viennent d'un autre compte enregistré (la note cite
+ *               le compte d'origine) : ça ne consomme AUCUN droit, mais c'est
+ *               une PREUVE D'ORIGINE EXTERNE au même titre qu'un virement
+ *               d'argent — donc à trancher.
+ *   ambigu      rien ne permet de dire. À trancher, et aucun droit calculé
+ *               tant que ça dure : les cotisations faites ailleurs AVANT le
+ *               transfert nous sont invisibles.
+ */
+export type EtiquetteApport = 'cotisation' | 'transfert' | 'ambigu';
+
+const NOTE_COTISATION_FRANCHE = /\bCOTISATION\b/i;
+
+export function etiquetteApportEnNature(note: string): EtiquetteApport {
+  const n = (note ?? '').trim();
+  // Un compte cité = les titres viennent de LÀ. C'est la preuve la plus forte,
+  // elle prime sur le vocabulaire employé (« CONTRIBUTION REF: 6AAZCI0 » est
+  // un transfert, malgré le mot « contribution »).
+  if (compteCiteDansNote(n) !== null) return 'transfert';
+  if (NOTE_VIREMENT_INTERNE.test(n)) return 'transfert';
+  if (NOTE_COTISATION_FRANCHE.test(n)) return 'cotisation';
+  return 'ambigu';
 }
 
 const TYPES_ENTREE = new Set(['Transfert', 'Réception']);
@@ -148,7 +244,7 @@ const TYPES_ENTREE = new Set(['Transfert', 'Réception']);
  * ne coûte qu'une question de plus en rencontre.
  */
 export function analyserFluxCompte(lignes: LigneTransaction[]): FluxCompte {
-  const { argentNeuf, apportsEnNature } = separerCotisations(lignes);
+  const { argentNeuf, apportsEnNature, apportsATrancher } = separerCotisations(lignes);
 
   const retraits = lignes
     .filter((l) => l.type === 'Retrait' && (l.total ?? 0) < 0)
@@ -163,16 +259,23 @@ export function analyserFluxCompte(lignes: LigneTransaction[]): FluxCompte {
       note: l.note,
     }));
 
-  // Un apport EN NATURE non expliqué compte aussi comme entrée douteuse : des
-  // titres arrivés d'ailleurs sans note d'appariement, c'est exactement le
-  // motif d'un transfert de régime externe.
-  const apportsDouteux = lignes.filter(
-    (l) => l.type === 'Cotisation' && !estEncaisse(l.symbole) && l.symbole !== ''
-      && (l.quantite ?? 0) > 0 && !estVirementInterne(l.note)
-  ).length;
+  // RÈGLE 5 — LES ARRIVÉES EN NATURE REJOIGNENT LES TRANSFERTS À TRANCHER.
+  // C'était le trou : une cotisation en titres venant d'un autre régime est
+  // une preuve d'origine externe au même titre qu'un virement d'argent, et
+  // elle échappait entièrement à la détection.
+  for (const a of apportsATrancher) {
+    transferts.push({
+      date: a.date,
+      montant: a.montant,
+      // Un apport ETIQUETE transfert n'est PAS « apparié » au sens de la
+      // règle 3 : savoir d'où il vient ne dit rien de ce qui a été cotisé
+      // AVANT, dans le compte d'origine. Il reste donc à trancher.
+      apparie: false,
+      note: a.note,
+    });
+  }
 
-  const transfertEntrantDetecte =
-    transferts.some((t) => !t.apparie) || apportsDouteux > 0;
+  const transfertEntrantDetecte = transferts.some((t) => !t.apparie);
 
   return {
     cotisations: argentNeuf,

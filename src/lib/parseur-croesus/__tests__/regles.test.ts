@@ -10,6 +10,8 @@ import {
   separerCotisations,
   estVirementInterne,
   analyserFluxCompte,
+  etiquetteApportEnNature,
+  compteCiteDansNote,
 } from '../regles';
 import { typeDeCompte, estCompteVMBL, type LigneTransaction } from '../types';
 
@@ -220,5 +222,59 @@ describe('typeDeCompte — deux conventions, iA et VMBL', () => {
   it('reconnaît le format VMBL', () => {
     expect(estCompteVMBL('4A-Y91I-7')).toBe(true);
     expect(estCompteVMBL('37-3DYJ-W')).toBe(false);
+  });
+});
+
+describe('RÈGLE 5 — l’étiquette d’un apport en nature', () => {
+  it('un compte cité dans la note fait de l’apport un TRANSFERT', () => {
+    // Motif réel : « CONTRIBUTION REF: 6AAZCI0 » — le mot « contribution »
+    // ne fait PAS de cette ligne une cotisation ; le compte cité tranche.
+    expect(etiquetteApportEnNature('CONTRIBUTION REF: 6AAZCI0 29326')).toBe('transfert');
+    expect(compteCiteDansNote('CONTRIBUTION REF: 6AAZCI0')).toBe('6AAZCI0');
+  });
+
+  it('reconnaît un numéro de compte ÉCRIT SANS TIRETS', () => {
+    expect(compteCiteDansNote('VIRE DE 373CUVS')).toBe('373CUVS');
+    expect(compteCiteDansNote('A 37-AEF9-R - 146(16)')).toBe('37-AEF9-R');
+  });
+
+  it('une note qui dit COTISATION est une cotisation', () => {
+    expect(etiquetteApportEnNature('COTISATION')).toBe('cotisation');
+  });
+
+  it('sans indice, l’apport est AMBIGU — donc à trancher', () => {
+    expect(etiquetteApportEnNature('')).toBe('ambigu');
+    expect(etiquetteApportEnNature('APPORT DE TITRES')).toBe('ambigu');
+  });
+
+  it('un apport ETIQUETE cotisation consomme des droits', () => {
+    const r = separerCotisations([
+      ligne({ type: 'Cotisation', symbole: '1CAD', total: 12000, note: 'COTISATION EN TITRES' }),
+      ligne({ type: 'Cotisation', symbole: 'XIU', quantite: 300, total: -12000, note: 'COTISATION EN TITRES' }),
+    ]);
+    expect(r.argentNeuf).toBe(12000);
+    expect(r.parEtiquette.cotisation).toBe(12000);
+    expect(r.apportsATrancher).toHaveLength(0);
+  });
+
+  it('un apport ETIQUETE transfert est ECARTE et part a trancher', () => {
+    const r = separerCotisations([
+      ligne({ type: 'Cotisation', symbole: '1CAD', total: 9395.62, note: 'CONTRIBUTION REF: 6AAZCI0' }),
+      ligne({ type: 'Cotisation', symbole: 'PBH.DB.F', quantite: 8000, total: -9395.62, note: 'CONTRIBUTION REF: 6AAZCI0 29326' }),
+    ]);
+    expect(r.argentNeuf).toBe(0);
+    expect(r.parEtiquette.transfert).toBeCloseTo(9395.62, 2);
+    expect(r.apportsATrancher).toHaveLength(1);
+    expect(r.apportsATrancher[0].compteOrigine).toBe('6AAZCI0');
+  });
+
+  it('LE TROU COMBLE : une arrivee en nature declenche la borne', () => {
+    // Avant la regle 5, ces lignes ne touchaient PAS transfertEntrantDetecte :
+    // un transfert de regime entier passait inapercu.
+    const flux = analyserFluxCompte([
+      ligne({ type: 'Cotisation', symbole: '1CAD', total: 22273.46, note: 'CONTRIBUTION REF: 6AAZCI0' }),
+    ]);
+    expect(flux.cotisations).toBe(0);
+    expect(flux.transfertEntrantDetecte).toBe(true);
   });
 });

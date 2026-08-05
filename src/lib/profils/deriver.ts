@@ -9,7 +9,7 @@
 
 import type { LigneTransaction } from '@/lib/parseur-croesus/types';
 import { typeDeCompte } from '@/lib/parseur-croesus/types';
-import { analyserFluxCompte, estVirementInterne } from '@/lib/parseur-croesus/regles';
+import { analyserFluxCompte, estVirementInterne, separerCotisations } from '@/lib/parseur-croesus/regles';
 import type { HistoriqueRegime, TypeCompte } from './types';
 import type { TransfertObserve } from './droits-celi';
 
@@ -78,7 +78,7 @@ export function deriverHistoriqueRegime(
  */
 export function observerTransferts(lignes: LigneTransaction[], regime?: TypeCompte): TransfertObserve[] {
   const source = regime ? pourRegime(lignes, regime) : lignes;
-  return source
+  const enArgent = source
     .filter((l) => (l.type === 'Transfert' || l.type === 'Réception') && (l.total ?? 0) > 0)
     .map((l) => ({
       compte: l.noCompte,
@@ -86,7 +86,28 @@ export function observerTransferts(lignes: LigneTransaction[], regime?: TypeComp
       montant: l.total as number,
       apparie: estVirementInterne(l.note),
       note: l.note,
-    }))
+    }));
+
+  // RÈGLE 5 : les apports EN NATURE étiquetés transfert ou ambigu rejoignent
+  // la liste. Une arrivée de titres depuis un autre régime prouve une origine
+  // externe exactement comme un virement d'argent -- et ce que le client a
+  // cotisé AVANT, dans le compte d'origine, nous reste invisible.
+  const parCompte = new Map<string, LigneTransaction[]>();
+  for (const l of source) {
+    if (!parCompte.has(l.noCompte)) parCompte.set(l.noCompte, []);
+    parCompte.get(l.noCompte)!.push(l);
+  }
+  const enNature: TransfertObserve[] = [];
+  for (const [, ls] of parCompte) {
+    for (const a of separerCotisations(ls).apportsATrancher) {
+      enNature.push({
+        compte: a.compte, date: a.date, montant: a.montant,
+        apparie: false, note: a.note,
+      });
+    }
+  }
+
+  return [...enArgent, ...enNature]
     .sort((a, b) => b.date.localeCompare(a.date) || b.montant - a.montant);
 }
 
