@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ClipboardPaste, Check, X, HelpCircle, Loader2, ArrowRight, RotateCcw, Wallet } from 'lucide-react';
+import { ClipboardPaste, Check, X, HelpCircle, Loader2, ArrowRight, RotateCcw, Wallet, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 // L'ALIAS EST OBLIGATOIRE : `Badge` est aussi le nom du composant d'interface.
 import type { Badge as BadgeProfil, CouleurBadge } from '@/lib/profils/badges';
@@ -35,9 +35,32 @@ type CompteDerive = {
   encaisse: Array<{ devise: string; montant: number }>;
 };
 
+type Constat = {
+  strategie: string;
+  titre: string;
+  statut: 'calcule' | 'montant-a-confirmer' | 'indisponible' | 'non-applicable';
+  montantEstime: number | null;
+  libelleMontant: string;
+  explication: string;
+  donneesManquantes: string[];
+};
+
+/**
+ * Le ton d'un constat à l'écran — le MÊME code couleur que sur le PDF.
+ * Le planificateur doit reconnaître au premier coup d'œil ce qui sortira.
+ */
+const TON_CONSTAT: Record<Constat['statut'], { classe: string; mot: string }> = {
+  calcule: { classe: 'border-emerald-300 bg-emerald-50', mot: 'chiffré' },
+  'montant-a-confirmer': { classe: 'border-amber-300 bg-amber-50', mot: 'à confirmer' },
+  indisponible: { classe: 'border-gray-200 bg-gray-50', mot: 'donnée manquante' },
+  'non-applicable': { classe: 'border-gray-200 bg-gray-50', mot: 'sans objet' },
+};
+
 type ProfilResume = {
   id: string; nom: string | null; version: number; dateMiseAJour: string;
   celi: ResumeCeli | null;
+  constats?: Constat[];
+  selection?: { strategies: string[]; dateSelection: string | null };
   badges?: BadgeProfil[];
   questions?: string[];
   compteurs?: { auto: number; manuel: number; manquant: number; aReconfirmer: number };
@@ -156,6 +179,39 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
     } finally {
       setEnCours(false);
     }
+  }
+
+  /**
+   * Coche ou décoche une stratégie et l'enregistre aussitôt.
+   *
+   * ENREGISTREMENT IMMÉDIAT, sans bouton « Sauvegarder » : le planificateur
+   * coche pendant qu'il parle au client, et un bouton oublié voudrait dire un
+   * PDF qui ne correspond pas à ce qu'il a décidé. Le serveur date la
+   * sélection et refuse toute stratégie hors catalogue.
+   */
+  async function basculerStrategie(profil: ProfilResume, strategie: string) {
+    const actuelles = profil.selection?.strategies ?? [];
+    const suivantes = actuelles.includes(strategie)
+      ? actuelles.filter((s) => s !== strategie)
+      : [...actuelles, strategie];
+
+    // Réponse optimiste : la case bouge tout de suite, la vérité serveur
+    // arrive au rafraîchissement.
+    setProfils((liste) =>
+      liste.map((p) =>
+        p.id === profil.id
+          ? { ...p, selection: { strategies: suivantes, dateSelection: p.selection?.dateSelection ?? null } }
+          : p
+      )
+    );
+
+    const res = await fetch('/api/base-locale/strategies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: profil.id, strategies: suivantes }),
+    });
+    if (!res.ok) setErreur('Sélection non enregistrée.');
+    await rafraichirProfils();
   }
 
   async function resoudre(t: TransfertDouteux, resolution: 'interne' | 'externe') {
@@ -451,6 +507,72 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
                       );
                     })}
                   </ul>
+                </div>
+              )}
+
+              {/* ── LES STRATÉGIES À PRÉSENTER ─────────────────────────────
+                  RIEN N'EST COCHÉ PAR DÉFAUT. Le moteur détecte, le
+                  planificateur décide : une piste juste sur papier peut être
+                  inopportune en rencontre pour des raisons que le moteur ne
+                  connaît pas. Seules les cases cochées entrent dans le PDF. */}
+              {(p.constats ?? []).length > 0 && (
+                <div className="border-t border-gray-200 px-4 py-3">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-text-main">
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Stratégies à présenter au client
+                    </p>
+                    <span className="text-xs text-text-muted">
+                      {(p.selection?.strategies ?? []).length} retenue
+                      {(p.selection?.strategies ?? []).length > 1 ? 's' : ''} sur {(p.constats ?? []).length}
+                      {p.selection?.dateSelection ? ` · choisi le ${p.selection.dateSelection}` : ''}
+                    </span>
+                  </div>
+
+                  <ul className="mt-2 space-y-1.5">
+                    {(p.constats ?? []).map((c) => {
+                      const coche = (p.selection?.strategies ?? []).includes(c.strategie);
+                      const ton = TON_CONSTAT[c.statut];
+                      return (
+                        <li key={c.strategie}>
+                          <label
+                            className={`flex cursor-pointer gap-2 rounded border px-2.5 py-2 ${ton.classe} ${
+                              coche ? 'ring-1 ring-brand-primary' : ''
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={coche}
+                              onChange={() => void basculerStrategie(p, c.strategie)}
+                              className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                            />
+                            <span className="min-w-0">
+                              <span className="flex flex-wrap items-baseline gap-x-2">
+                                <span className="text-sm font-medium text-text-main">{c.titre}</span>
+                                <span className="text-[11px] uppercase text-text-muted">{ton.mot}</span>
+                                {c.statut === 'calcule' && c.montantEstime !== null && (
+                                  <span className="text-sm font-semibold tabular-nums text-text-main">
+                                    {argent(c.montantEstime)}
+                                    <span className="ml-1 text-[11px] font-normal text-text-muted">
+                                      {c.libelleMontant}
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                              <span className="mt-0.5 block text-xs text-text-muted">{c.explication}</span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {(p.selection?.strategies ?? []).length === 0 && (
+                    <p className="mt-2 text-xs text-text-muted">
+                      Aucune case cochée : la section « Optimisations fiscales » n&apos;apparaîtra pas
+                      dans le PDF.
+                    </p>
+                  )}
                 </div>
               )}
 

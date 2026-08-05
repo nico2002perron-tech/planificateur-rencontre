@@ -37,7 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Page, Text, View } from '@react-pdf/renderer';
+import { Page, Text, View, Svg, Path } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
@@ -64,11 +64,67 @@ function fmtDate(iso: string): string {
  * qui porte la nuance, pas la couleur.
  */
 const TON: Record<Constat['statut'], { fond: string; bord: string; encre: string; mot: string }> = {
-  calcule: { fond: '#f0fce8', bord: '#86c34a', encre: '#2f6b12', mot: 'chiffré' },
-  'montant-a-confirmer': { fond: '#fffbeb', bord: '#fbbf24', encre: '#92400e', mot: 'à confirmer' },
-  indisponible: { fond: '#f8fafc', bord: '#cbd5e1', encre: '#475569', mot: 'donnée manquante' },
-  'non-applicable': { fond: '#f8fafc', bord: '#cbd5e1', encre: '#475569', mot: 'sans objet' },
+  // Passage « présentation » du 5 août : les fonds viennent maintenant de la
+  // palette Duolingo de la charte (styles.ts), plus francs que les gris-verts
+  // d'origine. LES STATUTS EUX-MÊMES N'ONT PAS BOUGÉ — quatre statuts, quatre
+  // mots, la même règle. C'est la couleur qui s'anime, pas la sémantique.
+  calcule: { fond: C.duoGreenBg, bord: C.duoGreen, encre: '#2f6b12', mot: 'chiffré' },
+  'montant-a-confirmer': { fond: '#fff8e7', bord: C.duoYellow, encre: '#8a5a00', mot: 'à confirmer' },
+  indisponible: { fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'donnée manquante' },
+  'non-applicable': { fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'sans objet' },
 };
+
+/**
+ * UNE ICÔNE PAR STRATÉGIE — dessinée, jamais importée.
+ *
+ * Traits vectoriels sur une grille de 24, dans la couleur de la stratégie.
+ * Aucune image, aucun fichier externe : le PDF reste autonome et le rendu ne
+ * dépend d'aucun réseau. Les traits sont volontairement simples — à 11 pt,
+ * tout détail supplémentaire devient une tache.
+ */
+const ICONES: Record<string, { couleur: string; traits: string[] }> = {
+  // Une flèche descendante sur un axe : la perte qu'on va chercher.
+  'cristallisation-pertes': {
+    couleur: C.duoGreen,
+    traits: ['M3 4 L3 21 L21 21', 'M7 9 L11 14 L15 10 L20 16', 'M20 11 L20 16 L15 16'],
+  },
+  // Deux contenants, un titre qui passe de l'un à l'autre.
+  'localisation-actifs': {
+    couleur: C.duoBlue,
+    traits: ['M3 7 L10 7 L10 20 L3 20 Z', 'M14 7 L21 7 L21 20 L14 20 Z', 'M10 11 L14 11'],
+  },
+  // Deux personnes côte à côte.
+  'celi-conjoint': {
+    couleur: C.duoPurple,
+    traits: ['M9 8 A2.6 2.6 0 1 0 9 3 A2.6 2.6 0 1 0 9 8', 'M3 21 A6 6 0 0 1 15 21',
+             'M17 9 A2.2 2.2 0 1 0 17 5 A2.2 2.2 0 1 0 17 9', 'M15 21 A5 5 0 0 1 22 17'],
+  },
+  // Une main ouverte qui tend quelque chose.
+  'don-titres': {
+    couleur: C.duoOrange,
+    traits: ['M12 3 L12 13', 'M8 7 L12 3 L16 7', 'M4 15 A8 8 0 0 0 20 15'],
+  },
+  // Une liste ordonnée.
+  'ordre-vente': {
+    couleur: C.cyan,
+    traits: ['M4 6 L7 6', 'M4 12 L7 12', 'M4 18 L7 18', 'M10 6 L20 6', 'M10 12 L20 12', 'M10 18 L20 18'],
+  },
+};
+
+function IconeStrategie({ strategie, eteinte }: { strategie: string; eteinte: boolean }) {
+  const icone = ICONES[strategie];
+  if (!icone) return null;
+  // Un constat sans chiffre porte son icône en gris : la couleur signale qu'il
+  // y a quelque chose à faire, pas seulement de quoi on parle.
+  const trait = eteinte ? '#94a3b8' : icone.couleur;
+  return (
+    <Svg viewBox="0 0 24 24" style={{ width: 13, height: 13, marginRight: 5 }}>
+      {icone.traits.map((d, i) => (
+        <Path key={i} d={d} stroke={trait} strokeWidth={2} fill="none" strokeLinecap="round" />
+      ))}
+    </Svg>
+  );
+}
 
 function CarteConstat({ constat }: { constat: Constat }) {
   const t = TON[constat.statut];
@@ -86,9 +142,13 @@ function CarteConstat({ constat }: { constat: Constat }) {
       }}
       wrap={false}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <IconeStrategie strategie={constat.strategie} eteinte={constat.statut !== 'calcule'} />
+        {/* LE TITRE CLIENT, pas le titre du catalogue. « Cristallisation de
+            pertes » est du vocabulaire de metier ; l'ecran de selection le
+            garde, le document remis au client dit ce que ca change pour lui. */}
         <Text style={{ fontSize: 9.5, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
-          {constat.titre}
+          {constat.titreClient}
         </Text>
         <Text style={{ marginLeft: 6, fontSize: 6.4, color: t.encre, textTransform: 'uppercase' }}>
           {t.mot}

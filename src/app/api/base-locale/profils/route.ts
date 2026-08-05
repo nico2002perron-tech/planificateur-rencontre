@@ -5,6 +5,7 @@ import { resumeCeli } from '@/lib/profils/resume';
 import type { ProfilClient } from '@/lib/profils/types';
 import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/badges';
 import { deriverComptes } from '@/lib/profils/comptes';
+import { analyser } from '@/lib/profils/strategies';
 import { lireDernierReleve, lireHistorique } from '@/lib/profils/historique';
 
 // Profils fiscaux — LOCAL SEULEMENT. 404 hors local avant toute autre chose :
@@ -71,6 +72,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Les CONSTATS FISCAUX accompagnent le profil : c'est la matiere de l'ecran
+    // de selection. Le moteur les DETECTE tous ; l'ecran montre les cinq, et
+    // seules les cases cochees entreront dans le PDF.
+    const fiscal = complet ? analyser(complet, null, date) : null;
+
     avecResume.push({
       ...p,
       celi: complet && nomClient ? await resumeCeli(complet, nomClient, annee) : null,
@@ -78,6 +84,8 @@ export async function GET(req: NextRequest) {
       questions: questionsRencontre(badges),
       compteurs: resumeBadges(badges),
       comptes,
+      constats: fiscal?.constats ?? [],
+      selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },
     });
   }
   return NextResponse.json({ profils: avecResume });

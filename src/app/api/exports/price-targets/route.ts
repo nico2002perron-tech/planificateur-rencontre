@@ -7,6 +7,9 @@ import { PriceTargetsDocument, type PriceTargetReportData, type PdfRenderOptions
 import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { enrichReportData } from '@/lib/pdf/enrich-report-data';
 import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
+import { modeFiscalActif } from '@/lib/base-locale/mode';
+import { profilPourClient } from '@/lib/profils/stockage';
+import { analyser, restreindre } from '@/lib/profils/strategies';
 
 export async function POST(req: NextRequest) {
   // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
@@ -28,6 +31,36 @@ export async function POST(req: NextRequest) {
     // revenus) — PARTAGÉS avec l'export HTML interactif pour que les deux
     // formats partent exactement des mêmes données. Voir enrich-report-data.ts.
     const reportData = await enrichReportData(base);
+
+    // ── SECTION FISCALE : jointe ICI, jamais reçue du navigateur ──────────────
+    //
+    // Trois verrous, et il faut les trois :
+    //   1. `modeFiscalActif()` — évalué à l'exécution côté serveur. Sur Vercel,
+    //      il est faux, et ce bloc entier ne s'exécute pas. Personne ne peut
+    //      réclamer cette section depuis la production, même en forgeant le
+    //      corps de la requête ;
+    //   2. le drapeau `includeOptimisationsFiscales === true` — le geste
+    //      volontaire du planificateur dans le composeur ;
+    //   3. une sélection non vide dans le profil du client. Le moteur DÉTECTE
+    //      cinq pistes ; seules celles que le planificateur a cochées, avec
+    //      leur date, entrent dans le document.
+    //
+    // Si l'un des trois manque, `optimisationsFiscales` reste `undefined` et le
+    // gabarit ne rend rien. L'échec est silencieux À DESSEIN : une erreur ici
+    // ne doit jamais empêcher la génération du rapport de cours cibles, qui est
+    // le livrable principal.
+    if (modeFiscalActif() && options?.includeOptimisationsFiscales === true && clientName?.trim()) {
+      try {
+        const jour = new Date().toISOString().split('T')[0];
+        const profil = await profilPourClient(clientName.trim(), jour);
+        const retenues = profil.selectionStrategies?.strategies ?? [];
+        if (retenues.length > 0) {
+          reportData.optimisationsFiscales = restreindre(analyser(profil, null, jour), retenues);
+        }
+      } catch (e) {
+        console.error('[fiscal] section non jointe :', e);
+      }
+    }
 
     const element = React.createElement(PriceTargetsDocument, { data: reportData });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

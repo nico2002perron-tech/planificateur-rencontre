@@ -34,7 +34,17 @@ import type {
 export type Constat = {
   /** Identifiant stable du catalogue — sert de clé, jamais affiché tel quel. */
   strategie: string;
+  /** Le titre INTERNE — celui de l'ecran de selection et du catalogue. */
   titre: string;
+  /**
+   * LE MEME CONSTAT, DIT AU CLIENT.
+   *
+   * « Cristallisation de pertes » est du vocabulaire de metier ; personne ne se
+   * reconnait dedans. Le PDF porte celui-ci, l'ecran garde l'autre : le
+   * planificateur cherche une strategie qu'il connait par son nom technique, le
+   * client lit ce que ca change pour lui.
+   */
+  titreClient: string;
   statut: StatutConstat;
   portee: Portee;
   /** `null` sauf si `statut === 'calcule'`. Jamais un chiffre « à peu près ». */
@@ -162,6 +172,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   const base = {
     strategie: 'cristallisation-pertes',
     titre: 'Cristallisation de pertes',
+    titreClient: 'Réduire l’impôt sur vos gains de l’année',
     libelleMontant: 'de perte à cristalliser',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
@@ -279,6 +290,7 @@ function strategieLocalisation(profil: ProfilClient): Constat {
   const base = {
     strategie: 'localisation-actifs',
     titre: 'Localisation d’actifs',
+    titreClient: 'Placer chaque revenu dans le bon compte',
     libelleMontant: 'de revenu à relocaliser',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
@@ -316,6 +328,7 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
   const base = {
     strategie: 'celi-conjoint',
     titre: 'CELI du conjoint',
+    titreClient: 'Utiliser le CELI de votre conjoint',
     libelleMontant: 'de droits accumulés disponibles',
     // UNIQUE, pas annuel : ce montant est le CUMUL des droits inutilisés depuis
     // l'ouverture. L'afficher « par année » laisserait croire à 48 000 $ de
@@ -387,6 +400,7 @@ function strategieDonTitres(profil: ProfilClient): Constat {
   const base = {
     strategie: 'don-titres',
     titre: 'Don de titres à gain latent',
+    titreClient: 'Donner un titre plutôt que de l’argent',
     libelleMontant: 'de gain mis à l’abri',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
@@ -468,6 +482,7 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
   const base = {
     strategie: 'ordre-vente',
     titre: 'Ordre de vente vers le portefeuille cible',
+    titreClient: 'Vendre dans l’ordre qui coûte le moins d’impôt',
     libelleMontant: 'de gain imposable pour l’année',
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
@@ -536,7 +551,10 @@ function construireAngleMort(profil: ProfilClient, constats: Constat[]): AngleMo
   if (!visibiliteEntamee(profil)) return null;
 
   const limites = constats.filter((c) => c.limiteVisibilite !== null);
-  const details = limites.map((c) => `${c.titre} : ${c.limiteVisibilite}`);
+  // `titreClient`, pas `titre` : ce bloc est rendu sur le document remis au
+  // client, a cote de cartes qui portent deja le titre client. Deux
+  // vocabulaires sur la meme page se lisent comme deux sujets differents.
+  const details = limites.map((c) => `${c.titreClient} : ${c.limiteVisibilite}`);
 
   // Le suivi des cotisations CELI est limité par la même cause, même s'il
   // n'est pas l'une des 5 stratégies. Il appartient à l'angle mort.
@@ -603,5 +621,57 @@ export function analyser(
     // ⚠ LE VERROU. Passer à `false` le jour où le fiscaliste a revu ce fichier
     // ET config/parametres-fiscaux.csv. C'est la seule ligne à changer.
     revisionFiscalisteRequise: true,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LA SÉLECTION DU PLANIFICATEUR
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Restreint une analyse aux stratégies que le planificateur a cochées.
+ *
+ * `analyser()` DÉTECTE ; cette fonction RETIENT. La distinction n'est pas
+ * cosmétique : l'écran a besoin de voir les cinq constats pour que le
+ * planificateur choisisse, le PDF ne doit porter que ceux qu'il a choisis.
+ *
+ * Une liste vide rend une analyse vide — et c'est le comportement voulu, pas un
+ * cas dégénéré. Rien n'est coché par défaut ; tant que rien ne l'est, la
+ * section PDF n'a rien à dire et ne doit pas paraître.
+ *
+ * L'ANGLE MORT ET LES QUESTIONS SONT RECALCULÉS sur les constats retenus. Un
+ * angle mort qui nommerait une stratégie absente de la page, ou une question
+ * portant sur une piste écartée, ferait parler le document d'autre chose que ce
+ * qu'il montre.
+ */
+export function restreindre(
+  resultat: ResultatAnalyse,
+  strategiesRetenues: string[]
+): ResultatAnalyse {
+  const retenues = new Set(strategiesRetenues);
+  const constats = resultat.constats.filter((c) => retenues.has(c.strategie));
+
+  const limites = constats.filter((c) => c.limiteVisibilite !== null);
+  // `titreClient`, pas `titre` : ce bloc est rendu sur le document remis au
+  // client, a cote de cartes qui portent deja le titre client. Deux
+  // vocabulaires sur la meme page se lisent comme deux sujets differents.
+  const details = limites.map((c) => `${c.titreClient} : ${c.limiteVisibilite}`);
+
+  // La ligne du suivi CELI n'appartient à aucune stratégie : elle décrit le
+  // dossier. On la garde telle qu'elle a été rédigée, si elle existait.
+  const ligneCeli = resultat.angleMort?.details.find((d) => d.startsWith('Suivi de cotisation CELI'));
+  if (ligneCeli) details.push(ligneCeli);
+
+  return {
+    ...resultat,
+    constats,
+    // Aucun constat retenu : pas d'angle mort non plus. La ligne du suivi CELI
+    // seule, sur une page vide, décrirait un dossier dont on ne montre rien.
+    angleMort:
+      resultat.angleMort === null || constats.length === 0 || details.length === 0
+        ? null
+        : { constatsLimites: limites.length, total: constats.length, details },
+    questionsRencontre: [...new Set(constats.flatMap((c) => c.donneesManquantes))]
+      .sort((a, b) => rangQuestion(a) - rangQuestion(b) || a.localeCompare(b)),
   };
 }

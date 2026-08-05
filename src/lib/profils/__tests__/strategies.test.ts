@@ -8,7 +8,7 @@
 // Profils fictifs, formats réels : les tests partent sur GitHub.
 
 import { describe, it, expect } from 'vitest';
-import { analyser, type PortefeuilleCible } from '../strategies';
+import { analyser, restreindre, type PortefeuilleCible } from '../strategies';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '../types';
 
 const DATE = '2026-08-05';
@@ -291,7 +291,7 @@ describe('la limite de visibilité — la matière de l’angle mort', () => {
     const c = trouver(r, 'cristallisation-pertes');
     expect(c.limiteVisibilite).not.toBeNull();
     expect((c.limiteVisibilite as string).length).toBeLessThan(c.explication.length);
-    expect(r.angleMort!.details.some((d) => d === `${c.titre} : ${c.limiteVisibilite}`)).toBe(true);
+    expect(r.angleMort!.details.some((d) => d === `${c.titreClient} : ${c.limiteVisibilite}`)).toBe(true);
   });
 
   it('reste NULL quand la visibilité est complète', () => {
@@ -316,5 +316,75 @@ describe('la nature des montants', () => {
       x.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
     });
     expect(trouver(analyser(p, null, DATE), 'celi-conjoint').recurrence).toBe('unique');
+  });
+});
+
+describe('restreindre — le planificateur choisit, le moteur détecte', () => {
+  const complet = () => analyser(profilConsolide((x) => {
+    x.consolidation.comptesExternes = 'oui';
+    x.transactionsAnnee.gainsRealises = 12000;
+    x.intentions.donsAnnuelsMoyens = 5000;
+    x.historiqueVie.celi.cotisationsTotales = 4000;
+    x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000), position('BBB', 50000, 10000)])];
+  }), null, DATE);
+
+  it('RIEN DE COCHÉ rend une analyse VIDE — c’est voulu, pas dégénéré', () => {
+    const r = restreindre(complet(), []);
+    expect(r.constats).toEqual([]);
+    expect(r.angleMort).toBeNull();
+    expect(r.questionsRencontre).toEqual([]);
+  });
+
+  it('ne retient que les stratégies cochées', () => {
+    const r = restreindre(complet(), ['cristallisation-pertes']);
+    expect(r.constats.map((c) => c.strategie)).toEqual(['cristallisation-pertes']);
+  });
+
+  it('L’ANGLE MORT NE NOMME JAMAIS une stratégie absente de la page', () => {
+    const r = restreindre(complet(), ['cristallisation-pertes']);
+    expect(r.angleMort!.details.some((d) => d.startsWith('Utiliser le CELI'))).toBe(false);
+    expect(r.angleMort!.details.some((d) => d.startsWith('Réduire l’impôt'))).toBe(true);
+    expect(r.angleMort!.total).toBe(1);
+  });
+
+  it('garde la ligne du suivi CELI : elle décrit le dossier, pas une stratégie', () => {
+    const r = restreindre(complet(), ['cristallisation-pertes']);
+    expect(r.angleMort!.details.some((d) => d.startsWith('Suivi de cotisation CELI'))).toBe(true);
+  });
+
+  it('les questions ne portent que sur les pistes retenues', () => {
+    const r = restreindre(complet(), ['localisation-actifs']);
+    expect(r.questionsRencontre.join(' ')).toMatch(/registre d’instruments/);
+    expect(r.questionsRencontre.join(' ')).not.toMatch(/portefeuille cible/);
+  });
+
+  it('le verrou du fiscaliste et la date survivent à la restriction', () => {
+    const r = restreindre(complet(), ['cristallisation-pertes']);
+    expect(r.revisionFiscalisteRequise).toBe(true);
+    expect(r.date).toBe(DATE);
+  });
+});
+
+describe('le vocabulaire du document', () => {
+  it('UN SEUL VOCABULAIRE SUR LA PAGE : l’angle mort parle comme les cartes', () => {
+    // Les cartes portent `titreClient` ; si l'angle mort portait `titre`, deux
+    // vocabulaires sur la même page se liraient comme deux sujets différents.
+    const p = profilConsolide((x) => {
+      x.consolidation.comptesExternes = 'oui';
+      x.transactionsAnnee.gainsRealises = 12000;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
+    });
+    const r = analyser(p, null, DATE);
+    for (const d of r.angleMort!.details) {
+      if (d.startsWith('Suivi de cotisation')) continue;    // décrit le dossier
+      expect(r.constats.some((c) => d.startsWith(c.titreClient))).toBe(true);
+    }
+  });
+
+  it('chaque stratégie a un titre client DIFFÉRENT de son titre de catalogue', () => {
+    for (const c of analyser(profilVierge('v', DATE), null, DATE).constats) {
+      expect(c.titreClient).not.toBe(c.titre);
+      expect(c.titreClient.length).toBeGreaterThan(10);
+    }
   });
 });

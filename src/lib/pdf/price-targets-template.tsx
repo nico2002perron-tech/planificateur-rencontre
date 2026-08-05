@@ -19,6 +19,8 @@ import {
   YearSummaryPanel,
 } from './year-activity-pages';
 import { DeploymentPage } from './deployment-page';
+import { OptimisationsFiscalesPage } from './optimisations-fiscales-page';
+import type { ResultatAnalyse } from '@/lib/profils/strategies';
 import {
   SECTOR_META, ASSET_CLASS_META, SectorIcon, SectorDonut,
   buildEquitySectorSlices, buildAssetClassSlices, type SectorSlice,
@@ -114,6 +116,19 @@ export interface PdfRenderOptions {
   includeIncomeCalendar?: boolean;
   /** Page « Revenus du portefeuille » : détail des dividendes et coupons par titre. */
   includeIncomeDetail?: boolean;
+  /**
+   * Page « Optimisations fiscales » — LOCAL SEULEMENT, ETEINTE PAR DEFAUT.
+   *
+   * SEULE OPTION EN `=== true` DE TOUTE CETTE LISTE. Les autres suivent la
+   * convention `!== false` : absentes, elles sont actives. Celle-ci fait
+   * l'inverse a la demande du planificateur -- chaque apparition de cette page
+   * doit etre un geste volontaire.
+   *
+   * Et cocher ne suffit pas : la ROUTE ne joint les donnees que si
+   * `modeFiscalActif()`, donc jamais depuis Vercel, et il faut en plus qu'une
+   * strategie ait ete selectionnee pour ce client.
+   */
+  includeOptimisationsFiscales?: boolean;
   /** Page orientation — defaults to 'portrait'. */
   orientation?: 'portrait' | 'landscape';
 }
@@ -131,6 +146,12 @@ export interface PriceTargetReportData {
   generatedAt: string;
   /** Client name displayed on the cover page. */
   clientName?: string;
+  /**
+   * Les constats fiscaux retenus. JOINTS PAR LA ROUTE, jamais par le navigateur :
+   * ils viennent du profil local du client, qui ne quitte pas le poste.
+   * `undefined` partout ailleurs — sur Vercel, ce champ est toujours vide.
+   */
+  optimisationsFiscales?: ResultatAnalyse;
   options?: PdfRenderOptions;
   /** Optional map of symbol → base64 PNG data URI for company logos. */
   logos?: Record<string, string>;
@@ -2099,6 +2120,13 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
   const showDescriptions = opts.includeDescriptions !== false;
   const yearActivity = opts.includeYearActivity !== false ? data.yearActivity : undefined;
   const deployment = opts.includeDeployment !== false ? data.deployment : undefined;
+  // `=== true` : voir le commentaire de l'option. Trois conditions doivent tenir
+  // pour que cette page existe -- le geste du planificateur, l'execution locale
+  // (la route joint les donnees), et au moins une strategie retenue.
+  const fiscal =
+    opts.includeOptimisationsFiscales === true && (data.optimisationsFiscales?.constats.length ?? 0) > 0
+      ? data.optimisationsFiscales
+      : undefined;
   const orientation: 'portrait' | 'landscape' = opts.orientation === 'landscape' ? 'landscape' : 'portrait';
 
   const equities = showEquities
@@ -2134,6 +2162,8 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
       {yearActivity && deployment && deployment.buyCount > 0 && (
         <DeploymentPage deployment={deployment} />
       )}
+
+      {fiscal && <OptimisationsFiscalesPage resultat={fiscal} />}
 
       {yearActivity && (
         <GrowthSourcesPage activity={yearActivity} orientation={orientation} />

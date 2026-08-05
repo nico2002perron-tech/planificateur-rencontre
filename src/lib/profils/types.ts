@@ -182,6 +182,25 @@ export type HistoriqueVie = {
   reer: HistoriqueRegime;
 };
 
+/**
+ * LES STRATEGIES QUE LE PLANIFICATEUR A CHOISI DE PRESENTER — 5 aout 2026.
+ *
+ * RIEN N'EST COCHE PAR DEFAUT, et c'est la regle. Le moteur DETECTE des pistes ;
+ * il ne decide pas lesquelles vont sous les yeux du client. Une piste
+ * pertinente sur papier peut etre inopportune en rencontre pour des raisons que
+ * le moteur ne connait pas -- une separation en cours, un deuil, un dossier
+ * fiscal deja ouvert.
+ *
+ * La date est obligatoire quand une selection existe : comme pour un transfert
+ * resolu, une selection non datee ne vaut rien. On doit pouvoir dire « ces
+ * cases ont ete cochees le 5 aout, avant la rencontre du 6 ».
+ */
+export type SelectionStrategies = {
+  /** Identifiants du catalogue (`cristallisation-pertes`, `celi-conjoint`...). */
+  strategies: string[];
+  dateSelection: string | null;
+};
+
 export type Intentions = {
   ageRetraiteVise: number | null;
   donsAnnuelsMoyens: number | null;
@@ -206,6 +225,8 @@ export type ProfilClient = {
   transactionsAnnee: TransactionsAnnee;
   historiqueVie: HistoriqueVie;
   intentions: Intentions;
+  /** Ce que le planificateur a choisi de presenter. Vide = rien au PDF. */
+  selectionStrategies: SelectionStrategies;
 };
 
 /** Un profil vierge, conforme au schéma — tout est `null`, rien n'est deviné. */
@@ -253,6 +274,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
       ageRetraiteVise: null, donsAnnuelsMoyens: null,
       venteEntreprisePrevue: null, achatImmobilierPrevu: null, testamentAJour: null,
     },
+    selectionStrategies: { strategies: [], dateSelection: null },
   };
 }
 

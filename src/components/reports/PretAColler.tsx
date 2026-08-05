@@ -511,6 +511,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   }, [vault.status]);
 
   // PDF builder state
+  // Execution locale ? Decide apres le montage pour ne pas casser l'hydratation
+  // (le serveur rend toujours sans l'option). Confort d'affichage seulement --
+  // la garde reelle est `modeFiscalActif()` cote route.
+  const [estLocalNavigateur, setEstLocalNavigateur] = useState(false);
+  useEffect(() => {
+    const h = window.location.hostname;
+    setEstLocalNavigateur(h === 'localhost' || h === '127.0.0.1' || h === '[::1]');
+  }, []);
+
   const [showPdfBuilder, setShowPdfBuilder] = useState(false);
   const [pdfOptions, setPdfOptions] = useState({
     includeCover: true,
@@ -520,6 +529,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
     includeFixedIncome: true,
     includeDescriptions: true,
     includeIncomeDetail: true,
+    // ETEINTE PAR DEFAUT, seule de la liste. Chaque apparition de la section
+    // fiscale doit etre un geste volontaire. Et cocher ne suffit pas : la route
+    // ne joint les donnees qu'en execution locale, et seulement si des
+    // strategies ont ete retenues pour ce client dans l'ecran Profils fiscaux.
+    includeOptimisationsFiscales: false,
     fundCodesToInclude: [] as string[],
     orientation: 'portrait' as 'portrait' | 'landscape',
   });
@@ -1438,6 +1452,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           includeFixedIncome: pdfOptions.includeFixedIncome,
           includeDescriptions: pdfOptions.includeDescriptions,
           includeIncomeDetail: pdfOptions.includeIncomeDetail,
+          includeOptimisationsFiscales: pdfOptions.includeOptimisationsFiscales,
           orientation: pdfOptions.orientation,
         },
         summary: (() => {
@@ -3225,6 +3240,41 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               }}
             />
 
+            {/* ── Section fiscale — LOCAL SEULEMENT ─────────────────────────
+                Affichée uniquement sur localhost, comme les entrées « Profils
+                fiscaux » et « Documents » de la barre latérale. Ce n'est PAS
+                une garde de sécurité — le navigateur peut mentir : la vraie
+                garde est côté serveur, où la route ne joint les données que si
+                `modeFiscalActif()`. Ici on évite seulement de proposer une
+                option qui ne ferait rien en production. */}
+            {estLocalNavigateur && (
+              <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={pdfOptions.includeOptimisationsFiscales}
+                    onChange={e => setPdfOptions(p => ({ ...p, includeOptimisationsFiscales: e.target.checked }))}
+                    className="mt-1 h-4 w-4 shrink-0"
+                  />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" style={{ color: '#c5a365' }} />
+                      <span className="text-sm font-bold text-text-main">Optimisations fiscales</span>
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                        document de travail
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs text-text-muted">
+                      Une page datée, avec les seules stratégies cochées pour ce client dans
+                      <strong> Profils fiscaux</strong>. Rien n&apos;est coché par défaut : si la
+                      liste est vide, la page n&apos;apparaît pas. En attente de révision par un
+                      fiscaliste — la page le dit elle-même.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
             {/* Fund reports section with inline upload */}
             {fundCheckResults.length > 0 && (
               <div className="mb-5 p-4 rounded-xl bg-white border border-gray-200">
@@ -3505,6 +3555,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                   if (pdfOptions.includeIncomeDetail && incomeCount > 0) pages += 1;
                   if (pdfOptions.includeFixedIncome && fiCount > 0) pages += 1;
                   if (pdfOptions.includeDescriptions && incl.length > 0) pages += Math.ceil(incl.length / 24);
+                  // La section fiscale fait UNE page — quand elle parait. Trois
+                  // conditions hors de portee de ce compteur peuvent l'annuler
+                  // (execution locale, profil du client, selection non vide),
+                  // d'ou l'estimation qui reste une estimation.
+                  if (pdfOptions.includeOptimisationsFiscales) pages += 1;
                   pages += pdfOptions.fundCodesToInclude.length * 2;
                   return (
                     <span className="font-semibold">
