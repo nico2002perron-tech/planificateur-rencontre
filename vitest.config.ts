@@ -15,6 +15,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "scripts/**/*.test.{ts,mjs}"],
+    // `.tsx` ADMIS depuis le 5 août 2026, pour UN cas précis : les pages PDF.
+    // @react-pdf/renderer rend en Node — `renderToBuffer` produit un vrai PDF
+    // dont on peut relire le texte, sans jsdom. C'est le seul moyen de vérifier
+    // CE QUI ATTEINT LE CLIENT plutôt que la forme du JSX.
+    //
+    // Ça ne rend PAS les composants d'écran testables : ceux-là ont besoin d'un
+    // DOM, et l'environnement reste `node`. La règle tient toujours — la
+    // logique de calcul vit dans un `.ts` pur.
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.{ts,mjs}"],
   },
 });

@@ -39,6 +39,21 @@ export type Constat = {
   portee: Portee;
   /** `null` sauf si `statut === 'calcule'`. Jamais un chiffre « à peu près ». */
   montantEstime: number | null;
+  /**
+   * CE QUE LE MONTANT EST — et la raison pour laquelle ces montants NE
+   * S'ADDITIONNENT PAS.
+   *
+   * Défaut trouvé au premier rendu de la page, le 5 août 2026 : un bandeau
+   * affichait la somme des cinq montants, soit 69 871 $. Or il additionnait
+   * une perte à cristalliser (18 000 $), des DROITS de cotisation du conjoint
+   * (48 000 $) et un gain mis à l'abri (3 871 $). Trois natures, trois unités,
+   * et surtout : des droits de cotisation ne sont pas une économie. Le total
+   * était un chiffre impressionnant qui ne voulait rien dire.
+   *
+   * Ce champ force chaque montant à dire ce qu'il est, et interdit de les
+   * sommer sans y penser.
+   */
+  libelleMontant: string;
   recurrence: 'annuel' | 'unique';
   /**
    * Rédigée à partir des chiffres du moteur — JAMAIS l'inverse.
@@ -48,6 +63,17 @@ export type Constat = {
   explication: string;
   donneesManquantes: string[];
   sources: string[];
+  /**
+   * CE QUE LE MANQUE DE VISIBILITE COUTE A CE CONSTAT — une phrase, pas un
+   * paragraphe.
+   *
+   * `null` quand la visibilite est complete. C'est la matiere de l'angle mort :
+   * la premiere version y recopiait l'explication entiere de chaque constat,
+   * ce qui donnait un bloc de six lignes qui repetait la page. Le schema
+   * demande le contraire — une limitation nommee, courte, et la liste EST
+   * l'argument.
+   */
+  limiteVisibilite: string | null;
 };
 
 export type AngleMort = {
@@ -77,6 +103,8 @@ export type PortefeuilleCible = {
 };
 
 const argent = (n: number) => `${Math.round(n).toLocaleString('fr-CA')} $`;
+/** Le « s » du pluriel — un document remis au client n'ecrit pas « 1 position(s) ». */
+const pl = (n: number) => (n > 1 ? 's' : '');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CE QU'ON SAIT DU PORTEFEUILLE, avant de juger quoi que ce soit
@@ -134,8 +162,10 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   const base = {
     strategie: 'cristallisation-pertes',
     titre: 'Cristallisation de pertes',
+    libelleMontant: 'de perte à cristalliser',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
+    limiteVisibilite: null,
   };
   const manquantes: string[] = [];
   const nonEnr = positionsNonEnregistrees(profil);
@@ -161,7 +191,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
       explication:
         nonEnr.length === 0
           ? 'Aucune position non enregistrée n’a pu être identifiée. Un compte dont le régime n’est pas prouvé est écarté plutôt que présumé : vendre à perte dans un CELI détruirait un droit de cotisation sans produire aucune déduction.'
-          : `Le prix de base rajusté manque sur les ${aveugles} position(s) non enregistrée(s) : le gain ou la perte latente n’est pas calculable.`,
+          : `Le prix de base rajusté manque sur ${aveugles} position${pl(aveugles)} non enregistrée${pl(aveugles)} : le gain ou la perte latente n’est pas calculable.`,
       donneesManquantes: manquantes,
     };
   }
@@ -180,7 +210,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   const absorbable = Math.min(pertesLatentes, Math.max(0, gainsRealises));
 
   if (aveugles > 0) {
-    manquantes.push(`le prix de base rajusté de ${aveugles} position(s)`);
+    manquantes.push(`le prix de base rajusté de ${aveugles} position${pl(aveugles)}`);
   }
   if (visibiliteEntamee(profil)) {
     manquantes.push('la liste des positions détenues ailleurs qu’ici');
@@ -195,8 +225,10 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   if (visibiliteEntamee(profil)) {
     return {
       ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      limiteVisibilite:
+        'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
       explication:
-        `${enPerte.length} position(s) non enregistrée(s) portent une perte latente de ${argent(pertesLatentes)}, ` +
+        `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}, ` +
         `dont ${argent(absorbable)} absorberait des gains déjà réalisés cette année (${argent(gainsRealises)}).` +
         `${detailReportees} Ce montant ne couvre que les comptes détenus ici : un ordre de vente coordonné ` +
         `exige de connaître aussi les positions détenues ailleurs.`,
@@ -210,7 +242,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     portee: 'declaree',
     montantEstime: absorbable > 0 ? absorbable : null,
     explication: absorbable > 0
-      ? `${enPerte.length} position(s) non enregistrée(s) portent une perte latente de ${argent(pertesLatentes)}. ` +
+      ? `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. ` +
         `En cristalliser ${argent(absorbable)} annulerait les gains déjà réalisés cette année (${argent(gainsRealises)}).` +
         `${detailReportees}`
       : gainsRealises <= 0
@@ -247,14 +279,16 @@ function strategieLocalisation(profil: ProfilClient): Constat {
   const base = {
     strategie: 'localisation-actifs',
     titre: 'Localisation d’actifs',
+    libelleMontant: 'de revenu à relocaliser',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
+    limiteVisibilite: null,
   };
 
   const regimesInconnus = profil.comptes.filter((c) => c.type === null).length;
   const manquantes = ['la nature de revenu de chaque titre (registre d’instruments)'];
   if (regimesInconnus > 0) {
-    manquantes.push(`le régime de ${regimesInconnus} compte(s)`);
+    manquantes.push(`le régime de ${regimesInconnus} compte${pl(regimesInconnus)}`);
   }
   if (profil.revenus.trancheRevenu === null) {
     manquantes.push('la tranche de revenu imposable du client');
@@ -282,8 +316,14 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
   const base = {
     strategie: 'celi-conjoint',
     titre: 'CELI du conjoint',
-    recurrence: 'annuel' as const,
+    libelleMontant: 'de droits accumulés disponibles',
+    // UNIQUE, pas annuel : ce montant est le CUMUL des droits inutilisés depuis
+    // l'ouverture. L'afficher « par année » laisserait croire à 48 000 $ de
+    // place neuve chaque année, alors que le plafond annuel est de l'ordre de
+    // 7 000 $. Le geste de rattrapage, lui, se pose une fois.
+    recurrence: 'unique' as const,
     sources: sourcesDe(profil),
+    limiteVisibilite: null,
   };
   const conjoint = profil.demographie.conjoint;
   const droitsConjoint = profil.droits.celiConjointInutilises.montant;
@@ -320,6 +360,8 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
   if (visibiliteEntamee(profil)) {
     return {
       ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      limiteVisibilite:
+        'droits connus, montant à cotiser inconnu — un compte ailleurs peut en avoir déjà consommé une partie.',
       explication:
         `Le conjoint dispose de ${argent(droitsConjoint as number)} de droits CELI inutilisés. Le montant à y ` +
         'placer reste à confirmer : des comptes détenus ailleurs pourraient déjà en avoir consommé une partie, ' +
@@ -345,8 +387,10 @@ function strategieDonTitres(profil: ProfilClient): Constat {
   const base = {
     strategie: 'don-titres',
     titre: 'Don de titres à gain latent',
+    libelleMontant: 'de gain mis à l’abri',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
+    limiteVisibilite: null,
   };
   const dons = profil.intentions.donsAnnuelsMoyens;
 
@@ -383,7 +427,7 @@ function strategieDonTitres(profil: ProfilClient): Constat {
       portee: aveugles > 0 ? 'inconnue' : 'declaree',
       montantEstime: null,
       explication: aveugles > 0
-        ? `Le prix de base rajusté manque sur ${aveugles} position(s) non enregistrée(s) : impossible de dire laquelle porte le plus gros gain latent.`
+        ? `Le prix de base rajusté manque sur ${aveugles} position${pl(aveugles)} non enregistrée${pl(aveugles)} : impossible de dire laquelle porte le plus gros gain latent.`
         : 'Aucune position non enregistrée ne porte de gain latent à donner.',
       donneesManquantes: aveugles > 0 ? ['le prix de base rajusté des positions non enregistrées'] : [],
     };
@@ -400,6 +444,9 @@ function strategieDonTitres(profil: ProfilClient): Constat {
     statut: visibiliteEntamee(profil) ? 'montant-a-confirmer' : 'calcule',
     portee: porteeDe(profil),
     montantEstime: visibiliteEntamee(profil) ? null : gainEvite,
+    limiteVisibilite: visibiliteEntamee(profil)
+      ? 'le titre choisi est le meilleur de nos comptes — un titre détenu ailleurs peut porter un gain plus élevé.'
+      : null,
     explication:
       `Le client donne environ ${argent(dons)} par année. Donner plutôt le titre ${meilleure.p.symbole}, ` +
       `qui porte ${argent(meilleure.g)} de gain latent, met ${argent(gainEvite)} de gain à l’abri de l’impôt ` +
@@ -421,8 +468,10 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
   const base = {
     strategie: 'ordre-vente',
     titre: 'Ordre de vente vers le portefeuille cible',
+    libelleMontant: 'de gain imposable pour l’année',
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
+    limiteVisibilite: null,
   };
 
   if (cible === null) {
@@ -459,6 +508,9 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
     statut: visibiliteEntamee(profil) ? 'montant-a-confirmer' : 'calcule',
     portee: porteeDe(profil),
     montantEstime: visibiliteEntamee(profil) ? null : gainNet,
+    limiteVisibilite: visibiliteEntamee(profil)
+      ? 'l’ordre ne porte que sur nos comptes — une vente ailleurs changerait le gain imposable de l’année.'
+      : null,
     explication:
       `En vendant d’abord ${parImpact[0].p.symbole} puis en remontant vers les gains les plus élevés, ` +
       `le gain imposable de l’année s’établit à ${argent(gainNet)} en incluant les ${argent(profil.transactionsAnnee.gainsRealises)} ` +
@@ -483,11 +535,8 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
 function construireAngleMort(profil: ProfilClient, constats: Constat[]): AngleMort {
   if (!visibiliteEntamee(profil)) return null;
 
-  const limites = constats.filter(
-    (c) => c.donneesManquantes.some((m) => m.includes('ailleurs')) || c.portee === 'interne-seulement'
-  );
-
-  const details = limites.map((c) => `${c.titre} : ${c.explication}`);
+  const limites = constats.filter((c) => c.limiteVisibilite !== null);
+  const details = limites.map((c) => `${c.titre} : ${c.limiteVisibilite}`);
 
   // Le suivi des cotisations CELI est limité par la même cause, même s'il
   // n'est pas l'une des 5 stratégies. Il appartient à l'angle mort.

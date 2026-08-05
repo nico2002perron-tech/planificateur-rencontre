@@ -277,3 +277,44 @@ describe('l’angle mort', () => {
     expect(analyser(profilVierge('vide', DATE), null, DATE).angleMort).not.toBeNull();
   });
 });
+
+describe('la limite de visibilité — la matière de l’angle mort', () => {
+  it('est une PHRASE COURTE, pas l’explication recopiée', () => {
+    // Première version : l'angle mort recopiait l'explication entière de chaque
+    // constat, ce qui donnait un bloc de six lignes qui répétait la page.
+    const p = profilConsolide((x) => {
+      x.consolidation.comptesExternes = 'oui';
+      x.transactionsAnnee.gainsRealises = 12000;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
+    });
+    const r = analyser(p, null, DATE);
+    const c = trouver(r, 'cristallisation-pertes');
+    expect(c.limiteVisibilite).not.toBeNull();
+    expect((c.limiteVisibilite as string).length).toBeLessThan(c.explication.length);
+    expect(r.angleMort!.details.some((d) => d === `${c.titre} : ${c.limiteVisibilite}`)).toBe(true);
+  });
+
+  it('reste NULL quand la visibilité est complète', () => {
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 12000;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
+    });
+    for (const c of analyser(p, null, DATE).constats) expect(c.limiteVisibilite).toBeNull();
+  });
+});
+
+describe('la nature des montants', () => {
+  it('chaque constat DIT ce que son montant est', () => {
+    for (const c of analyser(profilVierge('v', DATE), null, DATE).constats) {
+      expect(c.libelleMontant.length).toBeGreaterThan(5);
+    }
+  });
+
+  it('les droits CELI du conjoint sont un CUMUL, donc « unique »', () => {
+    const p = profilConsolide((x) => {
+      x.demographie.conjoint.trancheRevenu = '0-50k';
+      x.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
+    });
+    expect(trouver(analyser(p, null, DATE), 'celi-conjoint').recurrence).toBe('unique');
+  });
+});
