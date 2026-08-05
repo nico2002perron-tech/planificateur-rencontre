@@ -1,0 +1,24 @@
+parametre,annee,juridiction,valeur,source
+# Plafonds annuels de cotisation CELI. Le plafond CUMULATIF d'un client est la
+# somme des annees depuis ses 18 ans (au plus tot 2009, creation du regime).
+#
+# ⚠ A FAIRE REVISER PAR UN FISCALISTE avant toute version remise au client.
+# Les valeurs 2009-2025 sont les plafonds publies ; 2026 est a confirmer.
+plafond-celi,2009,CA,5000,publie
+plafond-celi,2010,CA,5000,publie
+plafond-celi,2011,CA,5000,publie
+plafond-celi,2012,CA,5000,publie
+plafond-celi,2013,CA,5500,publie
+plafond-celi,2014,CA,5500,publie
+plafond-celi,2015,CA,10000,publie
+plafond-celi,2016,CA,5500,publie
+plafond-celi,2017,CA,5500,publie
+plafond-celi,2018,CA,5500,publie
+plafond-celi,2019,CA,6000,publie
+plafond-celi,2020,CA,6000,publie
+plafond-celi,2021,CA,6000,publie
+plafond-celi,2022,CA,6000,publie
+plafond-celi,2023,CA,6500,publie
+plafond-celi,2024,CA,7000,publie
+plafond-celi,2025,CA,7000,publie
+plafond-celi,2026,CA,7000,a-confirmer

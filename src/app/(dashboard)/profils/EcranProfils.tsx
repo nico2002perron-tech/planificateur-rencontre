@@ -1,10 +1,31 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ClipboardPaste, Check, X, HelpCircle, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
-type ProfilResume = { id: string; nom: string | null; version: number; dateMiseAJour: string };
+type ResumeCeli = {
+  cotisationsTotales: number | null;
+  apportsEnNature: number | null;
+  retraitsAnneesPassees: number | null;
+  dateOuverture: string | null;
+  dateImport: string | null;
+  plafond: number | null;
+  plafondDepuis: number | null;
+  plafondMaximalFauteDage: boolean;
+  statut: 'calcule' | 'montant-a-confirmer' | 'indisponible' | 'non-applicable';
+  montant: number | null;
+  borne: number | null;
+  motifs: string[];
+  transfertsATrancher: number;
+  transfertsApparies: number;
+  nbLignes: number;
+};
+
+type ProfilResume = {
+  id: string; nom: string | null; version: number; dateMiseAJour: string;
+  celi: ResumeCeli | null;
+};
 
 type TransfertDouteux = {
   cle: string; compte: string; date: string; montant: number;
@@ -18,6 +39,7 @@ type ResumeImport = {
 };
 
 const argent = (n: number) => `${Math.round(n).toLocaleString('fr-CA')} $`;
+const ouRien = (n: number | null) => (n === null ? '—' : argent(n));
 
 export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResume[] }) {
   const [profils, setProfils] = useState(profilsInitiaux);
@@ -29,6 +51,15 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
   const [idCourant, setIdCourant] = useState<string | null>(null);
   const [douteux, setDouteux] = useState<TransfertDouteux[]>([]);
   const [apparies, setApparies] = useState(0);
+
+  const rafraichirProfils = useCallback(async () => {
+    const r = await fetch('/api/base-locale/profils');
+    if (!r.ok) return;
+    const d = await r.json();
+    setProfils(d.profils ?? []);
+  }, []);
+
+  useEffect(() => { void rafraichirProfils(); }, [rafraichirProfils]);
 
   const chargerTransferts = useCallback(async (id: string) => {
     const res = await fetch(`/api/base-locale/transferts?id=${encodeURIComponent(id)}`);
@@ -55,8 +86,7 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
       setIdCourant(d.profil.id);
       setColle('');
       await chargerTransferts(d.profil.id);
-      const liste = await fetch('/api/base-locale/profils').then((r) => r.json());
-      setProfils(liste.profils ?? []);
+      await rafraichirProfils();
     } catch (e) {
       setErreur(e instanceof Error ? e.message : 'Import impossible');
     } finally {
@@ -198,26 +228,96 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
         </section>
       )}
 
-      {/* ── Les profils existants ──────────────────────────────────────── */}
+      {/* ── Ce que le moteur a dérivé, client par client ───────────────── */}
       {profils.length > 0 && (
-        <section className="rounded-lg border border-border bg-surface">
-          <header className="border-b border-border px-4 py-3">
-            <h2 className="font-semibold text-text-main">Profils enregistrés</h2>
-          </header>
-          <ul className="divide-y divide-border">
-            {profils.map((p) => (
-              <li key={p.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+        <section className="space-y-3">
+          <h2 className="font-semibold text-text-main">Ce que le moteur a dérivé</h2>
+          {profils.map((p) => (
+            <article key={p.id} className="rounded-lg border border-border bg-surface">
+              <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+                <span className="font-semibold text-text-main">{p.nom ?? '(nom inconnu)'}</span>
                 <code className="font-mono text-xs text-text-muted">{p.id}</code>
-                <span className="font-medium text-text-main">{p.nom ?? '(nom inconnu)'}</span>
                 <span className="ml-auto text-xs text-text-muted">
                   version {p.version} · {p.dateMiseAJour}
                 </span>
                 <Button variant="secondary" onClick={() => { setIdCourant(p.id); void chargerTransferts(p.id); }}>
                   Transferts
                 </Button>
-              </li>
-            ))}
-          </ul>
+              </header>
+
+              {!p.celi || p.celi.nbLignes === 0 ? (
+                <p className="px-4 py-3 text-sm text-text-muted">
+                  Aucune ligne de compte CELI dans l&apos;historique importé.
+                </p>
+              ) : (
+                <div className="space-y-3 px-4 py-3 text-sm">
+                  <div className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Cotisations CELI (argent neuf)</span>
+                      <strong className="tabular-nums text-text-main">{ouRien(p.celi.cotisationsTotales)}</strong>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Apports en nature (écartés)</span>
+                      <span className="tabular-nums text-text-muted">{ouRien(p.celi.apportsEnNature)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Retraits des années passées</span>
+                      <strong className="tabular-nums text-text-main">{ouRien(p.celi.retraitsAnneesPassees)}</strong>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Ouverture du CELI</span>
+                      <strong className="tabular-nums text-text-main">{p.celi.dateOuverture ?? '—'}</strong>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Plafond théorique retenu</span>
+                      <span className="tabular-nums text-text-muted">
+                        {ouRien(p.celi.plafond)}
+                        {p.celi.plafondDepuis ? ` (depuis ${p.celi.plafondDepuis})` : ''}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-text-muted">Transferts entrants</span>
+                      <span className="tabular-nums text-text-muted">
+                        {p.celi.transfertsATrancher} à trancher · {p.celi.transfertsApparies} appariés
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={
+                    p.celi.statut === 'calcule'
+                      ? 'rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3'
+                      : 'rounded-lg border border-amber-300 bg-amber-50 px-4 py-3'
+                  }>
+                    {p.celi.statut === 'calcule' ? (
+                      <p className="text-emerald-900">
+                        <strong>Droits CELI : {ouRien(p.celi.montant)}</strong>
+                        <span className="ml-2 text-xs">calculé — les trois conditions sont réunies</span>
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-amber-900">
+                          <strong>Borne supérieure : {ouRien(p.celi.borne)}</strong>
+                          <span className="ml-2 text-xs">
+                            à confirmer — ce n&apos;est PAS le droit réel
+                          </span>
+                        </p>
+                        <ul className="mt-1 list-inside list-disc text-xs text-amber-800">
+                          {p.celi.motifs.map((m) => <li key={m}>{m}</li>)}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+
+                  {p.celi.plafondMaximalFauteDage && (
+                    <p className="text-xs text-text-muted">
+                      L&apos;âge du client est inconnu : le plafond cumulé part de 2009, soit le
+                      maximum possible. Renseigner l&apos;âge resserrerait la borne.
+                    </p>
+                  )}
+                </div>
+              )}
+            </article>
+          ))}
         </section>
       )}
     </div>

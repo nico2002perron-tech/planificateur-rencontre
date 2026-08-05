@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
-import { listerProfils, lireProfil, ecrireProfil, profilPourClient } from '@/lib/profils/stockage';
+import { listerProfils, lireProfil, ecrireProfil, profilPourClient, nomPour } from '@/lib/profils/stockage';
+import { resumeCeli } from '@/lib/profils/resume';
 import type { ProfilClient } from '@/lib/profils/types';
 import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/badges';
 
@@ -43,7 +44,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(avecBadges(profil));
   }
   if (nom) return NextResponse.json(avecBadges(await profilPourClient(nom, date)));
-  return NextResponse.json({ profils: await listerProfils() });
+
+  // La liste porte le RÉSUMÉ DÉRIVÉ de chaque profil : c'est ce que le
+  // planificateur regarde pour valider que les chiffres collent à ce qu'il
+  // sait de ses clients. Sans lui, il devrait ouvrir chaque dossier.
+  const annee = Number.parseInt(date.slice(0, 4), 10);
+  const profils = await listerProfils();
+  const avecResume = [];
+  for (const p of profils) {
+    const complet = await lireProfil(p.id);
+    const nomClient = p.nom ?? (await nomPour(p.id));
+    avecResume.push({
+      ...p,
+      celi: complet && nomClient ? await resumeCeli(complet, nomClient, annee) : null,
+    });
+  }
+  return NextResponse.json({ profils: avecResume });
 }
 
 export async function PUT(req: NextRequest) {

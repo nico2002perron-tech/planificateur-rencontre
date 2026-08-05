@@ -11,7 +11,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function PageProfils() {
   if (!estLocal()) notFound();
-  const profils = await listerProfils();
+  // La page ne sert qu'a l'ossature : le resume derive de chaque profil arrive
+  // par l'API au montage, pour ne pas bloquer le rendu sur la lecture de tous
+  // les grands livres.
+  const profils = (await listerProfils()).map((p) => ({ ...p, celi: null }));
 
   return (
     <div className="space-y-6">
