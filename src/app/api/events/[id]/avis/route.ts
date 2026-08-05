@@ -114,6 +114,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
   }
 
-  const envoyes = await sendEventNotice(event, destinataires, { titre, paragraphes, alerte });
-  return NextResponse.json({ ok: true, cible, destinataires: destinataires.length, envoyes });
+  const { envoyes, invalides, erreurs } = await sendEventNotice(event, destinataires, { titre, paragraphes, alerte });
+  return NextResponse.json({
+    ok: erreurs.length === 0,
+    cible,
+    destinataires: destinataires.length,
+    envoyes,
+    // Adresses malformées dans les inscriptions : écartées pour ne pas faire
+    // rejeter le lot. À corriger à la source, sinon ces gens n'ont jamais rien.
+    ...(invalides.length ? { invalides } : {}),
+    ...(erreurs.length ? { erreurs } : {}),
+  });
 }

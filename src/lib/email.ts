@@ -412,19 +412,35 @@ export interface EventNotice {
   alerte?: string;        // encadré ambre mis en évidence, optionnel
 }
 
+export interface NoticeResult {
+  envoyes: number;
+  invalides: string[];  // adresses écartées avant l'appel (forme invalide)
+  erreurs: string[];    // refus de Resend, par lot — JAMAIS avalés en silence
+}
+
+/**
+ * Forme d'adresse acceptable. Resend REJETTE LE LOT ENTIER si une seule
+ * adresse est malformée (vu en vrai : « prenom,nom@domaine.ca », virgule au
+ * lieu du point) — une adresse fautive ne doit pas priver les 76 autres.
+ */
+const adresseValide = (e: string): boolean => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e.trim());
+
 /**
  * Envoie un avis ponctuel aux destinataires fournis (lots Resend de 100).
  * Volontairement SANS bouton d'agenda ni lien de tournoi : un avis corrige
  * une information, il ne renvoie pas vers celle qu'on vient d'invalider.
- * Retourne le nombre de courriels remis à Resend.
  */
 export async function sendEventNotice(
   event: EventInfo,
   recipients: { email: string; firstName: string }[],
   notice: EventNotice,
-): Promise<number> {
+): Promise<NoticeResult> {
   const resend = getResend();
-  if (!resend || recipients.length === 0) return 0;
+  if (!resend) return { envoyes: 0, invalides: [], erreurs: ['RESEND_API_KEY absente'] };
+
+  const invalides = recipients.filter(r => !adresseValide(r.email)).map(r => r.email);
+  recipients = recipients.filter(r => adresseValide(r.email));
+  if (recipients.length === 0) return { envoyes: 0, invalides, erreurs: [] };
 
   const alerte = notice.alerte
     ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:0 0 18px">
@@ -450,21 +466,26 @@ export async function sendEventNotice(
     };
   });
 
-  let sent = 0;
-  try {
-    for (let i = 0; i < emails.length; i += 100) {
-      const chunk = emails.slice(i, i + 100);
+  let envoyes = 0;
+  const erreurs: string[] = [];
+  for (let i = 0; i < emails.length; i += 100) {
+    const chunk = emails.slice(i, i + 100);
+    try {
       const { error } = await resend.batch.send(chunk);
       if (error) {
+        // Le message de Resend est la seule façon de savoir POURQUOI (adresse
+        // refusée, quota du jour atteint, domaine non vérifié…) — on le remonte.
         console.error('Event notice batch failed:', error);
+        erreurs.push(`${error.name || 'erreur'}: ${error.message || JSON.stringify(error)}`);
         continue;
       }
-      sent += chunk.length;
+      envoyes += chunk.length;
+    } catch (err) {
+      console.error('Event notice email failed:', err);
+      erreurs.push(err instanceof Error ? err.message : String(err));
     }
-  } catch (err) {
-    console.error('Event notice email failed:', err);
   }
-  return sent;
+  return { envoyes, invalides, erreurs };
 }
 
 // ── Tournoi — résultat + prochaine partie (pendant le tournoi, 1 tap) ─────────
