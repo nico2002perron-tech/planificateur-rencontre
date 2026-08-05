@@ -41,6 +41,7 @@ import { Page, Text, View, Svg, Path } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
+import { gestesDe, estDejaEnOrdre } from '@/lib/profils/demarches';
 
 // ── Helpers locaux (copies volontaires : price-targets-template importera cette
 // page — importer ses helpers créerait un cycle de modules) ──
@@ -128,6 +129,7 @@ function IconeStrategie({ strategie, eteinte }: { strategie: string; eteinte: bo
 
 function CarteConstat({ constat }: { constat: Constat }) {
   const t = TON[constat.statut];
+  const gestes = gestesDe(constat);
   return (
     <View
       style={{
@@ -190,6 +192,68 @@ function CarteConstat({ constat }: { constat: Constat }) {
           Pour aller plus loin : {constat.donneesManquantes.join(' · ')}
         </Text>
       )}
+
+      {/* LES DÉMARCHES, SOUS CHAQUE GESTE.
+          Un constat dit ce qui est ; un geste dit ce qu'on fait ; les démarches
+          disent comment. Sans elles, la page se lit comme un diagnostic sans
+          ordonnance. Toutes ces phrases viennent de gabarits déterministes
+          (demarches.ts) : elles sont en nombre fini et un fiscaliste peut les
+          relire une par une. */}
+      {gestes.map((g, i) => (
+        <View key={i} style={{ marginTop: 4, paddingLeft: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+            <Text style={{ fontSize: 7.4, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+              {g.libelle}
+            </Text>
+            <Text style={{ marginLeft: 5, fontSize: 6, color: '#64748b' }}>
+              {PORTEUR[g.porteur]}
+            </Text>
+          </View>
+          {g.demarches.map((d, j) => (
+            <Text key={j} style={{ marginTop: 1, fontSize: 6.8, color: '#475569', lineHeight: 1.35 }}>
+              {j + 1}. {d}
+            </Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Qui pose le geste — le client ne doit pas croire qu'il doit tout faire. */
+const PORTEUR: Record<'client' | 'conseiller' | 'les-deux', string> = {
+  client: 'vous',
+  conseiller: 'nous nous en occupons',
+  'les-deux': 'ensemble',
+};
+
+/**
+ * « DÉJÀ EN ORDRE » — le contrepoids honnête.
+ *
+ * Un document qui ne parle que de ce qui cloche laisse croire que tout cloche.
+ * Ce bloc dit ce qui a été regardé et n'appelle rien. Il ne contient QUE les
+ * constats dont la situation est correcte — jamais ceux où il nous manque une
+ * donnée, qui sont une question à poser, pas une bonne nouvelle.
+ */
+function BlocDejaEnOrdre({ constats }: { constats: Constat[] }) {
+  return (
+    <View
+      style={{
+        marginTop: 4, marginBottom: 7, paddingVertical: 6, paddingHorizontal: 9,
+        backgroundColor: C.duoGreenBg, borderRadius: 2,
+      }}
+    >
+      <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 700, color: '#2f6b12' }}>
+        Déjà en ordre
+      </Text>
+      <Text style={{ marginTop: 1.5, fontSize: 6.8, color: '#3f6b2a', lineHeight: 1.35 }}>
+        Regardé, rien à faire de ce côté.
+      </Text>
+      {constats.map((c) => (
+        <Text key={c.strategie} style={{ marginTop: 2, fontSize: 7, color: '#334155', lineHeight: 1.35 }}>
+          {c.titreClient} — {c.explication}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -234,6 +298,10 @@ function BlocAngleMort({ angleMort }: { angleMort: NonNullable<ResultatAnalyse['
 export function OptimisationsFiscalesPage({ resultat }: { resultat: ResultatAnalyse }) {
   const dateLisible = fmtDate(resultat.date);
   const chiffres = resultat.constats.filter((c) => c.statut === 'calcule');
+  // Deux familles, deux traitements : ce sur quoi on agit, et ce qui est deja
+  // correct. Les melanger noierait les bonnes nouvelles dans les cartes.
+  const enOrdre = resultat.constats.filter(estDejaEnOrdre);
+  const aTravailler = resultat.constats.filter((c) => !estDejaEnOrdre(c));
 
   return (
     <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fffdf9' }]}>
@@ -294,9 +362,11 @@ export function OptimisationsFiscalesPage({ resultat }: { resultat: ResultatAnal
         </View>
       )}
 
-      {resultat.constats.map((c) => (
+      {aTravailler.map((c) => (
         <CarteConstat key={c.strategie} constat={c} />
       ))}
+
+      {enOrdre.length > 0 && <BlocDejaEnOrdre constats={enOrdre} />}
 
       {resultat.angleMort && <BlocAngleMort angleMort={resultat.angleMort} />}
 

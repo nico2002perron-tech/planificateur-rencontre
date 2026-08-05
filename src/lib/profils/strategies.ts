@@ -84,6 +84,15 @@ export type Constat = {
    * l'argument.
    */
   limiteVisibilite: string | null;
+  /**
+   * VRAI quand « non-applicable » veut dire « rien a faire, c'est correct ».
+   *
+   * A ne pas confondre avec le cas ou il nous manque un INTRANT : « aucun
+   * portefeuille cible n'a ete fourni » est aussi non-applicable, mais ce n'est
+   * pas le client qui est en ordre, c'est nous qui n'avons pas la matiere.
+   * Seul le premier cas va dans la section « Deja en ordre ».
+   */
+  dejaEnOrdre: boolean;
 };
 
 export type AngleMort = {
@@ -177,6 +186,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
+    dejaEnOrdre: false,
   };
   const manquantes: string[] = [];
   const nonEnr = positionsNonEnregistrees(profil);
@@ -250,6 +260,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   return {
     ...base,
     statut: absorbable > 0 ? 'calcule' : 'non-applicable',
+    dejaEnOrdre: absorbable <= 0,
     portee: 'declaree',
     montantEstime: absorbable > 0 ? absorbable : null,
     explication: absorbable > 0
@@ -295,6 +306,7 @@ function strategieLocalisation(profil: ProfilClient): Constat {
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
+    dejaEnOrdre: false,
   };
 
   const regimesInconnus = profil.comptes.filter((c) => c.type === null).length;
@@ -337,6 +349,7 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
+    dejaEnOrdre: false,
   };
   const conjoint = profil.demographie.conjoint;
   const droitsConjoint = profil.droits.celiConjointInutilises.montant;
@@ -347,6 +360,7 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
   if (sansConjoint) {
     return {
       ...base, statut: 'non-applicable', portee: 'declaree', montantEstime: null,
+      dejaEnOrdre: true,
       explication: 'Le client n’a pas de conjoint au dossier.',
       donneesManquantes: [],
     };
@@ -405,6 +419,7 @@ function strategieDonTitres(profil: ProfilClient): Constat {
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
+    dejaEnOrdre: false,
   };
   const dons = profil.intentions.donsAnnuelsMoyens;
 
@@ -422,6 +437,7 @@ function strategieDonTitres(profil: ProfilClient): Constat {
   if (dons <= 0) {
     return {
       ...base, statut: 'non-applicable', portee: 'declaree', montantEstime: null,
+      dejaEnOrdre: true,
       explication: 'Le client ne fait pas de dons de bienfaisance. Rien à optimiser ici.',
       donneesManquantes: [],
     };
@@ -438,6 +454,7 @@ function strategieDonTitres(profil: ProfilClient): Constat {
     return {
       ...base,
       statut: aveugles > 0 ? 'indisponible' : 'non-applicable',
+      dejaEnOrdre: aveugles === 0,
       portee: aveugles > 0 ? 'inconnue' : 'declaree',
       montantEstime: null,
       explication: aveugles > 0
@@ -487,11 +504,15 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
+    dejaEnOrdre: false,
   };
 
   if (cible === null) {
     return {
       ...base, statut: 'non-applicable', portee: 'inconnue', montantEstime: null,
+      // PAS « deja en ordre » : c'est NOUS qui n'avons pas la matiere, pas le
+      // client dont la situation serait correcte.
+      dejaEnOrdre: false,
       explication:
         'Aucun portefeuille cible n’a été fourni. Cette stratégie ordonne les ventes pour atteindre une cible ' +
         'en reportant le plus d’impôt possible ; sans cible, il n’y a rien à ordonner.',
