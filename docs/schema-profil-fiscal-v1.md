@@ -282,3 +282,29 @@ regarder ce que contient la **colonne 4** : le chiffre final du numéro, ou la
 lettre de régime du bloc du milieu ? Cette seule observation décide si les
 433 comptes VMBL sont joignables. Tant qu'elle n'est pas faite, ils sortent
 `non-jointable`, ce qui est honnête mais coûteux.
+
+---
+
+## 8. Périmètre du mandat au fiscaliste (5 août 2026)
+
+Le verrou `revisionFiscalisteRequise` couvre **cinq fichiers**, pas trois. Les
+deux derniers portent des règles fiscales écrites avant que le verrou n'existe,
+et il serait facile de les manquer.
+
+| # | Fichier | Ce qu'il faut valider |
+|---|---|---|
+| 1 | `src/lib/profils/strategies.ts` | Les 5 stratégies : conditions de déclenchement, nature de chaque montant, règle transversale « aucun montant à cotiser quand les droits sont inconnus » |
+| 2 | `config/parametres-fiscaux.csv` | Les plafonds CELI 2009-2026. **2026 est marqué `a-confirmer`** |
+| 3 | `src/lib/profils/demarches.ts` | Chaque phrase remise au client, une par une. Contient des règles de délai : date de règlement en fin d'année, perte apparente de 30 jours, pénalité de 1 % par mois |
+| 4 | `src/lib/profils/droits-celi.ts` | **La formule des droits CELI** : `borne = plafond − cotisations + retraits des années passées`, et les trois conditions qui autorisent un montant plutôt qu'une borne |
+| 5 | `src/lib/profils/deriver.ts` | **La règle du retrait** : un retrait de l'année courante ne redonne des droits qu'au 1er janvier suivant, donc il est exclu du calcul. C'est la ligne qui empêche de surestimer les droits |
+
+**Hors mandat, mais à savoir** : `src/lib/film/build-sections.ts` classe les
+comptes par nature fiscale (`abri` / `reporte` / `imposable`) à partir de leur
+suffixe, et cette classification paraît dans le **Rapport vivant HTML**, qui
+circule déjà. Elle est antérieure au chantier fiscal et n'est pas sous verrou.
+Si le fiscaliste a dix minutes de plus, c'est le meilleur endroit où les mettre.
+
+**Ce que le mandat NE couvre pas, à dessein** : la logique de parseur
+(`regles-parseur.md`), qui relève de la lecture des exports Croesus et non du
+droit fiscal.

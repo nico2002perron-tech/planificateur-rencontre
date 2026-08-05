@@ -97,11 +97,16 @@ export function indexerComptesDuLivre(livre: LigneTransaction[]): Map<string, Ca
  * livre. Les confondre avec un compte réellement inconnu ferait disparaître
  * l'écart au lieu de le montrer.
  *
- * ⚠ MESURE JAMAIS FAITE, et elle coûte une capture d'écran : ouvrir un relevé
- * de positions pour un client porteur d'un compte 4A/6A et regarder ce que
- * contient la colonne 4 — le chiffre final du numéro, ou la lettre de régime
- * du bloc du milieu ? Cette seule observation décide si ces 433 comptes sont
- * joignables. Tant qu'elle n'est pas faite, ils sortent `non-jointable`.
+ * ⚠ MESURE OFFICIELLEMENT REPORTÉE — décision de Nicolas, 5 août 2026.
+ *
+ * La question tenait en une observation : ouvrir un relevé de positions pour un
+ * client porteur d'un compte 4A/6A et regarder ce que contient la colonne 4 —
+ * le chiffre final du numéro, ou la lettre de régime du bloc du milieu ?
+ *
+ * Elle reste sans réponse, et c'est assumé : `non-jointable` est le
+ * comportement honnête, et aucune stratégie ne la réclame aujourd'hui.
+ * L'item revient au chantier du catalogue LE JOUR où une stratégie en dépend.
+ * Ne pas la relancer d'ici là — ce n'est pas un oubli, c'est un choix.
  */
 export function jointureDuSuffixe(
   suffixe: string,
