@@ -404,6 +404,69 @@ export async function sendTournamentSchedule(
   return sent;
 }
 
+// ── Avis libre aux participants d'un événement (correction, pluie, changement de lieu…) ──
+
+export interface EventNotice {
+  titre: string;          // gros titre du courriel
+  paragraphes: string[];  // corps — HTML simple permis (<strong>, <em>) : l'appelant est authentifié
+  alerte?: string;        // encadré ambre mis en évidence, optionnel
+}
+
+/**
+ * Envoie un avis ponctuel aux destinataires fournis (lots Resend de 100).
+ * Volontairement SANS bouton d'agenda ni lien de tournoi : un avis corrige
+ * une information, il ne renvoie pas vers celle qu'on vient d'invalider.
+ * Retourne le nombre de courriels remis à Resend.
+ */
+export async function sendEventNotice(
+  event: EventInfo,
+  recipients: { email: string; firstName: string }[],
+  notice: EventNotice,
+): Promise<number> {
+  const resend = getResend();
+  if (!resend || recipients.length === 0) return 0;
+
+  const alerte = notice.alerte
+    ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:0 0 18px">
+         <p style="margin:0;color:#92400e;font-size:14px;line-height:1.55">${notice.alerte}</p>
+       </div>`
+    : '';
+
+  const emails = recipients.map(r => {
+    const corps = notice.paragraphes
+      .map(p => `<p style="margin:0 0 16px;color:#475569;font-size:15px;line-height:1.55">${p}</p>`)
+      .join('');
+    const inner = `
+      <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">${notice.titre}</h1>
+      <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">${event.title} · ${formatDate(event.date)}</p>
+      <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour${r.firstName ? ` <strong>${r.firstName}</strong>` : ''},</p>
+      ${corps}
+      ${alerte}`;
+    return {
+      from: FROM,
+      to: r.email,
+      subject: `${notice.titre} – ${event.title}`,
+      html: emailShell(inner, contactStr(event)),
+    };
+  });
+
+  let sent = 0;
+  try {
+    for (let i = 0; i < emails.length; i += 100) {
+      const chunk = emails.slice(i, i + 100);
+      const { error } = await resend.batch.send(chunk);
+      if (error) {
+        console.error('Event notice batch failed:', error);
+        continue;
+      }
+      sent += chunk.length;
+    }
+  } catch (err) {
+    console.error('Event notice email failed:', err);
+  }
+  return sent;
+}
+
 // ── Tournoi — résultat + prochaine partie (pendant le tournoi, 1 tap) ─────────
 
 export interface MatchResultInfo {
