@@ -22,15 +22,55 @@ echo   --------------------------
 for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "BRANCHE=%%b"
 if defined BRANCHE (echo   branche : !BRANCHE!) else (echo   branche : hors depot git)
 
-if not exist "node_modules\" (
+REM Node absent doit se voir TOUT DE SUITE. Sans cette verification, la fenetre
+REM du serveur s'ouvrait, mourait aussitot, et le lanceur attendait 90 secondes
+REM avant d'afficher un diagnostic trompeur sur le port ou le .env.local.
+where npm >nul 2>&1
+if errorlevel 1 (
   echo.
-  echo   [X] Les dependances ne sont pas installees.
+  echo   [X] Node.js n'est pas installe, ou n'est pas dans le PATH.
   echo.
-  echo       Ouvrez un terminal dans ce dossier et lancez :  npm install
-  echo       Puis relancez ce raccourci.
+  echo       Installez-le depuis https://nodejs.org ^(version LTS^)
+  echo       puis relancez ce raccourci.
   echo.
   pause
   exit /b 1
+)
+
+REM Les dependances : absentes, ou desynchronisees de package-lock.json -- ce
+REM qui arrive apres un git pull qui touche les paquets. Dans les deux cas on
+REM installe ici, plutot que de renvoyer l'usager au terminal : un double-clic
+REM ne doit pas se transformer en session de depannage.
+REM
+REM On COMPARE LE CONTENU du verrou a la copie laissee par la derniere
+REM installation reussie, plutot que des dates. Une comparaison de dates en
+REM batch passe par "dir", qui liste le CONTENU d'un dossier au lieu du dossier
+REM lui-meme : la premiere version de ce bloc reinstallait a chaque lancement.
+set "TEMOIN=node_modules\.lanceur-verrou-copie"
+set "INSTALLER="
+if not exist "node_modules\" set "INSTALLER=1"
+if not defined INSTALLER if not exist "%TEMOIN%" set "INSTALLER=1"
+if not defined INSTALLER (
+  fc /b "package-lock.json" "%TEMOIN%" >nul 2>&1
+  if errorlevel 1 set "INSTALLER=1"
+)
+
+if defined INSTALLER (
+  echo   dependances : installation en cours, quelques minutes...
+  call npm install
+  if errorlevel 1 (
+    echo.
+    echo   [X] L'installation des dependances a echoue.
+    echo       Lisez le message ci-dessus : c'est presque toujours un probleme
+    echo       de reseau ou de pare-feu.
+    echo.
+    pause
+    exit /b 1
+  )
+  copy /y "package-lock.json" "%TEMOIN%" >nul 2>&1
+  echo   dependances : installees
+) else (
+  echo   dependances : a jour
 )
 
 call :TESTER

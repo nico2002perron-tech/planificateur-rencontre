@@ -14,5 +14,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
  " catch { Write-Host ('   impossible d arreter le processus ' + $_) } }"
 
 echo.
-timeout /t 1 /nobreak >nul
+REM CHEMIN COMPLET A DESSEIN : « timeout » tout court resout vers celui de
+REM Windows depuis l'Explorateur, mais vers celui de Git (syntaxe POSIX,
+REM incompatible) depuis un shell Git. Le raccourci du Bureau passe par le
+REM premier ; un lancement depuis un terminal de developpement par le second.
+"%SystemRoot%\System32\timeout.exe" /t 1 /nobreak >nul 2>&1
 exit /b 0
