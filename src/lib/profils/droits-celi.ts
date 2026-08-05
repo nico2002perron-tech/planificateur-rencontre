@@ -6,6 +6,7 @@
 
 import type { ProfilClient, StatutConstat, Portee, TransfertResolu } from './types';
 import { cleTransfert } from './types';
+import { canoniserCompte } from '@/lib/parseur-croesus/identifiant-compte';
 
 /** Un transfert entrant tel que le parseur l'a vu. */
 export type TransfertObserve = {
@@ -35,7 +36,18 @@ export function croiserTransferts(
   observes: TransfertObserve[],
   resolus: TransfertResolu[]
 ): TransfertDouteux[] {
-  const parCle = new Map(resolus.map((r) => [r.cle, r]));
+  // DEUX ENTRÉES PAR RÉSOLUTION : la clé telle qu'elle a été écrite, et sa
+  // réécriture canonique. Les résolutions enregistrées avant le 5 août 2026
+  // portent le compte avec ses tirets ; sans ce repli, le travail de rencontre
+  // déjà fait par le planificateur serait silencieusement perdu.
+  const parCle = new Map<string, TransfertResolu>();
+  for (const r of resolus) {
+    parCle.set(r.cle, r);
+    const [compte, ...reste] = r.cle.split('|');
+    const canonique = [canoniserCompte(compte), ...reste].join('|');
+    if (!parCle.has(canonique)) parCle.set(canonique, r);
+  }
+
   return observes
     .filter((t) => !t.apparie)
     .map((t) => {

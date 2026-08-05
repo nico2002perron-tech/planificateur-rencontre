@@ -1,5 +1,6 @@
 // Sans cycle : croesus-parser n'importe rien de lib/portfolio.
 import { ACCOUNT_TYPE_MAP } from '@/lib/parsers/croesus-parser';
+import { comptesCitesDansTexte, decomposerCompte } from '@/lib/parseur-croesus/identifiant-compte';
 
 export type ActivityPeriod = 'six_months' | 'year_to_date' | 'one_year';
 
@@ -508,9 +509,23 @@ const ACCOUNT_SUFFIX_MAP: Record<string, string> = {
   B: 'Devises',       // compte en devises (USD)
 };
 
-/** Libellé depuis un numéro de compte (37-3B8V-W → W → CELI). */
+/**
+ * Libellé depuis un numéro de compte (37-3B8V-W → W → CELI).
+ *
+ * Passe par `decomposerCompte` : le suffixe est ainsi le même que le numéro
+ * soit écrit « 37-3B8V-W » ou « 373B8VW ». L'ancien `split('-').pop()` rendait
+ * la chaîne entière sur la forme sans tirets, donc `null` en silence.
+ *
+ * NE RECONNAÎT QUE LES COMPTES iA, ET C'EST VOULU. `ACCOUNT_SUFFIX_MAP` est la
+ * table des suffixes iA. Chez VMBL, le régime est le dernier caractère du BLOC
+ * DU MILIEU et R/S sont INVERSÉS : « 4A-XXXX-R » y deviendrait « REER
+ * conjoint » au lieu de REER. Élargir cette fonction aux numéros VMBL
+ * échangerait une erreur connue contre une erreur neuve et silencieuse.
+ */
 function accountLabelFromNumber(num: string): string | null {
-  const suffix = (num.trim().split('-').pop() ?? '').toUpperCase();
+  const d = decomposerCompte(num);
+  if (d?.vmbl) return null;                    // convention incompatible — voir ci-dessus
+  const suffix = d ? d.suffixe : (num.trim().split('-').pop() ?? '').toUpperCase();
   return suffix ? (ACCOUNT_SUFFIX_MAP[suffix] ?? null) : null;
 }
 
@@ -525,9 +540,14 @@ export function accountLabelForTransaction(t: CroesusActivityTransaction): strin
 /** Compte d'une COTISATION = destination. Pour une jambe encaisse, la destination
  *  figure dans la note (« COTIS AU CELI 37-3B8V-W ») ; sinon le compte de la ligne. */
 function contributionAccountLabel(t: CroesusActivityTransaction): string | null {
-  const m = t.note.match(/(\d{2}-[A-Z0-9]+-[A-Z])\b/i);
-  if (m) {
-    const byNote = accountLabelFromNumber(m[1]);
+  // L'ANCIEN MOTIF EXIGEAIT LES TIRETS, un préfixe de deux CHIFFRES et un
+  // suffixe LETTRE. Il ratait donc « COTIS AU CELI 373B8VW » (forme collée),
+  // « TRSF 37-C7LY-6 » (suffixe chiffre) et tous les préfixes non numériques.
+  // La cotisation partait alors sur le compte de la LIGNE au lieu du compte de
+  // DESTINATION cité dans la note : le montant se retrouvait imputé au mauvais
+  // régime dans « cotisations par compte ».
+  for (const cite of comptesCitesDansTexte(t.note)) {
+    const byNote = accountLabelFromNumber(cite);
     if (byNote) return byNote;
   }
   return accountLabelForTransaction(t);

@@ -243,6 +243,11 @@ versionnés sur GitHub, aucun nom de client ne doit y apparaître.
 | 5b | Apport en nature, note `COTISATION EN TITRES` | Étiquette `cotisation` : consomme des droits |
 | 5c | Apport en nature sans note | Étiquette `ambigu` : aucun droit « calculé » tant qu'il n'est pas tranché |
 | 5d | Compte cité sans tirets (`373CUVS`, `6AAZCI0`) | Reconnu comme numéro de compte au même titre que `37-AEF9-R` |
+| 6a | `canoniserCompte('6a-azci-0')` | `6AAZCI0` — tirets, espaces insécables et casse retirés |
+| 6b | `memeCompte('', '')` | `false` — deux inconnus ne sont pas le même compte |
+| 6c | `decomposerCompte('~E-0024I-0')` | bloc du milieu `0024I` : les tirets font foi |
+| 6d | `compteCiteDansTexte('TRANSFERT SALAIRE DIVERS')` | `null` — le préfixe trie les 140 294 mots |
+| 6e | Note `COTIS AU CELI 373B8VW` (PDF annuel) | CELI 13 035,20 $ et non 4 035,20 $ |
 
 ---
 
@@ -258,3 +263,61 @@ les trois qui touchent la lecture brute :
 - **Dédoublonnage multi-ensemble** : le maximum d'occurrences par fichier,
   jamais l'union — les exports se chevauchent et un vrai achat peut légitimement
   apparaître deux fois le même jour.
+
+---
+
+## Règle 6 — un identifiant de compte se compare TOUJOURS canonisé
+
+**La règle générale**, dictée le 5 août 2026 après le défaut de la règle 5 :
+toute comparaison d'identifiants de comptes passe par `canoniserCompte`
+(tirets, espaces — y compris insécables — et casse retirés). Jamais deux
+chaînes brutes. Le module `src/lib/parseur-croesus/identifiant-compte.ts` est
+le seul endroit qui décide de ce qu'est un compte.
+
+**Ce qui a été mesuré** sur le livre complet (1 072 383 lignes, 3 325 comptes
+distincts) et qui justifie chaque constante :
+
+| fait | valeur |
+|---|---|
+| la colonne du numéro de compte porte toujours des tirets | 3 325 / 3 325 |
+| le bloc du milieu fait 4 caractères | 3 316 / 3 325 |
+| l'exception : format `~E-0024I-0`, bloc de 5 | 9 comptes |
+| préfixes réels | 13 : `37` (2810), `4A` (286), `6A` (66), `5A` (45), `00` (37), `36` (23), `34` (21), `6D` (9), `~E` (9), `5M` (8), `6M` (6), `6C` (4), `69` (1) |
+
+**Dans les notes**, les jetons de 7 caractères filtrés par ces 13 préfixes :
+
+| | occurrences |
+|---|---|
+| correspondent à un compte du livre | 31 750 |
+| **absents du livre — les comptes externes** | **48 623** |
+| rejetés par le préfixe | 140 294 |
+
+Les 140 294 rejets sont **tous des mots** : `ARTICLE`, `SALAIRE`, `RETRAIT`,
+`MALBAIE`, `DOLBEAU`, `PAYMENT`, `COMINAR`, `FORTIER`. C'est cette mesure qui
+autorise à relâcher la reconnaissance : le préfixe seul sépare proprement les
+comptes du texte français, là où un motif écrit à la main ne le faisait pas.
+
+**Les tirets font foi quand ils sont là.** `decomposerCompte` découpe sur les
+tirets en priorité, et ne tombe sur le découpage 2-4-1 que pour la forme
+collée. C'est ce qui préserve le format aberrant à bloc de 5, et tout format
+futur, sans avoir à le prévoir.
+
+**Canoniser pour comparer, JAMAIS pour afficher.** Le numéro montré au
+planificateur reste celui de ses écrans Croesus : `compteCiteDansNote` rend
+`37-AEF9-R`, pas `37AEF9R`.
+
+### Ce que la règle 6 a réparé, hors du chantier
+
+`src/lib/portfolio/year-activity.ts` — le PDF d'activité annuelle. Le motif qui
+lisait le compte de destination dans la note exigeait les tirets, un préfixe de
+deux **chiffres** et un suffixe **lettre**. Sur la forme collée, la cotisation
+repartait sur le compte de la **ligne** au lieu du compte de **destination**.
+Mesuré sur la fixture réelle : le CELI affichait **4 035,20 $ au lieu de
+13 035,20 $** — 9 000 $ imputés au mauvais régime. Le total, lui, ne bougeait
+pas : c'est une répartition fausse, donc invisible.
+
+**Précaution retenue** : cette fonction refuse désormais explicitement les
+numéros VMBL. Sa table est celle des suffixes iA, où `R`/`S` sont **inversés**
+par rapport à VMBL. L'élargir aux 424 comptes VMBL aurait échangé une erreur
+connue contre une erreur neuve et silencieuse, sur précisément les comptes que
+l'élargissement prétendait réparer.

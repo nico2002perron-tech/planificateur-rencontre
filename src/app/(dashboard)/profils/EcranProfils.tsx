@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ClipboardPaste, Check, X, HelpCircle, Loader2, ArrowRight } from 'lucide-react';
+import { ClipboardPaste, Check, X, HelpCircle, Loader2, ArrowRight, RotateCcw, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+// L'ALIAS EST OBLIGATOIRE : `Badge` est aussi le nom du composant d'interface.
+import type { Badge as BadgeProfil, CouleurBadge } from '@/lib/profils/badges';
 
 type ResumeCeli = {
   cotisationsTotales: number | null;
@@ -22,9 +24,39 @@ type ResumeCeli = {
   nbLignes: number;
 };
 
+type CompteDerive = {
+  numero: string | null;
+  suffixe: string;
+  provenanceNumero: 'livre' | 'confirme' | 'ambigu' | 'absent' | 'non-jointable';
+  candidats: string[];
+  type: string | null;
+  dateReleve: string | null;
+  positions: Array<{ symbole: string; devise: string; valeurMarchande: number | null }>;
+  encaisse: Array<{ devise: string; montant: number }>;
+};
+
 type ProfilResume = {
   id: string; nom: string | null; version: number; dateMiseAJour: string;
   celi: ResumeCeli | null;
+  badges?: BadgeProfil[];
+  questions?: string[];
+  compteurs?: { auto: number; manuel: number; manquant: number; aReconfirmer: number };
+  comptes?: { comptes: CompteDerive[]; multiClients: boolean } | null;
+};
+
+/** La couleur d'un badge dit la PROVENANCE du champ, jamais sa fraîcheur. */
+const TON: Record<CouleurBadge, string> = {
+  auto: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  manuel: 'border-amber-200 bg-amber-50 text-amber-900',
+  manquant: 'border-gray-200 bg-gray-50 text-text-muted',
+};
+
+const MOT_PROVENANCE: Record<CompteDerive['provenanceNumero'], string> = {
+  livre: 'numéro trouvé au grand livre',
+  confirme: 'numéro confirmé en rencontre',
+  ambigu: 'plusieurs comptes portent ce suffixe — à trancher',
+  absent: 'aucun compte du livre ne porte ce suffixe',
+  'non-jointable': 'compte VMBL : le relevé et le livre ne se comparent pas',
 };
 
 type TransfertDouteux = {
@@ -45,6 +77,8 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
   const [profils, setProfils] = useState(profilsInitiaux);
   const [nomClient, setNomClient] = useState('');
   const [colle, setColle] = useState('');
+  const [collePositions, setCollePositions] = useState('');
+  const [resumePositions, setResumePositions] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [resume, setResume] = useState<ResumeImport | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -94,6 +128,36 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
     }
   }
 
+  async function importerPositions() {
+    setErreur(null);
+    setResumePositions(null);
+    if (!nomClient.trim()) { setErreur('Indiquez le nom du client.'); return; }
+    if (!collePositions.trim()) { setErreur('Collez d’abord le relevé.'); return; }
+    setEnCours(true);
+    try {
+      const res = await fetch('/api/base-locale/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nomClient: nomClient.trim(), texte: collePositions }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Import impossible');
+      const d = await res.json();
+      if (d.refus) { setErreur(d.refus); return; }
+      const ambigus = (d.aTrancher ?? []).length;
+      setResumePositions(
+        `${d.comptes.length} compte(s) lus` +
+          (ambigus > 0 ? ` · ${ambigus} suffixe(s) ambigus` : '') +
+          (d.livreVide ? ' · aucun grand livre importé pour ce client' : '')
+      );
+      setCollePositions('');
+      await rafraichirProfils();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : 'Import impossible');
+    } finally {
+      setEnCours(false);
+    }
+  }
+
   async function resoudre(t: TransfertDouteux, resolution: 'interne' | 'externe') {
     if (!idCourant) return;
     const res = await fetch('/api/base-locale/transferts', {
@@ -103,7 +167,14 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
         id: idCourant, compte: t.compte, date: t.date, montant: t.montant, resolution,
       }),
     });
-    if (res.ok) await chargerTransferts(idCourant);
+    // Trancher un transfert change DEUX badges côté serveur : celui des
+    // transferts résolus, et — sur une résolution « externe » —
+    // `historiqueExterne`. Sans ce second rafraîchissement, les puces mentent
+    // jusqu'au prochain rechargement de page.
+    if (res.ok) {
+      await chargerTransferts(idCourant);
+      await rafraichirProfils();
+    }
   }
 
   const aTrancher = douteux.filter((t) => t.resolution === null).length;
@@ -111,9 +182,9 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
   return (
     <div className="space-y-6">
       {/* ── Import de l'historique complet ─────────────────────────────── */}
-      <section className="rounded-lg border border-border bg-surface">
-        <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <ClipboardPaste className="h-4 w-4 text-primary" />
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
+          <ClipboardPaste className="h-4 w-4 text-brand-primary" />
           <h2 className="font-semibold text-text-main">Importer l&apos;historique complet</h2>
         </header>
         <div className="space-y-3 p-4">
@@ -127,7 +198,7 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
             value={nomClient}
             onChange={(e) => setNomClient(e.target.value)}
             placeholder="Nom du client — le même que sur le rapport"
-            className="w-full max-w-sm rounded-lg border border-border bg-bg-light px-3 py-2 text-sm"
+            className="w-full max-w-sm rounded-lg border border-gray-200 bg-bg-light px-3 py-2 text-sm"
           />
           {nomClient.trim() && (
             <p className="text-xs text-text-muted">
@@ -141,7 +212,7 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
             onChange={(e) => setColle(e.target.value)}
             placeholder="Collez ici les lignes de transactions (20 colonnes, séparées par des tabulations)…"
             rows={6}
-            className="w-full rounded-lg border border-border bg-bg-light px-3 py-2 font-mono text-xs"
+            className="w-full rounded-lg border border-gray-200 bg-bg-light px-3 py-2 font-mono text-xs"
           />
           <div className="flex items-center gap-3">
             <Button onClick={importer} disabled={enCours}>
@@ -151,8 +222,36 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
             {erreur && <span className="text-sm text-red-600">{erreur}</span>}
           </div>
 
+          {/* ── Le relevé de positions : un SECOND collage, à part ──────────
+              Un relevé est un instantané, pas un cumul : le plus récent fait
+              foi et rien n'est fusionné. Fusionner deux instantanés ferait
+              ressusciter les titres vendus. */}
+          <div className="border-t border-gray-200 pt-3">
+            <p className="text-sm text-text-muted">
+              Et, si vous l&apos;avez sous la main, le <strong>relevé de positions</strong> du même
+              client (13 colonnes). Il donne les comptes et leur valeur ; le grand livre lui donne
+              son numéro complet quand il peut le prouver.
+            </p>
+            <textarea
+              value={collePositions}
+              onChange={(e) => setCollePositions(e.target.value)}
+              placeholder="Collez ici le relevé de positions…"
+              rows={4}
+              className="mt-2 w-full rounded-lg border border-gray-200 bg-bg-light px-3 py-2 font-mono text-xs"
+            />
+            <div className="mt-2 flex items-center gap-3">
+              <Button variant="secondary" onClick={importerPositions} disabled={enCours}>
+                <Wallet className="h-4 w-4" />
+                Importer le relevé
+              </Button>
+              {resumePositions && (
+                <span className="text-sm text-text-muted">{resumePositions}</span>
+              )}
+            </div>
+          </div>
+
           {resume && (
-            <div className="rounded-lg border border-border bg-bg-light px-4 py-3 text-sm">
+            <div className="rounded-lg border border-gray-200 bg-bg-light px-4 py-3 text-sm">
               <div className="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-4">
                 <span className="text-text-muted">Lignes lues</span>
                 <strong className="tabular-nums text-text-main">{resume.lues}</strong>
@@ -179,9 +278,9 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
 
       {/* ── Résolution des transferts orphelins ────────────────────────── */}
       {idCourant && (
-        <section className="rounded-lg border border-border bg-surface">
-          <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <HelpCircle className="h-4 w-4 text-primary" />
+        <section className="rounded-lg border border-gray-200 bg-white">
+          <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
+            <HelpCircle className="h-4 w-4 text-brand-primary" />
             <h2 className="font-semibold text-text-main">Transferts entrants à confirmer</h2>
             <span className="ml-auto text-xs text-text-muted">
               {aTrancher} à trancher · {apparies} appariés automatiquement
@@ -233,8 +332,8 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
         <section className="space-y-3">
           <h2 className="font-semibold text-text-main">Ce que le moteur a dérivé</h2>
           {profils.map((p) => (
-            <article key={p.id} className="rounded-lg border border-border bg-surface">
-              <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+            <article key={p.id} className="rounded-lg border border-gray-200 bg-white">
+              <header className="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3">
                 <span className="font-semibold text-text-main">{p.nom ?? '(nom inconnu)'}</span>
                 <code className="font-mono text-xs text-text-muted">{p.id}</code>
                 <span className="ml-auto text-xs text-text-muted">
@@ -313,6 +412,80 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
                       L&apos;âge du client est inconnu : le plafond cumulé part de 2009, soit le
                       maximum possible. Renseigner l&apos;âge resserrerait la borne.
                     </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Les comptes du relevé, et ce que la jointure a pu prouver ──
+                  FRÈRE de la ternaire CELI, jamais dedans : un client sans
+                  ligne CELI est justement celui dont tout est à demander. */}
+              {p.comptes && p.comptes.comptes.length > 0 && (
+                <div className="border-t border-gray-200 px-4 py-3">
+                  <p className="flex items-center gap-1.5 text-xs text-text-muted">
+                    <Wallet className="h-3.5 w-3.5" />
+                    {p.comptes.comptes.length} compte{p.comptes.comptes.length > 1 ? 's' : ''} au
+                    dernier relevé
+                    {p.comptes.comptes[0]?.dateReleve ? ` · ${p.comptes.comptes[0].dateReleve}` : ''}
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {p.comptes.comptes.map((c) => {
+                      const vm = c.positions.reduce((s, x) => s + (x.valeurMarchande ?? 0), 0)
+                        + c.encaisse.reduce((s, x) => s + x.montant, 0);
+                      const prouve = c.provenanceNumero === 'livre' || c.provenanceNumero === 'confirme';
+                      return (
+                        <li key={c.suffixe} className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                          <span className="font-mono text-text-main">
+                            {c.numero ?? `…-${c.suffixe}`}
+                          </span>
+                          <span className="text-text-muted">{c.type ?? 'régime inconnu'}</span>
+                          <span className="tabular-nums text-text-main">{argent(vm)}</span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[11px] ${
+                              prouve ? TON.auto : TON.manquant
+                            }`}
+                            title={c.candidats.length > 1 ? c.candidats.join(' · ') : undefined}
+                          >
+                            {MOT_PROVENANCE[c.provenanceNumero]}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* ── D'où vient chaque champ, et ce qu'il reste à demander ── */}
+              {(p.badges ?? []).length > 0 && (
+                <div className="border-t border-gray-200 px-4 py-3">
+                  <p className="text-xs text-text-muted">
+                    {p.compteurs?.auto ?? 0} automatiques · {p.compteurs?.manuel ?? 0} saisis ·{' '}
+                    {p.compteurs?.manquant ?? 0} manquants
+                    {p.compteurs?.aReconfirmer ? ` · ${p.compteurs.aReconfirmer} à reconfirmer` : ''}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(p.badges ?? []).map((b) => (
+                      <span
+                        key={b.champ}
+                        title={b.date ?? undefined}
+                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${TON[b.couleur]} ${
+                          b.aReconfirmer ? 'border-amber-400' : ''
+                        }`}
+                      >
+                        {b.libelle}
+                        {/* Déjà formatée par badges.ts — la reformater donnerait NaN. */}
+                        {b.valeur && <span className="font-medium tabular-nums">{b.valeur}</span>}
+                        {b.aReconfirmer && <RotateCcw className="h-3 w-3" />}
+                      </span>
+                    ))}
+                  </div>
+
+                  {(p.questions ?? []).length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-text-main">À demander en rencontre</p>
+                      <ol className="mt-1 list-inside list-decimal text-xs text-text-muted">
+                        {(p.questions ?? []).map((q) => <li key={q}>{q}</li>)}
+                      </ol>
+                    </div>
                   )}
                 </div>
               )}

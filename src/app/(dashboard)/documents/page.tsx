@@ -38,7 +38,7 @@ export default async function PageDocuments() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
         <HardDrive className="h-4 w-4 shrink-0 text-text-muted" />
         <span className="text-text-muted">Base locale :</span>
         <code className="font-mono text-text-main">{racine}</code>
@@ -48,7 +48,7 @@ export default async function PageDocuments() {
       </div>
 
       {clients.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-6 py-12 text-center">
+        <div className="rounded-lg border border-dashed border-gray-200 px-6 py-12 text-center">
           <FolderOpen className="mx-auto h-8 w-8 text-text-muted" />
           <p className="mt-3 text-sm text-text-muted">
             Aucun document archivé pour l&apos;instant. Générez un rapport de cours cibles :
@@ -58,9 +58,9 @@ export default async function PageDocuments() {
       ) : (
         <div className="space-y-4">
           {clients.map((client) => (
-            <section key={client.dossier} className="rounded-lg border border-border bg-surface">
-              <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-                <FolderOpen className="h-4 w-4 text-primary" />
+            <section key={client.dossier} className="rounded-lg border border-gray-200 bg-white">
+              <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
+                <FolderOpen className="h-4 w-4 text-brand-primary" />
                 <h2 className="font-semibold text-text-main">{client.dossier}</h2>
                 <span className="ml-auto text-xs text-text-muted">
                   {client.documents.length} document{client.documents.length > 1 ? 's' : ''}

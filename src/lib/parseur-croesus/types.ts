@@ -1,6 +1,10 @@
 // Les types du parseur Croesus. TypeScript pur — aucun import Next.js, React
 // ou Supabase, pour rester testable en isolation (règle 4 du chantier).
 
+import { canoniserCompte, decomposerCompte } from './identifiant-compte';
+
+export { canoniserCompte, memeCompte, decomposerCompte } from './identifiant-compte';
+
 /** Les 20 colonnes d'un export de transactions Croesus, telles quelles. */
 export const COLONNES = [
   'indVM', 'description', 'nom', 'note', 'traitement', 'transaction',
@@ -41,6 +45,11 @@ export type LignePosition = {
   prixUnitaire: number | null;
   coutTotal: number | null;
   valeurMarchande: number | null;
+  /**
+   * Colonne 12. `null` pour une obligation : l'échelle par 100 de la règle 1
+   * n'y a jamais été mesurée, et l'erreur serait d'un facteur 100.
+   */
+  revenuAnnuel: number | null;
 };
 
 /** Ce que le parseur déduit d'un compte enregistré, par année. */
@@ -101,26 +110,29 @@ export const TYPE_PAR_LETTRE_VMBL: Record<string, string> = {
   V: 'ferr',
 };
 
-const FORMAT_VMBL = /^\d[A-Z]-([A-Z0-9]+)-[A-Z0-9]$/i;
-
 /**
- * Le régime d'un compte, quel que soit son format.
+ * Le régime d'un compte, quel que soit SON ÉCRITURE.
+ *
+ * Passe par `decomposerCompte`, donc « 6A-AZCI-0 » et « 6AAZCI0 » rendent le
+ * même régime. Avant le 4 août 2026, la forme sans tirets tombait dans la
+ * table iA par son dernier caractère : un CELI VMBL y devenait `null`, et
+ * l'origine externe d'un transfert passait inaperçue.
  *
  * Rend `null` quand la lettre est inconnue — jamais un régime deviné. 2 739
  * lignes de cotisation du livre sont dans ce cas, et il vaut mieux les
  * déclarer que les ranger au hasard.
  */
 export function typeDeCompte(noCompte: string): string | null {
-  const n = noCompte.trim();
-  const vmbl = FORMAT_VMBL.exec(n);
-  if (vmbl) {
-    const lettre = vmbl[1].slice(-1).toUpperCase();
-    return TYPE_PAR_LETTRE_VMBL[lettre] ?? null;
-  }
-  return TYPE_PAR_SUFFIXE[n.slice(-1).toUpperCase()] ?? null;
+  const d = decomposerCompte(noCompte);
+  if (d?.vmbl) return TYPE_PAR_LETTRE_VMBL[d.milieu.slice(-1)] ?? null;
+  // iA et consorts : c'est le suffixe qui porte le régime. On garde la lecture
+  // par dernier caractère même quand la décomposition échoue — elle a toujours
+  // fonctionné sur les formats qu'on n'a pas encore catalogués.
+  const suffixe = d ? d.suffixe : canoniserCompte(noCompte).slice(-1);
+  return TYPE_PAR_SUFFIXE[suffixe] ?? null;
 }
 
-/** Vrai pour un vieux numéro VMBL (« 4A-… », « 6A-… »). */
+/** Vrai pour un vieux numéro VMBL (« 4A-… », « 6A-… », « 6AAZCI0 »). */
 export function estCompteVMBL(noCompte: string): boolean {
-  return FORMAT_VMBL.test(noCompte.trim());
+  return decomposerCompte(noCompte)?.vmbl ?? false;
 }

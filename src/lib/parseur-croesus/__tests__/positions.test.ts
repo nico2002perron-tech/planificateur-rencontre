@@ -87,8 +87,49 @@ describe('grouperParCompte', () => {
 
   it('accepte une jointure vers le numéro complet quand elle existe', () => {
     const { positions } = parserPositions([FNB, OBLIGATION].join('\n'));
-    const g = grouperParCompte(positions, (s) => (s === 'A' ? '37-FICT-A' : null));
+    const g = grouperParCompte(positions, (s) =>
+      s === 'A'
+        ? { numero: '37-FICT-A', provenance: 'livre', candidats: ['37-FICT-A'] }
+        : { numero: null, provenance: 'absent', candidats: [] }
+    );
     expect(g.find((x) => x.suffixe === 'A')?.numero).toBe('37-FICT-A');
     expect(g.find((x) => x.suffixe === 'S')?.numero).toBeNull();
+  });
+
+  it('TRANSPORTE L’AMBIGUÏTÉ au lieu de choisir un candidat', () => {
+    // 65 clients du livre ont deux comptes finissant par la même lettre.
+    // L'ancienne signature `(suffixe) => string | null` ne pouvait pas dire
+    // « ambigu » : elle forçait un choix, c'est-à-dire une invention.
+    const { positions } = parserPositions([FNB].join('\n'));
+    const g = grouperParCompte(positions, () => ({
+      numero: null, provenance: 'ambigu', candidats: ['37-AAAA-A', '37-BBBB-A'],
+    }));
+    expect(g[0].numero).toBeNull();
+    expect(g[0].provenance).toBe('ambigu');
+    expect(g[0].candidats).toHaveLength(2);
+  });
+
+  it('REFUSE un suffixe vide comme clé de compte', () => {
+    // Sans ce refus, toutes les lignes sans compte de tous les collages
+    // fusionneraient en un compte unique qui n'existe pas.
+    const sansCompte = FNB.split('\t');
+    sansCompte[4] = '';
+    const r = parserPositions(sansCompte.join('\t'));
+    expect(r.positions).toHaveLength(0);
+    expect(r.ignorees).toBe(1);
+    expect(r.suffixes).toEqual([]);
+  });
+
+  it('COMPTE les séparateurs « ### » : un collage multi-clients doit être refusé', () => {
+    const r = parserPositions(['### Client 1', FNB, '### Client 2', OBLIGATION].join('\n'));
+    expect(r.blocs).toBe(2);
+  });
+
+  it('canonise le suffixe : « s » et « S » sont le même compte', () => {
+    const minuscule = FNB.split('\t');
+    minuscule[4] = ' s ';                       // casse ET espaces, comme Excel les livre
+    const r = parserPositions([FNB, minuscule.join('\t')].join('\n'));
+    expect(r.suffixes).toEqual(['S']);
+    expect(grouperParCompte(r.positions)).toHaveLength(1);
   });
 });

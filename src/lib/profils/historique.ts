@@ -139,6 +139,65 @@ export async function importerCollage(params: {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LE RELEVÉ DE POSITIONS — même traitement que les transactions.
+//
+// Le relevé est un INSTANTANÉ, pas un cumul : on ne fusionne rien. Chaque
+// collage est archivé horodaté, et le plus récent fait foi. Fusionner des
+// instantanés ferait ressusciter les titres vendus et gonflerait la valeur
+// marchande — la même famille d'erreur que le portefeuille à 21,9 M$, mais
+// silencieuse, parce que chaque ligne prise isolément reste exacte.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Archive un relevé de positions collé. Rend le chemin et la date retenue. */
+export async function archiverReleve(params: {
+  nomClient: string;
+  texte: string;
+  horodatage: string;
+}): Promise<{ chemin: string; dateReleve: string }> {
+  if (!estLocal()) throw new Error('Import refusé hors exécution locale');
+  if (!params.nomClient?.trim()) throw new Error('Nom du client requis');
+
+  const dossier = dossierTransactions(params.nomClient);
+  await fs.mkdir(dossier, { recursive: true });
+
+  let chemin = path.join(dossier, `${params.horodatage}_releve.txt`);
+  let n = 1;
+  while (await fs.access(chemin).then(() => true).catch(() => false)) {
+    n += 1;
+    chemin = path.join(dossier, `${params.horodatage}_releve_${n}.txt`);
+  }
+  await fs.writeFile(chemin, params.texte, 'utf8');
+  return { chemin, dateReleve: params.horodatage };
+}
+
+/**
+ * Le relevé de positions le plus récent d'un client, ou `null`.
+ *
+ * C'est cette lecture qui permet de DÉRIVER `comptes` à l'affichage plutôt que
+ * de le figer dans le profil : le jour où la jointure s'améliore, tous les
+ * profils se réparent d'un coup.
+ */
+export async function lireDernierReleve(
+  nomClient: string
+): Promise<{ texte: string; dateReleve: string } | null> {
+  if (!estLocal() || !nomClient?.trim()) return null;
+  const dossier = dossierTransactions(nomClient);
+  try {
+    const fichiers = (await fs.readdir(dossier))
+      .filter((f) => /_releve(_\d+)?\.txt$/.test(f))
+      .sort();
+    const dernier = fichiers[fichiers.length - 1];
+    if (!dernier) return null;
+    return {
+      texte: await fs.readFile(path.join(dossier, dernier), 'utf8'),
+      dateReleve: dernier.slice(0, 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Relit le grand livre cumulatif d'un client. */
 export async function lireHistorique(nomClient: string): Promise<LigneTransaction[]> {
   if (!estLocal() || !nomClient?.trim()) return [];

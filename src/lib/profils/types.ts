@@ -3,6 +3,8 @@
 // TypeScript pur : aucun import Next.js, React ou Supabase. Le schéma fait foi ;
 // aucun champ n'est improvisé ici. Toute extension passe d'abord par le document.
 
+import { canoniserCompte } from '@/lib/parseur-croesus/identifiant-compte';
+
 /** Statuts d'un constat — section 1 du schéma. */
 export type StatutConstat = 'calcule' | 'montant-a-confirmer' | 'indisponible' | 'non-applicable';
 
@@ -90,6 +92,13 @@ export type CotisationsAnnee = {
 
 export type Position = {
   symbole: string;
+  /**
+   * LA DEVISE FAIT PARTIE DE L'IDENTITÉ D'UNE POSITION — règle héritée du
+   * grand livre : « clé de position = symbole + devise ». Le CDR canadien et
+   * l'action américaine portent le même symbole ; les confondre a coûté
+   * 65 470 $ d'erreur avant correction.
+   */
+  devise: string;
   categorie: string | null;
   valeurMarchande: number | null;
   /** = PBR. null si absent de l'export → gains latents indisponibles. */
@@ -97,12 +106,54 @@ export type Position = {
   revenuAnnuel: number | null;
 };
 
+/**
+ * D'où vient le numéro complet d'un compte — ajout du 5 août 2026.
+ *
+ * Un relevé de positions ne porte que le SUFFIXE du compte, jamais son numéro.
+ * La jointure vers le livre est donc AMBIGUË PAR NATURE : 65 clients ont deux
+ * comptes finissant par la même lettre. Ce champ dit ce qu'on sait vraiment.
+ *
+ *   livre         un seul compte du livre porte ce suffixe
+ *   confirme      le planificateur a tranché lui-même
+ *   ambigu        plusieurs candidats — le numéro reste null
+ *   absent        aucun candidat : livre pas encore importé, ou compte sans
+ *                 transaction dans la période collée
+ *   non-jointable le compte cherché est un VMBL (suffixe = chiffre) alors que
+ *                 le relevé porte une lettre : les deux ne se comparent pas
+ */
+export type ProvenanceNumero = 'livre' | 'confirme' | 'ambigu' | 'absent' | 'non-jointable';
+
 export type Compte = {
-  /** Numéro complet — la clé durable, jamais le nom. */
-  numero: string;
-  type: TypeCompte;
-  titulaire: Titulaire;
+  /**
+   * Numéro complet — la clé durable. `null` tant qu'il n'est pas PROUVÉ.
+   *
+   * Nullable depuis le 5 août 2026 : le remplir dans les cas ambigus aurait
+   * exigé de choisir un candidat, c'est-à-dire d'écrire une invention dans la
+   * clé durable de laquelle tout le reste dépend ensuite.
+   */
+  numero: string | null;
+  /** Le suffixe du relevé — toujours connu, toujours vrai. L'identité de repli. */
+  suffixe: string;
+  provenanceNumero: ProvenanceNumero;
+  /** Les candidats du livre quand la jointure est ambiguë — matière de l'écran. */
+  candidats: string[];
+  /**
+   * Le régime. `null` quand seul le suffixe est connu : la table des suffixes
+   * est celle d'iA, et rien dans un relevé ne dit de quelle convention relève
+   * le compte. Un « Q » de 2009 y deviendrait un CELIAPP — un régime qui
+   * n'existait pas à l'ouverture du compte.
+   */
+  type: TypeCompte | 'reer-conjoint' | null;
+  /** Aucune source automatique : les 13 colonnes d'un relevé ne le portent pas. */
+  titulaire: Titulaire | null;
+  /** La date du relevé d'où viennent ces positions. Sans elle, deux comptes
+   *  datés de deux mois différents s'additionnent en un total qui n'a jamais
+   *  existé à aucune date. */
+  dateReleve: string | null;
   positions: Position[];
+  /** L'encaisse et la MARGE DÉBITRICE. Sans ce champ, un compte afficherait sa
+   *  valeur marchande sans sa dette. */
+  encaisse: Array<{ devise: string; montant: number }>;
 };
 
 export type TransactionsAnnee = {
@@ -205,7 +256,14 @@ export function profilVierge(id: string, date: string): ProfilClient {
   };
 }
 
-/** La clé stable d'un transfert, pour le retrouver d'un import à l'autre. */
+/**
+ * La clé stable d'un transfert, pour le retrouver d'un import à l'autre.
+ *
+ * Le compte est CANONISÉ : sans ça, un transfert vu une fois « 6A-AZCI-0 » et
+ * une fois « 6AAZCI0 » produirait deux clés, et la résolution manuelle déjà
+ * saisie par le planificateur cesserait de s'y rattacher. Voir
+ * `croiserTransferts`, qui accepte aussi les clés écrites avant ce changement.
+ */
 export function cleTransfert(compte: string, date: string, montant: number): string {
-  return `${compte}|${date}|${montant.toFixed(2)}`;
+  return `${canoniserCompte(compte)}|${date}|${montant.toFixed(2)}`;
 }

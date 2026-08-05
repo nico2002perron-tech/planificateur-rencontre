@@ -4,6 +4,8 @@ import { listerProfils, lireProfil, ecrireProfil, profilPourClient, nomPour } fr
 import { resumeCeli } from '@/lib/profils/resume';
 import type { ProfilClient } from '@/lib/profils/types';
 import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/badges';
+import { deriverComptes } from '@/lib/profils/comptes';
+import { lireDernierReleve, lireHistorique } from '@/lib/profils/historique';
 
 // Profils fiscaux — LOCAL SEULEMENT. 404 hors local avant toute autre chose :
 // on ne confirme même pas l'existence de la route.
@@ -54,9 +56,28 @@ export async function GET(req: NextRequest) {
   for (const p of profils) {
     const complet = await lireProfil(p.id);
     const nomClient = p.nom ?? (await nomPour(p.id));
+    const badges = complet ? badgesProfil(complet, date) : [];
+
+    // LES COMPTES SONT DÉRIVÉS ICI, pas lus dans le profil — même raison que
+    // le résumé CELI : une jointure figée ne bénéficierait d'aucune correction
+    // future et rien ne signalerait qu'elle est périmée.
+    let comptes: Awaited<ReturnType<typeof deriverComptes>> | null = null;
+    if (nomClient) {
+      const releve = await lireDernierReleve(nomClient);
+      if (releve) {
+        comptes = deriverComptes(releve.texte, await lireHistorique(nomClient), {
+          dateReleve: releve.dateReleve,
+        });
+      }
+    }
+
     avecResume.push({
       ...p,
       celi: complet && nomClient ? await resumeCeli(complet, nomClient, annee) : null,
+      badges,
+      questions: questionsRencontre(badges),
+      compteurs: resumeBadges(badges),
+      comptes,
     });
   }
   return NextResponse.json({ profils: avecResume });

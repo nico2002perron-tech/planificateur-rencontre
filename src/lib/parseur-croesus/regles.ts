@@ -2,6 +2,7 @@
 // qui les ont établies. TypeScript pur, fonctions sans effet de bord.
 
 import type { LigneTransaction, FluxCompte } from './types';
+import { canoniserCompte, compteCiteDansTexte } from './identifiant-compte';
 
 /** Lit un nombre au format québécois : « 1 234,56 » → 1234.56. */
 export function nombre(brut: string | null | undefined): number | null {
@@ -155,26 +156,30 @@ const NOTE_VIREMENT_INTERNE =
  * et c'est instructif — il suffit d'UN orphelin pour bloquer un compte, donc
  * affiner l'appariement ne remplacera jamais la résolution manuelle. Le gain
  * réel est ailleurs : 1 556 lignes de bruit en moins à trancher à la main.
- */
-const NOTE_NUMERO_COMPTE =
-  // avec tirets : « 37-AEF9-R », « 4A-Y3VI-6 »
-  /\b\d{2}-[A-Z0-9]{4}-[A-Z0-9]\b|\b[0-9][A-Z]-[A-Z0-9]{4}-[0-9]\b/i;
-
-/**
- * LE MÊME NUMÉRO, ÉCRIT SANS TIRETS — trouvé le 4 août 2026 chez M.C.
+ *
+ * LES DEUX ÉCRITURES, UNE SEULE RECONNAISSANCE — généralisé le 4 août 2026.
  *
  * Croesus écrit aussi les comptes en continu : « CONTRIBUTION REF: 6AAZCI0 »
- * pour 6A-AZCI-0, « VIRE DE 373CUVS » pour 37-3CUV-S. Sans ce motif, un
- * transfert de régime entier passait pour de l'argent neuf.
+ * pour 6A-AZCI-0, « VIRE DE 373CUVS » pour 37-3CUV-S. Sans cette seconde
+ * écriture, un transfert de régime entier passait pour de l'argent neuf.
+ *
+ * La reconnaissance est maintenant DÉLÉGUÉE à `identifiant-compte`, qui trie
+ * par les 13 préfixes réellement observés dans le livre plutôt que par des
+ * motifs écrits à la main. Ce que ça change, mesuré sur les 1 072 383 lignes :
+ * les deux anciens motifs manquaient les préfixes 00, 34, 36, 69 et les
+ * comptes iA dont le suffixe est un chiffre (« 37-C7LY-6 »).
  */
-const NOTE_NUMERO_COMPTE_COLLE =
-  /\b37[A-Z0-9]{4}[A-Z]\b|\b[0-9][A-Z][A-Z0-9]{4}[0-9]\b/i;
 
-/** Le numéro de compte cité dans une note, s'il y en a un. */
+/**
+ * Le numéro de compte cité dans une note, s'il y en a un.
+ *
+ * Rend la forme D'ORIGINE, pas la forme canonique : ce numéro finit sous les
+ * yeux du planificateur, dans la liste des transferts à trancher, et il doit
+ * ressembler à ce que Croesus lui montre. La canonisation sert à COMPARER,
+ * jamais à afficher.
+ */
 export function compteCiteDansNote(note: string): string | null {
-  const n = note ?? '';
-  const m = NOTE_NUMERO_COMPTE.exec(n) || NOTE_NUMERO_COMPTE_COLLE.exec(n);
-  return m ? m[0].toUpperCase() : null;
+  return compteCiteDansTexte(note);
 }
 
 /**
