@@ -17,14 +17,37 @@ import path from 'node:path';
  * Surchargeable par BASE_LOCALE_RACINE dans .env.local (non commité).
  */
 export function racineBaseLocale(): string {
-  const surcharge = process.env.BASE_LOCALE_RACINE?.trim();
-  if (surcharge) return path.resolve(surcharge);
-  return process.platform === 'win32'
+  const defaut = process.platform === 'win32'
     ? 'C:\\planificateur-donnees'
     : path.join(process.env.HOME || '.', 'planificateur-donnees');
+
+  const surcharge = process.env.BASE_LOCALE_RACINE?.trim();
+  if (!surcharge) return defaut;
+
+  const resolu = path.resolve(surcharge);
+
+  // ═══ GARDE : LA BASE NE DOIT JAMAIS TOMBER DANS LE DÉPÔT ═══════════════════
+  // Vécu le 4 août 2026 : une variable mal formée — « C:planificateur-donnees »
+  // au lieu de « C:\planificateur-donnees », un backslash perdu — devient un
+  // chemin RELATIF, que path.resolve rattache au répertoire courant. Résultat :
+  // des documents et des profils clients écrits DANS le dépôt, sous OneDrive,
+  // et non ignorés par git. Le scénario exact que ce chantier veut rendre
+  // impossible.
+  //
+  // On refuse donc silencieusement une racine située sous le projet et on
+  // retombe sur le défaut, en le disant.
+  const projet = path.resolve(process.cwd());
+  if (resolu === projet || resolu.startsWith(projet + path.sep)) {
+    console.error(
+      `[base-locale] BASE_LOCALE_RACINE (« ${surcharge} ») tombe dans le projet `
+      + `(${resolu}) — refusé. Un chemin ABSOLU est requis. Retour au défaut : ${defaut}`
+    );
+    return defaut;
+  }
+  return resolu;
 }
 
-export const SOUS_DOSSIERS = ['documents', 'profils', 'historiques'] as const;
+export const SOUS_DOSSIERS = ['documents', 'transactions', 'profils'] as const;
 
 export type TypeDocument = 'cours-cibles' | 'rencontre-complete' | 'proposition';
 
@@ -59,6 +82,18 @@ export function nomDossierClient(nom: string): string {
 /** Le dossier des documents d'un client. */
 export function dossierDocuments(nomClient: string): string {
   return path.join(racineBaseLocale(), 'documents', nomDossierClient(nomClient));
+}
+
+/**
+ * Le dossier des transactions d'un client.
+ *
+ * MÊME NOM DE DOSSIER QUE SES DOCUMENTS, et c'est voulu : le planificateur
+ * saisit UN seul nom au moment de produire un rapport, et ce nom commande tout
+ * le rangement. Dans l'explorateur, « Tremblay-Michel » se retrouve à
+ * l'identique sous `documents\` et sous `transactions\`.
+ */
+export function dossierTransactions(nomClient: string): string {
+  return path.join(racineBaseLocale(), 'transactions', nomDossierClient(nomClient));
 }
 
 /**

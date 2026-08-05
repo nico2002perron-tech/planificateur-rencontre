@@ -56,3 +56,8 @@ output/
 # historiques de transactions Croesus). Noms de clients en clair : NE JAMAIS
 # VERSIONNER. Voir docs/installation-locale.md.
 donnees-locales/
+
+# Garde-fou : si BASE_LOCALE_RACINE est mal formee (chemin relatif), la base
+# locale se creerait DANS le depot. Ces motifs ne doivent jamais etre versionnes.
+planificateur-donnees/
+*-donnees/

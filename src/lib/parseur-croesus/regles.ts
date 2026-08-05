@@ -1,0 +1,292 @@
+// LES QUATRE RÈGLES DU PARSEUR — voir docs/regles-parseur.md pour les mesures
+// qui les ont établies. TypeScript pur, fonctions sans effet de bord.
+
+import type { LigneTransaction, FluxCompte } from './types';
+import { canoniserCompte, compteCiteDansTexte } from './identifiant-compte';
+
+/** Lit un nombre au format québécois : « 1 234,56 » → 1234.56. */
+export function nombre(brut: string | null | undefined): number | null {
+  const t = String(brut ?? '')
+    .replace(/[\s $]/g, '')
+    .replace(/\((.*)\)/, '-$1')       // « (1 234,56) » = négatif
+    .replace(/,/g, '.');
+  if (t === '' || t === '-') return null;
+  const n = Number.parseFloat(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RÈGLE 1 · L'ÉCHELLE PAR 100 DES OBLIGATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Dérive une valeur unitaire d'un total et d'une quantité.
+ *
+ * C'EST LA SEULE FAÇON CORRECTE. La colonne unitaire d'une obligation est
+ * exprimée pour 100 $ de nominal : `Q273A4` porte 100,000 pour une position de
+ * 39 000 $ (39 000 × 100 donnerait 3,9 M$). La division porte l'échelle en
+ * elle et vaut pour tous les instruments sans avoir à les distinguer.
+ */
+export function unitaireDerive(total: number | null, quantite: number | null): number | null {
+  if (total === null || quantite === null) return null;
+  if (Math.abs(quantite) < 1e-9) return null;
+  return Math.abs(total / quantite);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RÈGLE 2 · LA PARTIE DOUBLE DES COTISATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SYMBOLES_ENCAISSE = new Set(['1CAD', '1USD']);
+
+export function estEncaisse(symbole: string): boolean {
+  return SYMBOLES_ENCAISSE.has(symbole.trim().toUpperCase());
+}
+
+/**
+ * Sépare les cotisations en ARGENT NEUF des apports EN NATURE.
+ *
+ * Une cotisation en nature s'écrit deux fois — une jambe argent et une jambe
+ * titre de montant opposé, même compte, même date. Les additionner double le
+ * montant ; et surtout, la jambe argent appariée n'est PAS de l'argent neuf :
+ * c'est un apport de titres, souvent un transfert de régime qui ne consomme
+ * aucun droit de cotisation.
+ *
+ * Mesuré sur le livre : 46 % des « cotisations » CELI sont appariées
+ * (12,7 M$ sur 27,3 M$). Un compte affichait 300 221 $ de cotisations pour un
+ * CELI ouvert le mois précédent — impossible, et expliqué par l'appariement.
+ */
+export function separerCotisations(lignes: LigneTransaction[]): {
+  argentNeuf: number;
+  apportsEnNature: number;
+  /** Les apports en nature, ventilés par étiquette (règle 5). */
+  parEtiquette: Record<EtiquetteApport, number>;
+  /** Les apports à trancher : transferts et ambigus, un par ligne. */
+  apportsATrancher: Array<{
+    date: string; compte: string; montant: number; note: string;
+    etiquette: EtiquetteApport; compteOrigine: string | null;
+  }>;
+} {
+  const cotisations = lignes.filter((l) => l.type === 'Cotisation');
+  const jambesTitre = cotisations.filter(
+    (l) => !estEncaisse(l.symbole) && l.symbole !== '' && l.total !== null && l.total !== 0
+  );
+  const jambesArgent = cotisations.filter(
+    (l) => estEncaisse(l.symbole) && (l.total ?? 0) > 0
+  );
+
+  const restants = [...jambesTitre];
+  let apportsEnNature = 0;
+  let argentNeuf = 0;
+  const parEtiquette: Record<EtiquetteApport, number> = { cotisation: 0, transfert: 0, ambigu: 0 };
+  const apportsATrancher: Array<{
+    date: string; compte: string; montant: number; note: string;
+    etiquette: EtiquetteApport; compteOrigine: string | null;
+  }> = [];
+
+  for (const argent of jambesArgent) {
+    const montant = argent.total as number;
+    const i = restants.findIndex(
+      (t) =>
+        t.date === argent.date &&
+        t.noCompte === argent.noCompte &&
+        Math.abs(Math.abs(t.total as number) - montant) < 0.02
+    );
+    if (i < 0) {
+      // Pas de contrepartie titre : de l'argent. Mais la NOTE peut quand même
+      // le désigner comme venant d'un autre compte (l'encaisse d'un transfert
+      // de régime arrive ainsi : « CONTRIBUTION REF: 6AAZCI0 »).
+      const etiq = etiquetteApportEnNature(argent.note);
+      if (etiq === 'transfert') {
+        parEtiquette.transfert += montant;
+        apportsATrancher.push({
+          date: argent.date, compte: argent.noCompte, montant, note: argent.note,
+          etiquette: 'transfert', compteOrigine: compteCiteDansNote(argent.note),
+        });
+      } else {
+        argentNeuf += montant;
+        parEtiquette.cotisation += montant;
+      }
+      continue;
+    }
+
+    // Apport EN NATURE : c'est l'étiquette de la JAMBE TITRE qui fait foi,
+    // c'est elle qui porte la référence au compte d'origine.
+    const titre = restants[i];
+    restants.splice(i, 1);
+    apportsEnNature += montant;
+    const etiq = etiquetteApportEnNature(titre.note || argent.note);
+    parEtiquette[etiq] += montant;
+
+    if (etiq === 'cotisation') {
+      // Des titres apportés depuis un compte NON enregistré : ça consomme des
+      // droits, exactement comme de l'argent.
+      argentNeuf += montant;
+    } else {
+      apportsATrancher.push({
+        date: titre.date, compte: titre.noCompte, montant, note: titre.note || argent.note,
+        etiquette: etiq, compteOrigine: compteCiteDansNote(titre.note || argent.note),
+      });
+    }
+  }
+  return { argentNeuf, apportsEnNature, parEtiquette, apportsATrancher };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RÈGLES 3 ET 4 · VIREMENT INTERNE, TRANSFERT EXTERNE, ET LE DOUTE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Motifs de note qui désignent un AUTRE COMPTE DU MÊME CLIENT.
+ * Relevés sur le livre réel : 5 069 transferts entrants les portent.
+ */
+const NOTE_VIREMENT_INTERNE =
+  /TRANSFERE?\s+A\b|VIRE\s+DE\b|\bTRSF\b|ARTICLE\s+146\s*\(\s*16\s*\)/i;
+
+/**
+ * UN NUMÉRO DE COMPTE DANS LA NOTE — ajouté le 4 août 2026.
+ *
+ * Nicolas : « ça commence toujours par 37 normalement, et ceux qui font genre
+ * 4A et 6A c'est les vieux numéros de compte [VMBL] ». Une note qui NOMME un
+ * compte désigne une contrepartie identifiée : c'est un virement interne.
+ * Motifs réels : « A 37-AEF9-R - 146(16) », « 4A-Y3VI-6 », « 6A-CDTR-9 ».
+ *
+ * MESURE : +1 556 lignes reconnues (28 % → 37 % des transferts entrants).
+ * Effet sur les comptes débloqués : 253 → 247 sur 267, soit 2 points. Modeste,
+ * et c'est instructif — il suffit d'UN orphelin pour bloquer un compte, donc
+ * affiner l'appariement ne remplacera jamais la résolution manuelle. Le gain
+ * réel est ailleurs : 1 556 lignes de bruit en moins à trancher à la main.
+ *
+ * LES DEUX ÉCRITURES, UNE SEULE RECONNAISSANCE — généralisé le 4 août 2026.
+ *
+ * Croesus écrit aussi les comptes en continu : « CONTRIBUTION REF: 6AAZCI0 »
+ * pour 6A-AZCI-0, « VIRE DE 373CUVS » pour 37-3CUV-S. Sans cette seconde
+ * écriture, un transfert de régime entier passait pour de l'argent neuf.
+ *
+ * La reconnaissance est maintenant DÉLÉGUÉE à `identifiant-compte`, qui trie
+ * par les 13 préfixes réellement observés dans le livre plutôt que par des
+ * motifs écrits à la main. Ce que ça change, mesuré sur les 1 072 383 lignes :
+ * les deux anciens motifs manquaient les préfixes 00, 34, 36, 69 et les
+ * comptes iA dont le suffixe est un chiffre (« 37-C7LY-6 »).
+ */
+
+/**
+ * Le numéro de compte cité dans une note, s'il y en a un.
+ *
+ * Rend la forme D'ORIGINE, pas la forme canonique : ce numéro finit sous les
+ * yeux du planificateur, dans la liste des transferts à trancher, et il doit
+ * ressembler à ce que Croesus lui montre. La canonisation sert à COMPARER,
+ * jamais à afficher.
+ */
+export function compteCiteDansNote(note: string): string | null {
+  return compteCiteDansTexte(note);
+}
+
+/**
+ * VOLONTAIREMENT NON RECONNUS, malgré leur fréquence — règle 4 :
+ *   « TFR-146(16) » (256 lignes), « TFR-146.3(2)(E) » (78) : l'article 146(16)
+ *   autorise le transfert direct entre REER, Y COMPRIS ENTRE INSTITUTIONS. Le
+ *   citer ne prouve donc RIEN sur l'internalité — sauf quand un numéro de
+ *   compte l'accompagne, et là c'est le motif ci-dessus qui tranche.
+ *   « TRANSFERT DE FONDS » (226), « PAIEMENT RETRAITE » (907) : trop vagues.
+ * Dans le doute, la borne.
+ */
+
+/** Règle 3 : la note prouve-t-elle un virement interne ? */
+export function estVirementInterne(note: string): boolean {
+  const n = note ?? '';
+  return NOTE_VIREMENT_INTERNE.test(n) || compteCiteDansNote(n) !== null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RÈGLE 5 · L'ÉTIQUETTE D'UN APPORT EN NATURE (4 août 2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ce qu'est vraiment un apport de titres dans un compte enregistré.
+ *
+ * Décision du planificateur : « une cotisation en titres est normalement
+ * étiquetée comme telle dans Croesus — classe-les par leur type/note, pas par
+ * le seul appariement ».
+ *
+ *   cotisation  le client a apporté des titres qu'il possédait ailleurs en
+ *               non-enregistré : ça CONSOMME des droits, ça compte.
+ *   transfert   les titres viennent d'un autre compte enregistré (la note cite
+ *               le compte d'origine) : ça ne consomme AUCUN droit, mais c'est
+ *               une PREUVE D'ORIGINE EXTERNE au même titre qu'un virement
+ *               d'argent — donc à trancher.
+ *   ambigu      rien ne permet de dire. À trancher, et aucun droit calculé
+ *               tant que ça dure : les cotisations faites ailleurs AVANT le
+ *               transfert nous sont invisibles.
+ */
+export type EtiquetteApport = 'cotisation' | 'transfert' | 'ambigu';
+
+const NOTE_COTISATION_FRANCHE = /\bCOTISATION\b/i;
+
+export function etiquetteApportEnNature(note: string): EtiquetteApport {
+  const n = (note ?? '').trim();
+  // Un compte cité = les titres viennent de LÀ. C'est la preuve la plus forte,
+  // elle prime sur le vocabulaire employé (« CONTRIBUTION REF: 6AAZCI0 » est
+  // un transfert, malgré le mot « contribution »).
+  if (compteCiteDansNote(n) !== null) return 'transfert';
+  if (NOTE_VIREMENT_INTERNE.test(n)) return 'transfert';
+  if (NOTE_COTISATION_FRANCHE.test(n)) return 'cotisation';
+  return 'ambigu';
+}
+
+const TYPES_ENTREE = new Set(['Transfert', 'Réception']);
+
+/**
+ * Analyse les flux d'un compte enregistré : cotisations, retraits, et le
+ * drapeau qui décide si les droits sont calculables ou seulement bornés.
+ *
+ * RÈGLE 4 — L'ASYMÉTRIE VOULUE : un transfert entrant SANS note d'appariement
+ * est présumé EXTERNE. L'absence de preuve d'appariement n'est pas une preuve
+ * d'absence de compte externe. Décision du planificateur (4 août 2026) :
+ * « dans le doute on rétrograde vers la borne, jamais l'inverse, parce qu'un
+ * chiffre de droits CELI faux est pire qu'une borne prudente ». Un droit
+ * surestimé coûte au client une pénalité de 1 % par mois ; une borne prudente
+ * ne coûte qu'une question de plus en rencontre.
+ */
+export function analyserFluxCompte(lignes: LigneTransaction[]): FluxCompte {
+  const { argentNeuf, apportsEnNature, apportsATrancher } = separerCotisations(lignes);
+
+  const retraits = lignes
+    .filter((l) => l.type === 'Retrait' && (l.total ?? 0) < 0)
+    .reduce((s, l) => s + Math.abs(l.total as number), 0);
+
+  const transferts = lignes
+    .filter((l) => TYPES_ENTREE.has(l.type) && (l.total ?? 0) > 0)
+    .map((l) => ({
+      date: l.date,
+      montant: l.total as number,
+      apparie: estVirementInterne(l.note),
+      note: l.note,
+    }));
+
+  // RÈGLE 5 — LES ARRIVÉES EN NATURE REJOIGNENT LES TRANSFERTS À TRANCHER.
+  // C'était le trou : une cotisation en titres venant d'un autre régime est
+  // une preuve d'origine externe au même titre qu'un virement d'argent, et
+  // elle échappait entièrement à la détection.
+  for (const a of apportsATrancher) {
+    transferts.push({
+      date: a.date,
+      montant: a.montant,
+      // Un apport ETIQUETE transfert n'est PAS « apparié » au sens de la
+      // règle 3 : savoir d'où il vient ne dit rien de ce qui a été cotisé
+      // AVANT, dans le compte d'origine. Il reste donc à trancher.
+      apparie: false,
+      note: a.note,
+    });
+  }
+
+  const transfertEntrantDetecte = transferts.some((t) => !t.apparie);
+
+  return {
+    cotisations: argentNeuf,
+    retraits,
+    apportsEnNature,
+    transfertEntrantDetecte,
+    transferts,
+  };
+}

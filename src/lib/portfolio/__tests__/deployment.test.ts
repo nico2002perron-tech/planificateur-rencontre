@@ -388,6 +388,27 @@ describe("buildDeploymentSummary — données réelles (partie double)", () => {
     expect(byAcct["REER conjoint"]).toBeCloseTo(5900, 2);
   });
 
+  it("LE COMPTE CITÉ DANS LA NOTE EST RECONNU SANS SES TIRETS", () => {
+    // Croesus écrit le même compte des deux façons : « 37-3B8V-W » et
+    // « 373B8VW ». L'ancien motif exigeait les tirets, un préfixe de deux
+    // CHIFFRES et un suffixe LETTRE : sur la forme collée, la cotisation
+    // repartait sur le compte de la LIGNE (37-3B8V-A = Comptant) au lieu du
+    // compte de DESTINATION cité dans la note. Le total ne bougeait pas —
+    // c'est la répartition par régime qui était fausse, donc invisible.
+    const colle = REEL.map((r) => [...r]);
+    colle[1][1] = 'COTIS AU CELI 373B8VW';                 // sans tirets
+    colle[6][1] = 'FIRM CAP C28 CONT AU CELI 373B8VW';
+    const d2 = buildDeploymentSummary(
+      parseCroesusActivity(colle.map((r) => r.join(T)).join('\n')), 'year_to_date',
+      [{ symbol: 'MSFT', quantity: 325, marketValue: 8710, currentPrice: 26.8 },
+       { symbol: 'TRI', quantity: 43, marketValue: 5190.96, currentPrice: 120.72 },
+       { symbol: 'FC.DB.M', quantity: 4000, marketValue: 4112, currentPrice: 1.028 }],
+      { endDate: END, cashBalance: 17535.52 })!;
+    const byAcct = Object.fromEntries((d2.contributionsByAccount ?? []).map((a) => [a.label, a.amountCad]));
+    expect(byAcct['CELI']).toBeCloseTo(13035.20, 2);
+    expect(byAcct['REER conjoint']).toBeCloseTo(5900, 2);
+  });
+
   it("dépôt (43 500) et encaisse (17 535,52) distincts des cotisations", () => {
     expect(d.deposits).toBeCloseTo(43500, 2);
     expect(d.cashOnHand).toBeCloseTo(17535.52, 2);

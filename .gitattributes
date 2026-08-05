@@ -1,0 +1,3 @@
+
+# Les .bat sont des scripts Windows : jamais convertis en LF par git.
+*.bat text eol=crlf
