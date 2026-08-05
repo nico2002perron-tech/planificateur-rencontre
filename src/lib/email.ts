@@ -404,6 +404,90 @@ export async function sendTournamentSchedule(
   return sent;
 }
 
+// ── Avis libre aux participants d'un événement (correction, pluie, changement de lieu…) ──
+
+export interface EventNotice {
+  titre: string;          // gros titre du courriel
+  paragraphes: string[];  // corps — HTML simple permis (<strong>, <em>) : l'appelant est authentifié
+  alerte?: string;        // encadré ambre mis en évidence, optionnel
+}
+
+export interface NoticeResult {
+  envoyes: number;
+  invalides: string[];  // adresses écartées avant l'appel (forme invalide)
+  erreurs: string[];    // refus de Resend, par lot — JAMAIS avalés en silence
+}
+
+/**
+ * Forme d'adresse acceptable. Resend REJETTE LE LOT ENTIER si une seule
+ * adresse est malformée (vu en vrai : « prenom,nom@domaine.ca », virgule au
+ * lieu du point) — une adresse fautive ne doit pas priver les 76 autres.
+ */
+const adresseValide = (e: string): boolean => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(e.trim());
+
+/**
+ * Envoie un avis ponctuel aux destinataires fournis (lots Resend de 100).
+ * Volontairement SANS bouton d'agenda ni lien de tournoi : un avis corrige
+ * une information, il ne renvoie pas vers celle qu'on vient d'invalider.
+ */
+export async function sendEventNotice(
+  event: EventInfo,
+  recipients: { email: string; firstName: string }[],
+  notice: EventNotice,
+): Promise<NoticeResult> {
+  const resend = getResend();
+  if (!resend) return { envoyes: 0, invalides: [], erreurs: ['RESEND_API_KEY absente'] };
+
+  const invalides = recipients.filter(r => !adresseValide(r.email)).map(r => r.email);
+  recipients = recipients.filter(r => adresseValide(r.email));
+  if (recipients.length === 0) return { envoyes: 0, invalides, erreurs: [] };
+
+  const alerte = notice.alerte
+    ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:0 0 18px">
+         <p style="margin:0;color:#92400e;font-size:14px;line-height:1.55">${notice.alerte}</p>
+       </div>`
+    : '';
+
+  const emails = recipients.map(r => {
+    const corps = notice.paragraphes
+      .map(p => `<p style="margin:0 0 16px;color:#475569;font-size:15px;line-height:1.55">${p}</p>`)
+      .join('');
+    const inner = `
+      <h1 style="margin:0 0 6px;color:#03045e;font-size:23px">${notice.titre}</h1>
+      <p style="margin:0 0 22px;color:#0077b6;font-size:14px;font-weight:bold">${event.title} · ${formatDate(event.date)}</p>
+      <p style="margin:0 0 14px;color:#1e293b;font-size:15px">Bonjour${r.firstName ? ` <strong>${r.firstName}</strong>` : ''},</p>
+      ${corps}
+      ${alerte}`;
+    return {
+      from: FROM,
+      to: r.email,
+      subject: `${notice.titre} – ${event.title}`,
+      html: emailShell(inner, contactStr(event)),
+    };
+  });
+
+  let envoyes = 0;
+  const erreurs: string[] = [];
+  for (let i = 0; i < emails.length; i += 100) {
+    const chunk = emails.slice(i, i + 100);
+    try {
+      const { error } = await resend.batch.send(chunk);
+      if (error) {
+        // Le message de Resend est la seule façon de savoir POURQUOI (adresse
+        // refusée, quota du jour atteint, domaine non vérifié…) — on le remonte.
+        console.error('Event notice batch failed:', error);
+        erreurs.push(`${error.name || 'erreur'}: ${error.message || JSON.stringify(error)}`);
+        continue;
+      }
+      envoyes += chunk.length;
+    } catch (err) {
+      console.error('Event notice email failed:', err);
+      erreurs.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { envoyes, invalides, erreurs };
+}
+
 // ── Tournoi — résultat + prochaine partie (pendant le tournoi, 1 tap) ─────────
 
 export interface MatchResultInfo {
