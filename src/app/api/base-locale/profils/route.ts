@@ -5,7 +5,8 @@ import { resumeCeli } from '@/lib/profils/resume';
 import type { ProfilClient } from '@/lib/profils/types';
 import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/badges';
 import { deriverComptes } from '@/lib/profils/comptes';
-import { analyser } from '@/lib/profils/strategies';
+import { parametresReee } from '@/lib/profils/parametres-fiscaux';
+import { analyser, etatDetection, classerManques } from '@/lib/profils/strategies';
 import { lireDernierReleve, lireHistorique } from '@/lib/profils/historique';
 import { hydraterProfil } from '@/lib/profils/hydrater';
 
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
     // les gains de l'annee, et rend « indisponible » sur toute la ligne meme
     // quand les donnees sont au dossier.
     const fiscal = complet
-      ? analyser(await hydraterProfil(complet, nomClient, annee), null, date)
+      ? analyser(await hydraterProfil(complet, nomClient, annee), null, date, parametresReee(annee))
       : null;
 
     avecResume.push({
@@ -92,6 +93,21 @@ export async function GET(req: NextRequest) {
       compteurs: resumeBadges(badges),
       comptes,
       constats: fiscal?.constats ?? [],
+      // L'ETAT DU DETECTEUR : ou en est-on, et surtout quelle donnee
+      // debloquerait le plus de pistes. C'est le principe central de l'ecran.
+      detection: fiscal ? etatDetection(fiscal) : null,
+      manques: fiscal ? classerManques(fiscal) : [],
+      fiche: complet
+        ? {
+            age: complet.demographie.age,
+            etatCivil: complet.demographie.etatCivil,
+            enfants: complet.demographie.enfants,
+            trancheRevenu: complet.revenus.trancheRevenu,
+            trancheRevenuConjoint: complet.demographie.conjoint.trancheRevenu,
+            droits: complet.droits,
+            donsAnnuelsMoyens: complet.intentions.donsAnnuelsMoyens,
+          }
+        : null,
       selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },
       consolidation: complet?.consolidation ?? null,
     });

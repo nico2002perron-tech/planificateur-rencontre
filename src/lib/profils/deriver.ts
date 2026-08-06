@@ -148,5 +148,43 @@ export function deriverCotisationsAnnee(lignes: LigneTransaction[], annee: numbe
     for (const [, ls] of parCompte) t += analyserFluxCompte(ls).cotisations;
     return t;
   };
-  return { reer: somme('reer'), celi: somme('celi'), portee: 'interne-seulement' as const };
+  return {
+    reer: somme('reer'),
+    celi: somme('celi'),
+    reeeParEnfant: cotisationsReeeParEnfant(delAnnee),
+    portee: 'interne-seulement' as const,
+  };
+}
+
+/**
+ * LES COTISATIONS REEE, VENTILEES PAR ENFANT.
+ *
+ * Mesure sur le livre (6 aout 2026) : 110 comptes REEE, 23 326 lignes, et les
+ * cotisations portent le beneficiaire dans leur note -- « CONTRIBUTION
+ * 01LAURIE », « CONTRIBUTION 03JULES ». Le chiffre qui precede est un rang
+ * interne, pas une partie du prenom.
+ *
+ * POURQUOI PAR LA NOTE ET PAS PAR LE COMPTE : un REEE familial sert plusieurs
+ * enfants sous un seul numero. Compter par compte melerait leurs plafonds, et
+ * la subvention se calcule PAR BENEFICIAIRE.
+ *
+ * Un prenom non reconnu n'est pas invente : la ligne est simplement absente du
+ * decompte, et l'enfant ressort avec 0 $ cotise -- donc avec le plein montant
+ * a cotiser. C'est le bon cote sur lequel se tromper : on suggere de verifier,
+ * jamais de ne rien faire.
+ */
+function cotisationsReeeParEnfant(lignes: LigneTransaction[]): Record<string, number> {
+  const MOTIF = /(?:CONTRIBUTION|COTIS(?:ATION)?)\s+(?:\d{1,2})?([A-ZÀ-ÖØ-Þ]{3,})/i;
+  const out: Record<string, number> = {};
+  for (const l of lignes) {
+    if (typeDeCompte(l.noCompte) !== 'reee') continue;
+    if (l.type !== 'Cotisation' && l.type !== 'Dépôt') continue;
+    const montant = l.total ?? 0;
+    if (montant <= 0) continue;
+    const m = MOTIF.exec(l.note ?? '');
+    if (!m) continue;
+    const cle = m[1].normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+    out[cle] = (out[cle] ?? 0) + montant;
+  }
+  return out;
 }

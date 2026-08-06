@@ -92,3 +92,28 @@ export function plafondCeliCumulatif(ageAujourdhui: number | null, anneeCourante
     contientAConfirmer: retenus.some((p) => p.source === 'a-confirmer'),
   };
 }
+
+/**
+ * Les taux de subvention REEE de l'année — SCEE fédérale et IQEE du Québec.
+ *
+ * Rend `null` si l'un des trois manque : mieux vaut un constat « indisponible »
+ * qu'une subvention chiffrée avec un taux deviné. Le fichier de paramètres est
+ * la seule source, et chaque valeur y porte la sienne.
+ */
+export function parametresReee(annee: number): {
+  tauxScee: number;
+  tauxIqee: number;
+  cotisationSubventionnee: number;
+} | null {
+  const lire = (nom: string) => {
+    const candidats = lireParametres()
+      .filter((p) => p.parametre === nom && p.annee <= annee)
+      .sort((a, b) => b.annee - a.annee);
+    return candidats[0]?.valeur ?? null;
+  };
+  const tauxScee = lire('scee-taux-base');
+  const tauxIqee = lire('iqee-taux-base');
+  const cotisationSubventionnee = lire('cotisation-annuelle-subventionnee');
+  if (tauxScee === null || tauxIqee === null || cotisationSubventionnee === null) return null;
+  return { tauxScee, tauxIqee, cotisationSubventionnee };
+}

@@ -295,7 +295,19 @@ function BlocAngleMort({ angleMort }: { angleMort: NonNullable<ResultatAnalyse['
   );
 }
 
-export function OptimisationsFiscalesPage({ resultat }: { resultat: ResultatAnalyse }) {
+export function OptimisationsFiscalesPage({
+  resultat,
+  piedInterne = false,
+}: {
+  resultat: ResultatAnalyse;
+  /**
+   * Rend la mention « usage interne » en pied de CETTE page aussi.
+   *
+   * Posé par le document autonome. Une page photographiee seule, ou imprimee
+   * hors du document, doit continuer de dire ce qu'elle est.
+   */
+  piedInterne?: boolean;
+}) {
   const dateLisible = fmtDate(resultat.date);
   const chiffres = resultat.constats.filter((c) => c.statut === 'calcule');
   // Deux familles, deux traitements : ce sur quoi on agit, et ce qui est deja
@@ -413,6 +425,13 @@ export function OptimisationsFiscalesPage({ resultat }: { resultat: ResultatAnal
         </Text>
       </View>
 
+      {piedInterne && (
+        <View fixed style={{ position: 'absolute', bottom: 18, left: 44, right: 44 }}>
+          <Text style={{ fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#b91c1c' }}>
+            Version conseiller — usage interne. Ne pas remettre au client.
+          </Text>
+        </View>
+      )}
       <PageFooterV12 />
     </Page>
   );

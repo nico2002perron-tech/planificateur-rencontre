@@ -41,6 +41,8 @@ export type Demographie = {
     age: number | null;
     trancheRevenu: TrancheRevenu | null;
   };
+  /** Les enfants beneficiaires d'un REEE. Vide = aucun, ou pas encore demande. */
+  enfants: EnfantBeneficiaire[];
 };
 
 export type Revenus = {
@@ -87,6 +89,15 @@ export type Droits = {
 export type CotisationsAnnee = {
   reer: number;
   celi: number;
+  /**
+   * Les cotisations REEE de l'annee, PAR PRENOM DE BENEFICIAIRE.
+   *
+   * Le livre nomme l'enfant dans la note : « CONTRIBUTION 01LAURIE ». C'est le
+   * seul rattachement disponible -- un compte REEE familial peut servir
+   * plusieurs enfants, et la colonne du compte ne les distingue pas.
+   * Cle = prenom normalise (sans accent, sans casse, sans chiffre).
+   */
+  reeeParEnfant: Record<string, number>;
   portee: Portee;
 };
 
@@ -201,6 +212,23 @@ export type SelectionStrategies = {
   dateSelection: string | null;
 };
 
+/**
+ * UN ENFANT BENEFICIAIRE D'UN REEE — ajoute le 6 aout 2026.
+ *
+ * Le prenom est le SEUL moyen de rattacher une cotisation a son beneficiaire :
+ * le livre les note « CONTRIBUTION 01LAURIE », « CONTRIBUTION 03JULES ». Mesure
+ * sur le livre : 110 comptes REEE, et ce motif porte la quasi-totalite des
+ * cotisations.
+ *
+ * ⚠ CE PRENOM RESTE EN LOCAL, comme tout le profil. Il n'entre jamais dans une
+ * charge utile sortante (voir reformuler.ts) ni dans un nom de fichier.
+ */
+export type EnfantBeneficiaire = {
+  prenom: string;
+  /** null quand il n'a pas ete demande : l'age decide de l'urgence a cotiser. */
+  age: number | null;
+};
+
 export type Intentions = {
   ageRetraiteVise: number | null;
   donsAnnuelsMoyens: number | null;
@@ -248,6 +276,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
     demographie: {
       age: null, etatCivil: null, province: null,
       conjoint: { age: null, trancheRevenu: null },
+      enfants: [],
     },
     revenus: { trancheRevenu: null, source: null, dateDonnee: null },
     consolidation: {
@@ -263,7 +292,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
       celiConjointInutilises: montantVierge(),
       pertesCapitalReportees: montantVierge(),
     },
-    cotisationsAnnee: { reer: 0, celi: 0, portee: 'inconnue' },
+    cotisationsAnnee: { reer: 0, celi: 0, reeeParEnfant: {}, portee: 'inconnue' },
     comptes: [],
     transactionsAnnee: {
       gainsRealises: 0, pertesRealisees: 0,

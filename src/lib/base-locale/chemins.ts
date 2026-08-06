@@ -49,7 +49,12 @@ export function racineBaseLocale(): string {
 
 export const SOUS_DOSSIERS = ['documents', 'transactions', 'profils'] as const;
 
-export type TypeDocument = 'cours-cibles' | 'rencontre-complete' | 'proposition';
+export type TypeDocument =
+  | 'cours-cibles'
+  | 'rencontre-complete'
+  | 'proposition'
+  /** Le rapport fiscal autonome — ajoute le 6 aout 2026. */
+  | 'optimisations-fiscales';
 
 /**
  * Rend un nom de client utilisable comme nom de dossier, SANS le rendre

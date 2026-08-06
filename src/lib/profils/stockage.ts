@@ -81,10 +81,67 @@ export async function nomPour(id: string): Promise<string | null> {
 // Les profils
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * COMPLÈTE UN PROFIL LU AVEC LES CHAMPS QUE SON ÉCRITURE NE CONNAISSAIT PAS.
+ *
+ * Défaut vécu le 6 août 2026 : l'ajout de `demographie.enfants` au schéma a
+ * fait tomber toute la route des profils en 500, parce que les trois profils
+ * déjà sur disque avaient été écrits avant l'existence du champ. Le moteur
+ * lisait `undefined.length`.
+ *
+ * Ce n'est pas un cas isolé, c'est une FAMILLE : chaque champ ajouté au schéma
+ * casserait les profils existants de la même façon. On normalise donc à la
+ * lecture, une fois, plutôt que d'ajouter un `?? []` défensif à chaque site
+ * d'usage — il y en aurait des dizaines, et il en manquerait toujours un.
+ *
+ * La fusion est faite objet par objet, pas par un simple étalement de surface :
+ * `{...vierge, ...stocke}` remplacerait `demographie` EN ENTIER par la version
+ * stockée, ramenant exactement le problème qu'on corrige.
+ */
+function completerProfil(stocke: Partial<ProfilClient>, id: string, date: string): ProfilClient {
+  const v = profilVierge(id, date);
+  const fusion = <T extends object>(defaut: T, lu: unknown): T =>
+    (lu && typeof lu === 'object' ? { ...defaut, ...(lu as T) } : defaut);
+
+  return {
+    ...v,
+    ...stocke,
+    demographie: {
+      ...fusion(v.demographie, stocke.demographie),
+      conjoint: fusion(v.demographie.conjoint, stocke.demographie?.conjoint),
+      enfants: Array.isArray(stocke.demographie?.enfants) ? stocke.demographie.enfants : [],
+    },
+    revenus: fusion(v.revenus, stocke.revenus),
+    consolidation: {
+      ...fusion(v.consolidation, stocke.consolidation),
+      transfertsResolus: Array.isArray(stocke.consolidation?.transfertsResolus)
+        ? stocke.consolidation.transfertsResolus : [],
+    },
+    droits: fusion(v.droits, stocke.droits),
+    cotisationsAnnee: {
+      ...fusion(v.cotisationsAnnee, stocke.cotisationsAnnee),
+      reeeParEnfant: fusion(v.cotisationsAnnee.reeeParEnfant, stocke.cotisationsAnnee?.reeeParEnfant),
+    },
+    comptes: Array.isArray(stocke.comptes) ? stocke.comptes : [],
+    transactionsAnnee: fusion(v.transactionsAnnee, stocke.transactionsAnnee),
+    historiqueVie: {
+      celi: fusion(v.historiqueVie.celi, stocke.historiqueVie?.celi),
+      reer: fusion(v.historiqueVie.reer, stocke.historiqueVie?.reer),
+    },
+    intentions: fusion(v.intentions, stocke.intentions),
+    selectionStrategies: {
+      ...fusion(v.selectionStrategies, stocke.selectionStrategies),
+      strategies: Array.isArray(stocke.selectionStrategies?.strategies)
+        ? stocke.selectionStrategies.strategies : [],
+    },
+  };
+}
+
 export async function lireProfil(id: string): Promise<ProfilClient | null> {
   if (!estLocal() || !estPseudonymeValide(id)) return null;
   try {
-    return JSON.parse(await fs.readFile(cheminProfil(id), 'utf8')) as ProfilClient;
+    const brut = JSON.parse(await fs.readFile(cheminProfil(id), 'utf8')) as Partial<ProfilClient>;
+    return completerProfil(brut, id, brut.dateMiseAJour ?? new Date().toISOString().slice(0, 10));
   } catch {
     return null;
   }

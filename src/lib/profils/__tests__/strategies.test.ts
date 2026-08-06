@@ -8,7 +8,7 @@
 // Profils fictifs, formats réels : les tests partent sur GitHub.
 
 import { describe, it, expect } from 'vitest';
-import { analyser, restreindre, type PortefeuilleCible } from '../strategies';
+import { analyser, restreindre, classerManques, etatDetection, type PortefeuilleCible } from '../strategies';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '../types';
 
 const DATE = '2026-08-05';
@@ -51,11 +51,12 @@ const trouver = (r: ReturnType<typeof analyser>, s: string) =>
 const plat = (s: string) => s.replace(/[\s   ]+/g, ' ');
 
 describe('le contrat', () => {
-  it('rend les 5 stratégies, toujours, même sur un profil vide', () => {
+  it('rend TOUT le catalogue, toujours, même sur un profil vide', () => {
     const r = analyser(profilVierge('vide', DATE), null, DATE);
-    expect(r.constats).toHaveLength(5);
+    expect(r.constats).toHaveLength(6);
     expect(r.constats.map((c) => c.strategie).sort()).toEqual([
-      'celi-conjoint', 'cristallisation-pertes', 'don-titres', 'localisation-actifs', 'ordre-vente',
+      'celi-conjoint', 'cristallisation-pertes', 'don-titres', 'localisation-actifs',
+      'ordre-vente', 'subvention-reee',
     ]);
   });
 
@@ -266,7 +267,7 @@ describe('l’angle mort', () => {
     });
     const a = analyser(p, null, DATE).angleMort!;
     expect(a).not.toBeNull();
-    expect(a.total).toBe(5);
+    expect(a.total).toBe(6);
     expect(a.constatsLimites).toBeGreaterThan(0);
     expect(plat(a.details.join(' '))).toMatch(/4 000 \$ vus ici depuis 2015-03-12/);
     expect(plat(a.details.join(' '))).toMatch(/plafond non vérifiable/);
@@ -443,5 +444,123 @@ describe('« dont 0 $ absorberait » ne se dit pas', () => {
     expect(c.explication).not.toMatch(/dont 0/);
     expect(plat(c.explication)).toMatch(/aucun gain net n’a été réalisé/);
     expect(plat(c.explication)).toMatch(/13 088/);       // le chiffre vu reste dit
+  });
+});
+
+describe('STRATÉGIE 6 — subvention REEE (SCEE 20 % + IQEE 10 %)', () => {
+  const PARAMS = { tauxScee: 0.20, tauxIqee: 0.10, cotisationSubventionnee: 2500 };
+  const avecEnfants = (prenoms: string[], cotise: Record<string, number> = {}) =>
+    profilConsolide((x) => {
+      x.demographie.enfants = prenoms.map((prenom) => ({ prenom, age: 8 }));
+      x.cotisationsAnnee = { reer: 0, celi: 0, reeeParEnfant: cotise, portee: 'interne-seulement' };
+    });
+  const reee = (p: ProfilClient, params = PARAMS) =>
+    analyser(p, null, DATE, params).constats.find((c) => c.strategie === 'subvention-reee')!;
+
+  it('chiffre 30 % sur ce qui reste à cotiser', () => {
+    const c = reee(avecEnfants(['Laurie']));
+    expect(c.statut).toBe('calcule');
+    expect(c.montantEstime).toBe(750);          // 2 500 × 30 %
+    expect(plat(c.explication)).toMatch(/2 500 \$ de cotisation supplémentaire/);
+  });
+
+  it('tient compte de ce qui est DÉJÀ cotisé cette année, par enfant', () => {
+    const c = reee(avecEnfants(['Laurie', 'Jules'], { LAURIE: 2000 }));
+    // Laurie : 500 restants · Jules : 2 500 restants = 3 000 × 30 %
+    expect(c.montantEstime).toBe(900);
+    expect(plat(c.explication)).toMatch(/Laurie : 500 \$/);
+  });
+
+  it('LE PRÉNOM SE COMPARE SANS ACCENT NI CASSE', () => {
+    const c = reee(avecEnfants(['Béatrice'], { BEATRICE: 2500 }));
+    expect(c.dejaEnOrdre).toBe(true);
+  });
+
+  it('plafond atteint pour tous : « déjà en ordre », pas une piste', () => {
+    const c = reee(avecEnfants(['Laurie'], { LAURIE: 2500 }));
+    expect(c.statut).toBe('non-applicable');
+    expect(c.dejaEnOrdre).toBe(true);
+  });
+
+  it('SANS ENFANT AU DOSSIER : indisponible, avec la question', () => {
+    const c = reee(profilConsolide());
+    expect(c.statut).toBe('indisponible');
+    expect(c.donneesManquantes.join(' ')).toMatch(/enfants bénéficiaires/);
+  });
+
+  it('SANS BARÈME : indisponible plutôt qu’un taux deviné', () => {
+    const c = reee(avecEnfants(['Laurie']), null as unknown as typeof PARAMS);
+    expect(c.statut).toBe('indisponible');
+    expect(c.montantEstime).toBeNull();
+  });
+
+  it('LE MONTANT EST ANNONCÉ COMME UN PLANCHER', () => {
+    // On ne voit ni les droits reportés, ni les majorations selon le revenu,
+    // ni les plafonds à vie. Les trois ne peuvent qu'augmenter le montant ou
+    // l'annuler — jamais le rendre trompeur à la hausse. Il faut le dire.
+    const c = reee(avecEnfants(['Laurie']));
+    expect(plat(c.explication)).toMatch(/plancher/);
+    expect(plat(c.explication)).toMatch(/ne se reporte pas indéfiniment/);
+  });
+});
+
+describe('LE DÉTECTEUR ACTIONNABLE', () => {
+  it('classe les données manquantes par ce qu’elles DÉBLOQUENT', () => {
+    const r = analyser(profilVierge('vide', DATE), null, DATE);
+    const m = classerManques(r);
+    expect(m.length).toBeGreaterThan(0);
+    // Trié par nombre de pistes bloquées, décroissant.
+    for (let i = 1; i < m.length; i++) expect(m[i - 1].bloque).toBeGreaterThanOrEqual(m[i].bloque);
+    expect(m[0].strategies.length).toBe(m[0].bloque);
+  });
+
+  it('NE COMPTE PAS les pistes sans objet', () => {
+    // Une piste « non-applicable » ne se débloque pas. La compter gonflerait
+    // artificiellement l'intérêt d'une question.
+    const p = profilConsolide((x) => { x.demographie.etatCivil = 'celibataire'; });
+    const r = analyser(p, null, DATE);
+    const conjoint = r.constats.find((c) => c.strategie === 'celi-conjoint')!;
+    expect(conjoint.statut).toBe('non-applicable');
+    expect(classerManques(r).some((m) => m.strategies.includes(conjoint.titre))).toBe(false);
+  });
+
+  it('l’état de détection compte chaque famille et nomme la prochaine priorité', () => {
+    const e = etatDetection(analyser(profilVierge('vide', DATE), null, DATE));
+    expect(e.chiffrees + e.aConfirmer + e.bloquees + e.total).toBeGreaterThan(0);
+    expect(e.prochainePriorite).not.toBeNull();
+    expect(e.prochainePriorite!.bloque).toBeGreaterThan(0);
+  });
+
+  it('AUCUNE PRIORITÉ quand plus rien ne manque', () => {
+    const p = profilConsolide((x) => {
+      x.demographie.etatCivil = 'celibataire';
+      x.intentions.donsAnnuelsMoyens = 0;
+      x.transactionsAnnee.gainsRealises = 0;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 5000)])];
+    });
+    const r = restreindre(analyser(p, null, DATE), ['celi-conjoint', 'don-titres', 'cristallisation-pertes']);
+    expect(etatDetection(r).prochainePriorite).toBeNull();
+  });
+});
+
+describe('le classement privilégie ce qui débloque TOUT DE SUITE', () => {
+  it('une donnée qui est le DERNIER verrou passe devant une qui bloque plus', () => {
+    // Le compte brut ne suffit pas : une donnée qui bloque trois pistes ayant
+    // chacune deux autres trous ne débloque rien à l'instant ; une donnée qui
+    // bloque une seule piste, mais qui en est le dernier verrou, la rend
+    // chiffrée immédiatement.
+    const r = analyser(profilVierge('vide', DATE), null, DATE);
+    const m = classerManques(r);
+    for (let i = 1; i < m.length; i++) {
+      expect(m[i - 1].debloqueImmediatement).toBeGreaterThanOrEqual(m[i].debloqueImmediatement);
+    }
+  });
+
+  it('compte comme « immédiat » seulement le dernier verrou d’un constat', () => {
+    const p = profilConsolide((x) => { x.intentions.donsAnnuelsMoyens = null; });
+    const m = classerManques(analyser(p, null, DATE));
+    const dons = m.find((x) => x.donnee.includes('dons de bienfaisance'));
+    expect(dons).toBeDefined();
+    expect(dons!.debloqueImmediatement).toBe(1);
   });
 });

@@ -59,9 +59,18 @@ export async function hydraterProfil(
   if (!nomClient?.trim()) return profil;
 
   const livre = await lireHistorique(nomClient);
-  if (livre.length === 0) return profil;
-
   const releve = await lireDernierReleve(nomClient);
+  if (livre.length === 0 && releve === null) return profil;
+
+  // LE RELEVÉ SEUL SUFFIT À DÉRIVER LES COMPTES — défaut trouvé le 6 août en
+  // éprouvant le parcours « nouveau client ». La première version sortait dès
+  // que le livre était vide, et perdait donc les positions d'un client dont on
+  // n'a collé que le relevé. Or c'est justement le cas le plus courant à la
+  // première rencontre : le relevé est sous la main, l'historique complet non.
+  //
+  // Sans livre, la jointure vers le numéro complet échoue — le compte sort
+  // « absent », ce qui est exact — mais les positions, les PBR et donc les
+  // gains latents sont là. La cristallisation devient calculable.
   const comptes = releve
     ? deriverComptes(releve.texte, livre, { dateReleve: releve.dateReleve }).comptes
     : profil.comptes;

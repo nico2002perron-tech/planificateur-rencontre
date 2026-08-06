@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
 import { lireProfil, ecrireProfil, profilPourClient, nomPour } from '@/lib/profils/stockage';
+import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { analyser } from '@/lib/profils/strategies';
 import { hydraterProfil } from '@/lib/profils/hydrater';
 
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const jour = new Date().toISOString().slice(0, 10);
   const annee = Number.parseInt(jour.slice(0, 4), 10);
-  const resultat = analyser(await hydraterProfil(profil, await nomPour(id), annee), null, jour);
+  const resultat = analyser(await hydraterProfil(profil, await nomPour(id), annee), null, jour, parametresReee(annee));
   return NextResponse.json({
     constats: resultat.constats,
     angleMort: resultat.angleMort,
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
   const nomClient = nom ?? (await nomPour(profil.id));
   const annee = Number.parseInt(jour.slice(0, 4), 10);
   const hydrate = await hydraterProfil(profil, nomClient, annee);
-  const connues = new Set(analyser(hydrate, null, jour).constats.map((c) => c.strategie));
+  const connues = new Set(analyser(hydrate, null, jour, parametresReee(annee)).constats.map((c) => c.strategie));
   const retenues = (strategies as string[]).filter((s) => connues.has(s));
 
   profil.selectionStrategies = {

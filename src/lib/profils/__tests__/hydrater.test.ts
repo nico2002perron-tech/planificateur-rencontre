@@ -156,3 +156,34 @@ describe('LE DÉFAUT DE BOUT EN BOUT : le moteur voyait un dossier vide', () => 
     expect(c.montantEstime).toBe(4000);
   });
 });
+
+describe('LE RELEVÉ SEUL — le cas du nouveau client', () => {
+  const SANS_LIVRE = 'Temoin Releve Seul';
+  const SANS_LIVRE_DOSSIER = 'Temoin-Releve-Seul';
+
+  beforeAll(async () => {
+    const d = path.join(racine, 'transactions', SANS_LIVRE_DOSSIER);
+    await fs.mkdir(d, { recursive: true });
+    await fs.writeFile(path.join(d, `${DATE}_releve.txt`),
+      lig('CAD', 'Action', '1000', 'TITRE EN PERTE', 'A', 'AAA', '26', '8', '26 000,00', '8 000,00'),
+      'utf8');
+  });
+
+  it('dérive les comptes MÊME SANS grand livre', async () => {
+    // À la première rencontre, le relevé est sous la main et l'historique
+    // complet non. La première version d'hydraterProfil sortait dès que le
+    // livre était vide, et perdait donc toutes les positions.
+    const { hydraterProfil, profilVierge } = await outils();
+    const h = await hydraterProfil(profilVierge('f', DATE), SANS_LIVRE, ANNEE);
+    expect(h.comptes.length).toBe(1);
+    expect(h.comptes[0].positions[0].valeurComptable).toBe(26000);
+  });
+
+  it('le numéro reste INTROUVABLE, et le dit — la jointure a besoin du livre', async () => {
+    const { hydraterProfil, profilVierge } = await outils();
+    const h = await hydraterProfil(profilVierge('f', DATE), SANS_LIVRE, ANNEE);
+    expect(h.comptes[0].numero).toBeNull();
+    expect(h.comptes[0].provenanceNumero).toBe('absent');
+    expect(h.comptes[0].type).toBeNull();          // pas de numéro = pas de régime prouvé
+  });
+});

@@ -22,3 +22,24 @@ plafond-celi,2023,CA,6500,publie
 plafond-celi,2024,CA,7000,publie
 plafond-celi,2025,CA,7000,publie
 plafond-celi,2026,CA,7000,a-confirmer
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REEE — SUBVENTIONS SCEE (federale) ET IQEE (Quebec), ajoutees le 6 aout 2026.
+#
+# ⚠ A FAIRE REVISER PAR UN FISCALISTE, au meme titre que le reste : toutes ces
+# valeurs sont marquees « a-confirmer ». Elles servent a chiffrer une INCITATION
+# a cotiser ; une valeur fausse ferait miroiter une subvention inexistante.
+#
+# Ce que le moteur en fait, et ce qu'il ne fait PAS :
+#   · il applique le taux de base sur la cotisation annuelle, jusqu'au plafond
+#     subventionne ;
+#   · il NE TIENT PAS COMPTE des droits reportes des annees passees (un parent
+#     qui a peu cotise peut recevoir davantage), ni des majorations selon le
+#     revenu familial, ni des plafonds a vie deja atteints. Le montant rendu est
+#     donc un PLANCHER, et le constat le dit.
+# ─────────────────────────────────────────────────────────────────────────────
+scee-taux-base,2026,CA,0.20,a-confirmer
+iqee-taux-base,2026,QC,0.10,a-confirmer
+cotisation-annuelle-subventionnee,2026,CA,2500,a-confirmer
+scee-plafond-vie,2026,CA,7200,a-confirmer
+iqee-plafond-vie,2026,QC,3600,a-confirmer

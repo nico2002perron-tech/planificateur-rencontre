@@ -580,6 +580,123 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STRATÉGIE 6 · SUBVENTION REEE NON RÉCLAMÉE (SCEE + IQEE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * L'argent que le gouvernement DONNE et que personne ne réclame.
+ *
+ * 20 % du fédéral (SCEE) + 10 % du Québec (IQEE) = **30 % combiné** sur la
+ * première tranche de cotisation annuelle par enfant. C'est le rendement
+ * garanti le plus élevé du catalogue, et il expire chaque année.
+ *
+ * CE QUE LE MOTEUR SAIT, ET COMMENT.
+ * Mesuré sur le livre : 110 comptes REEE, 23 326 lignes. Les cotisations
+ * nomment leur bénéficiaire dans la note — « CONTRIBUTION 01LAURIE ». C'est ce
+ * qui permet de compter par enfant plutôt qu'en bloc.
+ *
+ * ⚠ LE MONTANT RENDU EST UN PLANCHER, et le constat le dit. On ne tient compte
+ * ni des droits reportés des années passées (un parent qui a peu cotisé peut
+ * recevoir davantage), ni des majorations selon le revenu familial, ni des
+ * plafonds à vie déjà atteints. Ces trois éléments ne peuvent QUE l'augmenter
+ * ou le rendre nul — jamais le rendre trompeur à la hausse.
+ */
+function strategieReee(
+  profil: ProfilClient,
+  parametres: ParametresReee | null
+): Constat {
+  const base = {
+    strategie: 'subvention-reee',
+    titre: 'Subvention REEE non réclamée',
+    titreClient: 'Aller chercher la subvention REEE de vos enfants',
+    libelleMontant: 'de subvention laissée sur la table',
+    recurrence: 'annuel' as const,
+    sources: sourcesDe(profil, ['parametres-fiscaux SCEE/IQEE']),
+    limiteVisibilite: null,
+    dejaEnOrdre: false,
+  };
+
+  if (parametres === null) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication: 'Les taux de subvention REEE ne sont pas au dossier des paramètres fiscaux.',
+      donneesManquantes: ['les taux SCEE et IQEE de l’année'],
+    };
+  }
+
+  const enfants = profil.demographie.enfants;
+  if (enfants.length === 0) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        'Chaque dollar cotisé dans un REEE attire 30 % de subvention — 20 % du fédéral et 10 % du Québec — ' +
+        'jusqu’à un plafond annuel par enfant. Encore faut-il savoir combien d’enfants sont bénéficiaires.',
+      donneesManquantes: ['les enfants bénéficiaires d’un REEE'],
+    };
+  }
+
+  // Ce qui a été cotisé cette année, par enfant nommé dans la note.
+  const parEnfant = profil.cotisationsAnnee.reeeParEnfant ?? {};
+  const plafond = parametres.cotisationSubventionnee;
+  const taux = parametres.tauxScee + parametres.tauxIqee;
+
+  const manquants = enfants
+    .map((e) => {
+      const cotise = parEnfant[normaliserPrenom(e.prenom)] ?? 0;
+      return { prenom: e.prenom, cotise, reste: Math.max(0, plafond - cotise) };
+    })
+    .filter((x) => x.reste > 0);
+
+  if (manquants.length === 0) {
+    return {
+      ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
+      dejaEnOrdre: true,
+      explication:
+        `Le plafond subventionné de ${argent(plafond)} est atteint cette année pour ` +
+        `${enfants.length > 1 ? 'chaque enfant' : 'l’enfant'} : la subvention est entièrement captée.`,
+      donneesManquantes: [],
+    };
+  }
+
+  const aCotiser = manquants.reduce((s, x) => s + x.reste, 0);
+  // ARRONDI AU CENT : 2 500 x 0,30 rend 750,0000000000001 en virgule flottante.
+  // Un montant d'argent qui traine des decimales fantomes finit par sortir tel
+  // quel quelque part -- dans un test, dans un export, ou sous les yeux du
+  // client.
+  const subvention = Math.round(aCotiser * taux * 100) / 100;
+  const detail = manquants
+    .map((x) => `${x.prenom} : ${argent(x.reste)} de plus`)
+    .join(', ');
+
+  return {
+    ...base,
+    statut: 'calcule',
+    portee: porteeDe(profil),
+    montantEstime: subvention,
+    explication:
+      `${argent(aCotiser)} de cotisation supplémentaire avant la fin de l’année attireraient ` +
+      `${argent(subvention)} de subvention — ${Math.round(taux * 100)} % versés par les gouvernements ` +
+      `(${detail}). Cette subvention ne se reporte pas indéfiniment : ce qui n’est pas demandé se perd. ` +
+      `Le montant est un plancher : des droits inutilisés d’années passées l’augmenteraient.`,
+    donneesManquantes: [],
+  };
+}
+
+/** Le prénom, réduit à ce qui se compare : sans accent, sans casse, sans chiffre. */
+export function normaliserPrenom(prenom: string): string {
+  return (prenom ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z]/g, '')
+    .toUpperCase();
+}
+
+export type ParametresReee = {
+  tauxScee: number;
+  tauxIqee: number;
+  cotisationSubventionnee: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // L'ANGLE MORT — section 4 du schéma
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -642,13 +759,15 @@ function rangQuestion(q: string): number {
 export function analyser(
   profil: ProfilClient,
   portefeuilleCible: PortefeuilleCible | null,
-  date: string
+  date: string,
+  parametresReee: ParametresReee | null = null
 ): ResultatAnalyse {
   const constats: Constat[] = [
     strategieCristallisation(profil),
     strategieLocalisation(profil),
     strategieCeliConjoint(profil),
     strategieDonTitres(profil),
+    strategieReee(profil, parametresReee),
     strategieOrdreVente(profil, portefeuilleCible),
   ];
 
@@ -715,5 +834,86 @@ export function restreindre(
         : { constatsLimites: limites.length, total: constats.length, details },
     questionsRencontre: [...new Set(constats.flatMap((c) => c.donneesManquantes))]
       .sort((a, b) => rangQuestion(a) - rangQuestion(b) || a.localeCompare(b)),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LE DÉTECTEUR ACTIONNABLE — « la donnée qui en débloquerait le plus »
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ManqueClasse = {
+  /** La donnée manquante, telle que le constat la nomme. */
+  donnee: string;
+  /** Combien de pistes elle bloque. */
+  bloque: number;
+  /**
+   * Combien de pistes deviennent chiffrables DÈS QU'ON RÉPOND — celles dont
+   * c'est la SEULE donnée manquante.
+   *
+   * C'est le vrai critère d'utilité, et le compte brut ne le donne pas :
+   * une donnée qui bloque trois pistes ayant chacune deux autres trous ne
+   * débloque rien tout de suite ; une donnée qui bloque une seule piste,
+   * mais qui en est le dernier verrou, la rend chiffrée à l'instant.
+   */
+  debloqueImmediatement: number;
+  /** Lesquelles — pour que l'écran puisse le montrer. */
+  strategies: string[];
+};
+
+/**
+ * Les données manquantes, CLASSÉES PAR CE QU'ELLES DÉBLOQUENT.
+ *
+ * Principe central de l'écran, arrêté le 5 août : une liste de « donnée
+ * manquante » ne fait rien faire à personne. Dire « la donnée qui débloquerait
+ * le plus : l'âge — elle ouvre 3 pistes » transforme un constat d'échec en
+ * prochaine action. C'est ça, un détecteur d'opportunités : il ne dit pas
+ * seulement ce qu'il a trouvé, il dit comment trouver le reste.
+ *
+ * On compte les constats BLOQUÉS — `indisponible` et `montant-a-confirmer` —
+ * et jamais les `non-applicable` : une piste sans objet ne se débloque pas, et
+ * la faire figurer gonflerait artificiellement l'intérêt d'une question.
+ */
+export function classerManques(resultat: ResultatAnalyse): ManqueClasse[] {
+  const par = new Map<string, ManqueClasse>();
+  for (const c of resultat.constats) {
+    if (c.statut !== 'indisponible' && c.statut !== 'montant-a-confirmer') continue;
+    const dernierVerrou = c.donneesManquantes.length === 1;
+    for (const d of c.donneesManquantes) {
+      const e = par.get(d) ?? { donnee: d, bloque: 0, debloqueImmediatement: 0, strategies: [] };
+      e.bloque += 1;
+      if (dernierVerrou) e.debloqueImmediatement += 1;
+      e.strategies.push(c.titre);
+      par.set(d, e);
+    }
+  }
+  // Ce qui débloque TOUT DE SUITE d'abord ; à égalité, ce qui bloque le plus.
+  return [...par.values()].sort(
+    (a, b) =>
+      b.debloqueImmediatement - a.debloqueImmediatement ||
+      b.bloque - a.bloque ||
+      a.donnee.localeCompare(b.donnee)
+  );
+}
+
+export type EtatDetection = {
+  chiffrees: number;
+  aConfirmer: number;
+  bloquees: number;
+  dejaEnOrdre: number;
+  total: number;
+  /** La donnée qui débloquerait le plus de pistes, ou `null` s'il n'en manque aucune. */
+  prochainePriorite: ManqueClasse | null;
+};
+
+/** Le tableau de bord du détecteur : où en est-on, et quoi faire ensuite. */
+export function etatDetection(resultat: ResultatAnalyse): EtatDetection {
+  const manques = classerManques(resultat);
+  return {
+    chiffrees: resultat.constats.filter((c) => c.statut === 'calcule').length,
+    aConfirmer: resultat.constats.filter((c) => c.statut === 'montant-a-confirmer').length,
+    bloquees: resultat.constats.filter((c) => c.statut === 'indisponible').length,
+    dejaEnOrdre: resultat.constats.filter((c) => c.dejaEnOrdre).length,
+    total: resultat.constats.length,
+    prochainePriorite: manques[0] ?? null,
   };
 }
