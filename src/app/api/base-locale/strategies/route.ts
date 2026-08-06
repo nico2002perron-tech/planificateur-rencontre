@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
 import { lireProfil, ecrireProfil, profilPourClient, nomPour } from '@/lib/profils/stockage';
 import { analyser } from '@/lib/profils/strategies';
+import { hydraterProfil } from '@/lib/profils/hydrater';
 
 export async function GET(req: NextRequest) {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
@@ -23,7 +24,8 @@ export async function GET(req: NextRequest) {
   if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
 
   const jour = new Date().toISOString().slice(0, 10);
-  const resultat = analyser(profil, null, jour);
+  const annee = Number.parseInt(jour.slice(0, 4), 10);
+  const resultat = analyser(await hydraterProfil(profil, await nomPour(id), annee), null, jour);
   return NextResponse.json({
     constats: resultat.constats,
     angleMort: resultat.angleMort,
@@ -50,7 +52,10 @@ export async function POST(req: NextRequest) {
   // moteur a réellement produits pour CE profil sont retenus : une stratégie
   // inventée, ou une qui ne s'applique pas à ce client, ne doit pas pouvoir
   // s'inscrire dans un profil et ressortir un jour dans un PDF.
-  const connues = new Set(analyser(profil, null, jour).constats.map((c) => c.strategie));
+  const nomClient = nom ?? (await nomPour(profil.id));
+  const annee = Number.parseInt(jour.slice(0, 4), 10);
+  const hydrate = await hydraterProfil(profil, nomClient, annee);
+  const connues = new Set(analyser(hydrate, null, jour).constats.map((c) => c.strategie));
   const retenues = (strategies as string[]).filter((s) => connues.has(s));
 
   profil.selectionStrategies = {

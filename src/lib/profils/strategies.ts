@@ -222,7 +222,17 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     return g !== null && g < 0;
   });
   const pertesLatentes = enPerte.reduce((s, p) => s + Math.abs(gainLatent(p) as number), 0);
-  const gainsRealises = profil.transactionsAnnee.gainsRealises;
+  // LE GAIN NET, PAS LE GAIN BRUT — défaut trouvé le 6 août 2026 sur un client
+  // réel de la campagne : 6 728 $ de gains réalisés, mais aussi 4 000 $ de
+  // pertes déjà réalisées. Ne regarder que les gains aurait fait recommander
+  // 6 728 $ de ventes là où 2 728 $ suffisent — soit 4 000 $ de ventes
+  // inutiles, avec leurs frais et leur sortie de marché, pour un gain fiscal
+  // nul. Les pertes déjà prises absorbent déjà leur part.
+  const gainsRealises = Math.max(
+    0,
+    profil.transactionsAnnee.gainsRealises - profil.transactionsAnnee.pertesRealisees
+  );
+  const pertesDejaPrises = profil.transactionsAnnee.pertesRealisees;
   const reportees = profil.droits.pertesCapitalReportees.montant;
 
   // Ce qu'il est UTILE de cristalliser : ce qui absorbe un gain déjà réalisé.
@@ -250,7 +260,13 @@ function strategieCristallisation(profil: ProfilClient): Constat {
         'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
       explication:
         `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}, ` +
-        `dont ${argent(absorbable)} absorberait des gains déjà réalisés cette année (${argent(gainsRealises)}).` +
+        // « DONT 0 $ ABSORBERAIT » NE SE DIT PAS. Vu à l'écran le 6 août sur un
+        // client de la campagne : la phrase était exacte et illisible, et elle
+        // laissait croire qu'il y avait quelque chose à faire. Quand il n'y a
+        // aucun gain à absorber, on le dit — la perte reste utile, mais plus tard.
+        (absorbable > 0
+          ? `dont ${argent(absorbable)} absorberait le gain net déjà réalisé cette année (${argent(gainsRealises)}).`
+          : 'mais aucun gain net n’a été réalisé cette année : rien à absorber pour l’instant, et ces pertes restent disponibles pour une année future.') +
         `${detailReportees} Ce montant ne couvre que les comptes détenus ici : un ordre de vente coordonné ` +
         `exige de connaître aussi les positions détenues ailleurs.`,
       donneesManquantes: manquantes,
@@ -265,10 +281,11 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     montantEstime: absorbable > 0 ? absorbable : null,
     explication: absorbable > 0
       ? `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. ` +
-        `En cristalliser ${argent(absorbable)} annulerait les gains déjà réalisés cette année (${argent(gainsRealises)}).` +
+        `En cristalliser ${argent(absorbable)} annulerait le gain net déjà réalisé cette année (${argent(gainsRealises)}` +
+        `${pertesDejaPrises > 0 ? `, après les ${argent(pertesDejaPrises)} de pertes déjà prises` : ''}).` +
         `${detailReportees}`
       : gainsRealises <= 0
-        ? `Aucun gain n’a été réalisé cette année : il n’y a rien à absorber. Les ${argent(pertesLatentes)} de pertes latentes restent disponibles pour une année future.`
+        ? `Aucun gain net n’a été réalisé cette année${pertesDejaPrises > 0 ? ` (les ${argent(pertesDejaPrises)} de pertes déjà prises couvrent les gains)` : ''} : il n’y a rien à absorber. Les ${argent(pertesLatentes)} de pertes latentes restent disponibles pour une année future.`
         : 'Aucune position non enregistrée n’est en perte latente.',
     donneesManquantes: manquantes,
   };
@@ -537,7 +554,11 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
   const parImpact = [...nonEnr]
     .map((p) => ({ p, g: gainLatent(p) as number }))
     .sort((a, b) => a.g - b.g);
-  const gainNet = parImpact.reduce((s, x) => s + x.g, 0) + profil.transactionsAnnee.gainsRealises;
+  // Meme correction que la cristallisation : le gain DEJA realise est net des
+  // pertes deja prises, sinon le gain imposable annonce est surestime.
+  const dejaRealise =
+    profil.transactionsAnnee.gainsRealises - profil.transactionsAnnee.pertesRealisees;
+  const gainNet = parImpact.reduce((s, x) => s + x.g, 0) + dejaRealise;
 
   return {
     ...base,
@@ -549,8 +570,8 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
       : null,
     explication:
       `En vendant d’abord ${parImpact[0].p.symbole} puis en remontant vers les gains les plus élevés, ` +
-      `le gain imposable de l’année s’établit à ${argent(gainNet)} en incluant les ${argent(profil.transactionsAnnee.gainsRealises)} ` +
-      'déjà réalisés.' +
+      `le gain imposable de l’année s’établit à ${argent(gainNet)} en incluant les ${argent(dejaRealise)} ` +
+      'déjà réalisés, nets des pertes déjà prises.' +
       (visibiliteEntamee(profil)
         ? ' L’ordre ne couvre que les comptes détenus ici.'
         : ''),

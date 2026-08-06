@@ -388,3 +388,60 @@ describe('le vocabulaire du document', () => {
     }
   });
 });
+
+describe('LE GAIN NET — défaut trouvé en campagne, 6 août 2026', () => {
+  it('les pertes DÉJÀ RÉALISÉES réduisent ce qu’il reste à cristalliser', () => {
+    // Cas réel : 6 728 $ de gains réalisés ET 4 000 $ de pertes déjà prises.
+    // Ne regarder que les gains ferait recommander 6 728 $ de ventes là où
+    // 2 728 $ suffisent — 4 000 $ de ventes inutiles, leurs frais, et une
+    // sortie de marché, pour un gain fiscal nul.
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 6728;
+      x.transactionsAnnee.pertesRealisees = 4000;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 40000)])];  // −32 000
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('calcule');
+    expect(c.montantEstime).toBe(2728);
+  });
+
+  it('des pertes qui couvrent tous les gains : plus rien à cristalliser', () => {
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 3000;
+      x.transactionsAnnee.pertesRealisees = 9000;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 40000)])];
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('non-applicable');
+    expect(plat(c.explication)).toMatch(/pertes déjà prises couvrent les gains/);
+  });
+
+  it('l’ordre de vente compte lui aussi le gain NET déjà réalisé', () => {
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 6728;
+      x.transactionsAnnee.pertesRealisees = 4000;
+      x.comptes = [compte('non-enregistre', [position('GAIN', 20000, 5000)])];  // +15 000
+    });
+    const c = trouver(analyser(p, { positions: [{ symbole: 'X', poidsCible: 1 }] }, DATE), 'ordre-vente');
+    expect(c.montantEstime).toBe(17728);   // 15 000 + (6 728 − 4 000)
+  });
+});
+
+describe('« dont 0 $ absorberait » ne se dit pas', () => {
+  it('sans gain à absorber, la phrase le DIT au lieu d’afficher un zéro', () => {
+    // Vu à l'écran le 6 août sur un client de la campagne : « 3 positions
+    // portent une perte latente de 13 088 $, dont 0 $ absorberait le gain net
+    // déjà réalisé cette année (0 $) ». Exact, illisible, et laissait croire
+    // qu'il y avait quelque chose à faire.
+    const p = profilConsolide((x) => {
+      x.consolidation.comptesExternes = 'oui';           // -> branche « à confirmer »
+      x.transactionsAnnee.gainsRealises = 0;
+      x.comptes = [compte('non-enregistre', [position('AAA', 8000, 21088)])];
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.explication).not.toMatch(/dont 0/);
+    expect(plat(c.explication)).toMatch(/aucun gain net n’a été réalisé/);
+    expect(plat(c.explication)).toMatch(/13 088/);       // le chiffre vu reste dit
+  });
+});

@@ -61,6 +61,11 @@ type ProfilResume = {
   celi: ResumeCeli | null;
   constats?: Constat[];
   selection?: { strategies: string[]; dateSelection: string | null };
+  consolidation?: {
+    comptesExternes: 'oui' | 'non' | 'inconnu';
+    historiqueExterne: 'jamais' | 'deja-eu' | 'inconnu';
+    dateConfirmation: string | null;
+  } | null;
   badges?: BadgeProfil[];
   questions?: string[];
   compteurs?: { auto: number; manuel: number; manquant: number; aReconfirmer: number };
@@ -212,6 +217,23 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
     });
     if (!res.ok) setErreur('Sélection non enregistrée.');
     await rafraichirProfils();
+  }
+
+  /**
+   * Répond à l'une des deux questions de consolidation.
+   *
+   * Enregistrement immédiat, comme la sélection des stratégies : le
+   * planificateur répond pendant qu'il parle au client.
+   */
+  async function repondreConsolidation(profil: ProfilResume, champ: string, valeur: string) {
+    const res = await fetch('/api/base-locale/consolidation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: profil.id, [champ]: valeur }),
+    });
+    if (!res.ok) setErreur('Réponse non enregistrée.');
+    await rafraichirProfils();
+    if (idCourant === profil.id) await chargerTransferts(profil.id);
   }
 
   async function resoudre(t: TransfertDouteux, resolution: 'interne' | 'externe') {
@@ -507,6 +529,57 @@ export function EcranProfils({ profilsInitiaux }: { profilsInitiaux: ProfilResum
                       );
                     })}
                   </ul>
+                </div>
+              )}
+
+              {/* ── LA QUESTION DE RENCONTRE N° 1 ───────────────────────────
+                  Elle commande la portée de TOUS les constats et la condition 2
+                  des droits CELI. Elle était posée depuis le début, et rien ne
+                  permettait d'y répondre : « jamais », la réponse qui débloque
+                  un montant plutôt qu'une borne, était inatteignable. */}
+              {p.consolidation && (
+                <div className="border-t border-gray-200 px-4 py-3">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-text-main">
+                    <HelpCircle className="h-3.5 w-3.5" />
+                    À demander au client
+                    {p.consolidation.dateConfirmation
+                      ? ` · répondu le ${p.consolidation.dateConfirmation}`
+                      : ''}
+                  </p>
+
+                  {[
+                    {
+                      champ: 'comptesExternes',
+                      question: 'Détenez-vous des comptes de placement ailleurs qu’ici ?',
+                      valeur: p.consolidation.comptesExternes,
+                      choix: [['non', 'Non'], ['oui', 'Oui'], ['inconnu', 'Pas demandé']],
+                    },
+                    {
+                      champ: 'historiqueExterne',
+                      question: 'Avez-vous déjà eu un CELI ailleurs, même fermé depuis ?',
+                      valeur: p.consolidation.historiqueExterne,
+                      choix: [['jamais', 'Jamais'], ['deja-eu', 'Déjà eu'], ['inconnu', 'Pas demandé']],
+                    },
+                  ].map((q) => (
+                    <div key={q.champ} className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-sm text-text-muted">{q.question}</span>
+                      <span className="ml-auto flex gap-1">
+                        {q.choix.map(([v, libelle]) => (
+                          <button
+                            key={v}
+                            onClick={() => void repondreConsolidation(p, q.champ, v)}
+                            className={`rounded border px-2 py-0.5 text-xs ${
+                              q.valeur === v
+                                ? 'border-brand-primary bg-brand-primary/10 font-medium text-brand-primary'
+                                : 'border-gray-200 bg-white text-text-muted hover:border-gray-300'
+                            }`}
+                          >
+                            {libelle}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
 

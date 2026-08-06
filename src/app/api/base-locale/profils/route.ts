@@ -7,6 +7,7 @@ import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/ba
 import { deriverComptes } from '@/lib/profils/comptes';
 import { analyser } from '@/lib/profils/strategies';
 import { lireDernierReleve, lireHistorique } from '@/lib/profils/historique';
+import { hydraterProfil } from '@/lib/profils/hydrater';
 
 // Profils fiscaux — LOCAL SEULEMENT. 404 hors local avant toute autre chose :
 // on ne confirme même pas l'existence de la route.
@@ -75,7 +76,13 @@ export async function GET(req: NextRequest) {
     // Les CONSTATS FISCAUX accompagnent le profil : c'est la matiere de l'ecran
     // de selection. Le moteur les DETECTE tous ; l'ecran montre les cinq, et
     // seules les cases cochees entreront dans le PDF.
-    const fiscal = complet ? analyser(complet, null, date) : null;
+    //
+    // HYDRATE D'ABORD : sans ca le moteur ne voit ni les positions du releve ni
+    // les gains de l'annee, et rend « indisponible » sur toute la ligne meme
+    // quand les donnees sont au dossier.
+    const fiscal = complet
+      ? analyser(await hydraterProfil(complet, nomClient, annee), null, date)
+      : null;
 
     avecResume.push({
       ...p,
@@ -86,6 +93,7 @@ export async function GET(req: NextRequest) {
       comptes,
       constats: fiscal?.constats ?? [],
       selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },
+      consolidation: complet?.consolidation ?? null,
     });
   }
   return NextResponse.json({ profils: avecResume });

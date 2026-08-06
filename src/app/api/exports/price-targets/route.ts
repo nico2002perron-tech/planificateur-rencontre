@@ -10,6 +10,7 @@ import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 import { modeFiscalActif } from '@/lib/base-locale/mode';
 import { profilPourClient } from '@/lib/profils/stockage';
 import { analyser, restreindre } from '@/lib/profils/strategies';
+import { hydraterProfil } from '@/lib/profils/hydrater';
 
 export async function POST(req: NextRequest) {
   // Le nom du client transite ici (dans le body) pour être imprimé dans le PDF.
@@ -55,7 +56,10 @@ export async function POST(req: NextRequest) {
         const profil = await profilPourClient(clientName.trim(), jour);
         const retenues = profil.selectionStrategies?.strategies ?? [];
         if (retenues.length > 0) {
-          reportData.optimisationsFiscales = restreindre(analyser(profil, null, jour), retenues);
+          // HYDRATE : le document doit porter les memes chiffres que l'ecran.
+          const annee = Number.parseInt(jour.slice(0, 4), 10);
+          const hydrate = await hydraterProfil(profil, clientName.trim(), annee);
+          reportData.optimisationsFiscales = restreindre(analyser(hydrate, null, jour), retenues);
         }
       } catch (e) {
         console.error('[fiscal] section non jointe :', e);
