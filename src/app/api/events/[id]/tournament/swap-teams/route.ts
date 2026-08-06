@@ -22,9 +22,10 @@ function slotValue(m: TournamentMatch, side: 'a' | 'b'): { teamId: string | null
     : { teamId: m.team_b_id, source: m.source_b };
 }
 
-// POST /api/events/[id]/tournament/swap-teams — échange deux équipes de place
-// dans l'horaire (mode « Échanger » de la console : deux taps, jamais de perte).
-// Body : { a: { matchId, side: 'a'|'b' }, b: { matchId, side: 'a'|'b' } }
+// POST /api/events/[id]/tournament/swap-teams — deux gestes du mode « Échanger » :
+//  - { a: { matchId, side }, b: { matchId, side } } → échange deux équipes de place ;
+//  - { a: { matchId, side }, teamId }               → place une équipe de la banque
+//    (toutes les équipes inscrites) dans la case choisie, peu importe où elle joue déjà.
 // Refusé sur une partie terminée ou annulée (le résultat serait corrompu).
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -41,6 +42,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const b = body.b as SwapSlot | undefined;
   const validSlot = (s: SwapSlot | undefined): s is SwapSlot =>
     !!s && typeof s.matchId === 'string' && (s.side === 'a' || s.side === 'b');
+
+  // Placement direct depuis la banque d'équipes
+  if (validSlot(a) && b === undefined && typeof body.teamId === 'string' && body.teamId) {
+    return assignFromBank(supabase, eventId, a, body.teamId);
+  }
+
   if (!validSlot(a) || !validSlot(b)) {
     return NextResponse.json({ error: 'a et b requis : { matchId, side }' }, { status: 400 });
   }
@@ -103,6 +110,42 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: errB.message }, { status: 500 });
     }
   }
+
+  const state = await fetchTournamentState(supabase, eventId, true);
+  return NextResponse.json(state);
+}
+
+// Place une équipe inscrite dans une case précise de l'horaire. On ne touche
+// qu'au team id : la source (« Gagnant M5 »…) reste en place, donc les cases
+// de séries continuent de suivre les résultats si un pointage change ensuite.
+async function assignFromBank(
+  supabase: SupabaseClient,
+  eventId: string,
+  slot: SwapSlot,
+  teamId: string,
+): Promise<NextResponse> {
+  const [{ data: match, error: matchError }, { data: team }] = await Promise.all([
+    supabase.from('event_matches').select(MATCH_COLUMNS).eq('id', slot.matchId).eq('event_id', eventId).maybeSingle(),
+    supabase.from('event_teams').select('id, team_name').eq('id', teamId).eq('event_id', eventId).maybeSingle(),
+  ]);
+  if (matchError) return NextResponse.json({ error: matchError.message }, { status: 500 });
+  if (!match) return NextResponse.json({ error: 'Partie introuvable' }, { status: 404 });
+  if (!team) return NextResponse.json({ error: 'Cette équipe n\'est pas inscrite à l\'événement.' }, { status: 400 });
+
+  const m = match as TournamentMatch;
+  if (['finished', 'cancelled'].includes(m.status)) {
+    return NextResponse.json({ error: 'Impossible de modifier une partie terminée ou annulée.' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('event_matches')
+    .update({
+      ...(slot.side === 'a' ? { team_a_id: teamId } : { team_b_id: teamId }),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', m.id)
+    .eq('event_id', eventId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const state = await fetchTournamentState(supabase, eventId, true);
   return NextResponse.json(state);

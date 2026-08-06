@@ -226,6 +226,19 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     return map;
   }, [state?.matches]);
 
+  // Nombre de parties de chaque équipe dans l'horaire vivant (annulées exclues) —
+  // affiché dans la banque d'équipes pour repérer d'un coup d'œil les déséquilibres.
+  const partiesParEquipe = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of state?.matches || []) {
+      if (m.status === 'cancelled') continue;
+      for (const id of [m.team_a_id, m.team_b_id]) {
+        if (id) map.set(id, (map.get(id) || 0) + 1);
+      }
+    }
+    return map;
+  }, [state?.matches]);
+
   const finishedCount = (state?.matches || []).filter(m => m.status === 'finished').length;
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
 
@@ -510,6 +523,27 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       applyState(data);
       setSwapSel(null);
       showToast('✓ Équipes échangées — n\'oublie pas « Mettre à jour le site ».');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  // Banque d'équipes : place l'équipe choisie (parmi TOUTES les inscrites)
+  // dans la case sélectionnée — pas besoin qu'elle soit déjà dans l'horaire.
+  async function assignFromBank(team: Team) {
+    if (!swapSel) return;
+    setBusy('swap');
+    try {
+      const res = await fetch(`/api/events/${eventId}/tournament/swap-teams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ a: swapSel, teamId: team.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Erreur de placement.'); return; }
+      applyState(data);
+      setSwapSel(null);
+      showToast(`✓ ${team.name} placée — n'oublie pas « Mettre à jour le site ».`);
     } finally {
       setBusy('');
     }
@@ -828,8 +862,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             <div className="rounded-xl px-3.5 py-2.5 mb-2 text-xs font-bold"
               style={{ backgroundColor: `${DUO.blue}10`, color: DUO.blueDark, border: `2px solid ${DUO.blue}30` }}>
               {swapSel
-                ? '👆 Maintenant, touche le nom avec qui l\'échanger — n\'importe où dans l\'horaire.'
-                : '👇 Touche un nom d\'équipe, puis un autre : ils échangent leur place. Les parties terminées sont verrouillées.'}
+                ? '👆 Touche un autre nom dans l\'horaire pour ÉCHANGER, ou choisis une équipe dans la banque au bas de l\'écran pour la PLACER ici.'
+                : '👇 Touche un nom d\'équipe : la banque de toutes les équipes inscrites s\'ouvre, ou touche un 2e nom pour échanger leur place. Les parties terminées sont verrouillées.'}
             </div>
           )}
           {/* Retard ? Tout le reste se décale d'un coup */}
@@ -1202,8 +1236,60 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         />
       )}
 
-      {/* Barre collante — le site n'affiche pas la dernière version */}
-      {published && state.has_unpublished_changes && (
+      {/* Banque d'équipes — toutes les équipes inscrites, pour remplir la case
+          sélectionnée en mode Échanger (même une équipe pas encore à l'horaire). */}
+      {swapMode && swapSel && (() => {
+        const sel = swapSel;
+        const m = state.matches.find(x => x.id === sel.matchId);
+        if (!m) return null;
+        const currentId = sel.side === 'a' ? m.team_a_id : m.team_b_id;
+        const currentLabel = teamName(currentId, sel.side === 'a' ? m.source_a : m.source_b);
+        return (
+          <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4">
+            <div className="max-w-2xl mx-auto rounded-2xl bg-white p-4 shadow-2xl"
+              style={{ border: `2px solid ${DUO.blue}50`, borderBottom: `4px solid ${DUO.blue}50` }}>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <p className="text-sm font-extrabold text-text-main">
+                  Banque d&apos;équipes
+                  <span className="block text-[11px] font-bold text-text-muted mt-0.5">
+                    M{m.match_number} · {m.scheduled_time} · {nomTerrain(m.court)} — remplacer{' '}
+                    <span style={{ color: DUO.blueDark }}>{currentLabel}</span> par :
+                  </span>
+                </p>
+                <button onClick={() => setSwapSel(null)} className="text-text-light hover:text-text-main flex-shrink-0 p-1"
+                  title="Fermer la banque">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="flex gap-1.5 flex-wrap max-h-[38vh] overflow-y-auto">
+                {state.teams.map(t => {
+                  const ici = t.id === currentId;
+                  const nb = partiesParEquipe.get(t.id) || 0;
+                  return (
+                    <button key={t.id} onClick={() => assignFromBank(t)} disabled={busy !== '' || ici}
+                      className="px-3 py-2 rounded-xl text-xs font-extrabold transition-all disabled:opacity-40"
+                      style={{
+                        backgroundColor: ici ? `${DUO.blue}15` : 'white',
+                        color: ici ? DUO.blueDark : '#334155',
+                        border: ici ? `2px solid ${DUO.blue}60` : '2px solid #e5e7eb',
+                      }}>
+                      {t.name}
+                      <span className="font-bold opacity-60"> · {ici ? 'déjà ici' : `${nb} partie${nb > 1 ? 's' : ''}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-text-muted mt-2">
+                Touche une équipe pour la placer dans cette case, ou touche un autre nom dans l&apos;horaire pour faire un échange.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Barre collante — le site n'affiche pas la dernière version
+          (cachée pendant que la banque d'équipes occupe le bas de l'écran) */}
+      {published && state.has_unpublished_changes && !(swapMode && swapSel) && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4">
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-3 rounded-2xl px-4 py-3 shadow-lg"
             style={{ backgroundColor: '#1e293b' }}>
