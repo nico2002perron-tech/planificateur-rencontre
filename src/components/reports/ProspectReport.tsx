@@ -295,36 +295,11 @@ function SmartInputZone({
       if (parsed.holdings.length > 0) {
         result = parsed;
       } else if (needsAI) {
-        // Try AI parsing
-        setAiParsing(true);
-        try {
-          const res = await fetch('/api/ai/parse-portfolio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rawText: text }),
-          });
-
-          if (res.ok) {
-            const { holdings: aiHoldings } = await res.json();
-            if (aiHoldings && aiHoldings.length > 0) {
-              result = buildParseResultFromAI(aiHoldings);
-            } else {
-              toast('error', 'L\'IA n\'a pas pu extraire de positions. Vérifiez le format des données.');
-              setAiParsing(false);
-              return;
-            }
-          } else {
-            toast('error', 'Erreur lors de l\'analyse IA');
-            setAiParsing(false);
-            return;
-          }
-        } catch {
-          toast('error', 'Erreur de connexion à l\'IA');
-          setAiParsing(false);
-          return;
-        } finally {
-          setAiParsing(false);
-        }
+        // REPLI IA RETIRE le 7 aout 2026 : cette branche envoyait le texte brut
+        // colle -- positions, quantites, valeurs -- a un fournisseur tiers.
+        toast('error', MESSAGE_FORMAT_INCONNU);
+        setAiParsing(false);
+        return;
       } else {
         toast('error', 'Aucune position détectée. Vérifiez le format des données.');
         return;
@@ -656,6 +631,8 @@ function SmartInputZone({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
+const MESSAGE_FORMAT_INCONNU =
+  'Format non reconnu. Le repli automatique par IA a été retiré : le texte collé — positions, quantités, valeurs — quittait le poste vers un fournisseur tiers. Collez un export Croesus standard, ou saisissez les positions à la main.';
 export function ProspectReport() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [clientName, setClientName] = useState('');

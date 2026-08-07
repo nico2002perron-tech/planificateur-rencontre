@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   reformuler, verifierReformulation, referencePour, nombresDe, STYLE_PAR_DEFAUT,
+  identifiantsDuProfil, masquerIdentifiants, demasquer,
   type ChargeReformulation,
 } from '../reformuler';
 import { analyser } from '../strategies';
@@ -130,5 +131,83 @@ describe('la vérification aval', () => {
     const r = await reformuler(c.explication, c, { appelLLM: async () => bonne });
     expect(r.origine).toBe('reformule');
     expect(r.texte).toBe(bonne);
+  });
+});
+
+describe('LE MASQUAGE DES IDENTIFIANTS — le défaut du 7 août 2026', () => {
+  const profilAvecEnfants = () => {
+    const p = profilVierge('f', DATE);
+    p.demographie.enfants = [{ prenom: 'Laurie', age: 9 }, { prenom: 'Jules', age: 6 }];
+    p.comptes = [{
+      numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', candidats: ['37-FICT-A'],
+      type: 'non-enregistre', titulaire: 'client', dateReleve: DATE, encaisse: [],
+      positions: [{ symbole: 'BBB', devise: 'CAD', categorie: null, valeurMarchande: 1, valeurComptable: 1, revenuAnnuel: null }],
+    }];
+    return p;
+  };
+
+  it('récolte les prénoms d’enfants ET les symboles de positions', () => {
+    const ids = identifiantsDuProfil(profilAvecEnfants());
+    expect(ids.prenoms).toEqual(['Laurie', 'Jules']);
+    expect(ids.symboles).toEqual(['BBB']);
+  });
+
+  it('AUCUN PRÉNOM D’ENFANT NE FRANCHIT LA FRONTIÈRE', async () => {
+    // C'est LE défaut : « Laurie : 500 $ de plus » partait vers un tiers.
+    const ids = identifiantsDuProfil(profilAvecEnfants());
+    let charge: ChargeReformulation | null = null;
+    const c = constatChiffre();
+    await reformuler('Laurie : 500 $ de plus, et le titre BBB porte un gain.', c, {
+      identifiants: ids,
+      appelLLM: async (ch) => { charge = ch; return ch.texteSource; },
+    });
+    expect(charge).not.toBeNull();
+    expect(charge!.texteSource).not.toMatch(/Laurie/i);
+    expect(charge!.texteSource).not.toMatch(/BBB/);
+    expect(charge!.texteSource).toMatch(/<<ENFANT_1>>/);
+    expect(charge!.texteSource).toMatch(/<<TITRE_1>>/);
+  });
+
+  it('LE DOCUMENT RETROUVE SES VRAIS NOMS après coup', async () => {
+    // Le masquage protège la frontière, il n'appauvrit pas la page.
+    const ids = identifiantsDuProfil(profilAvecEnfants());
+    // La sortie doit porter la nature du montant, sinon le garde la refuse —
+    // et il a raison de le faire, c'est la regle du 5 aout.
+    const r = await reformuler(
+      'Laurie : 500 $ de perte à cristalliser de plus.', constatChiffre(), {
+        identifiants: ids,
+        appelLLM: async (ch) => ch.texteSource,
+      });
+    expect(r.origine).toBe('reformule');
+    expect(r.texte).toMatch(/Laurie/);
+    expect(r.texte).not.toMatch(/<<ENFANT/);
+  });
+
+  it('REJETTE une sortie qui restaure un prénom de son propre chef', async () => {
+    const ids = identifiantsDuProfil(profilAvecEnfants());
+    const source = 'Laurie : 500 $ de plus.';
+    const r = await reformuler(source, constatChiffre(), {
+      identifiants: ids,
+      appelLLM: async () => 'Pour Laurie, 500 $ de perte à cristalliser de plus.',
+    });
+    expect(r.origine).toBe('gabarit');
+    expect(r.motifRepli).toMatch(/prénom/);
+  });
+
+  it('REJETTE une sortie qui a perdu le repère', async () => {
+    const ids = identifiantsDuProfil(profilAvecEnfants());
+    const r = await reformuler(
+      'Laurie : 500 $ de perte à cristalliser de plus.', constatChiffre(), {
+        identifiants: ids,
+        appelLLM: async () => 'Il reste 500 $ de perte à cristalliser.',
+      });
+    expect(r.origine).toBe('gabarit');
+    expect(r.motifRepli).toMatch(/repère/);
+  });
+
+  it('un prénom qui ressemble à un mot courant est masqué quand même', () => {
+    const m = masquerIdentifiants('Rose a 500 $ de plus.', { symboles: [], prenoms: ['Rose'] });
+    expect(m.texte).not.toMatch(/Rose/);
+    expect(demasquer(m.texte, m.jetons)).toBe('Rose a 500 $ de plus.');
   });
 });

@@ -18,6 +18,88 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Constat } from './strategies';
+import type { ProfilClient } from './types';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LE MASQUAGE DES IDENTIFIANTS — corrigé le 7 août 2026.
+//
+// DÉFAUT : la `reference` était propre — sept champs, que des chiffres et des
+// libellés de catalogue. Mais la charge transporte aussi `texteSource`, qui est
+// l'explication du constat, et celle-là n'avait JAMAIS été auditée. Elle
+// contient des symboles de positions (« Donner plutôt le titre BBB ») et, pire,
+// LES PRÉNOMS DES ENFANTS dans la stratégie REEE (« Laurie : 500 $ de plus »).
+//
+// Le prénom d'un enfant mineur serait sorti du poste. Le module se documentait
+// pourtant comme « pseudonymisé par construction » : c'était vrai de la
+// référence, faux du texte. Une garantie à moitié vraie est pire qu'aucune.
+//
+// LA CORRECTION NE RETIRE PAS LES NOMS DU DOCUMENT — le planificateur veut voir
+// « Laurie » et « BBB » sur la page. On substitue des JETONS STABLES avant
+// l'envoi, on exige qu'ils survivent dans la sortie, et on remet les vraies
+// valeurs en local après. Rien d'identifiant ne franchit la frontière, et le
+// document garde ses vrais noms.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type IdentifiantsAMasquer = { symboles: string[]; prenoms: string[] };
+
+/**
+ * Les identifiants qu'un profil peut faire apparaître dans un texte de constat.
+ *
+ * On ratisse LARGE à dessein : mieux vaut masquer un symbole qui n'apparaît
+ * nulle part que d'en manquer un. Le coût d'un masquage inutile est nul ; celui
+ * d'un oubli est un identifiant chez un tiers.
+ */
+export function identifiantsDuProfil(profil: ProfilClient): IdentifiantsAMasquer {
+  const symboles = new Set<string>();
+  for (const c of profil.comptes) {
+    for (const p of c.positions) if (p.symbole) symboles.add(p.symbole);
+  }
+  const prenoms = profil.demographie.enfants
+    .map((e) => e.prenom?.trim())
+    .filter((x): x is string => Boolean(x));
+  return { symboles: [...symboles], prenoms };
+}
+
+/** Échappe une chaîne pour l'insérer telle quelle dans une expression régulière. */
+function echapper(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export type Masquage = { texte: string; jetons: Record<string, string> };
+
+/**
+ * Remplace chaque identifiant par un jeton stable, et rend la table de retour.
+ *
+ * Les prénoms passent AVANT les symboles : un prénom court pourrait être
+ * contenu dans un nom de titre, et l'ordre inverse le laisserait passer.
+ */
+export function masquerIdentifiants(texte: string, ids: IdentifiantsAMasquer): Masquage {
+  const jetons: Record<string, string> = {};
+  let out = texte ?? '';
+
+  ids.prenoms.forEach((prenom, i) => {
+    const jeton = `<<ENFANT_${i + 1}>>`;
+    const avant = out;
+    out = out.replace(new RegExp(`\\b${echapper(prenom)}\\b`, 'gi'), jeton);
+    if (out !== avant) jetons[jeton] = prenom;
+  });
+  ids.symboles.forEach((symbole, i) => {
+    const jeton = `<<TITRE_${i + 1}>>`;
+    const avant = out;
+    out = out.replace(new RegExp(`\\b${echapper(symbole)}\\b`, 'g'), jeton);
+    if (out !== avant) jetons[jeton] = symbole;
+  });
+  return { texte: out, jetons };
+}
+
+/** Remet les vraies valeurs — EN LOCAL, après que la sortie a été acceptée. */
+export function demasquer(texte: string, jetons: Record<string, string>): string {
+  let out = texte;
+  for (const [jeton, valeur] of Object.entries(jetons)) {
+    out = out.split(jeton).join(valeur);
+  }
+  return out;
+}
 
 export type StyleReformulation = {
   /** En mots. La sortie est repliée au-delà de +20 %. */
@@ -123,10 +205,39 @@ function nombresAutorises(reference: ReferenceConstat): Set<string> {
  */
 export function verifierReformulation(
   sortie: string,
-  charge: ChargeReformulation
+  charge: ChargeReformulation,
+  /** Les jetons posés avant l'envoi — ils doivent tous ressortir intacts. */
+  jetons: Record<string, string> = {},
+  /** Les identifiants réels — aucun ne doit apparaître dans la sortie. */
+  identifiants: IdentifiantsAMasquer = { symboles: [], prenoms: [] }
 ): VerdictReformulation {
   const texte = (sortie ?? '').trim();
   if (!texte) return { accepte: false, motif: 'sortie vide' };
+
+  // 0. AUCUN IDENTIFIANT RÉEL DANS LA SORTIE.
+  //
+  // Le masquage se fait à l'aller ; ce contrôle est le garde-fou du retour.
+  // Un modèle qui « restaurerait » un prénom deviné, ou qui recopierait un
+  // symbole vu ailleurs, se ferait refuser. La double barrière est voulue :
+  // le prénom d'un enfant ne doit pas dépendre d'une seule ligne de code.
+  for (const prenom of identifiants.prenoms) {
+    if (new RegExp(`\\b${echapper(prenom)}\\b`, 'i').test(texte)) {
+      return { accepte: false, motif: 'un prénom apparaît dans la sortie' };
+    }
+  }
+  for (const symbole of identifiants.symboles) {
+    if (new RegExp(`\\b${echapper(symbole)}\\b`).test(texte)) {
+      return { accepte: false, motif: 'un symbole de position apparaît dans la sortie' };
+    }
+  }
+
+  // 0 bis. LES JETONS SURVIVENT. Sans eux, le démasquage rendrait un texte
+  // amputé de ce qu'il devait nommer.
+  for (const jeton of Object.keys(jetons)) {
+    if (!texte.includes(jeton)) {
+      return { accepte: false, motif: `le repère ${jeton} a disparu de la sortie` };
+    }
+  }
 
   // 1. AUCUN CHIFFRE INVENTÉ.
   const permis = nombresAutorises(charge.reference);
@@ -183,7 +294,12 @@ export type ResultatReformulation = {
 export async function reformuler(
   texteSource: string,
   constat: Constat,
-  options: { appelLLM?: AppelLLM; style?: StyleReformulation } = {}
+  options: {
+    appelLLM?: AppelLLM;
+    style?: StyleReformulation;
+    /** À fournir DÈS QU'UN PROFIL EST EN JEU — sinon rien n'est masqué. */
+    identifiants?: IdentifiantsAMasquer;
+  } = {}
 ): Promise<ResultatReformulation> {
   const gabarit: ResultatReformulation = {
     texte: texteSource, origine: 'gabarit', motifRepli: null,
@@ -194,8 +310,12 @@ export async function reformuler(
     return { ...gabarit, motifRepli: 'couche de reformulation débranchée' };
   }
 
+  const identifiants = options.identifiants ?? { symboles: [], prenoms: [] };
+  const { texte: masque, jetons } = masquerIdentifiants(texteSource, identifiants);
+
   const charge: ChargeReformulation = {
-    texteSource,
+    // C'EST LE TEXTE MASQUÉ QUI PART, jamais l'original.
+    texteSource: masque,
     reference: referencePour(constat),
     style: options.style ?? STYLE_PAR_DEFAUT,
   };
@@ -207,8 +327,9 @@ export async function reformuler(
     return { ...gabarit, motifRepli: `appel en échec : ${e instanceof Error ? e.message : 'inconnu'}` };
   }
 
-  const verdict = verifierReformulation(sortie, charge);
+  const verdict = verifierReformulation(sortie, charge, jetons, identifiants);
   if (!verdict.accepte) return { ...gabarit, motifRepli: verdict.motif };
 
-  return { texte: sortie.trim(), origine: 'reformule', motifRepli: null };
+  // Le démasquage se fait ICI, en local : le document retrouve ses vrais noms.
+  return { texte: demasquer(sortie.trim(), jetons), origine: 'reformule', motifRepli: null };
 }

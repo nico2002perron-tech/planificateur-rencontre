@@ -23,6 +23,8 @@ interface Props {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+const MESSAGE_FORMAT_INCONNU =
+  'Format non reconnu. Le repli automatique par IA a été retiré : le texte collé — positions, quantités, valeurs — quittait le poste vers un fournisseur tiers. Collez un export Croesus standard, ou saisissez les positions à la main.';
 export function ImportModal({ open, onClose, onImport }: Props) {
   const [mode, setMode] = useState<'paste' | 'file'>('paste');
   const [rawText, setRawText] = useState('');
@@ -33,62 +35,30 @@ export function ImportModal({ open, onClose, onImport }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  // ── Parse text via AI ──────────────────────────────────────────────────
+  // ── Repli IA RETIRÉ le 7 août 2026 ─────────────────────────────────────
+  //
+  // Cette fonction envoyait le TEXTE BRUT COLLÉ — positions, quantités,
+  // valeurs marchandes, suffixes de comptes — à un fournisseur d'IA tiers,
+  // au premier format non reconnu, sans bouton ni réglage.
+  //
+  // Le parseur déterministe reste : il lit les exports Croesus, qui sont le
+  // format réel. Pour tout le reste, la saisie à la main — plus lente, et qui
+  // ne fait sortir aucune donnée du poste.
 
-  const parseText = useCallback(async (text: string) => {
-    setIsParsing(true);
-    setError(null);
+  const parseText = useCallback(async (_text: string) => {
+    setError(MESSAGE_FORMAT_INCONNU);
     setParsedHoldings(null);
-    try {
-      const res = await fetch('/api/ai/parse-portfolio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText: text }),
-      });
-      const data = await res.json();
-      if (data.error && !data.holdings?.length) {
-        setError(data.error);
-        return;
-      }
-      if (data.holdings?.length > 0) {
-        const holdings = buildHoldings(data.holdings);
-        setParsedHoldings(holdings);
-        setExcluded(new Set());
-      } else {
-        setError('Aucune position détectée. Vérifiez le format des données.');
-      }
-    } catch {
-      setError("Erreur lors de l'analyse. Réessayez.");
-    } finally {
-      setIsParsing(false);
-    }
+    setIsParsing(false);
   }, []);
 
   // ── Parse image via AI Vision ──────────────────────────────────────────
 
-  const parseImage = useCallback(async (base64: string, mimeType: string) => {
-    setIsParsing(true);
-    setError(null);
+  const parseImage = useCallback(async (_base64: string, _mimeType: string) => {
+    // Le mode image envoyait une capture du releve du client au meme
+    // fournisseur. Retire pour la meme raison.
+    setError(MESSAGE_FORMAT_INCONNU);
     setParsedHoldings(null);
-    try {
-      const res = await fetch('/api/ai/parse-portfolio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mimeType }),
-      });
-      const data = await res.json();
-      if (data.holdings?.length > 0) {
-        const holdings = buildHoldings(data.holdings);
-        setParsedHoldings(holdings);
-        setExcluded(new Set());
-      } else {
-        setError("Aucune position détectée dans l'image. Assurez-vous que les titres/symboles sont lisibles.");
-      }
-    } catch {
-      setError("Erreur lors de l'analyse de l'image.");
-    } finally {
-      setIsParsing(false);
-    }
+    setIsParsing(false);
   }, []);
 
   // ── Build holdings with weights ────────────────────────────────────────
