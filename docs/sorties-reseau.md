@@ -50,14 +50,12 @@ sortir aucune donnée.
 
 ## 3. Ce qui sort ENCORE, et ce que ça transporte
 
-### 3a. Un nom de client part — à décider
+### 3a. Identité de client — PLUS AUCUNE (fermé le 11 août 2026)
 
-| Route | Ce qui part |
-|---|---|
-| `POST /api/models/email` | `DESTINATAIRE: ${clientName}` **dans le prompt**. Valeur par défaut « Client », mais les appelants peuvent passer un vrai nom. |
-
-C'est la seule sortie qui porte encore une identité de client. Elle n'était pas
-dans le périmètre du retrait demandé ; elle mérite une décision explicite.
+`models/email` mettait `DESTINATAIRE: <nom>` dans son prompt — la dernière
+sortie de l'application portant une identité. Le modèle écrit désormais le
+repère `[DESTINATAIRE]` et la substitution du vrai nom se fait en local, après
+génération. **Aucune route ne transmet plus de nom de client.**
 
 ### 3b. Composition de portefeuille, sans identité
 
