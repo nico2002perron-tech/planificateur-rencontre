@@ -285,9 +285,156 @@ function strategieCristallisation(profil: ProfilClient): Constat {
         `${pertesDejaPrises > 0 ? `, après les ${argent(pertesDejaPrises)} de pertes déjà prises` : ''}).` +
         `${detailReportees}`
       : gainsRealises <= 0
-        ? `Aucun gain net n’a été réalisé cette année${pertesDejaPrises > 0 ? ` (les ${argent(pertesDejaPrises)} de pertes déjà prises couvrent les gains)` : ''} : il n’y a rien à absorber. Les ${argent(pertesLatentes)} de pertes latentes restent disponibles pour une année future.`
+        // « Les 0 $ de pertes latentes restent disponibles » — vu au rendu du
+        // 11 août : la phrase ne se dit que s'il y a des pertes latentes.
+        ? `Aucun gain net n’a été réalisé cette année${pertesDejaPrises > 0 ? ` (les ${argent(pertesDejaPrises)} de pertes déjà prises couvrent les gains)` : ''} : il n’y a rien à absorber.${pertesLatentes > 0 ? ` Les ${argent(pertesLatentes)} de pertes latentes restent disponibles pour une année future.` : ''}`
         : 'Aucune position non enregistrée n’est en perte latente.',
     donneesManquantes: manquantes,
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STRATÉGIE 7 · CRISTALLISATION DE GAINS — le miroir de la stratégie 1
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Récolter des gains SANS impôt, à hauteur des pertes qui dorment.
+ *
+ * Les deux cristallisations sont les faces du même signe : gains nets positifs
+ * → la stratégie 1 récolte des pertes pour les effacer ; pertes inutilisées
+ * (année courante nette OU reportées d'années passées) → celle-ci récolte des
+ * gains qu'elles absorbent à taux nul. Le portefeuille ne change pas — on vend
+ * et on rachète — mais le prix de base remonte, ce qui réduit l'impôt d'une
+ * vente future.
+ *
+ * LE CALENDRIER, parce que Nicolas posait la question (11 août 2026) : ce
+ * geste n'a RIEN à voir avec la période de cotisation REER — les 60 premiers
+ * jours de l'année ne gouvernent que la déduction REER. L'axe fiscal d'une
+ * vente est sa DATE DE RÈGLEMENT dans l'année civile. Et la variante couverte
+ * ici — absorber des pertes inutilisées — n'a AUCUNE échéance : une perte
+ * reportée ne périme pas, le geste s'exécute en tout temps. Son avantage
+ * structurel sur la stratégie 1 : la règle de la perte apparente (30 jours) ne
+ * vise que les PERTES — un gain cristallisé permet de racheter le même titre
+ * le jour même.
+ *
+ * La variante « année à faible revenu » (réaliser au bas palier) exigera les
+ * barèmes d'imposition fédéral + Québec dans parametres-fiscaux.csv — sous le
+ * même verrou fiscaliste. Elle n'est PAS couverte ici.
+ */
+function strategieCristallisationGains(profil: ProfilClient): Constat {
+  const base = {
+    strategie: 'cristallisation-gains',
+    titre: 'Cristallisation de gains',
+    titreClient: 'Récolter des gains sans payer d’impôt',
+    libelleMontant: 'de gain cristallisable sans impôt',
+    recurrence: 'unique' as const,
+    sources: sourcesDe(profil),
+    limiteVisibilite: null,
+    dejaEnOrdre: false,
+  };
+  const nonEnr = positionsNonEnregistrees(profil);
+
+  if (profil.comptes.length === 0) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        'Aucun relevé de positions n’a été importé : les gains latents ne peuvent pas être établis.',
+      donneesManquantes: ['le relevé de positions du client'],
+    };
+  }
+
+  const aveugles = sansPbr(nonEnr);
+  if (nonEnr.length === 0 || aveugles === nonEnr.length) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        nonEnr.length === 0
+          ? 'Aucune position non enregistrée n’a pu être identifiée — un compte au régime non prouvé est écarté plutôt que présumé.'
+          : 'Le prix de base rajusté manque sur les positions non enregistrées : le gain latent n’est pas calculable.',
+      donneesManquantes: [
+        nonEnr.length === 0
+          ? 'un compte non enregistré identifié'
+          : 'le prix de base rajusté des positions non enregistrées',
+      ],
+    };
+  }
+
+  const enGain = nonEnr
+    .map((p) => ({ p, g: gainLatent(p) }))
+    .filter((x): x is { p: PositionSituee; g: number } => x.g !== null && x.g > 0);
+  const gainsLatents = enGain.reduce((somme, x) => somme + x.g, 0);
+
+  // Les pertes disponibles : le net de l'année (jamais négatif) + les
+  // reportées de l'avis de cotisation, quand elles sont connues.
+  const perteNetteAnnee = Math.max(
+    0,
+    profil.transactionsAnnee.pertesRealisees - profil.transactionsAnnee.gainsRealises
+  );
+  const reportees = profil.droits.pertesCapitalReportees.montant;
+  const pertesDisponibles = perteNetteAnnee + (reportees ?? 0);
+
+  if (enGain.length === 0) {
+    return {
+      ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
+      dejaEnOrdre: aveugles === 0,
+      explication: 'Aucune position non enregistrée ne porte de gain latent à récolter.',
+      donneesManquantes: [],
+    };
+  }
+
+  if (pertesDisponibles <= 0) {
+    // Aucune perte connue. Si les reportées n'ont jamais été demandées, c'est
+    // une question — pas un « rien à faire » : elles pourraient exister.
+    if (reportees === null) {
+      return {
+        ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+        explication:
+          `${argent(gainsLatents)} de gains latents pourraient être récoltés sans impôt si des pertes ` +
+          'd’années passées dormaient au dossier fiscal. Ce montant ne figure que sur l’avis de cotisation.',
+        donneesManquantes: ['le montant des pertes en capital reportées (avis de cotisation)'],
+      };
+    }
+    return {
+      ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
+      dejaEnOrdre: true,
+      explication:
+        'Aucune perte inutilisée — ni cette année, ni reportée. Il n’y a rien à récolter à impôt nul, et c’est une bonne chose.',
+      donneesManquantes: [],
+    };
+  }
+
+  const montant = Math.round(Math.min(gainsLatents, pertesDisponibles) * 100) / 100;
+  const originePertes =
+    perteNetteAnnee > 0 && (reportees ?? 0) > 0
+      ? `${argent(perteNetteAnnee)} de pertes nettes de l’année et ${argent(reportees as number)} reportées d’années passées`
+      : perteNetteAnnee > 0
+        ? `${argent(perteNetteAnnee)} de pertes nettes réalisées cette année`
+        : `${argent(reportees as number)} de pertes reportées d’années passées`;
+
+  if (visibiliteEntamee(profil)) {
+    return {
+      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      limiteVisibilite:
+        'chiffrée sur nos comptes seulement — des gains ou pertes réalisés ailleurs changeraient le montant absorbable.',
+      explication:
+        `${originePertes} restent inutilisées, et ${argent(gainsLatents)} de gains latents sont détenus ici. ` +
+        `Jusqu’à ${argent(montant)} de gain pourraient être cristallisés sans impôt — à confirmer une fois ` +
+        'les comptes détenus ailleurs connus.',
+      donneesManquantes: ['la liste des positions détenues ailleurs qu’ici'],
+    };
+  }
+
+  return {
+    ...base,
+    statut: 'calcule',
+    portee: 'declaree',
+    montantEstime: montant,
+    explication:
+      `${originePertes} restent inutilisées. Vendre puis racheter les positions gagnantes — permis le jour même, ` +
+      `la règle des 30 jours ne vise que les pertes — cristallise ${argent(montant)} de gain sans un dollar ` +
+      'd’impôt et remonte d’autant leur prix de base. Ce geste n’a aucune échéance : une perte reportée ne périme pas.',
+    donneesManquantes: [],
   };
 }
 
@@ -764,6 +911,7 @@ export function analyser(
 ): ResultatAnalyse {
   const constats: Constat[] = [
     strategieCristallisation(profil),
+    strategieCristallisationGains(profil),
     strategieLocalisation(profil),
     strategieCeliConjoint(profil),
     strategieDonTitres(profil),

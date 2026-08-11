@@ -89,6 +89,11 @@ const ICONES: Record<string, { couleur: string; traits: string[] }> = {
     couleur: C.duoGreen,
     traits: ['M3 4 L3 21 L21 21', 'M7 9 L11 14 L15 10 L20 16', 'M20 11 L20 16 L15 16'],
   },
+  // La flèche qui monte sur un axe : le gain qu'on va récolter.
+  'cristallisation-gains': {
+    couleur: C.duoYellow,
+    traits: ['M3 4 L3 21 L21 21', 'M7 16 L11 11 L15 14 L20 8', 'M20 13 L20 8 L15 8'],
+  },
   // Deux contenants, un titre qui passe de l'un à l'autre.
   'localisation-actifs': {
     couleur: C.duoBlue,

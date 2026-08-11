@@ -31,10 +31,10 @@ import { OptimisationsFiscalesDocument } from '@/lib/pdf/optimisations-fiscales-
  *   complet    — tout le catalogue, y compris ce qui exige la fiche.
  */
 const PRESETS: Record<string, string[]> = {
-  instantane: ['cristallisation-pertes', 'don-titres', 'ordre-vente'],
+  instantane: ['cristallisation-pertes', 'cristallisation-gains', 'don-titres', 'ordre-vente'],
   complet: [
-    'cristallisation-pertes', 'localisation-actifs', 'celi-conjoint',
-    'don-titres', 'subvention-reee', 'ordre-vente',
+    'cristallisation-pertes', 'cristallisation-gains', 'localisation-actifs',
+    'celi-conjoint', 'don-titres', 'subvention-reee', 'ordre-vente',
   ],
 };
 

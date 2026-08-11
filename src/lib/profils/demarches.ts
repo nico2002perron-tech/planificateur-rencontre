@@ -77,6 +77,22 @@ const GABARITS: Record<string, (c: Constat) => Geste[]> = {
     ];
   },
 
+
+  // ── 7 · Cristallisation de gains ───────────────────────────────────────────
+  'cristallisation-gains': (c) => [
+    {
+      libelle: 'Vendre puis racheter les positions gagnantes, à hauteur des pertes disponibles',
+      porteur: 'les-deux',
+      demarches: [
+        'Confirmer le montant exact des pertes reportées sur l’avis de cotisation — c’est la seule source qui fait foi.',
+        c.montantEstime !== null
+          ? `Vendre pour environ ${argent(c.montantEstime)} de gain, puis racheter les mêmes titres — permis le jour même : la règle des 30 jours ne vise que les pertes.`
+          : 'Établir le montant exact une fois les comptes détenus ailleurs connus.',
+        'Le portefeuille ne change pas ; seul le prix de base remonte, ce qui réduit l’impôt d’une vente future. Aucune échéance : une perte reportée ne périme pas.',
+      ],
+    },
+  ],
+
   // ── 3 · CELI du conjoint ───────────────────────────────────────────────────
   'celi-conjoint': (c) => {
     const montant = c.montantEstime;

@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { analyser, restreindre, classerManques, etatDetection, type PortefeuilleCible } from '../strategies';
+import { gestesDe } from '../demarches';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '../types';
 
 const DATE = '2026-08-05';
@@ -53,10 +54,10 @@ const plat = (s: string) => s.replace(/[\s   ]+/g, ' ');
 describe('le contrat', () => {
   it('rend TOUT le catalogue, toujours, même sur un profil vide', () => {
     const r = analyser(profilVierge('vide', DATE), null, DATE);
-    expect(r.constats).toHaveLength(6);
+    expect(r.constats).toHaveLength(7);
     expect(r.constats.map((c) => c.strategie).sort()).toEqual([
-      'celi-conjoint', 'cristallisation-pertes', 'don-titres', 'localisation-actifs',
-      'ordre-vente', 'subvention-reee',
+      'celi-conjoint', 'cristallisation-gains', 'cristallisation-pertes', 'don-titres',
+      'localisation-actifs', 'ordre-vente', 'subvention-reee',
     ]);
   });
 
@@ -267,7 +268,7 @@ describe('l’angle mort', () => {
     });
     const a = analyser(p, null, DATE).angleMort!;
     expect(a).not.toBeNull();
-    expect(a.total).toBe(6);
+    expect(a.total).toBe(7);
     expect(a.constatsLimites).toBeGreaterThan(0);
     expect(plat(a.details.join(' '))).toMatch(/4 000 \$ vus ici depuis 2015-03-12/);
     expect(plat(a.details.join(' '))).toMatch(/plafond non vérifiable/);
@@ -562,5 +563,123 @@ describe('le classement privilégie ce qui débloque TOUT DE SUITE', () => {
     const dons = m.find((x) => x.donnee.includes('dons de bienfaisance'));
     expect(dons).toBeDefined();
     expect(dons!.debloqueImmediatement).toBe(1);
+  });
+});
+
+
+describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
+  const gains = (p: ProfilClient) =>
+    analyser(p, null, DATE).constats.find((c) => c.strategie === 'cristallisation-gains')!;
+
+  it('chiffre le gain absorbable par les pertes REPORTÉES', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];  // +40 000
+    });
+    const c = gains(p);
+    expect(c.statut).toBe('calcule');
+    expect(c.montantEstime).toBe(7500);          // plafonné aux pertes, pas aux gains
+    expect(plat(c.explication)).toMatch(/7 500 \$ de pertes reportées/);
+  });
+
+  it('chiffre aussi le NET DE PERTES de l’année courante', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.transactionsAnnee.gainsRealises = 1000;
+      x.transactionsAnnee.pertesRealisees = 6000;   // net −5 000
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 20000, 12000)])];  // +8 000
+    });
+    expect(gains(p).montantEstime).toBe(5000);
+  });
+
+  it('PLAFONNE aux gains latents quand les pertes dépassent', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 90000, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 15000, 12000)])];  // +3 000
+    });
+    expect(gains(p).montantEstime).toBe(3000);
+  });
+
+  it('S’ALLUME EXACTEMENT QUAND LA 1 S’ÉTEINT — les deux faces du même signe', () => {
+    // Année à pertes nettes : la 1 n'a rien à absorber, la 7 chiffre.
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 6000;
+      x.comptes = [compte('non-enregistre', [
+        position('GAGNANT', 20000, 12000),
+        position('PERDANT', 4000, 9000),
+      ])];
+    });
+    const r = analyser(p, null, DATE);
+    const pertes = r.constats.find((c) => c.strategie === 'cristallisation-pertes')!;
+    const g = r.constats.find((c) => c.strategie === 'cristallisation-gains')!;
+    expect(pertes.statut).toBe('non-applicable');
+    expect(g.statut).toBe('calcule');
+  });
+
+  it('PERTES REPORTÉES JAMAIS DEMANDÉES : une question, pas un « rien à faire »', () => {
+    // Elles pourraient exister — seul l'avis de cotisation le sait.
+    const p = profilConsolide((x) => {
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
+    });
+    const c = gains(p);
+    expect(c.statut).toBe('indisponible');
+    expect(c.donneesManquantes.join(' ')).toMatch(/avis de cotisation/);
+  });
+
+  it('AUCUNE PERTE, CONFIRMÉ : « déjà en ordre », et c’est une bonne nouvelle', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
+    });
+    const c = gains(p);
+    expect(c.statut).toBe('non-applicable');
+    expect(c.dejaEnOrdre).toBe(true);
+  });
+
+  it('JAMAIS un montant quand des comptes existent ailleurs', () => {
+    const p = profilConsolide((x) => {
+      x.consolidation.comptesExternes = 'oui';
+      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
+    });
+    const c = gains(p);
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.montantEstime).toBeNull();
+    expect(plat(c.explication)).toMatch(/7 500/);   // le chiffre vu reste dit
+  });
+
+  it('un compte au régime INCONNU reste écarté, jamais présumé non enregistré', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.comptes = [compte(null, [position('GAGNANT', 50000, 10000)])];
+    });
+    expect(gains(p).statut).toBe('indisponible');
+  });
+
+  it('ses gestes disent le rachat immédiat — pas de règle des 30 jours pour un gain', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
+    });
+    const g = gestesDe(gains(p));
+    expect(g.length).toBeGreaterThan(0);
+    expect(plat(g[0].demarches.join(' '))).toMatch(/permis le jour même/);
+  });
+});
+
+describe('« 0 $ de pertes latentes » ne se dit pas', () => {
+  it('la phrase des pertes latentes disparaît quand il n’y en a aucune', () => {
+    // Vu au rendu du 11 août : « Les 0 $ de pertes latentes restent
+    // disponibles pour une année future » — même famille que le « dont 0 $
+    // absorberait » du 5 août. Un zéro narratif est un mensonge de précision.
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 1000;
+      x.transactionsAnnee.pertesRealisees = 6000;
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 62000, 14000)])];
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('non-applicable');
+    expect(plat(c.explication)).not.toMatch(/0 \$ de pertes latentes/);
   });
 });
