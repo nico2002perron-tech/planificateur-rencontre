@@ -52,6 +52,9 @@ interface Config {
   break_minutes: number;
   playoffs_enabled: boolean;
   playoffs_team_count: number;
+  points_win?: number;
+  points_tie?: number;
+  points_loss?: number;
   status: 'draft' | 'published';
   schedule_sent_at: string | null;
   published_at: string | null;
@@ -246,8 +249,17 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   const qual = useMemo(() => computeQualification(
     state?.standings || [],
     (state?.matches || []) as unknown as TournamentMatch[],
-    { playoffsEnabled: !!state?.config?.playoffs_enabled, playoffSize: state?.config?.playoffs_team_count ?? 0 },
-  ), [state?.standings, state?.matches, state?.config?.playoffs_enabled, state?.config?.playoffs_team_count]);
+    {
+      playoffsEnabled: !!state?.config?.playoffs_enabled,
+      playoffSize: state?.config?.playoffs_team_count ?? 0,
+      points: {
+        win: state?.config?.points_win ?? 2,
+        tie: state?.config?.points_tie ?? 1,
+        loss: state?.config?.points_loss ?? 0,
+      },
+    },
+  ), [state?.standings, state?.matches, state?.config?.playoffs_enabled, state?.config?.playoffs_team_count,
+      state?.config?.points_win, state?.config?.points_tie, state?.config?.points_loss]);
   const showCut = qual.guaranteedComplete && qual.playoffSize > 0 && qual.cutRank < (state?.standings.length ?? 0);
   const liveUrl = typeof window !== 'undefined' ? `${window.location.origin}/tournoi/${eventId}` : `/tournoi/${eventId}`;
 
@@ -489,7 +501,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
       if (!res.ok) { showToast(data.error || 'Erreur de génération des séries.'); return; }
       applyState(data);
       showToast(
-        `Séries générées : ${data.playoffsGenerated} parties. Les cases se rempliront automatiquement avec les pointages.` +
+        `Séries générées : ${data.playoffsGenerated} parties. Chaque case se remplit dès que c'est sûr : qui passe, contre qui, à quelle heure.` +
         (data.overflowMatches ? ` ⚠ ${data.overflowMatches} partie(s) dépassent la fin de la dernière journée.` : ''),
       );
     } finally {
@@ -1061,7 +1073,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         <div className="rounded-2xl bg-white p-4" style={{ border: '2px solid #e5e7eb40', borderBottom: '4px solid #d1d5db40' }}>
           <h2 className="text-sm font-extrabold text-text-main mb-3 flex items-center gap-1.5">
             <Medal className="h-4 w-4" style={{ color: DUO.orange }} /> Classement
-            <span className="text-[11px] text-text-muted font-bold">(mis à jour à chaque pointage)</span>
+            <span className="text-[11px] text-text-muted font-bold">(égalité brisée par le moins de points contre)</span>
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1073,6 +1085,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                   <th className="text-center py-1.5 px-1.5">V</th>
                   <th className="text-center py-1.5 px-1.5">N</th>
                   <th className="text-center py-1.5 px-1.5">D</th>
+                  <th className="text-center py-1.5 px-1.5" title="Points contre — le moins = devant en cas d'égalité">PC</th>
                   <th className="text-center py-1.5 px-1.5">+/−</th>
                   <th className="text-center py-1.5 px-1.5">Pts</th>
                   <th className="text-right py-1.5 pl-1.5">Statut</th>
@@ -1085,7 +1098,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                   return (
                   <Fragment key={r.teamId}>
                     {showCut && i === qual.cutRank && (
-                      <tr><td colSpan={9} className="py-1">
+                      <tr><td colSpan={10} className="py-1">
                         <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide" style={{ color: DUO.blue }}>
                           <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${DUO.blue}66` }} />
                           Ligne des séries · les {qual.playoffSize} premières passent
@@ -1102,6 +1115,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
                       <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.greenDark }}>{r.wins}</td>
                       <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.ties}</td>
                       <td className="py-2 px-1.5 text-center font-bold" style={{ color: DUO.red }}>{r.losses}</td>
+                      <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.pointsAgainst}</td>
                       <td className="py-2 px-1.5 text-center font-bold text-text-muted">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
                       <td className="py-2 px-1.5 text-center font-extrabold text-text-main">{r.points}</td>
                       <td className="py-2 pl-1.5 text-right text-[11px] font-extrabold whitespace-nowrap" style={{ color: QUAL_COLOR[tq?.status ?? 'none'] }}>
@@ -1122,7 +1136,9 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         <div className="rounded-2xl bg-white p-4 mt-4" style={{ border: '2px solid #e5e7eb40', borderBottom: '4px solid #d1d5db40' }}>
           <h2 className="text-sm font-extrabold text-text-main mb-3 flex items-center gap-1.5">
             <Trophy className="h-4 w-4" style={{ color: DUO.orange }} /> Séries éliminatoires
-            <span className="text-[11px] text-text-muted font-bold">(se remplit avec les pointages)</span>
+            <span className="text-[11px] text-text-muted font-bold">
+              (chaque case se remplit dès que la place est mathématiquement assurée)
+            </span>
           </h2>
           <Bracket matches={playoffMatches} teamName={teamName} multiDay={multiDay} accent={DUO.blue} />
         </div>

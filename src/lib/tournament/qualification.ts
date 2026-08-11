@@ -10,14 +10,21 @@
  *      championne, finaliste, médaillée de bronze, ou éliminée à une ronde donnée.
  */
 import type { TournamentMatch } from './state';
+import type { PointsConfig } from './standings';
+import { plagesDeRang } from './certitude.ts';
 
-/** Le classement, réduit à ce dont ce module a besoin (accepte StandingRow & co). */
-type RankedTeam = { teamId: string; rank: number };
+/**
+ * Le classement, réduit à ce dont ce module a besoin (accepte StandingRow & co).
+ * points/pointsAgainst alimentent le moteur de certitude quand ils sont là —
+ * sans eux, les statuts avant la fin de la phase retombent sur « En lice ».
+ */
+type RankedTeam = { teamId: string; rank: number; points?: number; pointsAgainst?: number };
 
 /**
  * Toutes les parties garanties sont-elles réglées (au moins une jouée) ?
  * Miroir volontaire de playoffs.guaranteedPhaseComplete — gardé local pour que
- * ce module n'ait que des imports de TYPE (testable au runner TS de Node).
+ * ce module n'importe rien qui touche à la DB (seul certitude.ts, pur lui
+ * aussi, est importé au runtime).
  */
 function guaranteedPhaseComplete(matches: Pick<TournamentMatch, 'phase' | 'status'>[]): boolean {
   const g = matches.filter(m => m.phase === 'garantie');
@@ -76,10 +83,23 @@ function decide(m: TournamentMatch): { winner: string | null; loser: string | nu
 export function computeQualification(
   standings: readonly RankedTeam[],
   matches: TournamentMatch[],
-  opts: { playoffsEnabled: boolean; playoffSize: number },
+  opts: { playoffsEnabled: boolean; playoffSize: number; points?: PointsConfig },
 ): QualificationResult {
   const playoffSize = opts.playoffsEnabled ? Math.max(0, opts.playoffSize) : 0;
   const guaranteedComplete = guaranteedPhaseComplete(matches);
+
+  // Avant la fin de la phase : qui est DÉJÀ mathématiquement fixé ? (une équipe
+  // dont le pire rang possible reste dans le top N est sûre de passer ; une
+  // équipe dont le meilleur rang possible est sous la coupe est sortie)
+  let plages: ReturnType<typeof plagesDeRang> | null = null;
+  if (playoffSize > 0 && !guaranteedComplete
+    && standings.every(r => typeof r.points === 'number' && typeof r.pointsAgainst === 'number')) {
+    plages = plagesDeRang(
+      matches,
+      standings.map(r => ({ teamId: r.teamId, points: r.points as number, pointsAgainst: r.pointsAgainst as number })),
+      opts.points ?? { win: 2, tie: 1, loss: 0 },
+    );
+  }
   const playoffMatches = matches.filter(m => m.phase !== 'garantie' && m.status !== 'cancelled');
 
   const finale = playoffMatches.find(m => m.phase === 'finale');
@@ -116,7 +136,14 @@ export function computeQualification(
     if (playoffSize === 0) {
       status = 'none'; label = '';
     } else if (!guaranteedComplete) {
-      status = 'contention'; label = 'En lice';
+      // Certitude en direct : déjà placée dans le bracket → « En séries » ;
+      // sûre de passer (pire rang ≤ coupe) → « Qualifié » ; plus aucun scénario
+      // pour passer → « Éliminé » ; sinon encore « En lice ».
+      const p = plages?.get(row.teamId);
+      if (aliveInPlayoffs.has(row.teamId)) { status = 'qualified'; label = 'En séries'; }
+      else if (p && p.max <= playoffSize) { status = 'qualified'; label = 'Qualifié'; }
+      else if (p && p.min > playoffSize) { status = 'eliminated'; label = 'Éliminé'; }
+      else { status = 'contention'; label = 'En lice'; }
     } else if (!inPlayoffs) {
       status = 'eliminated'; label = 'Éliminé';
     } else if (finaleRes.winner === row.teamId) {

@@ -2,7 +2,9 @@
  * Classement de tournoi — fonction PURE, calculée à la volée depuis les
  * parties TERMINÉES. Jamais stocké en base : impossible d'être désynchronisé.
  *
- * Bris d'égalité (dans l'ordre) : points → différentiel → points pour → nom.
+ * Bris d'égalité (dans l'ordre) : points → POINTS CONTRE (le moins = devant,
+ * comme dans les tournois de balle : ça décourage de gonfler les pointages) →
+ * différentiel → points pour → nom.
  * (Le face-à-face n'est pas implanté — à considérer si un tournoi le réclame.)
  */
 
@@ -97,6 +99,7 @@ export function computeStandings(
   sorted.forEach(r => { r.diff = r.pointsFor - r.pointsAgainst; });
   sorted.sort((x, y) =>
     y.points - x.points ||
+    x.pointsAgainst - y.pointsAgainst ||
     y.diff - x.diff ||
     y.pointsFor - x.pointsFor ||
     x.teamName.localeCompare(y.teamName, 'fr'),

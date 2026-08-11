@@ -166,6 +166,7 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
   const qual = computeQualification(standings, matches, {
     playoffsEnabled: config.playoffs_enabled,
     playoffSize: config.playoffs_team_count,
+    points: { win: config.points_win, tie: config.points_tie, loss: config.points_loss },
   });
 
   const garantie = matches.filter(m => m.phase === 'garantie').sort((a, b) => a.match_number - b.match_number);
@@ -314,7 +315,7 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
         {standings.length > 0 && (
           <>
             <Text style={s.sectionTitle}>
-              Classement <Text style={s.sectionNote}>(phase garantie — {config.points_win} pt/victoire, {config.points_tie} nulle)</Text>
+              Classement <Text style={s.sectionNote}>(phase garantie — {config.points_win} pt/victoire, {config.points_tie} nulle · égalité : moins de points contre)</Text>
             </Text>
             <View style={s.th}>
               <Text style={[s.thc, { width: 18, textAlign: 'left' }]}>#</Text>
@@ -323,6 +324,7 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
               <Text style={[s.thc, { width: 20 }]}>V</Text>
               <Text style={[s.thc, { width: 20 }]}>N</Text>
               <Text style={[s.thc, { width: 20 }]}>D</Text>
+              <Text style={[s.thc, { width: 26 }]}>PC</Text>
               <Text style={[s.thc, { width: 34 }]}>+/−</Text>
               <Text style={[s.thc, { width: 26 }]}>Pts</Text>
               <Text style={[s.thc, { width: 84, textAlign: 'right' }]}>Statut</Text>
@@ -346,6 +348,7 @@ export function TournamentSheet({ input }: { input: SheetInput }) {
                     <Text style={{ width: 20, textAlign: 'center' }}>{r.wins}</Text>
                     <Text style={{ width: 20, textAlign: 'center' }}>{r.ties}</Text>
                     <Text style={{ width: 20, textAlign: 'center' }}>{r.losses}</Text>
+                    <Text style={{ width: 26, textAlign: 'center' }}>{r.pointsAgainst}</Text>
                     <Text style={{ width: 34, textAlign: 'center', color: r.diff > 0 ? GREEN : r.diff < 0 ? '#b91c1c' : GREY }}>{r.diff > 0 ? '+' : ''}{r.diff}</Text>
                     <Text style={{ width: 26, textAlign: 'center', fontFamily: 'Helvetica-Bold' }}>{r.points}</Text>
                     <Text style={{ width: 84, textAlign: 'right', fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: STATUS_COLOR[tq?.status ?? 'none'] }}>

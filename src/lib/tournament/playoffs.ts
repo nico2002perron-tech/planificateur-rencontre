@@ -7,7 +7,11 @@
  *    Le bracket existe donc AVANT de connaître les équipes.
  *
  * 2. resolvePlayoffSlots : remplit (et vide) ces cases automatiquement.
- *      - les seeds se placent quand TOUTES les parties garanties sont jouées ;
+ *      - « Ne au classement » se place DÈS QUE LE RANG EST MATHÉMATIQUEMENT
+ *        VERROUILLÉ (moteur certitude.ts) : pas besoin d'attendre la fin de la
+ *        phase garantie — une équipe sait qui elle affronte et à quelle heure
+ *        aussitôt que plus aucun scénario ne peut la déloger. Le bris d'égalité
+ *        « moins de points contre » (standings.ts) rend ça rapide ;
  *      - « Gagnant/Perdant MX » se place dès que MX est terminée ;
  *      - un pointage corrigé ou effacé re-propage tout en aval ;
  *      - une partie de séries TERMINÉE n'est JAMAIS retouchée (résultat sacré).
@@ -15,7 +19,10 @@
  */
 
 import type { TournamentMatch } from './state';
-import type { StandingRow } from './standings';
+import type { StandingRow, PointsConfig } from './standings';
+// Extension explicite : les scripts de régression roulent ces modules avec le
+// décapage de types natif de Node, qui exige le chemin complet.
+import { plagesDeRang, rangsVerrouilles } from './certitude.ts';
 
 export type PlayoffSize = 2 | 4 | 8;
 
@@ -85,22 +92,29 @@ export function guaranteedPhaseComplete(matches: Pick<TournamentMatch, 'phase' |
     && garantie.some(m => m.status === 'finished');
 }
 
+const POINTS_DEFAUT: PointsConfig = { win: 2, tie: 1, loss: 0 };
+
 /**
  * Calcule les équipes que chaque case de séries DEVRAIT contenir maintenant,
- * et retourne les différences à persister. Une source non résoluble (parties
- * garanties incomplètes, match amont non joué, égalité en séries) donne null —
- * la case redevient « Gagnant MX » à l'affichage.
+ * et retourne les différences à persister. Une source non résoluble (rang pas
+ * encore verrouillé, match amont non joué, égalité en séries) donne null — la
+ * case redevient « 1er au classement » / « Gagnant MX » à l'affichage.
  */
-export function resolvePlayoffSlots(matches: TournamentMatch[], standings: StandingRow[]): SlotResolution[] {
+export function resolvePlayoffSlots(
+  matches: TournamentMatch[],
+  standings: StandingRow[],
+  points: PointsConfig = POINTS_DEFAUT,
+): SlotResolution[] {
   const byNumber = new Map(matches.map(m => [m.match_number, m]));
-  const seedingReady = guaranteedPhaseComplete(matches);
+
+  // « Ne au classement » : rempli dès que le rang N est VERROUILLÉ — plus aucun
+  // scénario des parties restantes ne peut y mettre une autre équipe. (Quand
+  // tout est joué, tous les rangs sont verrouillés : même résultat qu'avant.)
+  const rangs = rangsVerrouilles(plagesDeRang(matches, standings, points));
 
   const resolveSource = (source: string): string | null => {
     const rank = source.match(/^(\d+)(?:er|e)\s+au\s+classement$/i);
-    if (rank) {
-      if (!seedingReady) return null;
-      return standings[parseInt(rank[1], 10) - 1]?.teamId ?? null;
-    }
+    if (rank) return rangs.get(parseInt(rank[1], 10)) ?? null;
     const winner = source.match(/^gagnant\s+m(\d+)$/i);
     const loser = source.match(/^perdant\s+m(\d+)$/i);
     const ref = winner || loser;

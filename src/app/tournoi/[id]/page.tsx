@@ -138,12 +138,19 @@ function LivePageInner({ eventId }: { eventId: string }) {
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
 
   // Qui passe / qui sort / champion — le config public inclut playoffs_* (type élargi ici).
-  const pconf = state?.config as { status: string; playoffs_enabled?: boolean; playoffs_team_count?: number } | null;
+  const pconf = state?.config as {
+    status: string; playoffs_enabled?: boolean; playoffs_team_count?: number;
+    points_win?: number; points_tie?: number; points_loss?: number;
+  } | null;
   const qual = useMemo(() => computeQualification(
     state?.standings || [],
     (state?.matches || []) as unknown as TournamentMatch[],
-    { playoffsEnabled: !!pconf?.playoffs_enabled, playoffSize: pconf?.playoffs_team_count ?? 0 },
-  ), [state?.standings, state?.matches, pconf?.playoffs_enabled, pconf?.playoffs_team_count]);
+    {
+      playoffsEnabled: !!pconf?.playoffs_enabled,
+      playoffSize: pconf?.playoffs_team_count ?? 0,
+      points: { win: pconf?.points_win ?? 2, tie: pconf?.points_tie ?? 1, loss: pconf?.points_loss ?? 0 },
+    },
+  ), [state?.standings, state?.matches, pconf?.playoffs_enabled, pconf?.playoffs_team_count, pconf?.points_win, pconf?.points_tie, pconf?.points_loss]);
   const showCut = qual.guaranteedComplete && qual.playoffSize > 0 && qual.cutRank < (state?.standings.length ?? 0);
 
   // Prochaine partie de l'équipe sélectionnée — la plus tôt en JOUR + HEURE
@@ -415,6 +422,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
                         <th className="text-center py-1.5 px-1.5">V</th>
                         <th className="text-center py-1.5 px-1.5">N</th>
                         <th className="text-center py-1.5 px-1.5">D</th>
+                        <th className="text-center py-1.5 px-1.5" title="Points contre — le moins = devant en cas d'égalité">PC</th>
                         <th className="text-center py-1.5 px-1.5">+/−</th>
                         <th className="text-center py-1.5 px-1.5">Pts</th>
                         <th className="text-right py-1.5 pl-1.5">Statut</th>
@@ -428,7 +436,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
                         return (
                         <Fragment key={r.teamId}>
                           {showCut && i === qual.cutRank && (
-                            <tr><td colSpan={9} className="py-1">
+                            <tr><td colSpan={10} className="py-1">
                               <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide" style={{ color: BRAND.blue }}>
                                 <span className="flex-1 border-t-2 border-dashed" style={{ borderColor: `${BRAND.blue}66` }} />
                                 Ligne des séries · les {qual.playoffSize} premières passent
@@ -446,6 +454,7 @@ function LivePageInner({ eventId }: { eventId: string }) {
                             <td className="py-2 px-1.5 text-center font-bold" style={{ color: BRAND.greenDark }}>{r.wins}</td>
                             <td className="py-2 px-1.5 text-center font-bold text-slate-500">{r.ties}</td>
                             <td className="py-2 px-1.5 text-center font-bold" style={{ color: BRAND.red }}>{r.losses}</td>
+                            <td className="py-2 px-1.5 text-center font-bold text-slate-500">{r.pointsAgainst}</td>
                             <td className="py-2 px-1.5 text-center font-bold text-slate-500">{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
                             <td className="py-2 px-1.5 text-center font-extrabold text-slate-800">{r.points}</td>
                             <td className="py-2 pl-1.5 text-right text-[11px] font-extrabold whitespace-nowrap" style={{ color: QUAL_COLOR[tq?.status ?? 'none'] }}>

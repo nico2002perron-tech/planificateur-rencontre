@@ -207,7 +207,9 @@ export async function applyPlayoffResolution(supabase: SupabaseClient, eventId: 
     { win: config.points_win, tie: config.points_tie, loss: config.points_loss },
   );
 
-  const changes = resolvePlayoffSlots(matches, standings);
+  const changes = resolvePlayoffSlots(matches, standings, {
+    win: config.points_win, tie: config.points_tie, loss: config.points_loss,
+  });
   const now = new Date().toISOString();
   for (const c of changes) {
     await supabase
