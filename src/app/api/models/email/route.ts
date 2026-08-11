@@ -68,9 +68,16 @@ REGLES STRICTES:
 - L'email doit etre pret a envoyer, avec objet, salutation, corps, et signature
 - Garde un format clair avec des paragraphes courts`;
 
+  // ── LE NOM DU CLIENT NE PART JAMAIS VERS GROQ — corrigé le 11 août 2026 ────
+  //
+  // C'était la dernière sortie réseau de l'application qui portait une identité
+  // de client (docs/sorties-reseau.md, point 3a). Le modèle n'a pas besoin du
+  // nom pour rédiger : il écrit le repère [DESTINATAIRE] là où le prénom irait,
+  // et la substitution se fait ICI, en local, après la génération. Même patron
+  // que le masquage de reformuler.ts : jeton à l'aller, vraie valeur au retour.
   const userPrompt = `Redige un email de suivi pour un client a propos de son portefeuille modele.
 
-DESTINATAIRE: ${clientName}
+DESTINATAIRE: ecris exactement le repere [DESTINATAIRE] partout ou le nom du client irait (salutation comprise). N'invente aucun nom.
 PORTEFEUILLE: Profil ${profileNumber} — ${profileName}
 NOMBRE DE TITRES: ${nbStocks}
 
@@ -137,9 +144,11 @@ Reponds en JSON valide avec ce schema:
       return NextResponse.json({ error: 'Reponse Groq incomplete' }, { status: 500 });
     }
 
+    // La substitution du vrai nom se fait ici, sur le poste — jamais avant.
+    const insererNom = (t: string) => t.split('[DESTINATAIRE]').join(clientName);
     return NextResponse.json({
-      subject: parsed.subject,
-      body: parsed.body,
+      subject: insererNom(parsed.subject),
+      body: insererNom(parsed.body),
       profileName,
       profileNumber,
     });
