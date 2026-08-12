@@ -182,6 +182,72 @@ function positionsNonEnregistrees(profil: ProfilClient): PositionSituee[] {
   return dedans;
 }
 
+/**
+ * POURQUOI aucune position non enregistrée n'est ressortie — les causes
+ * commandent des verdicts OPPOSÉS, et les confondre fait mentir le constat.
+ *
+ * Défaut trouvé le 12 août 2026 en éprouvant le moteur sur un client fictif
+ * « CELI + CELIAPP seulement » : le constat affirmait « le régime de certains
+ * comptes reste inconnu » alors que les deux régimes étaient PROUVÉS. Trois
+ * cas, trois réponses :
+ *
+ *   `regimes-inconnus`  au moins un compte au régime non prouvé — la stratégie
+ *                       est BLOQUÉE, et le dire est vrai ;
+ *   `tout-a-l-abri`     tous les régimes prouvés, aucun non enregistré — la
+ *                       stratégie est NON APPLICABLE : il n'y a rien à faire,
+ *                       et « bloqué » enverrait le planificateur chercher une
+ *                       donnée qui n'existe pas ;
+ *   `imposable-vide`    un compte non enregistré existe mais ne porte aucune
+ *                       position (encaisse seulement) — non applicable aussi,
+ *                       avec ce motif-là.
+ */
+function raisonAucunNonEnregistre(
+  profil: ProfilClient
+): 'regimes-inconnus' | 'tout-a-l-abri' | 'imposable-vide' {
+  if (profil.comptes.some((c) => c.type === null)) return 'regimes-inconnus';
+  if (profil.comptes.some((c) => c.type === 'non-enregistre')) return 'imposable-vide';
+  return 'tout-a-l-abri';
+}
+
+/** Le début d'explication du cas sans position imposable — précis sur ce qu'on a VU. */
+function debutSansImposable(profil: ProfilClient): string {
+  const corpo = profil.comptes.some((c) => c.type === 'corpo')
+    ? ' Les comptes de société sont un autre contribuable : ils relèveront des stratégies corporatives, à part.'
+    : '';
+  if (raisonAucunNonEnregistre(profil) === 'imposable-vide') {
+    return 'Le compte non enregistré du client ne porte aucune position (encaisse seulement).' + corpo;
+  }
+  return 'Tous les comptes personnels vus ici sont des régimes à l’abri de l’impôt (CELI, CELIAPP, REER, FERR…).' + corpo;
+}
+
+/**
+ * Le constat NON APPLICABLE commun du cas sans position imposable.
+ *
+ * « Déjà en ordre » seulement quand la visibilité est complète : tant que
+ * l'existence de comptes ailleurs n'est pas tranchée, on dit ce qu'on a vu et
+ * on borne — un compte non enregistré détenu ailleurs porterait, lui, des
+ * gains imposables.
+ */
+function constatSansImposable(
+  profil: ProfilClient,
+  base: Omit<Constat, 'statut' | 'portee' | 'montantEstime' | 'explication' | 'donneesManquantes'>,
+  consequence: string
+): Constat {
+  const entamee = visibiliteEntamee(profil);
+  return {
+    ...base,
+    statut: 'non-applicable',
+    portee: porteeDe(profil),
+    montantEstime: null,
+    dejaEnOrdre: !entamee,
+    limiteVisibilite: entamee
+      ? 'ce constat ne vaut que pour les comptes vus ici — un compte non enregistré détenu ailleurs porterait, lui, des gains imposables.'
+      : null,
+    explication: `${debutSansImposable(profil)} ${consequence}`,
+    donneesManquantes: [],
+  };
+}
+
 /** Le gain (positif) ou la perte (négative) latente d'une position, ou `null`. */
 function gainLatent(p: Position): number | null {
   if (p.valeurMarchande === null || p.valeurComptable === null) return null;
@@ -278,6 +344,15 @@ function strategieCristallisation(profil: ProfilClient): Constat {
         'Aucun relevé de positions n’a été importé : les gains et pertes latents ne peuvent pas être établis.',
       donneesManquantes: ['le relevé de positions du client'],
     };
+  }
+
+  // SANS POSITION IMPOSABLE ET SANS RÉGIME DOUTEUX, le verdict n'est pas
+  // « bloqué », c'est « rien à faire » — voir raisonAucunNonEnregistre.
+  if (nonEnr.length === 0 && raisonAucunNonEnregistre(profil) !== 'regimes-inconnus') {
+    return constatSansImposable(
+      profil, base,
+      'Vendre à perte dans un régime enregistré ne produit aucune déduction : il n’y a rien à cristalliser.'
+    );
   }
 
   const aveugles = sansPbr(nonEnr);
@@ -425,6 +500,15 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     };
   }
 
+  // Même distinction que la cristallisation de pertes : sans position
+  // imposable et sans régime douteux, « rien à faire » plutôt que « bloqué ».
+  if (nonEnr.length === 0 && raisonAucunNonEnregistre(profil) !== 'regimes-inconnus') {
+    return constatSansImposable(
+      profil, base,
+      'Les gains y croissent déjà libres d’impôt : la cristallisation n’a pas d’objet.'
+    );
+  }
+
   const aveugles = sansPbr(nonEnr);
   if (nonEnr.length === 0 || aveugles === nonEnr.length) {
     return {
@@ -554,6 +638,17 @@ function strategieLocalisation(profil: ProfilClient): Constat {
     limiteVisibilite: null,
     dejaEnOrdre: false,
   };
+
+  // LE CAS « TOUT À L'ABRI » D'ABORD : sans aucun compte personnel imposable,
+  // il n'y a rien à localiser — le registre d'instruments n'y changerait rien.
+  // Le cas « compte imposable vide » garde, lui, le verrou du registre : dès
+  // que ce compte se remplira, la question se posera.
+  if (profil.comptes.length > 0 && raisonAucunNonEnregistre(profil) === 'tout-a-l-abri') {
+    return constatSansImposable(
+      profil, base,
+      'Chaque revenu est déjà à l’abri : il n’y a aucun compte imposable d’où relocaliser quoi que ce soit.'
+    );
+  }
 
   const regimesInconnus = profil.comptes.filter((c) => c.type === null).length;
   const manquantes = ['la nature de revenu de chaque titre (registre d’instruments)'];
@@ -690,6 +785,27 @@ function strategieDonTitres(profil: ProfilClient): Constat {
   }
 
   const nonEnr = positionsNonEnregistrees(profil);
+
+  // LE MOTIF DU ZÉRO DOIT ÊTRE LE VRAI MOTIF (12 août 2026). Un donateur sans
+  // relevé importé n'est pas « déjà en ordre » ; des régimes non prouvés non
+  // plus. Seul le cas « rien d'imposable, régimes prouvés » l'est.
+  if (profil.comptes.length === 0) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        'Le client fait des dons, mais aucun relevé de positions n’a été importé : impossible de dire quel titre porterait le don.',
+      donneesManquantes: ['le relevé de positions du client'],
+    };
+  }
+  if (nonEnr.length === 0 && raisonAucunNonEnregistre(profil) === 'regimes-inconnus') {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        'Aucune position non enregistrée n’a pu être identifiée : le régime de certains comptes reste inconnu, et un compte non prouvé est écarté plutôt que présumé.',
+      donneesManquantes: ['un compte non enregistré identifié (le régime de certains comptes reste inconnu)'],
+    };
+  }
+
   const enGain = nonEnr
     .map((p) => ({ p, g: gainLatent(p) }))
     .filter((x): x is { p: PositionSituee; g: number } => x.g !== null && x.g > 0)
@@ -767,8 +883,35 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
   }
 
   const nonEnr = positionsNonEnregistrees(profil);
+
+  // LE MOTIF DU ZÉRO DOIT ÊTRE LE VRAI MOTIF (12 août 2026) : l'ancien message
+  // réclamait le PBR même quand la vraie cause était l'absence de relevé, un
+  // régime non prouvé — ou rien d'imposable du tout, où l'ordre est sans objet.
+  if (profil.comptes.length === 0) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication: 'Aucun relevé de positions n’a été importé : il n’y a rien à ordonner.',
+      donneesManquantes: ['le relevé de positions du client'],
+    };
+  }
+  if (nonEnr.length === 0) {
+    if (raisonAucunNonEnregistre(profil) === 'regimes-inconnus') {
+      return {
+        ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+        explication:
+          'Aucune position non enregistrée n’a pu être identifiée : le régime de certains comptes reste inconnu. ' +
+          'Ordonner des ventes suppose de savoir lesquelles sont imposables.',
+        donneesManquantes: ['un compte non enregistré identifié (le régime de certains comptes reste inconnu)'],
+      };
+    }
+    return constatSansImposable(
+      profil, base,
+      'Vendre pour atteindre la cible ne déclenche aucun impôt dans un régime enregistré : il n’y a pas d’ordre fiscal à optimiser.'
+    );
+  }
+
   const aveugles = sansPbr(nonEnr);
-  if (nonEnr.length === 0 || aveugles > 0) {
+  if (aveugles > 0) {
     return {
       ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
       explication:

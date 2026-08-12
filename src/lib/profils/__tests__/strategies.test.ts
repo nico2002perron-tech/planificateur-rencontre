@@ -758,7 +758,83 @@ describe('UN COMPTE CORPO EST UN AUTRE CONTRIBUABLE — défaut du 12 août', ()
       x.transactionsAnnee.gainsRealises = 12000;
       x.comptes = [compte('corpo', [position('CORPO-PERDANT', 8000, 20000)])];
     });
-    expect(trouver(analyser(p, null, DATE), 'cristallisation-pertes').statut).toBe('indisponible');
+    // Depuis le 12 août : « non-applicable » (aucun compte personnel imposable),
+    // plus « indisponible » — mais la protection reste entière : jamais de
+    // montant ni de plan bâtis sur la position de la société, et l'explication
+    // nomme l'autre contribuable.
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('non-applicable');
+    expect(c.montantEstime).toBeNull();
+    expect(c.plan).toBeUndefined();
+    expect(c.explication).toContain('société');
+  });
+});
+
+describe('LE MOTIF DU ZÉRO DOIT ÊTRE LE VRAI MOTIF — client tout à l’abri (12 août)', () => {
+  // Trouvé en éprouvant le moteur sur un client fictif « CELI + CELIAPP
+  // seulement » : le constat affirmait « le régime de certains comptes reste
+  // inconnu » alors que les deux régimes étaient PROUVÉS. Un client dont tous
+  // les comptes sont à l'abri n'est pas « bloqué » : il n'a rien à cristalliser.
+  const toutAbri = (modif: (p: ProfilClient) => void = () => {}) =>
+    profilConsolide((x) => {
+      x.comptes = [
+        compte('celi', [position('AAA', 45000, 30000)]),
+        compte('celiapp', [position('BBB', 12000, 10000)]),
+      ];
+      modif(x);
+    });
+
+  it('CELI + CELIAPP prouvés : non-applicable et déjà en ordre, pas « bloqué »', () => {
+    const r = analyser(toutAbri(), null, DATE);
+    for (const s of ['cristallisation-pertes', 'cristallisation-gains', 'localisation-actifs']) {
+      const c = trouver(r, s);
+      expect(c.statut).toBe('non-applicable');
+      expect(c.dejaEnOrdre).toBe(true);
+      expect(c.donneesManquantes).toEqual([]);
+      expect(plat(c.explication)).toContain('à l’abri de l’impôt');
+    }
+  });
+
+  it('visibilité entamée : non-applicable mais PAS « déjà en ordre », et la limite est dite', () => {
+    const p = toutAbri((x) => { x.consolidation.comptesExternes = 'inconnu'; });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('non-applicable');
+    expect(c.dejaEnOrdre).toBe(false);
+    expect(c.limiteVisibilite).toContain('ailleurs');
+  });
+
+  it('un régime NON prouvé garde le verdict « bloqué », avec son motif vrai', () => {
+    const p = toutAbri((x) => { x.comptes.push(compte(null, [position('CCC', 5000, 4000)])); });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('indisponible');
+    expect(c.donneesManquantes[0]).toContain('régime');
+  });
+
+  it('un compte imposable VIDE (encaisse seulement) : non-applicable avec ce motif-là', () => {
+    const p = toutAbri((x) => { x.comptes.push(compte('non-enregistre', [])); });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
+    expect(c.statut).toBe('non-applicable');
+    expect(c.explication).toContain('encaisse seulement');
+  });
+
+  it('ordre-vente avec cible : rien d’imposable à ordonner → non-applicable', () => {
+    const c = trouver(
+      analyser(toutAbri(), { positions: [] }, DATE),
+      'ordre-vente'
+    );
+    expect(c.statut).toBe('non-applicable');
+    expect(c.donneesManquantes).toEqual([]);
+  });
+
+  it('don-titres chez un donateur sans relevé : indisponible (pas « déjà en ordre »)', () => {
+    const p = profilConsolide((x) => {
+      x.intentions.donsAnnuelsMoyens = 5000;
+      x.comptes = [];
+    });
+    const c = trouver(analyser(p, null, DATE), 'don-titres');
+    expect(c.statut).toBe('indisponible');
+    expect(c.dejaEnOrdre).toBe(false);
+    expect(c.donneesManquantes[0]).toContain('relevé');
   });
 });
 
