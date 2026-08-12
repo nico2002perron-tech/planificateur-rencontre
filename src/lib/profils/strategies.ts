@@ -29,6 +29,7 @@
 import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
+import type { SignauxLivre } from './signaux-livre';
 
 /** Un constat, tel que le contrat du schéma le définit. */
 export type Constat = {
@@ -925,6 +926,109 @@ export type ParametresReee = {
   cotisationSubventionnee: number;
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STRATÉGIE 8 · DROITS DE COTISATION INUTILISÉS — « voici l'espace »
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * L'espace de cotisation encore ouvert, régime par régime — la demande du
+ * 12 août : « en date d'aujourd'hui, voici l'espace (à vérifier sur le site de
+ * l'ARC), et voici ce qui serait intéressant de faire ».
+ *
+ * CELI : le verdict vient de la MÊME chaîne que l'écran (calculerDroitsCeli via
+ * les signaux du livre) — trois conditions, borne sinon. Le signal de
+ * MAXIMISATION éclaire la question n° 1 sans jamais y répondre : « au plafond
+ * chaque année » est une probabilité à confirmer d'un mot ; « dépasse ce que le
+ * plafond permet » est une preuve d'historique externe.
+ *
+ * REER : INCALCULABLE D'ICI PAR CONSTRUCTION — il faut le revenu gagné et le
+ * facteur d'équivalence, que seul l'avis de cotisation porte. Si le montant de
+ * l'avis est saisi dans la fiche, il s'affiche daté ; sinon c'est la question.
+ *
+ * Le « petit disclaimer » demandé est dans chaque branche : l'ARC fait foi,
+ * jamais ce document — une cotisation excédentaire coûte 1 % par mois.
+ */
+function strategieDroitsCotisation(
+  profil: ProfilClient,
+  signaux: SignauxLivre | null
+): Constat {
+  const base = {
+    strategie: 'droits-cotisation',
+    titre: 'Droits de cotisation inutilisés',
+    titreClient: 'L’espace d’abri fiscal qui vous attend',
+    libelleMontant: 'de droits CELI encore ouverts',
+    recurrence: 'unique' as const,
+    sources: sourcesDe(profil, ['plafonds CELI parametres-fiscaux.csv']),
+    limiteVisibilite: null,
+    dejaEnOrdre: false,
+    echeance: 'Aucune échéance : les droits inutilisés se reportent indéfiniment — mais chaque année qui passe reporte aussi le rendement à l’abri.',
+  };
+
+  const droits = signaux?.droitsCeli ?? null;
+  if (droits === null) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      explication:
+        'L’espace CELI se mesure sur l’historique complet des cotisations. Sans l’historique importé, rien n’est calculable.',
+      donneesManquantes: ['l’historique complet des transactions (import)'],
+    };
+  }
+
+  // La phrase du REER — toujours honnête sur son incalculabilité.
+  const reer = profil.droits.reerInutilises;
+  const phraseReer = reer.montant !== null
+    ? ` Côté REER : ${argent(reer.montant)} selon l’avis de cotisation${reer.dateDonnee ? ` (saisi le ${reer.dateDonnee})` : ''} — ce chiffre ne peut venir que de là.`
+    : ' Côté REER : l’espace ne peut pas se calculer d’ici (revenu gagné et facteur d’équivalence requis) — c’est le chiffre de l’avis de cotisation à rapporter.';
+
+  // Le signal de maximisation — il ÉCLAIRE, il ne répond pas.
+  const m = signaux?.maximisation ?? null;
+  let phraseMotif = '';
+  if (m && m.etat === 'maximise' && m.depuis !== null) {
+    phraseMotif = ` Le motif des cotisations — au plafond chaque année depuis ${m.depuis} — suggère que le client cotise seulement ici ; un mot en rencontre le confirme.`;
+  } else if (m && m.etat === 'sous-plafond') {
+    phraseMotif = ` Des années sous le plafond (${m.anneesSousPlafond.slice(0, 4).join(', ')}${m.anneesSousPlafond.length > 4 ? '…' : ''}) : de la place laissée libre, ou des cotisations faites ailleurs — c’est exactement la question à poser.`;
+  } else if (m && m.etat === 'depasse-cumul') {
+    phraseMotif = ` ⚠ Les cotisations vues ici (${argent(m.totalCotise)}) dépassent ce que le plafond de la période permet (${argent(m.plafondPeriode)}, retraits compris) : c’est la preuve d’un historique externe — des droits ont été créés ailleurs.`;
+  }
+
+  const disclaimer = ' Avant toute cotisation, le chiffre à croire est celui de Mon dossier ARC — une cotisation excédentaire coûte 1 % par mois.';
+
+  if (droits.statut === 'calcule' && droits.montant !== null) {
+    if (droits.montant <= 0) {
+      return {
+        ...base, statut: 'non-applicable', portee: 'declaree', montantEstime: null,
+        dejaEnOrdre: true,
+        explication: `Le CELI est plein : aucun droit inutilisé au dossier.${phraseReer}${disclaimer}`,
+        donneesManquantes: [],
+      };
+    }
+    return {
+      ...base, statut: 'calcule', portee: 'complete', montantEstime: droits.montant,
+      explication:
+        `En date du dossier, ${argent(droits.montant)} d’espace CELI restent ouverts — les trois conditions sont réunies ` +
+        `(historique complet, aucun compte ailleurs confirmé, transferts tranchés).${phraseMotif}${phraseReer}${disclaimer}`,
+      donneesManquantes: [],
+    };
+  }
+
+  const borne = droits.borne;
+  return {
+    ...base,
+    statut: 'montant-a-confirmer',
+    portee: droits.portee,
+    montantEstime: null,
+    limiteVisibilite:
+      'l’espace CELI vu d’ici est une borne — les cotisations faites ailleurs le réduiraient.',
+    explication:
+      (borne !== null
+        ? `Vu d’ici, jusqu’à ${argent(borne)} d’espace CELI pourraient être ouverts — c’est une borne, pas le droit réel : ${droits.conditionsManquantes.join(' ; ')}.`
+        : `L’espace CELI n’est pas calculable : ${droits.conditionsManquantes.join(' ; ')}.`) +
+      phraseMotif + phraseReer + disclaimer,
+    donneesManquantes: droits.conditionsManquantes,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // L'ANGLE MORT — section 4 du schéma
 // ─────────────────────────────────────────────────────────────────────────────
@@ -989,11 +1093,13 @@ export function analyser(
   profil: ProfilClient,
   portefeuilleCible: PortefeuilleCible | null,
   date: string,
-  parametresReee: ParametresReee | null = null
+  parametresReee: ParametresReee | null = null,
+  signaux: SignauxLivre | null = null
 ): ResultatAnalyse {
   const constats: Constat[] = [
     strategieCristallisation(profil),
     strategieCristallisationGains(profil),
+    strategieDroitsCotisation(profil, signaux),
     strategieLocalisation(profil),
     strategieCeliConjoint(profil),
     strategieDonTitres(profil),

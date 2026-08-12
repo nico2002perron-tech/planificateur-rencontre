@@ -99,6 +99,11 @@ const ICONES: Record<string, { couleur: string; traits: string[] }> = {
     couleur: C.duoBlue,
     traits: ['M3 7 L10 7 L10 20 L3 20 Z', 'M14 7 L21 7 L21 20 L14 20 Z', 'M10 11 L14 11'],
   },
+  // Un coffre entrouvert : l'espace d'abri qui attend.
+  'droits-cotisation': {
+    couleur: C.blue,
+    traits: ['M4 11 L20 11 L20 20 L4 20 Z', 'M4 11 L7 6 L17 6 L20 11', 'M10 15 L14 15'],
+  },
   // Deux personnes côte à côte.
   'celi-conjoint': {
     couleur: C.duoPurple,

@@ -162,7 +162,7 @@ describe('ce qui atteint le client', () => {
       x.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     }));
-    expect(texte).toMatch(/2 pistes chiffrées sur 7/);
+    expect(texte).toMatch(/2 pistes chiffrées sur 8/);
     expect(texte).toMatch(/ne s’additionnent pas/);
     expect(texte).not.toMatch(/60 000/);          // 12 000 + 48 000
   });

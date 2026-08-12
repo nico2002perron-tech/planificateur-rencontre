@@ -117,3 +117,13 @@ export function parametresReee(annee: number): {
   if (tauxScee === null || tauxIqee === null || cotisationSubventionnee === null) return null;
   return { tauxScee, tauxIqee, cotisationSubventionnee };
 }
+
+
+/** Les plafonds CELI annuels, indexés par année — pour l'heuristique de maximisation. */
+export function plafondsCeliParAnnee(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of lireParametres()) {
+    if (p.parametre === 'plafond-celi') out[String(p.annee)] = p.valeur;
+  }
+  return out;
+}

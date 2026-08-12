@@ -54,10 +54,10 @@ const plat = (s: string) => s.replace(/[\s   ]+/g, ' ');
 describe('le contrat', () => {
   it('rend TOUT le catalogue, toujours, même sur un profil vide', () => {
     const r = analyser(profilVierge('vide', DATE), null, DATE);
-    expect(r.constats).toHaveLength(7);
+    expect(r.constats).toHaveLength(8);
     expect(r.constats.map((c) => c.strategie).sort()).toEqual([
       'celi-conjoint', 'cristallisation-gains', 'cristallisation-pertes', 'don-titres',
-      'localisation-actifs', 'ordre-vente', 'subvention-reee',
+      'droits-cotisation', 'localisation-actifs', 'ordre-vente', 'subvention-reee',
     ]);
   });
 
@@ -268,7 +268,7 @@ describe('l’angle mort', () => {
     });
     const a = analyser(p, null, DATE).angleMort!;
     expect(a).not.toBeNull();
-    expect(a.total).toBe(7);
+    expect(a.total).toBe(8);
     expect(a.constatsLimites).toBeGreaterThan(0);
     expect(plat(a.details.join(' '))).toMatch(/4 000 \$ vus ici depuis 2015-03-12/);
     expect(plat(a.details.join(' '))).toMatch(/plafond non vérifiable/);
@@ -759,5 +759,67 @@ describe('UN COMPTE CORPO EST UN AUTRE CONTRIBUABLE — défaut du 12 août', ()
       x.comptes = [compte('corpo', [position('CORPO-PERDANT', 8000, 20000)])];
     });
     expect(trouver(analyser(p, null, DATE), 'cristallisation-pertes').statut).toBe('indisponible');
+  });
+});
+
+describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', () => {
+  const signaux = (droits: Partial<import('../droits-celi').ResultatDroitsCeli> | null, max: Partial<import('../signaux-livre').SignalMaximisation> | null = null) => ({
+    droitsCeli: droits === null ? null : {
+      statut: 'montant-a-confirmer' as const, portee: 'interne-seulement' as const,
+      montant: null, borne: 50000, conditionsManquantes: ["le client n'a pas confirmé"],
+      transfertsATrancher: 0, ...droits,
+    },
+    maximisation: max === null ? null : {
+      etat: 'sous-plafond' as const, depuis: 2015, totalCotise: 40000,
+      plafondPeriode: 70000, anneesSousPlafond: [2019, 2022], ...max,
+    },
+  });
+  const dc = (p: ProfilClient, s: ReturnType<typeof signaux> | null) =>
+    analyser(p, null, DATE, null, s).constats.find((c) => c.strategie === 'droits-cotisation')!;
+
+  it('SANS signaux (pas de livre) : indisponible', () => {
+    const c = dc(profilConsolide(), null);
+    expect(c.statut).toBe('indisponible');
+  });
+
+  it('trois conditions réunies : l’espace est CHIFFRÉ', () => {
+    const c = dc(profilConsolide(), signaux({ statut: 'calcule', montant: 37000, borne: 37000, conditionsManquantes: [] }));
+    expect(c.statut).toBe('calcule');
+    expect(c.montantEstime).toBe(37000);
+  });
+
+  it('sinon : une BORNE dans le texte, jamais un montant', () => {
+    const c = dc(profilConsolide(), signaux({}));
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.montantEstime).toBeNull();
+    expect(plat(c.explication)).toMatch(/50 000 \$/);
+    expect(plat(c.explication)).toMatch(/borne, pas le droit réel/);
+  });
+
+  it('LE SIGNAL ÉCLAIRE SANS RÉPONDRE : « maximisé » reste une suggestion', () => {
+    const c = dc(profilConsolide(), signaux({}, { etat: 'maximise', anneesSousPlafond: [] }));
+    expect(plat(c.explication)).toMatch(/suggère que le client cotise seulement ici/);
+    expect(plat(c.explication)).toMatch(/un mot en rencontre le confirme/);
+  });
+
+  it('« dépasse-cumul » est annoncé comme une PREUVE d’historique externe', () => {
+    const c = dc(profilConsolide(), signaux({}, { etat: 'depasse-cumul', totalCotise: 90000, plafondPeriode: 70000 }));
+    expect(plat(c.explication)).toMatch(/preuve d’un historique externe/);
+  });
+
+  it('le REER dit son incalculabilité — ou l’avis saisi, daté', () => {
+    const sansAvis = dc(profilConsolide(), signaux({}));
+    expect(plat(sansAvis.explication)).toMatch(/ne peut pas se calculer d’ici/);
+    const avecAvis = dc(profilConsolide((x) => {
+      x.droits.reerInutilises = { montant: 22000, dateDonnee: DATE };
+    }), signaux({}));
+    expect(plat(avecAvis.explication)).toMatch(/22 000 \$ selon l’avis/);
+  });
+
+  it('le petit disclaimer ARC est TOUJOURS là', () => {
+    for (const c of [dc(profilConsolide(), signaux({})), dc(profilConsolide(), signaux({ statut: 'calcule', montant: 5000, conditionsManquantes: [] }))]) {
+      expect(plat(c.explication)).toMatch(/Mon dossier ARC/);
+      expect(plat(c.explication)).toMatch(/1 % par mois/);
+    }
   });
 });

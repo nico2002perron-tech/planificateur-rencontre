@@ -15,7 +15,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { estLocal } from '@/lib/base-locale/mode';
 import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 import { profilPourClient } from '@/lib/profils/stockage';
-import { hydraterProfil } from '@/lib/profils/hydrater';
+import { hydraterProfil, signauxDuLivre } from '@/lib/profils/hydrater';
 import { analyser, restreindre } from '@/lib/profils/strategies';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { OptimisationsFiscalesDocument } from '@/lib/pdf/optimisations-fiscales-document';
@@ -35,8 +35,9 @@ import { iaEssaiPermise, construireAppelEssai } from '@/lib/profils/appel-llm-es
 const PRESETS: Record<string, string[]> = {
   instantane: ['cristallisation-pertes', 'cristallisation-gains', 'don-titres', 'ordre-vente'],
   complet: [
-    'cristallisation-pertes', 'cristallisation-gains', 'localisation-actifs',
-    'celi-conjoint', 'don-titres', 'subvention-reee', 'ordre-vente',
+    'cristallisation-pertes', 'cristallisation-gains', 'droits-cotisation',
+    'localisation-actifs', 'celi-conjoint', 'don-titres', 'subvention-reee',
+    'ordre-vente',
   ],
 };
 
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     const profil = await profilPourClient(nomClient.trim(), jour);
     const hydrate = await hydraterProfil(profil, nomClient.trim(), annee);
-    const complet = analyser(hydrate, null, jour, parametresReee(annee));
+    const complet = analyser(hydrate, null, jour, parametresReee(annee), await signauxDuLivre(profil, nomClient.trim(), annee));
 
     // Une sélection explicite l'emporte sur le préréglage ; sinon on retient
     // les stratégies du préréglage QUE LE MOTEUR A RÉELLEMENT PRODUITES.

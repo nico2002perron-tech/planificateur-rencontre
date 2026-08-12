@@ -48,6 +48,7 @@ type Detection = {
 
 type Fiche = {
   fictif?: boolean;
+  dateNaissance?: string | null;
   age: number | null;
   etatCivil: string | null;
   enfants: Array<{ prenom: string; age: number | null }>;
@@ -545,9 +546,13 @@ export function EcranFiscal({ racine }: { racine: string }) {
                 onChoisir={(v) => void repondreConsolidation('historiqueExterne', v ?? 'inconnu')}
               />
             </Ligne>
-            <Ligne question="Âge" aide="resserre le plafond CELI cumulé">
-              <ChampNombre valeur={courant.fiche?.age ?? null} suffixe="ans"
-                onValider={(v) => void ecrireFiche('age', v)} />
+            <Ligne question="Date de naissance" aide="donne l’année des 18 ans — le plafond CELI exact">
+              <input
+                type="date"
+                defaultValue={courant.fiche?.dateNaissance ?? ''}
+                onBlur={(e) => void ecrireFiche('dateNaissance', e.target.value || null)}
+                className="rounded border border-gray-200 bg-white px-2 py-1 text-sm"
+              />
             </Ligne>
             <Ligne question="État civil">
               <Choix valeur={courant.fiche?.etatCivil ?? null} options={ETATS_CIVILS}

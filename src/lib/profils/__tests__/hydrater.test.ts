@@ -187,3 +187,69 @@ describe('LE RELEVÉ SEUL — le cas du nouveau client', () => {
     expect(h.comptes[0].type).toBeNull();          // pas de numéro = pas de régime prouvé
   });
 });
+
+describe('analyserMaximisation — le motif des cotisations', () => {
+  it('au plafond chaque année → « maximise »', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(
+      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 3000 },
+      {}, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+    );
+    expect(m.etat).toBe('maximise');
+    expect(m.depuis).toBe(2023);
+  });
+
+  it('l’ANNÉE COURANTE inachevée ne compte jamais « sous-plafond »', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation({ '2025': 7000, '2026': 0 }, {}, { '2025': 7000, '2026': 7000 }, 2026);
+    expect(m.etat).toBe('maximise');
+  });
+
+  it('des années sous le plafond → « sous-plafond », années nommées', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(
+      { '2023': 2000, '2024': 7000, '2025': 1000 },
+      {}, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+    );
+    expect(m.etat).toBe('sous-plafond');
+    expect(m.anneesSousPlafond).toEqual([2023, 2025]);
+  });
+
+  it('cotiser plus que la période ne permet → « depasse-cumul », la PREUVE', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(
+      { '2024': 30000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+    );
+    expect(m.etat).toBe('depasse-cumul');
+  });
+
+  it('un RETRAIT l’année précédente excuse un dépassement du plafond annuel', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    // 2024 : retrait de 20 000 ; 2025 : recotisation de 20 000 — légitime.
+    const m = analyserMaximisation(
+      { '2023': 6500, '2024': 7000, '2025': 20000 },
+      { '2024': 20000 }, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+    );
+    expect(m.etat).toBe('maximise');
+  });
+});
+
+describe('ageALaDate — la date de naissance remplace l’âge', () => {
+  it('calcule l’âge au jour dit, anniversaire respecté', async () => {
+    const { ageALaDate } = await import('../hydrater');
+    expect(ageALaDate('1961-06-15', '2026-12-31')).toBe(65);
+    expect(ageALaDate('1961-06-15', '2026-06-14')).toBe(64);
+    expect(ageALaDate(null, '2026-12-31')).toBeNull();
+    expect(ageALaDate('n-importe-quoi', '2026-12-31')).toBeNull();
+  });
+});
+
+describe('« maximisé » exige au moins une année complète', () => {
+  it('une seule année — la courante — ne fait pas un motif', async () => {
+    // Vu sur un dossier réel : « au plafond chaque année depuis 2026 » alors
+    // qu'aucune année n'était terminée. Le silence vaut mieux qu'un signal vide.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation({ '2026': 7000 }, {}, { '2026': 7000 }, 2026);
+    expect(m.etat).toBe('indetermine');
+  });
+});

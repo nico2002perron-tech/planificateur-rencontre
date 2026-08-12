@@ -8,7 +8,7 @@ import { deriverComptes } from '@/lib/profils/comptes';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { analyser, etatDetection, classerManques } from '@/lib/profils/strategies';
 import { lireDernierReleve, lireHistorique } from '@/lib/profils/historique';
-import { hydraterProfil } from '@/lib/profils/hydrater';
+import { hydraterProfil, signauxDuLivre } from '@/lib/profils/hydrater';
 
 // Profils fiscaux — LOCAL SEULEMENT. 404 hors local avant toute autre chose :
 // on ne confirme même pas l'existence de la route.
@@ -82,7 +82,11 @@ export async function GET(req: NextRequest) {
     // les gains de l'annee, et rend « indisponible » sur toute la ligne meme
     // quand les donnees sont au dossier.
     const fiscal = complet
-      ? analyser(await hydraterProfil(complet, nomClient, annee), null, date, parametresReee(annee))
+      ? analyser(
+          await hydraterProfil(complet, nomClient, annee), null, date,
+          parametresReee(annee),
+          await signauxDuLivre(complet, nomClient, annee)
+        )
       : null;
 
     avecResume.push({
@@ -107,6 +111,7 @@ export async function GET(req: NextRequest) {
             droits: complet.droits,
             donsAnnuelsMoyens: complet.intentions.donsAnnuelsMoyens,
             fictif: complet.fictif ?? false,
+            dateNaissance: complet.demographie.dateNaissance,
           }
         : null,
       selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },

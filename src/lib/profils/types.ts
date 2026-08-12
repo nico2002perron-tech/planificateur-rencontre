@@ -34,6 +34,15 @@ export type MontantDate = {
 };
 
 export type Demographie = {
+  /**
+   * LA DATE DE NAISSANCE remplace l'âge comme source (12 août 2026, demande de
+   * Nicolas). L'âge se périme chaque année ; la date jamais. Et elle donne
+   * l'ANNÉE EXACTE DES 18 ANS, donc un plafond CELI cumulatif juste — au lieu
+   * du « maximum depuis 2009 » qu'un âge inconnu force. Reste locale, comme
+   * tout le profil.
+   */
+  dateNaissance: string | null;
+  /** Dérivé de dateNaissance à la lecture quand elle existe ; sinon saisi. */
   age: number | null;
   etatCivil: EtatCivil | null;
   province: string | null;
@@ -282,6 +291,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
     dateMiseAJour: date,
     version: 1,
     demographie: {
+      dateNaissance: null,
       age: null, etatCivil: null, province: null,
       conjoint: { age: null, trancheRevenu: null },
       enfants: [],

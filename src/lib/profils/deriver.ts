@@ -135,6 +135,39 @@ export function deriverTransactionsAnnee(lignes: LigneTransaction[], annee: numb
   };
 }
 
+/**
+ * Les cotisations CELI d'ARGENT NEUF et les retraits, PAR ANNÉE CIVILE.
+ *
+ * La matière de l'heuristique de maximisation : « si c'est maximisé d'année en
+ * année, probablement que le client est seulement ici » (Nicolas, 12 août).
+ * Mêmes règles que partout — partie double, étiquettes, virements internes —
+ * appliquées année par année, compte par compte.
+ */
+export function deriverCeliParAnnee(lignes: LigneTransaction[]): {
+  cotisations: Record<string, number>;
+  retraits: Record<string, number>;
+} {
+  const duCeli = lignes.filter((l) => typeDeCompte(l.noCompte) === 'celi');
+  const annees = [...new Set(duCeli.map((l) => l.date.slice(0, 4)))].sort();
+  const cotisations: Record<string, number> = {};
+  const retraits: Record<string, number> = {};
+  for (const annee of annees) {
+    const delAnnee = duCeli.filter((l) => l.date.startsWith(annee));
+    const parCompte = new Map<string, LigneTransaction[]>();
+    for (const l of delAnnee) {
+      if (!parCompte.has(l.noCompte)) parCompte.set(l.noCompte, []);
+      parCompte.get(l.noCompte)!.push(l);
+    }
+    let c = 0;
+    for (const [, ls] of parCompte) c += analyserFluxCompte(ls).cotisations;
+    cotisations[annee] = c;
+    retraits[annee] = delAnnee
+      .filter((l) => l.type === 'Retrait' && (l.total ?? 0) < 0)
+      .reduce((somme, l) => somme + Math.abs(l.total as number), 0);
+  }
+  return { cotisations, retraits };
+}
+
 /** Les cotisations de l'année, régime par régime — argent neuf seulement. */
 export function deriverCotisationsAnnee(lignes: LigneTransaction[], annee: number) {
   const delAnnee = lignes.filter((l) => l.date.startsWith(String(annee)));

@@ -37,8 +37,25 @@
 import 'server-only';
 import { lireHistorique, lireDernierReleve } from './historique';
 import { deriverComptes } from './comptes';
-import { deriverTransactionsAnnee, deriverCotisationsAnnee } from './deriver';
+import {
+  deriverTransactionsAnnee, deriverCotisationsAnnee, deriverCeliParAnnee,
+  deriverHistoriqueRegime, observerTransferts,
+} from './deriver';
+import { croiserTransferts, calculerDroitsCeli } from './droits-celi';
+import { plafondCeliCumulatif, plafondsCeliParAnnee } from './parametres-fiscaux';
+import { analyserMaximisation, type SignauxLivre } from './signaux-livre';
 import type { ProfilClient } from './types';
+
+/** L'âge au jour dit, dérivé de la date de naissance. */
+export function ageALaDate(dateNaissance: string | null, jour: string): number | null {
+  if (!dateNaissance) return null;
+  const n = new Date(`${dateNaissance}T12:00:00`);
+  const j = new Date(`${jour}T12:00:00`);
+  if (Number.isNaN(n.getTime()) || Number.isNaN(j.getTime())) return null;
+  let age = j.getFullYear() - n.getFullYear();
+  if (j.getMonth() < n.getMonth() || (j.getMonth() === n.getMonth() && j.getDate() < n.getDate())) age -= 1;
+  return age >= 0 && age <= 120 ? age : null;
+}
 
 /**
  * Le profil, augmenté de tout ce que le livre et le dernier relevé savent.
@@ -75,10 +92,49 @@ export async function hydraterProfil(
     ? deriverComptes(releve.texte, livre, { dateReleve: releve.dateReleve }).comptes
     : profil.comptes;
 
+  // L'ÂGE SE DÉRIVE de la date de naissance quand elle existe : un âge saisi
+  // il y a deux ans est faux aujourd'hui, une date de naissance jamais.
+  const jour = `${annee}-12-31`;
+  const ageDerive = ageALaDate(profil.demographie.dateNaissance, jour);
+
   return {
     ...profil,
+    demographie: ageDerive === null
+      ? profil.demographie
+      : { ...profil.demographie, age: ageDerive },
     comptes,
     transactionsAnnee: deriverTransactionsAnnee(livre, annee),
     cotisationsAnnee: deriverCotisationsAnnee(livre, annee),
   };
+}
+
+/**
+ * LES SIGNAUX DU LIVRE — le verdict des droits CELI par la MÊME chaîne que
+ * l'écran, et l'heuristique de maximisation. Rendus à part du profil parce
+ * qu'ils ne sont PAS des champs du schéma : ils se recalculent à chaque
+ * lecture et n'existent que le temps d'une analyse.
+ */
+export async function signauxDuLivre(
+  profil: ProfilClient,
+  nomClient: string | null,
+  annee: number
+): Promise<SignauxLivre> {
+  const vide: SignauxLivre = { droitsCeli: null, maximisation: null };
+  if (!nomClient?.trim()) return vide;
+  const livre = await lireHistorique(nomClient);
+  if (livre.length === 0) return vide;
+
+  const h = deriverHistoriqueRegime(livre, 'celi', annee, profil.historiqueVie.celi.dateImport ?? '');
+  const observes = observerTransferts(livre, 'celi');
+  const douteux = croiserTransferts(observes, profil.consolidation.transfertsResolus);
+  const age = ageALaDate(profil.demographie.dateNaissance, `${annee}-12-31`) ?? profil.demographie.age;
+  const plafond = plafondCeliCumulatif(age, annee);
+  const frais = { ...profil, historiqueVie: { ...profil.historiqueVie, celi: h } };
+  const droitsCeli = calculerDroitsCeli(frais, douteux, plafond.montant);
+
+  const parAnnee = deriverCeliParAnnee(livre);
+  const maximisation = analyserMaximisation(
+    parAnnee.cotisations, parAnnee.retraits, plafondsCeliParAnnee(), annee
+  );
+  return { droitsCeli, maximisation };
 }

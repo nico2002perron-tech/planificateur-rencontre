@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
   const refus: string[] = [];
 
   // ── Démographie ───────────────────────────────────────────────────────────
+  if ('dateNaissance' in corps) {
+    const v = corps.dateNaissance;
+    if (v === null) profil.demographie.dateNaissance = null;
+    else if (typeof v === 'string' && /^(19|20)\d{2}-\d{2}-\d{2}$/.test(v)) {
+      profil.demographie.dateNaissance = v;
+    } else refus.push('dateNaissance');
+  }
   if ('age' in corps) {
     const a = age(corps.age);
     if (a === undefined) refus.push('age');
