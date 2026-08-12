@@ -19,6 +19,8 @@ import { hydraterProfil } from '@/lib/profils/hydrater';
 import { analyser, restreindre } from '@/lib/profils/strategies';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { OptimisationsFiscalesDocument } from '@/lib/pdf/optimisations-fiscales-document';
+import { reformuler, identifiantsDuProfil } from '@/lib/profils/reformuler';
+import { iaEssaiPermise, construireAppelEssai } from '@/lib/profils/appel-llm-essai';
 
 /**
  * LES DEUX PRÉRÉGLAGES — pas deux gabarits.
@@ -67,6 +69,30 @@ export async function POST(req: NextRequest) {
       : PRESETS[choisi].filter((s) => complet.constats.some((c) => c.strategie === s));
     const resultat = restreindre(complet, voulues);
 
+    // ── L'IA D'ESSAI — profils FICTIFS seulement (décision du 11 août) ──────
+    //
+    // Sur un dossier marqué fictif, chaque constat CHIFFRÉ passe par la couche
+    // de reformulation : masquage à l'aller, vérification au retour, repli sur
+    // le gabarit au moindre écart. Sur un dossier réel, ce bloc entier est
+    // inerte — la conformité iA n'a pas encore parlé.
+    let essaiIA = false;
+    if (iaEssaiPermise(hydrate)) {
+      const appel = construireAppelEssai();
+      if (appel) {
+        const identifiants = identifiantsDuProfil(hydrate);
+        for (const c of resultat.constats) {
+          if (c.statut !== 'calcule') continue;
+          const r = await reformuler(c.explication, c, { appelLLM: appel, identifiants });
+          if (r.origine === 'reformule') {
+            c.explication = r.texte;
+            essaiIA = true;
+          } else if (r.motifRepli && !r.motifRepli.includes('débranchée')) {
+            console.warn(`[ia-essai] repli sur gabarit (${c.strategie}) : ${r.motifRepli}`);
+          }
+        }
+      }
+    }
+
     if (resultat.constats.length === 0) {
       return NextResponse.json(
         { error: 'Aucune stratégie retenue : le document n’aurait rien à dire.' },
@@ -76,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     const buffer = await renderToBuffer(
       React.createElement(OptimisationsFiscalesDocument, {
-        donnees: { resultat, nomClient: nomClient.trim(), preset: choisi },
+        donnees: { resultat, nomClient: nomClient.trim(), preset: choisi, essaiIA },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any
     );

@@ -53,8 +53,14 @@ export type DonneesDocumentFiscal = {
   resultat: ResultatAnalyse;
   /** Le nom du client — imprimé sur la couverture SEULEMENT, jamais ailleurs. */
   nomClient?: string;
-  /** `instantane` = portefeuille seul · `complet` = fiche remplie. */
+  /** `instantane` = portefeuille seul · `complet` = fiche rempli. */
   preset: 'instantane' | 'complet';
+  /**
+   * VRAI quand des textes ont été reformulés par l'IA d'essai (dossier fictif).
+   * Le document LE DIT : un texte poli par un modèle qui ne s'annonce pas
+   * serait un mensonge d'origine, même sur un dossier inventé.
+   */
+  essaiIA?: boolean;
 };
 
 const MOT_PRESET: Record<DonneesDocumentFiscal['preset'], string> = {
@@ -165,6 +171,7 @@ export function OptimisationsFiscalesDocument({ donnees }: { donnees: DonneesDoc
       <OptimisationsFiscalesPage
         resultat={donnees.resultat}
         piedInterne={donnees.resultat.revisionFiscalisteRequise}
+        essaiIA={donnees.essaiIA === true}
       />
     </Document>
   );

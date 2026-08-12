@@ -118,6 +118,13 @@ export async function POST(req: NextRequest) {
     profil.droits[champ] = { montant: m, dateDonnee: m === null ? null : jour };
   }
 
+  // ── Le marqueur d'essai ───────────────────────────────────────────────────
+  if ('fictif' in corps) {
+    if (typeof corps.fictif !== 'boolean') refus.push('fictif');
+    // Le marqueur se pose A LA MAIN — c'est le garde de la couche IA d'essai.
+    else profil.fictif = corps.fictif;
+  }
+
   // ── Intentions ────────────────────────────────────────────────────────────
   if ('donsAnnuelsMoyens' in corps) {
     const m = montant(corps.donsAnnuelsMoyens);

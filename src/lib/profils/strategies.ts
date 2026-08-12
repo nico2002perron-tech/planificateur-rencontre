@@ -101,6 +101,14 @@ export type Constat = {
    * un montant non confirmé serait une marche à suivre vers un chiffre faux.
    */
   plan?: LignePlan[];
+  /**
+   * LE CALENDRIER DU GESTE, dicté par le MOTEUR — jamais par un modèle.
+   *
+   * C'est la condition du « temporel » demandé par Nicolas : l'IA d'essai peut
+   * parler d'échéances, mais seulement de celle-ci. Une IA libre d'inventer un
+   * calendrier fiscal est un danger, pas un appui.
+   */
+  echeance?: string | null;
 };
 
 export type LignePlan = {
@@ -159,7 +167,15 @@ type PositionSituee = Position & { compte: Compte };
 function positionsNonEnregistrees(profil: ProfilClient): PositionSituee[] {
   const dedans: PositionSituee[] = [];
   for (const c of profil.comptes) {
-    if (c.type !== 'non-enregistre' && c.type !== 'corpo') continue;
+    // LES COMPTES CORPO SONT EXCLUS — corrigé le 12 août 2026, défaut trouvé
+    // par la contre-expertise de l'exploration : une société de gestion est un
+    // AUTRE CONTRIBUABLE. Ses gains ne peuvent pas absorber les pertes
+    // personnelles du client, ses pertes ne protègent pas les gains du client,
+    // et un plan de récolte qui mélange les deux propose une compensation qui
+    // n'existe pas en droit. Les stratégies corporatives (CDC, pertes de la
+    // société) viendront comme des stratégies À PART, sur les seuls comptes de
+    // la société.
+    if (c.type !== 'non-enregistre') continue;
     for (const p of c.positions) dedans.push({ ...p, compte: c });
   }
   return dedans;
@@ -244,6 +260,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     strategie: 'cristallisation-pertes',
     titre: 'Cristallisation de pertes',
     titreClient: 'Réduire l’impôt sur vos gains de l’année',
+    echeance: 'Ordres réglés avant le 31 décembre pour compter dans l’année — et pas de rachat du même titre pendant 30 jours.',
     libelleMontant: 'de perte à cristalliser',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil),
@@ -389,6 +406,7 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     strategie: 'cristallisation-gains',
     titre: 'Cristallisation de gains',
     titreClient: 'Récolter des gains sans payer d’impôt',
+    echeance: 'Aucune échéance : une perte reportée ne périme pas, et le rachat du même titre est permis le jour même.',
     libelleMontant: 'de gain cristallisable sans impôt',
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
@@ -819,6 +837,7 @@ function strategieReee(
     strategie: 'subvention-reee',
     titre: 'Subvention REEE non réclamée',
     titreClient: 'Aller chercher la subvention REEE de vos enfants',
+    echeance: 'Cotiser avant le 31 décembre pour la subvention de l’année.',
     libelleMontant: 'de subvention laissée sur la table',
     recurrence: 'annuel' as const,
     sources: sourcesDe(profil, ['parametres-fiscaux SCEE/IQEE']),

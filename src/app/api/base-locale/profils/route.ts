@@ -106,6 +106,7 @@ export async function GET(req: NextRequest) {
             trancheRevenuConjoint: complet.demographie.conjoint.trancheRevenu,
             droits: complet.droits,
             donsAnnuelsMoyens: complet.intentions.donsAnnuelsMoyens,
+            fictif: complet.fictif ?? false,
           }
         : null,
       selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },

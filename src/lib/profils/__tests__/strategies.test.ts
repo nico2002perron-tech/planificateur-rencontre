@@ -739,3 +739,25 @@ describe('LE PLAN DE RÉCOLTE — quoi vendre, et pourquoi cet ordre', () => {
     expect(c.montantEstime).toBe(14000);
   });
 });
+
+describe('UN COMPTE CORPO EST UN AUTRE CONTRIBUABLE — défaut du 12 août', () => {
+  it('les gains de la société n’absorbent JAMAIS les pertes personnelles', () => {
+    // Trouvé par la contre-expertise : le plan mélangeait les comptes corpo et
+    // personnels — une compensation qui n'existe pas en droit fiscal.
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 10000, dateDonnee: DATE };
+      x.comptes = [compte('corpo', [position('CORPO-GAGNANT', 50000, 10000)])];
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-gains');
+    expect(c.statut).not.toBe('calcule');
+    expect(c.plan).toBeUndefined();
+  });
+
+  it('la cristallisation de pertes ignore aussi les positions corpo', () => {
+    const p = profilConsolide((x) => {
+      x.transactionsAnnee.gainsRealises = 12000;
+      x.comptes = [compte('corpo', [position('CORPO-PERDANT', 8000, 20000)])];
+    });
+    expect(trouver(analyser(p, null, DATE), 'cristallisation-pertes').statut).toBe('indisponible');
+  });
+});

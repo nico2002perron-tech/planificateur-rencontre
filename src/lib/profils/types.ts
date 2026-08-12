@@ -255,6 +255,14 @@ export type ProfilClient = {
   intentions: Intentions;
   /** Ce que le planificateur a choisi de presenter. Vide = rien au PDF. */
   selectionStrategies: SelectionStrategies;
+  /**
+   * VRAI = dossier d'ESSAI, sans aucune donnée réelle — le bac à sable.
+   *
+   * C'est le garde de la couche IA (11 août 2026) : tant que la conformité iA
+   * n'a pas tranché, l'appel au modèle n'est permis QUE sur un profil marqué
+   * fictif. Le marqueur se pose à la main, jamais par déduction.
+   */
+  fictif: boolean;
 };
 
 /** Un profil vierge, conforme au schéma — tout est `null`, rien n'est deviné. */
@@ -304,6 +312,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
       venteEntreprisePrevue: null, achatImmobilierPrevu: null, testamentAJour: null,
     },
     selectionStrategies: { strategies: [], dateSelection: null },
+    fictif: false,
   };
 }
 

@@ -57,8 +57,8 @@ describe('la charge utile est pseudonymisée PAR CONSTRUCTION', () => {
     const brut = JSON.stringify(ref);
     expect(brut).not.toMatch(/37-FICT-A|37FICTA/);
     expect(Object.keys(ref).sort()).toEqual([
-      'donneesManquantes', 'libelleMontant', 'limiteVisibilite',
-      'montantEstime', 'recurrence', 'statut', 'strategie',
+      'donneesManquantes', 'echeance', 'libelleMontant', 'limiteVisibilite',
+      'montantEstime', 'plan', 'recurrence', 'statut', 'strategie',
     ]);
   });
 });
@@ -209,5 +209,90 @@ describe('LE MASQUAGE DES IDENTIFIANTS — le défaut du 7 août 2026', () => {
     const m = masquerIdentifiants('Rose a 500 $ de plus.', { symboles: [], prenoms: ['Rose'] });
     expect(m.texte).not.toMatch(/Rose/);
     expect(demasquer(m.texte, m.jetons)).toBe('Rose a 500 $ de plus.');
+  });
+});
+
+
+describe('LE TEMPOREL ET LE PLAN — la référence étendue (11 août 2026)', () => {
+  const constatAvecPlan = () => {
+    const c = constatChiffre();
+    return {
+      ...c,
+      plan: [{ symbole: 'BBB', vendre: 10000, gain: 8000, partiel: false }],
+      echeance: 'Aucune échéance : une perte reportée ne périme pas, rachat permis le jour même.',
+    };
+  };
+  const idsAvecBBB = () => ({ symboles: ['BBB'], prenoms: [] });
+
+  it('LE PLAN PART MASQUÉ : aucun symbole réel dans la référence', async () => {
+    let charge: ChargeReformulation | null = null;
+    await reformuler('Texte source avec 12 000 $ de perte à cristalliser.', constatAvecPlan(), {
+      identifiants: idsAvecBBB(),
+      appelLLM: async (ch) => { charge = ch; return ch.texteSource; },
+    });
+    expect(JSON.stringify(charge!.reference)).not.toMatch(/BBB/);
+    expect(charge!.reference.plan![0].titre).toBe('<<TITRE_1>>');
+    expect(charge!.reference.echeance).toMatch(/ne périme pas/);
+  });
+
+  it('les nombres du PLAN sont citables sans déclencher le rejet', async () => {
+    const r = await reformuler('12 000 $ de perte à cristalliser.', constatAvecPlan(), {
+      identifiants: idsAvecBBB(),
+      appelLLM: async () =>
+        'Vendre environ 10 000 $ de <<TITRE_1>> cristallise 8 000 $ — sur vos 12 000 $ de perte à cristalliser.',
+    });
+    expect(r.origine).toBe('reformule');
+    // Et le démasquage a remis le vrai symbole, en local.
+    expect(r.texte).toMatch(/BBB/);
+  });
+
+  it('les nombres de l’ÉCHÉANCE (30 jours, 31 décembre) sont permis', async () => {
+    const c = { ...constatAvecPlan(), echeance: 'Ordres réglés avant le 31 décembre — pas de rachat pendant 30 jours.' };
+    const r = await reformuler('12 000 $ de perte à cristalliser.', c, {
+      identifiants: idsAvecBBB(),
+      appelLLM: async () => 'Avant le 31 décembre, cristallisez vos 12 000 $ de perte à cristalliser.',
+    });
+    expect(r.origine).toBe('reformule');
+  });
+
+  it('un jeton du plan NON cité ne fait PAS échouer la sortie', async () => {
+    // Le modèle n'est pas tenu de citer chaque ligne du plan — seuls les
+    // repères du TEXTE doivent survivre.
+    const r = await reformuler('12 000 $ de perte à cristalliser.', constatAvecPlan(), {
+      identifiants: idsAvecBBB(),
+      appelLLM: async () => 'Vos 12 000 $ de perte à cristalliser peuvent être effacés.',
+    });
+    expect(r.origine).toBe('reformule');
+  });
+
+  it('une date INVENTÉE hors référence est rejetée', async () => {
+    const r = await reformuler('12 000 $ de perte à cristalliser.', constatAvecPlan(), {
+      identifiants: idsAvecBBB(),
+      appelLLM: async () => 'Agissez avant le 15 mars : 12 000 $ de perte à cristalliser.',
+    });
+    expect(r.origine).toBe('gabarit');
+    expect(r.motifRepli).toMatch(/absent de la référence/);
+  });
+});
+
+describe('LE GARDE DES FICTIFS', () => {
+  it('iaEssaiPermise exige le marqueur explicite', async () => {
+    const { iaEssaiPermise } = await import('../appel-llm-essai');
+    const p = profilVierge('f', DATE);
+    expect(iaEssaiPermise(p)).toBe(false);          // réel par défaut
+    p.fictif = true;
+    expect(iaEssaiPermise(p)).toBe(true);           // fictif marqué, local
+  });
+
+  it('hors exécution locale, JAMAIS — même sur un fictif', async () => {
+    const { iaEssaiPermise } = await import('../appel-llm-essai');
+    const p = profilVierge('f', DATE);
+    p.fictif = true;
+    process.env.VERCEL = '1';
+    try {
+      expect(iaEssaiPermise(p)).toBe(false);
+    } finally {
+      delete process.env.VERCEL;
+    }
   });
 });

@@ -47,6 +47,7 @@ type Detection = {
 };
 
 type Fiche = {
+  fictif?: boolean;
   age: number | null;
   etatCivil: string | null;
   enfants: Array<{ prenom: string; age: number | null }>;
@@ -521,6 +522,14 @@ export function EcranFiscal({ racine }: { racine: string }) {
             </span>
           </header>
           <div className="px-4 py-2">
+            <Ligne question="Dossier fictif — bac d’essai"
+              aide="active l’IA de reformulation sur ce dossier seulement (aucune donnée réelle)">
+              <Choix
+                valeur={courant.fiche?.fictif ? 'oui' : 'non'}
+                options={[['non', 'Non'], ['oui', 'Oui']]}
+                onChoisir={(v) => void ecrireFiche('fictif', v === 'oui')}
+              />
+            </Ligne>
             <Ligne question="Détenez-vous des comptes de placement ailleurs qu’ici ?"
               aide="commande la portée de tous les constats">
               <Choix

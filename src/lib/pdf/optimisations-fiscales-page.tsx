@@ -330,8 +330,11 @@ function BlocAngleMort({ angleMort }: { angleMort: NonNullable<ResultatAnalyse['
 export function OptimisationsFiscalesPage({
   resultat,
   piedInterne = false,
+  essaiIA = false,
 }: {
   resultat: ResultatAnalyse;
+  /** Des textes reformulés par l'IA d'essai figurent sur la page. */
+  essaiIA?: boolean;
   /**
    * Rend la mention « usage interne » en pied de CETTE page aussi.
    *
@@ -448,6 +451,14 @@ export function OptimisationsFiscalesPage({
           Les plafonds de cotisation proviennent des montants publiés ; ceux de l&apos;année en
           cours restent à confirmer.
         </Text>
+        {essaiIA && (
+          <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#b45309', lineHeight: 1.34 }}>
+            Essai sur dossier fictif : certains textes de cette page ont été reformulés par une IA à
+            partir des chiffres du moteur, puis vérifiés — chaque nombre, réserve et échéance doit
+            correspondre au calcul, sinon le texte d’origine est conservé. Aucune donnée réelle
+            n’a été transmise.
+          </Text>
+        )}
         <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.34 }}>
           Ces constats sont établis à partir des données disponibles à la date indiquée : ils ne
           préjugent pas des résultats futurs et ne constituent ni une prévision, ni une

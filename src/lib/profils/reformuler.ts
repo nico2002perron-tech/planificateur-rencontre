@@ -144,9 +144,17 @@ export type ReferenceConstat = {
   recurrence: Constat['recurrence'];
   donneesManquantes: string[];
   limiteVisibilite: string | null;
+  /** Le plan de récolte, TITRES MASQUÉS — le modèle joue avec les chiffres. */
+  plan?: Array<{ titre: string; vendre: number; gain: number }>;
+  /** Le calendrier du geste, dicté par le moteur. */
+  echeance?: string | null;
 };
 
-export function referencePour(constat: Constat): ReferenceConstat {
+export function referencePour(
+  constat: Constat,
+  /** Masque un symbole avant qu'il n'entre dans la référence. Identité par défaut. */
+  masqueSymbole: (s: string) => string = (x) => x
+): ReferenceConstat {
   return {
     strategie: constat.strategie,
     statut: constat.statut,
@@ -155,6 +163,8 @@ export function referencePour(constat: Constat): ReferenceConstat {
     recurrence: constat.recurrence,
     donneesManquantes: [...constat.donneesManquantes],
     limiteVisibilite: constat.limiteVisibilite,
+    plan: constat.plan?.map((l) => ({ titre: masqueSymbole(l.symbole), vendre: l.vendre, gain: l.gain })),
+    echeance: constat.echeance ?? null,
   };
 }
 
@@ -190,8 +200,15 @@ function nombresAutorises(reference: ReferenceConstat): Set<string> {
   }
   // Les motifs et la limite peuvent porter leurs propres chiffres (« 1 % par
   // mois », « 30 jours ») : ils sont dans la référence, donc ils sont permis.
-  for (const t of [...reference.donneesManquantes, reference.limiteVisibilite ?? '']) {
+  for (const t of [...reference.donneesManquantes, reference.limiteVisibilite ?? '', reference.echeance ?? '']) {
     for (const n of nombresDe(t)) permis.add(n);
+  }
+  // Le plan de récolte : chaque « vendre » et chaque « gain » sont citables.
+  for (const l of reference.plan ?? []) {
+    permis.add(String(l.vendre));
+    permis.add(String(Math.round(l.vendre)));
+    permis.add(String(l.gain));
+    permis.add(String(Math.round(l.gain)));
   }
   return permis;
 }
@@ -240,9 +257,14 @@ export function verifierReformulation(
   }
 
   // 1. AUCUN CHIFFRE INVENTÉ.
+  //
+  // Les jetons sont retirés AVANT l'extraction : « <<TITRE_1>> » porte un « 1 »
+  // structurel qui n'est pas un chiffre du constat. Sans ce retrait, le garde
+  // rejetait toute sortie citant un titre masqué — il se mordait la queue.
+  const sansJetons = (t: string) => t.replace(/<<[A-Z0-9_]+>>/g, ' ');
   const permis = nombresAutorises(charge.reference);
-  for (const n of nombresDe(charge.texteSource)) permis.add(n);
-  const intrus = nombresDe(texte).filter((n) => !permis.has(n));
+  for (const n of nombresDe(sansJetons(charge.texteSource))) permis.add(n);
+  const intrus = nombresDe(sansJetons(texte)).filter((n) => !permis.has(n));
   if (intrus.length > 0) {
     return { accepte: false, motif: `chiffre absent de la référence : ${intrus.join(', ')}` };
   }
@@ -313,10 +335,21 @@ export async function reformuler(
   const identifiants = options.identifiants ?? { symboles: [], prenoms: [] };
   const { texte: masque, jetons } = masquerIdentifiants(texteSource, identifiants);
 
+  // Les symboles du PLAN sont masqués avec la même table de jetons que le
+  // texte : « TITRE_1 » désigne le même titre partout. Leurs jetons servent au
+  // démasquage du retour, mais PAS à l'exigence de survie — le modèle n'est
+  // pas tenu de citer chaque ligne du plan.
+  const jetonsPlan: Record<string, string> = {};
+  const masqueSymbole = (sym: string) => {
+    const m = masquerIdentifiants(sym, identifiants);
+    Object.assign(jetonsPlan, m.jetons);
+    return m.texte;
+  };
+
   const charge: ChargeReformulation = {
     // C'EST LE TEXTE MASQUÉ QUI PART, jamais l'original.
     texteSource: masque,
-    reference: referencePour(constat),
+    reference: referencePour(constat, masqueSymbole),
     style: options.style ?? STYLE_PAR_DEFAUT,
   };
 
@@ -331,5 +364,5 @@ export async function reformuler(
   if (!verdict.accepte) return { ...gabarit, motifRepli: verdict.motif };
 
   // Le démasquage se fait ICI, en local : le document retrouve ses vrais noms.
-  return { texte: demasquer(sortie.trim(), jetons), origine: 'reformule', motifRepli: null };
+  return { texte: demasquer(sortie.trim(), { ...jetonsPlan, ...jetons }), origine: 'reformule', motifRepli: null };
 }
