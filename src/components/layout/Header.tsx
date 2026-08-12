@@ -29,7 +29,8 @@ export function Header() {
 
   return (
     <header className="h-[var(--header-height)] bg-white border-b border-gray-100 flex items-center justify-between px-6 sticky top-0 z-30">
-      <div className="flex items-center gap-4">
+      {/* pl-12 mobile : laisse la place au bouton menu flottant du tiroir */}
+      <div className="flex items-center gap-4 pl-12 lg:pl-0">
         <h2 className="text-sm font-semibold text-text-muted">
           Planificateur de rencontre
         </h2>

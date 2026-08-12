@@ -10,9 +10,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <VaultProvider>
       <div className="min-h-screen bg-bg-light">
         <Sidebar />
-        <div className="ml-[var(--sidebar-width)] transition-all duration-300">
+        {/* Mobile : la barre devient un tiroir par-dessus → aucune marge, tout
+            l'écran au contenu. Desktop : la marge suit --sidebar-width, que la
+            barre met à jour quand on la réduit. */}
+        <div className="ml-0 lg:ml-[var(--sidebar-width)] transition-all duration-300">
           <Header />
-          <main className="p-6">
+          <main className="p-4 sm:p-6">
             <Breadcrumbs />
             {children}
           </main>

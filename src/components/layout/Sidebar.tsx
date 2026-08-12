@@ -22,6 +22,8 @@ import {
   Inbox,
   FolderOpen,
   UserCog,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -56,14 +58,25 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  // Tiroir mobile : la barre est cachée sous ~1024 px et s'ouvre par-dessus le
+  // contenu (le contenu garde toute la largeur de l'écran — indispensable pour
+  // gérer un tournoi au téléphone sur le bord du terrain).
+  const [openMobile, setOpenMobile] = useState(false);
   // Exécution locale ? Décidé après le montage pour ne pas casser l'hydratation
   // (le serveur rend toujours la liste de base). Confort d'affichage seulement :
   // la sécurité est le 404 côté serveur — voir navItemsLocaux ci-dessus.
   const [local, setLocal] = useState(false);
   useEffect(() => {
     const h = window.location.hostname;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydratation : lecture navigateur impossible au rendu serveur
     setLocal(h === 'localhost' || h === '127.0.0.1' || h === '[::1]');
   }, []);
+
+  // La marge du contenu suit la barre : la variable pilote AUSSI le ml-[…] du
+  // layout, donc « Réduire » libère enfin l'espace au lieu de laisser un trou.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', collapsed ? '72px' : '260px');
+  }, [collapsed]);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/';
@@ -71,10 +84,24 @@ export function Sidebar() {
   }
 
   return (
+    <>
+    {/* Bouton menu — visible seulement sur petit écran */}
+    <button
+      onClick={() => setOpenMobile(v => !v)}
+      aria-label={openMobile ? 'Fermer le menu' : 'Ouvrir le menu'}
+      className="lg:hidden fixed top-3 left-3 z-50 w-10 h-10 rounded-xl bg-brand-dark text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+    >
+      {openMobile ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+    </button>
+    {/* Voile derrière le tiroir mobile — un tap le referme */}
+    {openMobile && (
+      <div className="lg:hidden fixed inset-0 bg-slate-900/50 z-30" onClick={() => setOpenMobile(false)} />
+    )}
     <aside
       className={cn(
         'fixed left-0 top-0 h-screen bg-brand-dark flex flex-col z-40 transition-all duration-300',
-        collapsed ? 'w-[72px]' : 'w-[var(--sidebar-width)]'
+        'w-[260px] lg:w-[var(--sidebar-width)] lg:translate-x-0',
+        openMobile ? 'translate-x-0' : '-translate-x-full'
       )}
     >
       {/* Logo */}
@@ -100,6 +127,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setOpenMobile(false)}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
                 active
@@ -115,8 +143,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — collapse toggle only */}
-      <div className="px-3 py-4 border-t border-white/10">
+      {/* Footer — collapse toggle (desktop seulement : le mobile a son tiroir) */}
+      <div className="px-3 py-4 border-t border-white/10 hidden lg:block">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/40 hover:text-white/60 transition-all duration-200 w-full"
@@ -126,5 +154,6 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

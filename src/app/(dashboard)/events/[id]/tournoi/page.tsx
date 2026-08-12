@@ -13,6 +13,7 @@ import { useState, useEffect, useMemo, useCallback, use, Fragment } from 'react'
 import {
   Loader2, ArrowLeft, Trophy, CalendarClock, Send, RefreshCw, Eye, Copy, Check,
   AlertTriangle, MapPin, Medal, X, Pencil, ArrowLeftRight, Globe, Tv, Mail, FileText,
+  ChevronDown,
 } from 'lucide-react';
 import Bracket from '@/components/tournament/Bracket';
 import GrilleHoraire from '@/components/tournament/GrilleHoraire';
@@ -22,6 +23,7 @@ import {
   construireGrilleParJour, journeeCourante, nomTerrain, libelleTerrain,
   normaliserSport, SPORTS, SPORT_PAR_DEFAUT, type SportId,
 } from '@/lib/tournament/terrains';
+import { etatDuTempo } from '@/lib/tournament/tempo';
 
 // Couleur d'étiquette de qualification (qui passe / qui sort / champion)
 const QUAL_COLOR: Record<QualStatus, string> = {
@@ -140,6 +142,18 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
   // journée en cours, puis elle ne bouge plus toute seule : saisir le dernier
   // pointage du vendredi ne doit pas faire sauter l'écran au samedi.
   const [jourChoisi, setJourChoisi] = useState<string>('');
+  // Configuration repliée/dépliée — null = automatique (repliée dès qu'un
+  // horaire existe : le jour J, les pointages passent en premier).
+  const [configOuverte, setConfigOuverte] = useState<boolean | null>(null);
+  // Horloge du témoin avance/retard — démarrée côté client seulement (sinon
+  // l'heure du serveur et celle du navigateur divergent à l'hydratation).
+  const [maintenant, setMaintenant] = useState<number | null>(null);
+
+  useEffect(() => {
+    setMaintenant(Date.now());
+    const t = setInterval(() => setMaintenant(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -241,6 +255,17 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
     }
     return map;
   }, [state?.matches]);
+
+  // Témoin « suis-je en avance ? » — visible seulement le jour même : compare
+  // l'heure réelle à la prochaine partie à jouer (les heures, elles, ne
+  // bougent jamais toutes seules — décaler reste un geste de l'organisateur).
+  const tempo = useMemo(
+    () => (maintenant === null ? null : etatDuTempo(
+      state?.matches || [], jourAffiche, state?.event.date || '',
+      form.game_minutes || 60, new Date(maintenant),
+    )),
+    [maintenant, state?.matches, jourAffiche, state?.event.date, form.game_minutes],
+  );
 
   const finishedCount = (state?.matches || []).filter(m => m.status === 'finished').length;
   const playoffMatches = useMemo(() => (state?.matches || []).filter(m => m.phase !== 'garantie'), [state?.matches]);
@@ -582,6 +607,8 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
 
   const published = state.config?.status === 'published';
   const hasSchedule = state.matches.length > 0;
+  // Repliée par défaut dès qu'un horaire existe — un tap sur l'en-tête l'ouvre.
+  const showConfig = configOuverte ?? !hasSchedule;
 
   return (
     <div className="max-w-2xl mx-auto pb-36">
@@ -639,12 +666,23 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {/* Configuration */}
+      {/* Configuration — repliée une fois l'horaire créé (un tap pour rouvrir) */}
       <div className="rounded-2xl bg-white p-4 mb-4" style={{ border: '2px solid #e5e7eb40', borderBottom: '4px solid #d1d5db40' }}>
-        <h2 className="text-sm font-extrabold text-text-main mb-3 flex items-center gap-1.5">
-          <CalendarClock className="h-4 w-4" style={{ color: DUO.orange }} /> Configuration de l&apos;horaire
-        </h2>
+        <button onClick={() => setConfigOuverte(!showConfig)} className="w-full flex items-center justify-between gap-2 text-left">
+          <h2 className="text-sm font-extrabold text-text-main flex items-center gap-1.5">
+            <CalendarClock className="h-4 w-4" style={{ color: DUO.orange }} /> Configuration de l&apos;horaire
+          </h2>
+          <span className="flex items-center gap-2 min-w-0">
+            {!showConfig && (
+              <span className="text-[11px] font-bold text-text-muted truncate">
+                {form.guaranteed_games} garantie{form.guaranteed_games > 1 ? 's' : ''} · {form.courts} terrain{form.courts > 1 ? 's' : ''} · {form.game_minutes} min · {form.playoffs_enabled ? `Top ${form.playoffs_team_count}` : 'sans séries'}
+              </span>
+            )}
+            <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${showConfig ? 'rotate-180' : ''}`} style={{ color: '#9ca3af' }} />
+          </span>
+        </button>
 
+        {showConfig && (<div className="mt-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-extrabold text-text-muted block mb-1">Parties garanties / équipe</label>
@@ -793,6 +831,7 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
             <AlertTriangle className="h-3.5 w-3.5" /> Il faut au moins 2 équipes inscrites.
           </p>
         )}
+        </div>)}
       </div>
 
       {/* Publication + envoi — rien ne part sur le site sans un geste explicite */}
@@ -876,6 +915,22 @@ export default function TournamentConsolePage({ params }: { params: Promise<{ id
               {swapSel
                 ? '👆 Touche un autre nom dans l\'horaire pour ÉCHANGER, ou choisis une équipe dans la banque au bas de l\'écran pour la PLACER ici.'
                 : '👇 Touche un nom d\'équipe : la banque de toutes les équipes inscrites s\'ouvre, ou touche un 2e nom pour échanger leur place. Les parties terminées sont verrouillées.'}
+            </div>
+          )}
+          {/* Témoin en direct : avance / à l'heure / retard (jour même seulement) */}
+          {tempo && (
+            <div className="mb-2 px-1">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold"
+                style={{
+                  backgroundColor: tempo.etat === 'retard' ? '#fef2f2' : tempo.etat === 'heure' ? `${DUO.blue}12` : `${DUO.green}15`,
+                  color: tempo.etat === 'retard' ? DUO.red : tempo.etat === 'heure' ? DUO.blueDark : DUO.greenDark,
+                  border: `1px solid ${tempo.etat === 'retard' ? '#fecaca' : tempo.etat === 'heure' ? `${DUO.blue}40` : `${DUO.green}40`}`,
+                }}>
+                {tempo.etat === 'fini' && '✅ Toutes les parties de la journée sont jouées'}
+                {tempo.etat === 'avance' && `⏱ En avance — terrain libre, M${tempo.matchNumber} commence dans ${tempo.minutes} min`}
+                {tempo.etat === 'heure' && `⏱ À l'heure — fenêtre de M${tempo.matchNumber} en cours`}
+                {tempo.etat === 'retard' && `⏱ En retard d'environ ${tempo.minutes} min sur M${tempo.matchNumber} — décale le reste au besoin`}
+              </span>
             </div>
           )}
           {/* Retard ? Tout le reste se décale d'un coup */}
