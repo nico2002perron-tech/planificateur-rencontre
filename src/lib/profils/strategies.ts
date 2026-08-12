@@ -93,6 +93,24 @@ export type Constat = {
    * Seul le premier cas va dans la section « Deja en ordre ».
    */
   dejaEnOrdre: boolean;
+  /**
+   * LE PLAN DE RÉCOLTE — quelles positions vendre, pour combien, et pourquoi.
+   *
+   * Demandé par Nicolas le 11 août 2026 : « est-ce que ça va détecter quoi
+   * vendre ? ». Présent seulement quand le statut est `calcule` : un plan sur
+   * un montant non confirmé serait une marche à suivre vers un chiffre faux.
+   */
+  plan?: LignePlan[];
+};
+
+export type LignePlan = {
+  symbole: string;
+  /** Ce qu'il faut vendre de cette position, en dollars — « environ ». */
+  vendre: number;
+  /** Le gain que cette vente cristallise. */
+  gain: number;
+  /** Vrai quand la position est vendue en partie seulement. */
+  partiel: boolean;
 };
 
 export type AngleMort = {
@@ -151,6 +169,50 @@ function positionsNonEnregistrees(profil: ProfilClient): PositionSituee[] {
 function gainLatent(p: Position): number | null {
   if (p.valeurMarchande === null || p.valeurComptable === null) return null;
   return p.valeurMarchande - p.valeurComptable;
+}
+
+/**
+ * LE PLAN DE RÉCOLTE : atteindre `cible` dollars de gain en vendant le moins
+ * possible.
+ *
+ * L'ordre est la DENSITÉ DE GAIN (gain latent ÷ valeur marchande) : chaque
+ * dollar vendu du titre le plus dense cristallise plus de gain, donc la cible
+ * est atteinte avec le plus petit volume vendu-racheté — moins de
+ * transactions, moins de frais.
+ *
+ * LA PROPORTION EST FISCALEMENT EXACTE, pas approchée : au Canada le PBR est
+ * un coût moyen par action (biens identiques), donc vendre une fraction d'une
+ * position cristallise exactement cette fraction de son gain latent. C'est ce
+ * qui autorise la dernière ligne du plan à être partielle.
+ */
+function planifierRecolte(
+  enGain: Array<{ p: PositionSituee; g: number }>,
+  cible: number
+): LignePlan[] {
+  const ordonnees = [...enGain]
+    .filter((x) => (x.p.valeurMarchande ?? 0) > 0)
+    .sort((a, b) => b.g / (b.p.valeurMarchande as number) - a.g / (a.p.valeurMarchande as number));
+
+  const plan: LignePlan[] = [];
+  let reste = cible;
+  for (const { p, g } of ordonnees) {
+    if (reste <= 0.005) break;
+    const vm = p.valeurMarchande as number;
+    if (g <= reste + 0.005) {
+      plan.push({ symbole: p.symbole, vendre: Math.round(vm), gain: Math.round(g * 100) / 100, partiel: false });
+      reste -= g;
+    } else {
+      const fraction = reste / g;
+      plan.push({
+        symbole: p.symbole,
+        vendre: Math.round(vm * fraction),
+        gain: Math.round(reste * 100) / 100,
+        partiel: true,
+      });
+      reste = 0;
+    }
+  }
+  return plan;
 }
 
 /** Combien de positions non enregistrées n'ont pas de PBR — le motif d'`indisponible`. */
@@ -430,6 +492,7 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     statut: 'calcule',
     portee: 'declaree',
     montantEstime: montant,
+    plan: planifierRecolte(enGain, montant),
     explication:
       `${originePertes} restent inutilisées. Vendre puis racheter les positions gagnantes — permis le jour même, ` +
       `la règle des 30 jours ne vise que les pertes — cristallise ${argent(montant)} de gain sans un dollar ` +

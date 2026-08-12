@@ -683,3 +683,59 @@ describe('« 0 $ de pertes latentes » ne se dit pas', () => {
     expect(plat(c.explication)).not.toMatch(/0 \$ de pertes latentes/);
   });
 });
+
+
+describe('LE PLAN DE RÉCOLTE — quoi vendre, et pourquoi cet ordre', () => {
+  const avecPositions = () => profilConsolide((x) => {
+    x.droits.pertesCapitalReportees = { montant: 10000, dateDonnee: DATE };
+    x.comptes = [compte('non-enregistre', [
+      position('DENSE', 10000, 2000),     // gain 8 000, densité 80 %
+      position('MOYEN', 20000, 14000),    // gain 6 000, densité 30 %
+      position('LEGER', 30000, 27000),    // gain 3 000, densité 10 %
+    ])];
+  });
+
+  it('commence par le titre au gain le plus DENSE, pas le plus gros', () => {
+    const c = trouver(analyser(avecPositions(), null, DATE), 'cristallisation-gains');
+    expect(c.statut).toBe('calcule');
+    expect(c.plan![0].symbole).toBe('DENSE');
+  });
+
+  it('la dernière ligne est PARTIELLE et la somme tombe exactement sur la cible', () => {
+    const c = trouver(analyser(avecPositions(), null, DATE), 'cristallisation-gains');
+    // Cible 10 000 : DENSE en entier (8 000), puis 2 000 sur MOYEN.
+    expect(c.plan).toHaveLength(2);
+    expect(c.plan![0]).toMatchObject({ symbole: 'DENSE', vendre: 10000, gain: 8000, partiel: false });
+    expect(c.plan![1].symbole).toBe('MOYEN');
+    expect(c.plan![1].gain).toBe(2000);
+    expect(c.plan![1].partiel).toBe(true);
+    // La proportion est fiscalement exacte : 2 000/6 000 du gain = 1/3 de la
+    // position, donc environ 6 667 $ à vendre.
+    expect(c.plan![1].vendre).toBe(6667);
+    const total = c.plan!.reduce((somme, l) => somme + l.gain, 0);
+    expect(total).toBe(c.montantEstime);
+  });
+
+  it('AUCUN PLAN sur un montant non confirmé', () => {
+    // Un plan vers un chiffre incertain serait une marche à suivre vers un
+    // chiffre faux.
+    const p = avecPositions();
+    p.consolidation.comptesExternes = 'oui';
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-gains');
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.plan).toBeUndefined();
+  });
+
+  it('pertes qui dépassent les gains : tout se vend, rien de partiel', () => {
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 50000, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [
+        position('DENSE', 10000, 2000),
+        position('MOYEN', 20000, 14000),
+      ])];
+    });
+    const c = trouver(analyser(p, null, DATE), 'cristallisation-gains');
+    expect(c.plan!.every((l) => !l.partiel)).toBe(true);
+    expect(c.montantEstime).toBe(14000);
+  });
+});

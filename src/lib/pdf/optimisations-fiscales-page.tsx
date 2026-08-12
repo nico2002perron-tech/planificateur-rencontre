@@ -198,6 +198,33 @@ function CarteConstat({ constat }: { constat: Constat }) {
         </Text>
       )}
 
+      {/* LE PLAN DE RÉCOLTE — quoi vendre, pour combien, et pourquoi cet
+          ordre. Présent seulement sur un constat calculé : un plan vers un
+          montant non confirmé serait une marche à suivre vers un chiffre faux. */}
+      {constat.plan && constat.plan.length > 0 && (
+        <View style={{ marginTop: 4, paddingLeft: 6 }}>
+          <View style={{ flexDirection: 'row', paddingBottom: 1.5, borderBottomWidth: 0.6, borderBottomColor: '#cbd5e1', borderBottomStyle: 'solid' }}>
+            <Text style={{ flex: 2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>Titre</Text>
+            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Vendre (environ)</Text>
+            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Gain cristallisé</Text>
+          </View>
+          {constat.plan.map((l) => (
+            <View key={l.symbole} style={{ flexDirection: 'row', paddingVertical: 1.2 }}>
+              <Text style={{ flex: 2, fontSize: 7, color: '#334155' }}>
+                {l.symbole}{l.partiel ? '  (en partie)' : ''}
+              </Text>
+              <Text style={{ flex: 1.6, fontSize: 7, color: '#334155', textAlign: 'right' }}>{fmt(l.vendre)}</Text>
+              <Text style={{ flex: 1.6, fontSize: 7, color: '#334155', textAlign: 'right' }}>{fmt(l.gain)}</Text>
+            </View>
+          ))}
+          <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.3 }}>
+            L’ordre va du titre au gain le plus dense au moins dense : la cible est atteinte en
+            vendant-rachetant le moins possible. Vendre une partie d’une position cristallise la même
+            part de son gain — le prix de base est un coût moyen par action.
+          </Text>
+        </View>
+      )}
+
       {/* LES DÉMARCHES, SOUS CHAQUE GESTE.
           Un constat dit ce qui est ; un geste dit ce qu'on fait ; les démarches
           disent comment. Sans elles, la page se lit comme un diagnostic sans
