@@ -472,7 +472,7 @@ interface AICorrection {
   reason?: string;
 }
 
-export function ResultsView({ result, onReset, clientName = '', onClientNameChange }: { result: ParseResult; onReset: () => void; clientName?: string; onClientNameChange?: (name: string) => void }) {
+export function ResultsView({ result, onReset, clientName = '', onClientNameChange, rawPositions = '' }: { result: ParseResult; onReset: () => void; clientName?: string; onClientNameChange?: (name: string) => void; rawPositions?: string }) {
   const { toast } = useToast();
   const vault = useVault();
   const [activeFilter, setActiveFilter] = useState<AssetType | 'ALL'>('ALL');
@@ -1443,6 +1443,18 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           ? deploymentSummary ?? undefined
           : undefined,
         usdCadRate: convertUsdToCad && usdCadRate ? usdCadRate : null,
+        // NOURRIR LA BASE LOCALE (principe du 12 août) : les textes BRUTS
+        // collés voyagent avec la génération pour que la base fiscale se
+        // nourrisse des cours cibles — le geste quotidien, sans deuxième
+        // collage. Uniquement en exécution locale ET pour un client nommé :
+        // depuis Vercel ce champ n'existe pas, et la route l'ignorerait de
+        // toute façon (`estLocal()` côté serveur fait foi).
+        collages: estLocalNavigateur && clientName.trim()
+          ? {
+              positions: rawPositions.trim() ? rawPositions : undefined,
+              transactions: activityPaste.trim() ? activityPaste : undefined,
+            }
+          : undefined,
         fundCodes: pdfOptions.fundCodesToInclude,
         options: {
           includeCover: pdfOptions.includeCover,
@@ -1497,7 +1509,8 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
 
       return { payload, pdfHoldings };
   }, [holdings, targetData, prices, pdfOptions, excludedRows, incomeTotals, incomeData,
-      clientName, evolution, activitySummary, deploymentSummary, convertUsdToCad, usdCadRate]);
+      clientName, evolution, activitySummary, deploymentSummary, convertUsdToCad, usdCadRate,
+      estLocalNavigateur, rawPositions, activityPaste]);
 
   const handleDownloadPdf = useCallback(async () => {
     setGeneratingPdf(true);
@@ -1519,6 +1532,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       // a rangé une copie du document dans le dossier du client et nous renvoie
       // son chemin. Sur Vercel ces en-têtes sont absents, et rien ne change.
       const cheminArchive = res.headers.get('X-Archive-Chemin');
+      // NOURRISSAGE : ce que la base locale a retenu des collages de CE cours
+      // cibles. Le dire à l'écran, sinon le principe « la base se nourrit toute
+      // seule » resterait invérifiable pour le planificateur.
+      const livreNouvelles = res.headers.get('X-Livre-Nouvelles');
+      const releveArchive = res.headers.get('X-Releve-Archive');
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -1533,12 +1551,11 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast(
-        'success',
-        cheminArchive
-          ? `PDF téléchargé · archivé dans ${decodeURIComponent(cheminArchive)}`
-          : 'PDF téléchargé'
-      );
+      const bouts = ['PDF téléchargé'];
+      if (cheminArchive) bouts.push(`archivé dans ${decodeURIComponent(cheminArchive)}`);
+      if (livreNouvelles !== null) bouts.push(`livre : +${livreNouvelles} transaction(s)`);
+      if (releveArchive) bouts.push('relevé du jour archivé');
+      toast('success', bouts.join(' · '));
 
       // Journal des cours cibles : on enregistre en silence chaque cible comme
       // une prédiction datée. Best-effort, non bloquant — le PDF est déjà
@@ -3687,18 +3704,25 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
 export function PretAColler() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [clientName, setClientName] = useState('');
+  // LE BRUT SURVIT AU PARSE : c'est lui qui nourrira la base locale à la
+  // génération (principe du 12 août — les cours cibles alimentent la base
+  // fiscale, tout sur le poste). Le parseur, lui, continue de travailler sur
+  // sa propre lecture ; le brut n'est jamais retouché.
+  const [rawPositions, setRawPositions] = useState('');
 
   const handlePaste = useCallback((text: string) => {
     const result = parseCroesusData(text);
     setParseResult(result);
+    setRawPositions(text);
   }, []);
 
   const handleReset = useCallback(() => {
     setParseResult(null);
+    setRawPositions('');
   }, []);
 
   if (parseResult && parseResult.holdings.length > 0) {
-    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} onClientNameChange={setClientName} />;
+    return <ResultsView result={parseResult} onReset={handleReset} clientName={clientName} onClientNameChange={setClientName} rawPositions={rawPositions} />;
   }
 
   return (

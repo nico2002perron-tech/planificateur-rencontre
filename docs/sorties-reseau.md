@@ -18,6 +18,7 @@ Mis à jour le **7 août 2026**. À relire avant tout ajout d'appel sortant.
 | `src/lib/profils/*` (moteur, stratégies, démarches) | TypeScript pur, aucun accès réseau |
 | `src/lib/profils/reformuler.ts` | **débranchée** — ne connaît aucun fournisseur, aucune clé, aucune URL. Sans `appelLLM` fourni par l'appelant, elle rend le texte source. Aucun appelant n'en fournit. |
 | `src/app/api/base-locale/*` | lecture/écriture disque local, 404 hors localhost |
+| `POST /api/exports/price-targets`, champ `collages` (12 août 2026) | les textes BRUTS collés dans les cours cibles (relevé de positions, transactions — numéros de comptes inclus) voyagent navigateur → serveur pour nourrir la base locale. **Double barrière** : le navigateur ne joint le champ qu'en localhost (`estLocalNavigateur`), et le serveur ne l'écrit qu'en local (`estLocal()` dans `nourrirBaseLocale`). Depuis Vercel : champ absent ET no-op. Rien ne quitte le poste. |
 
 **Le jour d'un branchement**, la charge est protégée par deux barrières :
 `referencePour()` ne construit que sept champs de chiffres et de libellés de

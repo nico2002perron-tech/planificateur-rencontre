@@ -8,6 +8,7 @@ import { mergeFundPdfs } from '@/lib/pdf/merge-fund-pdfs';
 import { enrichReportData } from '@/lib/pdf/enrich-report-data';
 import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 import { modeFiscalActif } from '@/lib/base-locale/mode';
+import { nourrirBaseLocale } from '@/lib/base-locale/nourrir';
 import { profilPourClient } from '@/lib/profils/stockage';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { analyser, restreindre } from '@/lib/profils/strategies';
@@ -22,12 +23,35 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { fundCodes, options, clientName, ...rest } = body as PriceTargetReportData & { fundCodes?: string[]; options?: PdfRenderOptions };
+    const { fundCodes, options, clientName, collages, ...rest } = body as PriceTargetReportData & {
+      fundCodes?: string[];
+      options?: PdfRenderOptions;
+      collages?: { positions?: string; transactions?: string };
+    };
     const base: PriceTargetReportData = { ...rest, options, clientName };
 
     if (!base.holdings || base.holdings.length === 0) {
       return NextResponse.json({ error: 'Aucune position fournie' }, { status: 400 });
     }
+
+    const jour = new Date().toISOString().split('T')[0];
+
+    // ── NOURRIR LA BASE LOCALE : les cours cibles SONT le geste qui alimente ──
+    //
+    // Principe du 12 août : « ma base de données se fera nourrir au fur et à
+    // mesure que je fais des cours cibles — et ce sera la seule façon; tout sur
+    // mon ordi seulement. » Les textes BRUTS collés (relevé de positions,
+    // transactions de l'année) arrivent avec la requête et sont archivés AVANT
+    // la section fiscale : le relevé collé à l'instant sert au calcul fiscal de
+    // CE MÊME document. Hors exécution locale, `nourrirBaseLocale` est un no-op
+    // intégral — rien ne s'écrit, aucun en-tête ne s'ajoute. Même doctrine que
+    // l'archivage : ne peut jamais faire échouer la génération.
+    const nourri = await nourrirBaseLocale({
+      nomClient: clientName?.trim() ?? '',
+      positions: collages?.positions,
+      transactions: collages?.transactions,
+      horodatage: jour,
+    });
 
     // Enrichissements serveur (logos, secteurs/descriptions, calendrier des
     // revenus) — PARTAGÉS avec l'export HTML interactif pour que les deux
@@ -53,7 +77,6 @@ export async function POST(req: NextRequest) {
     // le livrable principal.
     if (modeFiscalActif() && options?.includeOptimisationsFiscales === true && clientName?.trim()) {
       try {
-        const jour = new Date().toISOString().split('T')[0];
         const profil = await profilPourClient(clientName.trim(), jour);
         const retenues = profil.selectionStrategies?.strategies ?? [];
         if (retenues.length > 0) {
@@ -79,7 +102,7 @@ export async function POST(req: NextRequest) {
       finalPdfBytes = new Uint8Array(buffer);
     }
 
-    const date = new Date().toISOString().split('T')[0];
+    const date = jour;
     // Nom de fichier NEUTRE : le nom du client n'appara\u00EEt jamais dans l'en-t\u00EAte
     // Content-Disposition (loggable par les proxies/CDN/Vercel). Il reste
     // uniquement \u00E0 l'int\u00E9rieur du PDF, qui est le livrable destin\u00E9 au client.
@@ -102,6 +125,12 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,
         ...entetesArchivage(archivage),
+        // Le bilan du nourrissage, pour que l'écran puisse le DIRE. Absents
+        // hors local — la réponse Vercel reste identique au bit près.
+        ...(nourri.transactionsNouvelles !== null
+          ? { 'X-Livre-Nouvelles': String(nourri.transactionsNouvelles) }
+          : {}),
+        ...(nourri.releveArchive ? { 'X-Releve-Archive': '1' } : {}),
       },
     });
   } catch (err) {
