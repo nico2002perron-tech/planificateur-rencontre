@@ -71,6 +71,84 @@ describe('le contrat', () => {
     }
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // LA GARDE TRANSVERSALE DE VISIBILITÉ — balayage de TOUT le catalogue.
+  //
+  // L'inspection du 13 août 2026 a trouvé cinq violations de la même règle dans
+  // cinq stratégies différentes : chacune avait été écrite (et testée) sur des
+  // profils consolidés, où la règle ne se voit pas. Un test par stratégie
+  // n'attrape pas une famille — celui-ci balaie le catalogue entier, et couvre
+  // donc aussi les stratégies qui n'existent pas encore.
+  // ───────────────────────────────────────────────────────────────────────────
+  describe('VISIBILITÉ ENTAMÉE — la règle transversale, sur tout le catalogue', () => {
+    /** Un profil aussi renseigné que possible : chaque stratégie a de quoi chiffrer. */
+    const profilRiche = (externes: 'oui' | 'inconnu' | 'non') => {
+      const p = profilVierge('riche', DATE);
+      p.consolidation.comptesExternes = externes;
+      p.consolidation.historiqueExterne = 'jamais';
+      p.consolidation.dateConfirmation = DATE;
+      p.demographie.etatCivil = 'marie';
+      p.demographie.conjoint = { age: 45, trancheRevenu: '50-100k' };
+      p.demographie.enfants = [{ prenom: 'Laurie', age: 8 }];
+      p.revenus = { trancheRevenu: '100-150k', source: 'declare', dateDonnee: DATE };
+      p.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
+      p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+      p.intentions.donsAnnuelsMoyens = 5000;
+      p.transactionsAnnee = {
+        gainsRealises: 12000, pertesRealisees: 0, retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
+      };
+      p.comptes = [compte('non-enregistre', [
+        position('GAGNANT', 50000, 20000),
+        position('PERDANT', 8000, 20000),
+      ])];
+      return p;
+    };
+    const signauxComplets = {
+      droitsCeli: {
+        statut: 'calcule' as const, portee: 'complete' as const, montant: 21500,
+        borne: 21500, conditionsManquantes: [], transfertsATrancher: 0,
+      },
+      maximisation: null,
+    };
+
+    for (const externes of ['oui', 'inconnu'] as const) {
+      it(`comptesExternes = « ${externes} » : AUCUN montant ferme, AUCUN « déjà en ordre »`, () => {
+        const r = analyser(profilRiche(externes), null, DATE, { tauxScee: 0.20, tauxIqee: 0.10, cotisationSubventionnee: 2500 }, signauxComplets);
+        for (const c of r.constats) {
+          expect(
+            c.statut === 'calcule' ? `${c.strategie} sort « calcule »` : 'ok'
+          ).toBe('ok');
+          expect(
+            c.dejaEnOrdre ? `${c.strategie} sort « déjà en ordre »` : 'ok'
+          ).toBe('ok');
+          expect(
+            c.montantEstime !== null ? `${c.strategie} affirme un montant` : 'ok'
+          ).toBe('ok');
+        }
+      });
+
+      it(`comptesExternes = « ${externes} » : tout constat non chiffré porte SA réserve ou SA question`, () => {
+        // Sans l'un des deux, le constat échappe à l'angle mort du document :
+        // la limite existerait sans être écrite nulle part.
+        const r = analyser(profilRiche(externes), null, DATE, { tauxScee: 0.20, tauxIqee: 0.10, cotisationSubventionnee: 2500 }, signauxComplets);
+        for (const c of r.constats) {
+          if (c.statut === 'non-applicable' && c.donneesManquantes.length === 0 && c.limiteVisibilite === null) {
+            // Seul cas légitime : la stratégie ne dépend pas de ce qu'on voit.
+            expect(`${c.strategie} : ni réserve ni question`).toBe('ok');
+          }
+        }
+      });
+    }
+
+    it('la même situation, comptesExternes = « non » : les montants reviennent', () => {
+      const r = analyser(profilRiche('non'), null, DATE, { tauxScee: 0.20, tauxIqee: 0.10, cotisationSubventionnee: 2500 }, signauxComplets);
+      const chiffrees = r.constats.filter((c) => c.statut === 'calcule');
+      // La garde ne doit pas être un mur : sans compte ailleurs, ça calcule.
+      expect(chiffrees.length).toBeGreaterThanOrEqual(4);
+      for (const c of chiffrees) expect(c.montantEstime).not.toBeNull();
+    });
+  });
+
   it('LA DATE ENTRE PAR L’APPELANT, jamais par une horloge cachée', () => {
     expect(analyser(profilVierge('v', DATE), null, '1999-01-01').date).toBe('1999-01-01');
   });

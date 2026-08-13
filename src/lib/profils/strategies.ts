@@ -313,6 +313,31 @@ function porteeDe(profil: ProfilClient): Portee {
   return 'interne-seulement';
 }
 
+/**
+ * « DÉJÀ EN ORDRE » EXIGE LA VISIBILITÉ COMPLÈTE — corrigé le 13 août 2026.
+ *
+ * Un « rien à faire, c'est correct » prononcé sur les seuls comptes vus ici est
+ * une affirmation sur un ensemble qu'on n'a pas vu. Trois constats l'accordaient
+ * sans regarder `comptesExternes` : un client avec 20 000 $ de pertes reportées
+ * et un compte gagnant à l'autre institution lisait « rien à récolter » alors
+ * qu'il y avait jusqu'à 20 000 $ de gain à cristalliser à impôt nul.
+ *
+ * Et comme `limiteVisibilite` restait `null`, ces constats échappaient aussi à
+ * l'angle mort du document, qui ne retient que les constats qui la portent :
+ * la réserve n'était écrite nulle part. Ce couple répare les deux d'un coup.
+ */
+function sousReserveDeVisibilite(
+  profil: ProfilClient,
+  enOrdreSiVisible: boolean,
+  limite: string
+): { dejaEnOrdre: boolean; limiteVisibilite: string | null } {
+  const entamee = visibiliteEntamee(profil);
+  return {
+    dejaEnOrdre: enOrdreSiVisible && !entamee,
+    limiteVisibilite: entamee ? limite : null,
+  };
+}
+
 /** Les sources d'un constat — ce que le fiscaliste doit pouvoir remonter. */
 function sourcesDe(profil: ProfilClient, extra: string[] = []): string[] {
   return [`profil v${profil.version}`, 'regles-parseur v1.0', ...extra];
@@ -409,20 +434,32 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   // RÈGLE TRANSVERSALE : la visibilité entamée dégrade le constat, elle ne
   // l'annule pas. On dit le chiffre vu ET qu'il est partiel.
   if (visibiliteEntamee(profil)) {
-    return {
-      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
-      limiteVisibilite:
-        'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
-      explication:
-        `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}, ` +
+    // LE MÊME MOTIF QUE LE CHEMIN NOMINAL — corrigé le 13 août 2026.
+    //
+    // Cette branche disait « mais aucun gain net n'a été réalisé cette année »
+    // dès qu'`absorbable` valait zéro. Or `absorbable` est un MINIMUM : il vaut
+    // aussi zéro quand le client a de vrais gains réalisés mais aucune position
+    // en perte latente. Un client à 10 000 $ de gains lisait alors « 0 position
+    // porte une perte latente de 0 $, mais aucun gain net n'a été réalisé » —
+    // trois affirmations fausses d'un coup. Le chemin nominal (plus bas) avait
+    // reçu ce correctif le 11 août ; celui-ci l'avait manqué.
+    const phrasePertes = pertesLatentes <= 0
+      ? `Aucune position non enregistrée vue ici n’est en perte latente${gainsRealises > 0 ? `, alors que ${argent(gainsRealises)} de gain net a déjà été réalisé cette année` : ''}.`
+      : `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}, ` +
         // « DONT 0 $ ABSORBERAIT » NE SE DIT PAS. Vu à l'écran le 6 août sur un
         // client de la campagne : la phrase était exacte et illisible, et elle
         // laissait croire qu'il y avait quelque chose à faire. Quand il n'y a
         // aucun gain à absorber, on le dit — la perte reste utile, mais plus tard.
         (absorbable > 0
           ? `dont ${argent(absorbable)} absorberait le gain net déjà réalisé cette année (${argent(gainsRealises)}).`
-          : 'mais aucun gain net n’a été réalisé cette année : rien à absorber pour l’instant, et ces pertes restent disponibles pour une année future.') +
-        `${detailReportees} Ce montant ne couvre que les comptes détenus ici : un ordre de vente coordonné ` +
+          : 'mais aucun gain net n’a été réalisé cette année : rien à absorber pour l’instant, et ces pertes restent disponibles pour une année future.');
+
+    return {
+      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      limiteVisibilite:
+        'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
+      explication:
+        `${phrasePertes}${detailReportees} Ce constat ne couvre que les comptes détenus ici : un ordre de vente coordonné ` +
         `exige de connaître aussi les positions détenues ailleurs.`,
       donneesManquantes: manquantes,
     };
@@ -542,9 +579,16 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   if (enGain.length === 0) {
     return {
       ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
-      dejaEnOrdre: aveugles === 0,
-      explication: 'Aucune position non enregistrée ne porte de gain latent à récolter.',
-      donneesManquantes: [],
+      ...sousReserveDeVisibilite(
+        profil, aveugles === 0,
+        'constaté sur nos comptes seulement — un titre à gain latent détenu ailleurs pourrait, lui, être récolté.'
+      ),
+      explication:
+        'Aucune position non enregistrée vue ici ne porte de gain latent à récolter.' +
+        (visibiliteEntamee(profil)
+          ? ' Un titre détenu ailleurs pourrait en porter : le constat reste à confirmer.'
+          : ''),
+      donneesManquantes: visibiliteEntamee(profil) ? ['la liste des positions détenues ailleurs qu’ici'] : [],
     };
   }
 
@@ -562,10 +606,18 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     }
     return {
       ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
-      dejaEnOrdre: true,
+      // Les pertes de l'année sont dérivées du seul livre interne : une perte
+      // réalisée ailleurs cette année n'y figure pas. Le « rien à récolter »
+      // ne vaut donc que si le client a confirmé n'avoir aucun compte ailleurs.
+      ...sousReserveDeVisibilite(
+        profil, true,
+        'les pertes de l’année sont comptées sur nos comptes seulement — une perte réalisée ailleurs ouvrirait de la place.'
+      ),
       explication:
-        'Aucune perte inutilisée — ni cette année, ni reportée. Il n’y a rien à récolter à impôt nul, et c’est une bonne chose.',
-      donneesManquantes: [],
+        (visibiliteEntamee(profil)
+          ? 'Aucune perte inutilisée vue ici — ni cette année, ni reportée. Une perte réalisée dans un compte détenu ailleurs ouvrirait pourtant de la place : le constat reste à confirmer.'
+          : 'Aucune perte inutilisée — ni cette année, ni reportée. Il n’y a rien à récolter à impôt nul, et c’est une bonne chose.'),
+      donneesManquantes: visibiliteEntamee(profil) ? ['la liste des positions détenues ailleurs qu’ici'] : [],
     };
   }
 
@@ -723,6 +775,29 @@ function strategieCeliConjoint(profil: ProfilClient): Constat {
     };
   }
 
+  // LE CELI DU CONJOINT EST PLEIN — corrigé le 13 août 2026.
+  //
+  // La branche finale ne traitait pas le zéro : elle rendait une carte
+  // « calculée » à 0 $ dont l'explication recommandait quand même d'y loger des
+  // placements. Suivre ce conseil, c'est la cotisation excédentaire à 1 % de
+  // pénalité par mois que ce fichier rappelle deux fois. Le moteur a déjà sa
+  // convention pour ce cas (stratégie 8 : « le CELI est plein », non applicable
+  // et déjà en ordre) — on l'applique ici aussi. Le zéro est une VRAIE réponse,
+  // pas un montant : il se dit, il ne se chiffre pas.
+  if (droitsConjoint !== null && droitsConjoint <= 0) {
+    return {
+      ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
+      ...sousReserveDeVisibilite(
+        profil, true,
+        'droits lus sur l’avis de cotisation du conjoint — à confirmer avec ses comptes détenus ailleurs.'
+      ),
+      explication:
+        'Le CELI du conjoint est déjà plein : aucun droit de cotisation inutilisé. Il n’y a rien à y loger, ' +
+        'et cotiser au-delà coûterait 1 % de pénalité par mois.',
+      donneesManquantes: [],
+    };
+  }
+
   // Les droits du conjoint sont connus et datés. Mais un montant à cotiser ne
   // se recommande que si la visibilité est complète — règle transversale.
   if (visibiliteEntamee(profil)) {
@@ -813,16 +888,25 @@ function strategieDonTitres(profil: ProfilClient): Constat {
 
   if (enGain.length === 0) {
     const aveugles = sansPbr(nonEnr);
+    const entamee = visibiliteEntamee(profil);
     return {
       ...base,
       statut: aveugles > 0 ? 'indisponible' : 'non-applicable',
-      dejaEnOrdre: aveugles === 0,
-      portee: aveugles > 0 ? 'inconnue' : 'declaree',
+      // Le donateur dont TOUS les titres à gain sont ailleurs n'est pas « en
+      // ordre » : c'est justement chez lui que le don en titres rapporte.
+      ...sousReserveDeVisibilite(
+        profil, aveugles === 0,
+        'cherché dans nos comptes seulement — un titre à gain latent détenu ailleurs ferait un bien meilleur don.'
+      ),
+      portee: aveugles > 0 ? 'inconnue' : porteeDe(profil),
       montantEstime: null,
       explication: aveugles > 0
         ? `Le prix de base rajusté manque sur ${aveugles} position${pl(aveugles)} non enregistrée${pl(aveugles)} : impossible de dire laquelle porte le plus gros gain latent.`
-        : 'Aucune position non enregistrée ne porte de gain latent à donner.',
-      donneesManquantes: aveugles > 0 ? ['le prix de base rajusté des positions non enregistrées'] : [],
+        : 'Aucune position non enregistrée vue ici ne porte de gain latent à donner.' +
+          (entamee ? ' Un titre détenu ailleurs pourrait en porter : le constat reste à confirmer.' : ''),
+      donneesManquantes: aveugles > 0
+        ? ['le prix de base rajusté des positions non enregistrées']
+        : entamee ? ['la liste des positions détenues ailleurs qu’ici'] : [],
     };
   }
 
@@ -1041,6 +1125,30 @@ function strategieReee(
     .map((x) => `${x.prenom} : ${argent(x.reste)} de plus`)
     .join(', ');
 
+  // LA RÈGLE TRANSVERSALE S'APPLIQUE ICI AUSSI — corrigé le 13 août 2026.
+  //
+  // Cette stratégie était la seule à chiffrer sans jamais regarder
+  // `comptesExternes`, en s'abritant derrière « le montant est un plancher ».
+  // Le plancher ne tient pas : le plafond subventionné est PAR BÉNÉFICIAIRE,
+  // tous REEE confondus. Une cotisation faite pour le même enfant dans une
+  // autre institution consomme le même plafond et n'apparaît nulle part dans
+  // notre livre. Un parent qui a déjà versé les 2 500 $ ailleurs lisait
+  // « 750 $ laissés sur la table » — un chiffre faux qui pousse à sur-cotiser,
+  // et sans `limiteVisibilite` le document n'en disait pas un mot.
+  if (visibiliteEntamee(profil)) {
+    return {
+      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      limiteVisibilite:
+        'compté sur nos comptes seulement — le plafond subventionné est par enfant, tous REEE confondus : une cotisation faite ailleurs l’a peut-être déjà consommé.',
+      explication:
+        `D’après les cotisations vues ici, il resterait ${argent(aCotiser)} à verser avant la fin de l’année ` +
+        `pour capter jusqu’à ${argent(subvention)} de subvention (${detail}). Le montant reste à confirmer : ` +
+        'le plafond subventionné se compte par enfant, tous REEE confondus, et une cotisation versée dans un ' +
+        'REEE détenu ailleurs l’aurait déjà entamé.',
+      donneesManquantes: ['les cotisations REEE versées ailleurs cette année'],
+    };
+  }
+
   return {
     ...base,
     statut: 'calcule',
@@ -1140,12 +1248,45 @@ function strategieDroitsCotisation(
   if (droits.statut === 'calcule' && droits.montant !== null) {
     if (droits.montant <= 0) {
       return {
-        ...base, statut: 'non-applicable', portee: 'declaree', montantEstime: null,
-        dejaEnOrdre: true,
+        ...base, statut: 'non-applicable', portee: porteeDe(profil), montantEstime: null,
+        ...sousReserveDeVisibilite(
+          profil, true,
+          'plein d’après les cotisations vues ici — un CELI détenu ailleurs ne ferait que confirmer l’absence de place.'
+        ),
         explication: `Le CELI est plein : aucun droit inutilisé au dossier.${phraseReer}${disclaimer}`,
         donneesManquantes: [],
       };
     }
+
+    // LES DEUX QUESTIONS NE SONT PAS LA MÊME — corrigé le 13 août 2026.
+    //
+    // `calculerDroitsCeli` ne vérifie que `historiqueExterne` (« as-tu déjà eu
+    // un CELI ailleurs ? »). `comptesExternes` (« as-tu des comptes ailleurs ? »)
+    // se saisit séparément, et rien ne les croise. Un client qui répond « oui,
+    // j'ai un compte de placement ailleurs » et « non, jamais eu de CELI
+    // ailleurs » sortait donc en montant CALCULÉ, portée COMPLÈTE, avec la
+    // phrase « aucun compte ailleurs confirmé » — factuellement fausse, sur le
+    // seul constat du document qui pousse à poser un geste chiffré.
+    //
+    // On applique la règle transversale, comme l'en-tête de ce fichier le
+    // prescrit : la borne se dit, le montant ferme attend la consolidation.
+    // (Fiscalement, le chiffre serait probablement exact — les droits CELI ne
+    // dépendent que des cotisations CELI. C'est un choix de PRUDENCE assumé :
+    // une cotisation excédentaire coûte 1 % par mois, et le client qui confirme
+    // « aucun compte ailleurs » récupère le montant ferme aussitôt.)
+    if (visibiliteEntamee(profil)) {
+      return {
+        ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+        limiteVisibilite:
+          'le client a confirmé n’avoir jamais eu de CELI ailleurs, mais il détient des comptes ailleurs : le chiffre ferme attend cette confirmation.',
+        explication:
+          `Vu d’ici, ${argent(droits.montant)} d’espace CELI restent ouverts — l’historique est complet et les ` +
+          'transferts sont tranchés, mais le client détient des comptes ailleurs : tant que ce point n’est pas ' +
+          `confirmé, ce chiffre reste une borne.${phraseMotif}${phraseReer}${disclaimer}`,
+        donneesManquantes: ['la confirmation qu’aucun compte n’est détenu ailleurs'],
+      };
+    }
+
     return {
       ...base, statut: 'calcule', portee: 'complete', montantEstime: droits.montant,
       explication:
