@@ -5,9 +5,7 @@
 // (montant calculé, ou borne avec son motif).
 import 'server-only';
 import { lireHistorique } from './historique';
-import { observerTransferts } from './deriver';
-import { croiserTransferts, calculerDroitsCeli, type TransfertDouteux } from './droits-celi';
-import { plafondCeliCumulatif } from './parametres-fiscaux';
+import { verdictCeliDuLivre } from './verdict-celi';
 import type { ProfilClient, StatutConstat, Portee } from './types';
 
 export type ResumeCeli = {
@@ -46,11 +44,13 @@ export async function resumeCeli(
   anneeCourante: number
 ): Promise<ResumeCeli> {
   const livre = await lireHistorique(nomClient);
-  const observes = observerTransferts(livre, 'celi');
-  const douteux: TransfertDouteux[] = croiserTransferts(observes, profil.consolidation.transfertsResolus);
 
-  const plafond = plafondCeliCumulatif(profil.demographie.age, anneeCourante);
-  const droits = calculerDroitsCeli(profil, douteux, plafond.montant);
+  // LA CHAÎNE UNIQUE — l'écran et le moteur passent par le MÊME calcul depuis
+  // le 13 août 2026. Avant, ce fichier calculait le verdict sur l'historique
+  // FIGÉ à l'import puis dérivait un historique frais qui n'alimentait que
+  // l'affichage : deux montants « calculés » différents pouvaient sortir dans
+  // la même réponse. Voir l'en-tête de verdict-celi.ts.
+  const { historique: h, observes, plafond, droits } = verdictCeliDuLivre(profil, livre, anneeCourante);
 
   // Les apports en nature ne sont pas dans historiqueVie : on les recalcule
   // ici pour que le planificateur voie CE QUI A ÉTÉ ÉCARTÉ, pas seulement ce
@@ -65,19 +65,6 @@ export async function resumeCeli(
   }
   let apportsEnNature = 0;
   for (const [, ls] of parCompte) apportsEnNature += separerCotisations(ls).apportsEnNature;
-
-  // ON RECALCULE, on ne lit pas le profil figé.
-  //
-  // `historiqueVie` a été écrit au moment de l'import, avec les règles de ce
-  // jour-là. Quand une règle change — et elles changent, la 5e est née le
-  // 4 août — un profil importé la veille porterait un chiffre périmé sans
-  // que rien ne le signale. C'est la leçon du grand livre : recalculer depuis
-  // la source, toujours.
-  const { deriverHistoriqueRegime } = await import('./deriver');
-  const h = lignesCeli.length
-    ? deriverHistoriqueRegime(livre, 'celi', anneeCourante,
-        profil.historiqueVie.celi.dateImport ?? '')
-    : profil.historiqueVie.celi;
 
   return {
     cotisationsTotales: h.cotisationsTotales,

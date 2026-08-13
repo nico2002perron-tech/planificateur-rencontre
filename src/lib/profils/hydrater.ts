@@ -39,23 +39,17 @@ import { lireHistorique, lireDernierReleve } from './historique';
 import { deriverComptes } from './comptes';
 import {
   deriverTransactionsAnnee, deriverCotisationsAnnee, deriverCeliParAnnee,
-  deriverHistoriqueRegime, observerTransferts,
 } from './deriver';
-import { croiserTransferts, calculerDroitsCeli } from './droits-celi';
-import { plafondCeliCumulatif, plafondsCeliParAnnee } from './parametres-fiscaux';
+import { plafondsCeliParAnnee } from './parametres-fiscaux';
 import { analyserMaximisation, type SignauxLivre } from './signaux-livre';
+import { verdictCeliDuLivre, ageALaDate } from './verdict-celi';
 import type { ProfilClient } from './types';
 
-/** L'âge au jour dit, dérivé de la date de naissance. */
-export function ageALaDate(dateNaissance: string | null, jour: string): number | null {
-  if (!dateNaissance) return null;
-  const n = new Date(`${dateNaissance}T12:00:00`);
-  const j = new Date(`${jour}T12:00:00`);
-  if (Number.isNaN(n.getTime()) || Number.isNaN(j.getTime())) return null;
-  let age = j.getFullYear() - n.getFullYear();
-  if (j.getMonth() < n.getMonth() || (j.getMonth() === n.getMonth() && j.getDate() < n.getDate())) age -= 1;
-  return age >= 0 && age <= 120 ? age : null;
-}
+// `ageALaDate` vit désormais dans verdict-celi.ts, avec le calcul dont il
+// commande le plafond. Réexporté ici : c'est de ce module qu'on l'importe
+// depuis le 12 août, et une signature stable ne se casse pas pour un
+// déménagement.
+export { ageALaDate };
 
 /**
  * Le profil, augmenté de tout ce que le livre et le dernier relevé savent.
@@ -124,13 +118,9 @@ export async function signauxDuLivre(
   const livre = await lireHistorique(nomClient);
   if (livre.length === 0) return vide;
 
-  const h = deriverHistoriqueRegime(livre, 'celi', annee, profil.historiqueVie.celi.dateImport ?? '');
-  const observes = observerTransferts(livre, 'celi');
-  const douteux = croiserTransferts(observes, profil.consolidation.transfertsResolus);
-  const age = ageALaDate(profil.demographie.dateNaissance, `${annee}-12-31`) ?? profil.demographie.age;
-  const plafond = plafondCeliCumulatif(age, annee);
-  const frais = { ...profil, historiqueVie: { ...profil.historiqueVie, celi: h } };
-  const droitsCeli = calculerDroitsCeli(frais, douteux, plafond.montant);
+  // LA CHAÎNE UNIQUE — exactement le même calcul que l'écran (resumeCeli).
+  // Voir l'en-tête de verdict-celi.ts : ces deux surfaces divergeaient.
+  const { droits: droitsCeli } = verdictCeliDuLivre(profil, livre, annee);
 
   const parAnnee = deriverCeliParAnnee(livre);
   const maximisation = analyserMaximisation(
