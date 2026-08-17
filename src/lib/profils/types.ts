@@ -143,6 +143,22 @@ export type Position = {
  */
 export type ProvenanceNumero = 'livre' | 'confirme' | 'ambigu' | 'absent' | 'non-jointable';
 
+/**
+ * Le compte détient-il encore quelque chose ? — ajouté le 17 août 2026.
+ *
+ * `au-releve`        des positions (ou une encaisse) figurent au relevé du jour.
+ * `livre-seulement`  le compte apparaît dans les transactions, plus au relevé.
+ *
+ * ⚠ `livre-seulement` NE VEUT PAS DIRE « FERMÉ ». On observe une absence, pas
+ * une fermeture : le compte peut être fermé, transféré ailleurs, ou vidé. Dire
+ * « fermé » serait une déduction de plus, et ce schéma en refuse une de plus.
+ *
+ * AXE DISTINCT DE `provenanceNumero`, qui dit la confiance dans le NUMÉRO.
+ * Les deux sont orthogonaux : un compte vu au livre seulement a un numéro
+ * certain (`livre`) et aucune position (`livre-seulement`).
+ */
+export type PresenceCompte = 'au-releve' | 'livre-seulement';
+
 export type Compte = {
   /**
    * Numéro complet — la clé durable. `null` tant qu'il n'est pas PROUVÉ.
@@ -155,6 +171,21 @@ export type Compte = {
   /** Le suffixe du relevé — toujours connu, toujours vrai. L'identité de repli. */
   suffixe: string;
   provenanceNumero: ProvenanceNumero;
+  /**
+   * Détient-il encore quelque chose ? Voir `PresenceCompte`.
+   *
+   * Absent des profils écrits avant le 17 août 2026 : `completerProfil` le
+   * remplit à `au-releve`, ce qui était la seule valeur possible avant.
+   */
+  presence: PresenceCompte;
+  /**
+   * Pour un compte `livre-seulement` : la date de sa dernière transaction, et
+   * le dernier solde vu. C'est ce qui permet de dire « plus rien depuis mars
+   * 2023 » plutôt que d'afficher un compte à 0 $ indistinguable d'un compte
+   * vivant qu'on aurait vidé. `null` pour un compte au relevé.
+   */
+  derniereActivite: string | null;
+  dernierSolde: number | null;
   /** Les candidats du livre quand la jointure est ambiguë — matière de l'écran. */
   candidats: string[];
   /**

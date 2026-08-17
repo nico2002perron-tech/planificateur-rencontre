@@ -18,6 +18,7 @@ function profil(modif: (p: ProfilClient) => void = () => {}): ProfilClient {
 }
 const compte = (positions: Position[]) => ({
   numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre' as const, candidats: ['37-FICT-A'],
+  presence: 'au-releve' as const, derniereActivite: null, dernierSolde: null,
   type: 'non-enregistre' as const, titulaire: 'client' as const, dateReleve: DATE,
   encaisse: [], positions,
 });

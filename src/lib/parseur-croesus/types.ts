@@ -136,3 +136,24 @@ export function typeDeCompte(noCompte: string): string | null {
 export function estCompteVMBL(noCompte: string): boolean {
   return decomposerCompte(noCompte)?.vmbl ?? false;
 }
+
+/**
+ * Vrai pour un compte iA — un « 37-… ».
+ *
+ * ÉCRIT LE 17 AOÛT 2026, et le mot « écrit » compte : jusque-là il n'existait
+ * AUCUN prédicat positif. Le seul discriminant était négatif (`vmbl`), et
+ * « pas VMBL » n'est pas « iA » : la forme `~E-0024I-0` n'est ni l'un ni
+ * l'autre, et un identifiant que `decomposerCompte` refuse n'est rien du tout.
+ *
+ * Pourquoi il fallait un prédicat POSITIF : la passe des comptes vus au livre
+ * seulement (`Compte.presence`) doit s'appliquer aux seuls comptes iA — consigne
+ * de Nicolas du 12 août, « fie-toi aux comptes qui commencent par 37 ». Filtrer
+ * sur « pas VMBL » y ferait entrer tous les formats non catalogués.
+ *
+ * On exige donc les DEUX conditions : un identifiant que la décomposition
+ * reconnaît, ET le préfixe « 37 » exactement. Tout le reste rend `false` —
+ * y compris les autres préfixes à deux chiffres, qui ne sont pas prouvés iA.
+ */
+export function estCompteIA(noCompte: string): boolean {
+  return decomposerCompte(noCompte)?.prefixe === '37';
+}

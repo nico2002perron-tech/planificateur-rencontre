@@ -21,7 +21,7 @@ function constatChiffre() {
   p.demographie.etatCivil = 'marie';
   p.transactionsAnnee.gainsRealises = 12000;
   p.comptes = [{
-    numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', candidats: ['37-FICT-A'],
+    numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', presence: 'au-releve', derniereActivite: null, dernierSolde: null, candidats: ['37-FICT-A'],
     type: 'non-enregistre', titulaire: 'client', dateReleve: DATE, encaisse: [],
     positions: [{ symbole: 'AAA', devise: 'CAD', categorie: null, valeurMarchande: 8000, valeurComptable: 20000, revenuAnnuel: null }],
   }];
@@ -139,7 +139,7 @@ describe('LE MASQUAGE DES IDENTIFIANTS — le défaut du 7 août 2026', () => {
     const p = profilVierge('f', DATE);
     p.demographie.enfants = [{ prenom: 'Laurie', age: 9 }, { prenom: 'Jules', age: 6 }];
     p.comptes = [{
-      numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', candidats: ['37-FICT-A'],
+      numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', presence: 'au-releve', derniereActivite: null, dernierSolde: null, candidats: ['37-FICT-A'],
       type: 'non-enregistre', titulaire: 'client', dateReleve: DATE, encaisse: [],
       positions: [{ symbole: 'BBB', devise: 'CAD', categorie: null, valeurMarchande: 1, valeurComptable: 1, revenuAnnuel: null }],
     }];

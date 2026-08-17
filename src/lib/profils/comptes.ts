@@ -17,6 +17,7 @@
 // périmée. Ce qui est persisté, c'est le relevé brut et les tranchages datés.
 
 import { canoniserCompte, decomposerCompte } from '@/lib/parseur-croesus/identifiant-compte';
+import { estCompteIA } from '@/lib/parseur-croesus/types';
 import { typeDeCompte } from '@/lib/parseur-croesus/types';
 import { parserPositions, grouperParCompte, type VerdictJointure } from '@/lib/parseur-croesus/positions';
 import type { LigneTransaction } from '@/lib/parseur-croesus/types';
@@ -208,6 +209,9 @@ export function deriverComptes(
       type: regimeDuCompte(g.numero),
       titulaire: tranche?.titulaire ?? null,
       dateReleve: options.dateReleve,
+      presence: 'au-releve',
+      derniereActivite: null,
+      dernierSolde: null,
       positions: g.positions.map(
         (p): Position => ({
           symbole: p.symbole,
@@ -235,9 +239,68 @@ export function deriverComptes(
     comptes.push({
       numero: v.numero, suffixe, provenanceNumero: v.provenance as ProvenanceNumero,
       candidats: v.candidats, type: regimeDuCompte(v.numero), titulaire: null,
-      dateReleve: options.dateReleve, positions: [], encaisse,
+      dateReleve: options.dateReleve, presence: 'au-releve',
+      derniereActivite: null, dernierSolde: null,
+      positions: [], encaisse,
     });
     detailles.set(suffixe, v.candidatsDetailles);
+  }
+
+  // ── LES COMPTES VUS AU LIVRE SEULEMENT — passe inverse (17 août 2026) ──
+  //
+  // Jusqu'ici, cette fonction ne regardait QUE le relevé : un compte présent
+  // dans l'historique des transactions mais absent du relevé du jour n'était
+  // émis nulle part. Ses lignes n'étaient pas perdues — les dérivations de
+  // régime lisent le livre entier — mais il n'existait aucune entité : pas de
+  // type, pas de dernière activité, rien à l'écran.
+  //
+  // QUATRE GARDES, chacune contre une invention :
+  //
+  //   1. SANS RELEVÉ LISIBLE, on ne conclut rien. « Absent du relevé » n'a de
+  //      sens que si un relevé a été lu. Sinon tous les comptes du livre
+  //      sortiraient « sans position », ce qui serait faux et alarmant.
+  //   2. LES COMPTES iA SEULEMENT (`estCompteIA`) — consigne du 12 août. Ce
+  //      qui tenait les VMBL à l'écart n'était pas une règle mais un accident
+  //      de clés : leur suffixe est un chiffre, celui du relevé une lettre.
+  //      Sans ce filtre, cette passe sortirait des centaines de comptes VMBL.
+  //   3. UN COMPTE DÉJÀ ÉMIS N'EST PAS ABSENT : on compare les NUMÉROS
+  //      canonisés, pas les suffixes.
+  //   4. SUFFIXE AMBIGU, ON SE TAIT. Quand plusieurs comptes du livre
+  //      partagent le suffixe d'un compte du relevé, rien ne dit lequel est
+  //      encore vivant. L'ambiguïté est déjà dite par `aTrancher` ; en
+  //      déduire une fermeture serait un choix déguisé.
+  const releveLisible = lu.positions.length > 0 || lu.encaisses.length > 0;
+  if (releveLisible) {
+    const numerosVivants = new Set(
+      comptes.map((c) => (c.numero ? canoniserCompte(c.numero) : '')).filter(Boolean)
+    );
+    const suffixesAmbigus = new Set(
+      comptes.filter((c) => c.provenanceNumero === 'ambigu').map((c) => c.suffixe)
+    );
+
+    for (const [suffixe, candidats] of index) {
+      if (suffixesAmbigus.has(suffixe)) continue;                    // garde 4
+      for (const cand of candidats) {
+        if (!estCompteIA(cand.numero)) continue;                     // garde 2
+        if (numerosVivants.has(canoniserCompte(cand.numero))) continue; // garde 3
+        comptes.push({
+          numero: cand.numero,
+          suffixe,
+          // Le numéro vient du livre : il est CERTAIN. C'est la présence qui
+          // manque — deux axes distincts, jamais écrasés l'un sur l'autre.
+          provenanceNumero: 'livre',
+          candidats: [cand.numero],
+          type: regimeDuCompte(cand.numero),
+          titulaire: null,
+          dateReleve: options.dateReleve,
+          presence: 'livre-seulement',
+          derniereActivite: cand.derniereActivite,
+          dernierSolde: cand.dernierSolde,
+          positions: [],
+          encaisse: [],
+        });
+      }
+    }
   }
 
   comptes.sort((a, b) => a.suffixe.localeCompare(b.suffixe));

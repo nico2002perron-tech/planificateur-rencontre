@@ -11,7 +11,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { estLocal } from '@/lib/base-locale/mode';
 import { racineBaseLocale } from '@/lib/base-locale/chemins';
-import { profilVierge, type ProfilClient } from './types';
+import { profilVierge, type ProfilClient, type Compte } from './types';
 
 export type Correspondance = Record<string, string>;   // pseudonyme → nom
 
@@ -122,7 +122,19 @@ function completerProfil(stocke: Partial<ProfilClient>, id: string, date: string
       ...fusion(v.cotisationsAnnee, stocke.cotisationsAnnee),
       reeeParEnfant: fusion(v.cotisationsAnnee.reeeParEnfant, stocke.cotisationsAnnee?.reeeParEnfant),
     },
-    comptes: Array.isArray(stocke.comptes) ? stocke.comptes : [],
+    // `presence` est né le 17 août 2026 : un profil écrit avant ne l'a pas.
+    // Avant cette date, un compte ne pouvait venir que du relevé — « au-releve »
+    // est donc la seule valeur qu'il ait jamais eue. (En pratique `comptes` se
+    // redérive à la lecture ; cette normalisation couvre les profils anciens
+    // qui l'auraient encore figé.)
+    comptes: Array.isArray(stocke.comptes)
+      ? (stocke.comptes as Compte[]).map((c) => ({
+          ...c,
+          presence: c.presence ?? 'au-releve',
+          derniereActivite: c.derniereActivite ?? null,
+          dernierSolde: c.dernierSolde ?? null,
+        }))
+      : [],
     transactionsAnnee: fusion(v.transactionsAnnee, stocke.transactionsAnnee),
     historiqueVie: {
       celi: fusion(v.historiqueVie.celi, stocke.historiqueVie?.celi),

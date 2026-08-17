@@ -275,6 +275,45 @@ c'est **le relevé brut horodaté** et **les tranchages datés** ; `comptes` se
 reconstruit à chaque affichage. Le jour où la jointure s'améliore — ou le jour
 où la mesure ci-dessous est faite — tous les profils se réparent d'un coup.
 
+### 17 août 2026 — `Compte.presence` : les comptes vus au livre seulement
+
+**Demande de Nicolas** : « par les transactions et les positions collés des
+cours cibles je veux qu'il arrive à faire des liens selon le type de compte
+existant, etc. les comptes qui ont été fermés (sans compter ceux de chez
+VMBL) ».
+
+**Ce qui manquait.** `deriverComptes()` ne parcourait que le RELEVÉ : un compte
+présent dans l'historique des transactions mais absent du relevé du jour
+n'était émis nulle part. Ses **lignes** n'étaient pas perdues — les dérivations
+de régime lisent le livre entier, donc les cotisations d'un CELI fermé
+comptaient déjà dans les droits — mais il n'existait aucune **entité** : pas de
+type affiché, pas de dernière activité, rien à l'écran.
+
+**Le champ.** `Compte.presence`, deux valeurs :
+
+| valeur | sens |
+|---|---|
+| `au-releve` | le compte porte des positions (ou une encaisse) dans le relevé du jour |
+| `livre-seulement` | le compte apparaît dans les transactions, mais plus dans le relevé |
+
+**`livre-seulement` NE VEUT PAS DIRE « FERMÉ ».** On observe une absence, pas
+une fermeture : le compte peut être fermé, transféré ailleurs, ou simplement
+vidé. Le mot « fermé » serait une déduction, et le schéma en interdit une de
+plus. L'écran et le document disent « plus de position aujourd'hui ».
+
+**Pourquoi un champ à part de `provenanceNumero`.** Les deux axes sont
+orthogonaux : `provenanceNumero` dit la confiance dans le NUMÉRO, `presence`
+dit si le compte détient encore quelque chose. Un compte venu du livre a un
+numéro certain (`livre`) et une présence nulle (`livre-seulement`).
+
+**Les comptes VMBL sont EXCLUS de cette passe**, sur consigne du 12 août
+(« fie-toi aux comptes qui commencent par 37 »). Attention : ce qui les tenait
+à l'écart jusqu'ici n'était pas une règle mais un accident — leur suffixe est
+un chiffre, celui du relevé une lettre, donc les clés ne se croisaient jamais.
+Une passe inverse sans filtre explicite ferait apparaître **~424 comptes VMBL**
+comme absents du relevé. D'où le prédicat `estCompteIA()`, écrit pour cette
+passe et appelé par elle.
+
 ### ⚠ UNE MESURE À FAIRE, qui débloque 433 comptes
 
 Ouvrir un relevé de positions pour un client porteur d'un compte `4A`/`6A` et

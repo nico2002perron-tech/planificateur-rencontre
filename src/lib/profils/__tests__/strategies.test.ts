@@ -23,7 +23,7 @@ function position(symbole: string, vm: number | null, pbr: number | null): Posit
 
 function compte(type: Compte['type'], positions: Position[]): Compte {
   return {
-    numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', candidats: ['37-FICT-A'],
+    numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', presence: 'au-releve', derniereActivite: null, dernierSolde: null, candidats: ['37-FICT-A'],
     type, titulaire: 'client', dateReleve: DATE, positions, encaisse: [],
   };
 }

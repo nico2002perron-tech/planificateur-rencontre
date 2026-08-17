@@ -63,6 +63,9 @@ type CompteDerive = {
   numero: string | null; suffixe: string;
   provenanceNumero: 'livre' | 'confirme' | 'ambigu' | 'absent' | 'non-jointable';
   type: string | null; dateReleve: string | null;
+  presence?: 'au-releve' | 'livre-seulement';
+  derniereActivite?: string | null;
+  dernierSolde?: number | null;
   positions: Array<{ symbole: string; valeurMarchande: number | null }>;
   encaisse: Array<{ devise: string; montant: number }>;
 };
@@ -490,11 +493,26 @@ export function EcranFiscal({ racine }: { racine: string }) {
                 {courant.comptes.comptes.map((c) => {
                   const vm = c.positions.reduce((s, x) => s + (x.valeurMarchande ?? 0), 0)
                     + c.encaisse.reduce((s, x) => s + x.montant, 0);
+                  // UN COMPTE VU AU LIVRE SEULEMENT n'a plus de position
+                  // aujourd'hui. On dit CE QU'ON OBSERVE — « plus de position
+                  // depuis <date> » — jamais « fermé », qui serait une
+                  // déduction : le compte peut être fermé, transféré ou vidé.
+                  const dormant = c.presence === 'livre-seulement';
                   return (
-                    <li key={c.suffixe} className="flex flex-wrap items-baseline gap-2 text-sm">
+                    <li
+                      key={c.numero ?? c.suffixe}
+                      className={`flex flex-wrap items-baseline gap-2 text-sm ${dormant ? 'opacity-70' : ''}`}
+                    >
                       <span className="font-mono text-text-main">{c.numero ?? `…-${c.suffixe}`}</span>
                       <span className="text-text-muted">{c.type ?? 'régime inconnu'}</span>
-                      <span className="tabular-nums text-text-main">{argent(vm)}</span>
+                      {dormant ? (
+                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">
+                          plus de position
+                          {c.derniereActivite ? ` depuis ${c.derniereActivite}` : ''}
+                        </span>
+                      ) : (
+                        <span className="tabular-nums text-text-main">{argent(vm)}</span>
+                      )}
                     </li>
                   );
                 })}

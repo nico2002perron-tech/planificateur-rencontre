@@ -131,12 +131,14 @@ describe('deriverComptes', () => {
     // aurait effacé le revenu de tous les FNB obligataires du portefeuille.
     // Seule la colonne 1, la famille déclarée par Croesus, fait foi.
     const r = deriverComptes(FNB, livre, { dateReleve: '2026-08-05' });
-    expect(r.comptes[0].positions[0].revenuAnnuel).toBe(84.5);
+    // Le compte VISÉ, pas le premier de la liste : depuis la passe inverse du
+    // 17 août, `comptes` peut aussi porter des comptes vus au livre seulement.
+    expect(r.comptes.find((c) => c.suffixe === 'S')!.positions[0].revenuAnnuel).toBe(84.5);
   });
 
   it('LA CATÉGORIE RESTE NULL : aucune colonne du relevé ne la porte', () => {
     const r = deriverComptes(FNB, livre, { dateReleve: '2026-08-05' });
-    expect(r.comptes[0].positions[0].categorie).toBeNull();
+    expect(r.comptes.find((c) => c.suffixe === 'S')!.positions[0].categorie).toBeNull();
   });
 
   it('REFUSE un collage multi-clients plutôt que de fusionner deux « A »', () => {
@@ -155,5 +157,76 @@ describe('deriverComptes', () => {
     // Le solde et la date sont là pour que le planificateur décide d'un coup
     // d'œil — pas pour que le code décide à sa place.
     expect(r.aTrancher[0].candidats[0].dernierSolde).toBe(1000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LES COMPTES VUS AU LIVRE SEULEMENT — la passe inverse du 17 août 2026.
+//
+// Demande de Nicolas : faire le lien entre transactions et positions « selon le
+// type de compte existant, etc. les comptes qui ont été fermés (sans compter
+// ceux de chez VMBL) ». Ces tests éprouvent les quatre gardes — chacune existe
+// pour empêcher une invention.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('presence : les comptes vus au livre seulement', () => {
+  const releveA = lig('CAD', 'Action', '100', 'TITRE', 'A', 'XBB',
+    '10,00', '12,00', '1 000,00', '1 200,00');
+
+  it('un compte iA du livre absent du relevé sort en « livre-seulement »', () => {
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('37-BBBB-W', '2023-03-10', 4200)];
+    const r = deriverComptes(releveA, livre, { dateReleve: '2026-08-17' });
+
+    const vivant = r.comptes.find((c) => c.suffixe === 'A');
+    expect(vivant?.presence).toBe('au-releve');
+
+    const dormant = r.comptes.find((c) => c.suffixe === 'W');
+    expect(dormant).toBeDefined();
+    expect(dormant!.presence).toBe('livre-seulement');
+    expect(dormant!.type).toBe('celi');            // le régime reste lisible
+    expect(dormant!.derniereActivite).toBe('2023-03-10');
+    expect(dormant!.dernierSolde).toBe(4200);
+    expect(dormant!.positions).toEqual([]);
+    // Le NUMÉRO vient du livre : il est certain. C'est la présence qui manque.
+    expect(dormant!.provenanceNumero).toBe('livre');
+  });
+
+  it('GARDE VMBL : un compte 4A du livre n’est JAMAIS émis', () => {
+    // Sans filtre explicite, cette passe sortirait des centaines de comptes
+    // VMBL — ce qui les tenait à l'écart n'était qu'une non-collision de clés.
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('4A-Y3VI-6', '2019-05-02')];
+    const r = deriverComptes(releveA, livre, { dateReleve: '2026-08-17' });
+    expect(r.comptes.every((c) => c.presence === 'au-releve')).toBe(true);
+    expect(r.comptes).toHaveLength(1);
+  });
+
+  it('GARDE FORMAT INCONNU : un préfixe non prouvé iA n’est pas émis non plus', () => {
+    // « pas VMBL » n'est pas « iA » : seul le préfixe 37 est prouvé.
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('00-ZZZZ-W', '2020-02-02')];
+    const r = deriverComptes(releveA, livre, { dateReleve: '2026-08-17' });
+    expect(r.comptes.some((c) => c.presence === 'livre-seulement')).toBe(false);
+  });
+
+  it('GARDE AMBIGUÏTÉ : deux comptes du livre au même suffixe, on se tait', () => {
+    // Rien ne dit lequel est encore vivant. L'ambiguïté est déjà dite par
+    // `aTrancher` ; en déduire une fermeture serait un choix déguisé.
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('37-CCCC-A', '2022-06-01')];
+    const r = deriverComptes(releveA, livre, { dateReleve: '2026-08-17' });
+    expect(r.comptes.some((c) => c.presence === 'livre-seulement')).toBe(false);
+    expect(r.aTrancher.length).toBeGreaterThan(0);
+  });
+
+  it('GARDE RELEVÉ ILLISIBLE : sans relevé lu, on ne conclut RIEN', () => {
+    // « Absent du relevé » n'a de sens que si un relevé a été lu. Sinon tous
+    // les comptes du livre sortiraient « sans position », ce qui serait faux.
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('37-BBBB-W', '2023-03-10')];
+    const r = deriverComptes('', livre, { dateReleve: '2026-08-17' });
+    expect(r.comptes).toEqual([]);
+  });
+
+  it('un compte du relevé n’est jamais dupliqué par la passe inverse', () => {
+    const livre = [tx('37-AAAA-A', '2026-01-15'), tx('37-AAAA-A', '2026-02-20')];
+    const r = deriverComptes(releveA, livre, { dateReleve: '2026-08-17' });
+    expect(r.comptes.filter((c) => c.suffixe === 'A')).toHaveLength(1);
+    expect(r.comptes[0].presence).toBe('au-releve');
   });
 });

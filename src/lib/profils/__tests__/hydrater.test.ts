@@ -76,10 +76,22 @@ describe('hydraterProfil', () => {
     expect(nu.comptes).toEqual([]);
 
     const h = await hydraterProfil(nu, CLIENT, ANNEE);
-    expect(h.comptes.length).toBe(1);
-    expect(h.comptes[0].numero).toBe('37-FICT-A');
-    expect(h.comptes[0].type).toBe('non-enregistre');
-    expect(h.comptes[0].positions[0]).toMatchObject({ symbole: 'AAA', valeurComptable: 26000 });
+
+    // Le compte DU RELEVÉ, avec ses positions.
+    const auReleve = h.comptes.find((c) => c.presence === 'au-releve');
+    expect(auReleve!.numero).toBe('37-FICT-A');
+    expect(auReleve!.type).toBe('non-enregistre');
+    expect(auReleve!.positions[0]).toMatchObject({ symbole: 'AAA', valeurComptable: 26000 });
+
+    // ET le compte VU AU LIVRE SEULEMENT — passe inverse du 17 août 2026. Le
+    // CELI de ce dossier porte une cotisation au livre mais aucune position
+    // aujourd'hui : avant, il n'existait nulle part.
+    const dormant = h.comptes.find((c) => c.presence === 'livre-seulement');
+    expect(dormant).toBeDefined();
+    expect(dormant!.numero).toBe('37-FICT-W');
+    expect(dormant!.type).toBe('celi');
+    expect(dormant!.positions).toEqual([]);
+    expect(h.comptes).toHaveLength(2);
   });
 
   it('DÉRIVE les gains réalisés de l’année — ils valaient toujours 0', async () => {
