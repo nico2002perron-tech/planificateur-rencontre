@@ -473,14 +473,25 @@ export function OptimisationsFiscalesPage({
         </Text>
       </View>
 
+      {/* LA MENTION PASSE AU-DESSUS DU PIED — corrigé le 17 août 2026.
+          Les deux étaient ancrés au MÊME `bottom: 18` : leurs bandes de texte
+          se recouvraient, et le pied gris, peint après, effaçait la mention
+          rouge. Le marquage qui doit « survivre à une page photographiée
+          isolément » était donc illisible sur chaque PDF autonome. */}
       {piedInterne && (
-        <View fixed style={{ position: 'absolute', bottom: 18, left: 44, right: 44 }}>
+        <View fixed style={{ position: 'absolute', bottom: 32, left: 44, right: 44 }}>
           <Text style={{ fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#b91c1c' }}>
             Version conseiller — usage interne. Ne pas remettre au client.
           </Text>
         </View>
       )}
-      <PageFooterV12 />
+      <PageFooterV12
+        libelle={
+          piedInterne
+            ? 'Groupe Financier Ste-Foy — Optimisations fiscales (document de travail)'
+            : undefined
+        }
+      />
     </Page>
   );
 }

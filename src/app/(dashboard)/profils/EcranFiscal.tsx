@@ -667,7 +667,13 @@ export function EcranFiscal({ racine }: { racine: string }) {
                       className="mt-1 h-3.5 w-3.5 shrink-0" />
                     <span className="min-w-0">
                       <span className="flex flex-wrap items-baseline gap-x-2">
-                        <span className="text-sm font-medium text-text-main">{c.titreClient}</span>
+                        {/* LE TITRE TECHNIQUE À L'ÉCRAN, le titre client au
+                            document — corrigé le 17 août 2026, la convention
+                            était inversée ici. Le planificateur cherche une
+                            stratégie par le nom qu'il connaît (« Cristallisation
+                            de pertes ») ; c'est ce nom qu'il coche, et c'est ce
+                            nom qui figure dans le mandat du fiscaliste. */}
+                        <span className="text-sm font-medium text-text-main">{c.titre}</span>
                         <span className="text-[11px] uppercase text-text-muted">{t.mot}</span>
                         {c.statut === 'calcule' && c.montantEstime !== null && (
                           <span className="text-sm font-semibold tabular-nums text-text-main">

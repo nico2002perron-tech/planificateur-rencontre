@@ -99,6 +99,44 @@ function rendre(profil: ProfilClient, date = DATE): string {
     .replace(/[\s   ]+/g, ' ');
 }
 
+/** La page telle que le document AUTONOME la rend — mention interne comprise. */
+function rendreAutonome(profil: ProfilClient, date = DATE): string {
+  const resultat = analyser(profil, null, date);
+  return textesDe(React.createElement(OptimisationsFiscalesPage, { resultat, piedInterne: true }))
+    .join('')
+    .replace(/[\s   ]+/g, ' ');
+}
+
+describe('LE PIED DE PAGE dit ce que le document EST — défaut du 17 août 2026', () => {
+  // La mention obligatoire et le pied commun étaient ancrés au MÊME bottom:18 :
+  // le pied gris, peint après, recouvrait la mention rouge. Et ce pied portait
+  // en dur « Analyse des cours cibles 1.2 », imprimé au bas du document
+  // autonome d'optimisations fiscales. Vérifié au rendu rastérisé le 17 août.
+  it('le document autonome ne se présente PAS comme l’analyse des cours cibles', () => {
+    const texte = rendreAutonome(profilConsolide());
+    expect(texte).not.toMatch(/cours cibles/i);
+    expect(texte).toMatch(/Optimisations fiscales \(document de travail\)/);
+  });
+
+  it('la mention « usage interne » est bien rendue en pied du document autonome', () => {
+    expect(rendreAutonome(profilConsolide())).toMatch(/usage interne\. Ne pas remettre au client/);
+  });
+
+  it('intégrée aux cours cibles, la page garde le pied du document hôte', () => {
+    // Sans `piedInterne`, la page vit DANS le rapport de cours cibles : c'est
+    // ce document-là que le pied doit nommer.
+    expect(rendre(profilConsolide())).toMatch(/Analyse des cours cibles/);
+  });
+
+  it('AUCUN glyphe absent des polices embarquées dans ce qui atteint le client', () => {
+    // U+26A0 s'imprimait en carré vide. Même famille que « ≈ » et « ✓ ».
+    const profil = profilConsolide();
+    for (const texte of [rendre(profil), rendreAutonome(profil), rendre(profilVierge('vide', DATE))]) {
+      expect(texte).not.toMatch(/[⚠✓≈→←]/);
+    }
+  });
+});
+
 describe('la page se rend', () => {
   it('produit un PDF valide même sur un profil entièrement vide', async () => {
     const resultat = analyser(profilVierge('vide', DATE), null, DATE);

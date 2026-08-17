@@ -541,6 +541,49 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   const [fundDragOver, setFundDragOver] = useState<string | null>(null);
   const [activityPeriod, setActivityPeriod] = useState<ActivityPeriod>('year_to_date');
   const [activityPaste, setActivityPaste] = useState('');
+
+  // L'HISTORIQUE COMPLET DEPUIS L'OUVERTURE — demandé le 17 août 2026 : « quand
+  // je fais optimisations fiscales je m'attends à ce que ça me demande de coller
+  // toutes les transactions depuis l'ouverture du compte ».
+  //
+  // C'est un collage DIFFÉRENT de l'activité de l'année (juste au-dessus) : les
+  // droits de cotisation CELI se mesurent sur la totalité des cotisations depuis
+  // l'ouverture, pas sur l'année courante. Un geste unique par client ; ensuite
+  // les cours cibles entretiennent le livre tout seuls.
+  const [historiquePaste, setHistoriquePaste] = useState('');
+  const [historiqueEnCours, setHistoriqueEnCours] = useState(false);
+  const [historiqueResume, setHistoriqueResume] = useState<{
+    nouvelles: number; doublons: number; totalApres: number;
+    premiereDate: string | null; derniereDate: string | null; comptes: string[];
+  } | null>(null);
+  const [historiqueErreur, setHistoriqueErreur] = useState<string | null>(null);
+
+  const importerHistorique = useCallback(async () => {
+    const nom = clientName.trim();
+    if (!nom || !historiquePaste.trim()) return;
+    setHistoriqueEnCours(true);
+    setHistoriqueErreur(null);
+    try {
+      const r = await fetch('/api/base-locale/historique', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom, texte: historiquePaste }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? 'Import refusé');
+      }
+      const d = await r.json();
+      setHistoriqueResume(d.resume ?? null);
+      // Le brut est archivé et fusionné : on libère la zone pour éviter de le
+      // renvoyer une seconde fois à la génération du PDF.
+      setHistoriquePaste('');
+    } catch (e) {
+      setHistoriqueErreur(e instanceof Error ? e.message : 'Import refusé');
+    } finally {
+      setHistoriqueEnCours(false);
+    }
+  }, [clientName, historiquePaste]);
   const [activityStartValue, setActivityStartValue] = useState('');
   const [activityContributionsOverride, setActivityContributionsOverride] = useState('');
   const [activityWithdrawalsOverride, setActivityWithdrawalsOverride] = useState('');
@@ -3289,6 +3332,79 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                     </span>
                   </span>
                 </label>
+
+                {/* L'HISTORIQUE COMPLET — le collage que la fiscalité exige.
+                    Il n'apparaît qu'une fois l'option cochée : sans elle, il
+                    n'a pas de raison d'être là. */}
+                {pdfOptions.includeOptimisationsFiscales && (
+                  <div className="mt-4 border-t border-gray-200 pt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-text-main">
+                        Historique complet des transactions
+                      </span>
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                        une fois par client
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-text-muted">
+                      Depuis <strong>l&apos;ouverture des comptes</strong>, pas seulement cette
+                      année : les droits de cotisation CELI se mesurent sur la totalité des
+                      cotisations. Collez l&apos;export Croesus complet (20 colonnes). Les collages
+                      qui se chevauchent sont dédoublonnés — ensuite, chaque cours cibles
+                      entretient le livre tout seul.
+                    </p>
+
+                    {!clientName.trim() && (
+                      <p className="mt-2 text-xs font-medium text-amber-700">
+                        Indiquez d&apos;abord le nom du client — c&apos;est lui qui nomme le dossier.
+                      </p>
+                    )}
+
+                    <textarea
+                      value={historiquePaste}
+                      onChange={e => setHistoriquePaste(e.target.value)}
+                      placeholder="Collez ici toutes les transactions depuis l'ouverture…"
+                      rows={4}
+                      className="mt-2 w-full rounded-lg border border-gray-300 p-2 font-mono text-[11px]"
+                    />
+
+                    <div className="mt-2 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void importerHistorique()}
+                        disabled={historiqueEnCours || !clientName.trim() || !historiquePaste.trim()}
+                        className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                      >
+                        {historiqueEnCours ? 'Import en cours…' : 'Alimenter la base fiscale'}
+                      </button>
+                      <span className="text-[11px] text-text-muted">
+                        Reste sur cet ordinateur — rien n&apos;est envoyé.
+                      </span>
+                    </div>
+
+                    {historiqueErreur && (
+                      <p className="mt-2 text-xs font-medium text-red-700">{historiqueErreur}</p>
+                    )}
+                    {historiqueResume && (
+                      <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+                        <strong>
+                          {historiqueResume.nouvelles} transaction
+                          {historiqueResume.nouvelles !== 1 ? 's' : ''} ajoutée
+                          {historiqueResume.nouvelles !== 1 ? 's' : ''}
+                        </strong>
+                        {historiqueResume.doublons > 0 && ` · ${historiqueResume.doublons} déjà connue${historiqueResume.doublons !== 1 ? 's' : ''}`}
+                        {' · '}livre à {historiqueResume.totalApres} ligne
+                        {historiqueResume.totalApres !== 1 ? 's' : ''}
+                        {historiqueResume.premiereDate && historiqueResume.derniereDate && (
+                          <> · de {historiqueResume.premiereDate} à {historiqueResume.derniereDate}</>
+                        )}
+                        {historiqueResume.comptes.length > 0 && (
+                          <> · {historiqueResume.comptes.length} compte{historiqueResume.comptes.length !== 1 ? 's' : ''}</>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

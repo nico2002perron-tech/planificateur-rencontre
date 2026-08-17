@@ -1240,7 +1240,10 @@ function strategieDroitsCotisation(
   } else if (m && m.etat === 'sous-plafond') {
     phraseMotif = ` Des années sous le plafond (${m.anneesSousPlafond.slice(0, 4).join(', ')}${m.anneesSousPlafond.length > 4 ? '…' : ''}) : de la place laissée libre, ou des cotisations faites ailleurs — c’est exactement la question à poser.`;
   } else if (m && m.etat === 'depasse-cumul') {
-    phraseMotif = ` ⚠ Les cotisations vues ici (${argent(m.totalCotise)}) dépassent ce que le plafond de la période permet (${argent(m.plafondPeriode)}, retraits compris) : c’est la preuve d’un historique externe — des droits ont été créés ailleurs.`;
+    // PAS DE « ⚠ » ICI : ce texte est rendu par @react-pdf, et U+26A0 est absent
+    // des quatre polices embarquées — il s'imprimait en carré vide sur le
+    // document. Un signe d'attention se dit avec des mots dans un document remis.
+    phraseMotif = ` À noter : les cotisations vues ici (${argent(m.totalCotise)}) dépassent ce que le plafond de la période permet (${argent(m.plafondPeriode)}, retraits compris) : c’est la preuve d’un historique externe — des droits ont été créés ailleurs.`;
   }
 
   const disclaimer = ' Avant toute cotisation, le chiffre à croire est celui de Mon dossier ARC — une cotisation excédentaire coûte 1 % par mois.';

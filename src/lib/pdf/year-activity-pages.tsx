@@ -56,7 +56,17 @@ function fmtDate(iso: string): string {
   return formatted.replace(/^1 /, '1er ');
 }
 
-export function PageFooterV12() {
+/**
+ * Le pied de page commun.
+ *
+ * `libelle` existe depuis le 17 août 2026 : ce pied était codé en dur sur
+ * « Analyse des cours cibles 1.2 » et se retrouvait imprimé tel quel au bas du
+ * document AUTONOME d'optimisations fiscales — qui se présentait donc, en pied,
+ * comme un document qu'il n'est pas. Un pied de page dit ce que le document EST.
+ */
+export function PageFooterV12({
+  libelle = 'Groupe Financier Ste-Foy — Analyse des cours cibles 1.2',
+}: { libelle?: string } = {}) {
   return (
     <View
       fixed
@@ -74,9 +84,7 @@ export function PageFooterV12() {
         alignItems: 'center',
       }}
     >
-      <Text style={{ fontSize: 6, color: '#94a3b8' }}>
-        Groupe Financier Ste-Foy — Analyse des cours cibles 1.2
-      </Text>
+      <Text style={{ fontSize: 6, color: '#94a3b8' }}>{libelle}</Text>
       <Text
         style={{ fontSize: 6, color: '#94a3b8' }}
         render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`}
