@@ -925,7 +925,7 @@ describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', 
     },
     maximisation: max === null ? null : {
       etat: 'sous-plafond' as const, depuis: 2015, totalCotise: 40000,
-      plafondPeriode: 70000, anneesSousPlafond: [2019, 2022], ...max,
+      plafondPeriode: 70000, plafondCumulatif: 102000, anneesSousPlafond: [2019, 2022], ...max,
     },
   });
   const dc = (p: ProfilClient, s: ReturnType<typeof signaux> | null) =>
@@ -956,9 +956,19 @@ describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', 
     expect(plat(c.explication)).toMatch(/un mot en rencontre le confirme/);
   });
 
-  it('« dépasse-cumul » est annoncé comme une PREUVE d’historique externe', () => {
-    const c = dc(profilConsolide(), signaux({}, { etat: 'depasse-cumul', totalCotise: 90000, plafondPeriode: 70000 }));
-    expect(plat(c.explication)).toMatch(/preuve d’un historique externe/);
+  it('« dépasse-cumul » cite les DROITS ACCUMULÉS, pas la période vue ici', () => {
+    // Corrigé le 17 août 2026 : la phrase citait le plafond de la période
+    // d'activité dans nos livres, qui ne prouve rien — un client peut verser à
+    // l'ouverture des droits accumulés depuis 2009. C'est le plafond cumulatif
+    // qui fonde l'affirmation, et c'est donc lui que le document doit montrer.
+    const c = dc(profilConsolide(), signaux({}, {
+      etat: 'depasse-cumul', totalCotise: 120000, plafondPeriode: 21000, plafondCumulatif: 102000,
+    }));
+    expect(plat(c.explication)).toMatch(/120 000 \$/);
+    expect(plat(c.explication)).toMatch(/102 000 \$/);
+    expect(plat(c.explication)).toMatch(/des droits ont donc été créés ailleurs/);
+    // Le chiffre de la période ne doit PLUS être présenté comme la preuve.
+    expect(plat(c.explication)).not.toMatch(/21 000 \$/);
   });
 
   it('le REER dit son incalculabilité — ou l’avis saisi, daté', () => {

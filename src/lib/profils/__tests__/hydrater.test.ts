@@ -215,12 +215,63 @@ describe('analyserMaximisation — le motif des cotisations', () => {
     expect(m.anneesSousPlafond).toEqual([2023, 2025]);
   });
 
-  it('cotiser plus que la période ne permet → « depasse-cumul », la PREUVE', async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // LA PREUVE SE MESURE CONTRE LES DROITS ACCUMULÉS — corrigé le 17 août 2026.
+  //
+  // Ce bloc bénissait exactement le cas fautif : 30 000 $ versés en 2024 contre
+  // 21 000 $ de plafonds 2024-2026 = « la PREUVE ». Or ces 30 000 $ sont le
+  // versement le plus banal qui soit — un client qui ouvre son premier CELI et
+  // y met des droits accumulés depuis 2009. Le test verrouillait le défaut.
+  // ─────────────────────────────────────────────────────────────────────────
+  it('verser ses droits accumulés à l’ouverture n’est PAS une preuve', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    // 40 ans, premier CELI ouvert ici en 2024, 95 000 $ de droits légitimes.
+    const m = analyserMaximisation(
+      { '2024': 95000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
+      102000        // plafond cumulatif depuis 2009
+    );
+    expect(m.etat).not.toBe('depasse-cumul');
+  });
+
+  it('cotiser plus que les DROITS ACCUMULÉS → « depasse-cumul », la PREUVE', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     const m = analyserMaximisation(
-      { '2024': 30000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+      { '2024': 120000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
+      102000
     );
     expect(m.etat).toBe('depasse-cumul');
+    expect(m.plafondCumulatif).toBe(102000);
+  });
+
+  it('les retraits d’ici s’ajoutent aux droits avant de crier à la preuve', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    // 120 000 versés, mais 30 000 retirés ici : les droits reviennent.
+    const m = analyserMaximisation(
+      { '2024': 60000, '2026': 60000 }, { '2024': 30000 },
+      { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026, 102000
+    );
+    expect(m.etat).not.toBe('depasse-cumul');
+  });
+
+  it('SANS plafond cumulatif, aucune preuve n’est affirmée', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(
+      { '2024': 500000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026, null
+    );
+    expect(m.etat).not.toBe('depasse-cumul');
+  });
+
+  it('un RETRAIT n’excuse pas de ne RIEN verser l’année suivante', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    // 2024 : retrait de 20 000 → 2025 a plus de place que jamais, et 0 $ versé.
+    // L'ancienne exemption suspendait le verdict et disait « au plafond ».
+    const m = analyserMaximisation(
+      { '2023': 6500, '2024': 7000, '2025': 0 },
+      { '2024': 20000 }, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 },
+      2026, 102000
+    );
+    expect(m.etat).toBe('sous-plafond');
+    expect(m.anneesSousPlafond).toContain(2025);
   });
 
   it('un RETRAIT l’année précédente excuse un dépassement du plafond annuel', async () => {

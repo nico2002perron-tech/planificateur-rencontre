@@ -1243,7 +1243,10 @@ function strategieDroitsCotisation(
     // PAS DE « ⚠ » ICI : ce texte est rendu par @react-pdf, et U+26A0 est absent
     // des quatre polices embarquées — il s'imprimait en carré vide sur le
     // document. Un signe d'attention se dit avec des mots dans un document remis.
-    phraseMotif = ` À noter : les cotisations vues ici (${argent(m.totalCotise)}) dépassent ce que le plafond de la période permet (${argent(m.plafondPeriode)}, retraits compris) : c’est la preuve d’un historique externe — des droits ont été créés ailleurs.`;
+    //
+    // LE CHIFFRE CITÉ EST LE PLAFOND CUMULATIF, celui qui fonde la preuve — pas
+    // celui de la période vue ici, qui ne prouvait rien (voir signaux-livre.ts).
+    phraseMotif = ` À noter : les cotisations vues ici (${argent(m.totalCotise)}) dépassent tout ce que les droits accumulés permettent (${argent(m.plafondCumulatif as number)}, retraits compris) : des droits ont donc été créés ailleurs — un CELI détenu à une autre institution.`;
   }
 
   const disclaimer = ' Avant toute cotisation, le chiffre à croire est celui de Mon dossier ARC — une cotisation excédentaire coûte 1 % par mois.';

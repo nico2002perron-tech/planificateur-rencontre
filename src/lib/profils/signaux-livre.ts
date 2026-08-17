@@ -21,6 +21,17 @@
 //                   probabilité, c'est une PREUVE : des droits ont été créés
 //                   ailleurs (retraits dans un CELI externe). Même famille que
 //                   `transfertEntrantDetecte`, par un chemin indépendant.
+//
+//                   ⚠ LE COMPARATEUR EST LE PLAFOND DEPUIS LES 18 ANS, jamais
+//                   depuis la première cotisation vue ici — corrigé le 17 août
+//                   2026. L'ancienne version sommait les plafonds à partir de la
+//                   première année d'activité DANS NOS LIVRES. Or les droits
+//                   CELI s'accumulent sans qu'aucun compte n'existe nulle part :
+//                   un client de 40 ans qui ouvre son premier CELI ici et y
+//                   verse ses 95 000 $ de droits accumulés depuis 2009 —
+//                   le cas d'accueil le plus banal — déclenchait « la PREUVE
+//                   d'un historique externe ». Le document accusait d'avoir un
+//                   compte ailleurs un client qui n'en a jamais eu.
 //   maximise        Chaque année depuis la première cotisation ici, le client
 //                   a versé au moins ~le plafond annuel. Probablement seulement
 //                   ici — à confirmer d'un mot en rencontre.
@@ -43,6 +54,12 @@ export type SignalMaximisation = {
   totalCotise: number;
   /** La somme des plafonds annuels sur la période d'activité ici. */
   plafondPeriode: number;
+  /**
+   * TOUT ce que le client a pu accumuler depuis ses 18 ans (ou 2009) — le seul
+   * comparateur qui autorise à parler de PREUVE. `null` quand il n'a pas pu
+   * être établi : on ne prouve alors rien, et on ne l'affirme pas.
+   */
+  plafondCumulatif: number | null;
   /** Les années sous le plafond, pour que l'écran puisse les montrer. */
   anneesSousPlafond: number[];
 };
@@ -53,14 +70,17 @@ export type SignalMaximisation = {
  *
  * Une année tolère un léger manque (95 % du plafond) : les arrondis de
  * versements automatiques ne doivent pas casser un motif clairement maximisé.
- * L'année suivant un RETRAIT est exclue du verdict « sous-plafond » : le
- * client peut y recotiser plus que le plafond annuel sans rien prouver.
+ *
+ * `plafondCumulatif` = tout ce que le client a pu accumuler depuis ses 18 ans
+ * (`plafondCeliCumulatif`). C'est le SEUL comparateur qui autorise à parler de
+ * preuve ; `null` quand il n'est pas établi, et alors rien n'est prouvé.
  */
 export function analyserMaximisation(
   cotisationsParAnnee: Record<string, number>,
   retraitsParAnnee: Record<string, number>,
   plafondsParAnnee: Record<string, number>,
-  anneeCourante: number
+  anneeCourante: number,
+  plafondCumulatif: number | null = null
 ): SignalMaximisation {
   const annees = Object.keys(cotisationsParAnnee)
     .map((a) => Number.parseInt(a, 10))
@@ -68,7 +88,7 @@ export function analyserMaximisation(
     .sort();
   const vide = {
     etat: 'indetermine' as const, depuis: null, totalCotise: 0,
-    plafondPeriode: 0, anneesSousPlafond: [],
+    plafondPeriode: 0, plafondCumulatif, anneesSousPlafond: [],
   };
   if (annees.length === 0) return vide;
 
@@ -89,16 +109,27 @@ export function analyserMaximisation(
     // L'année courante n'est pas finie : ne jamais la compter « sous-plafond ».
     if (a === anneeCourante) continue;
     if (plafond <= 0) continue;
-    const retraitAnneePrecedente = retraitsParAnnee[String(a - 1)] ?? 0;
-    if (cotise < plafond * 0.95 && retraitAnneePrecedente < plafond) {
+    // UN RETRAIT N'EXCUSE PAS DE NE RIEN VERSER — corrigé le 17 août 2026.
+    // Une exemption suspendait le verdict « sous-plafond » l'année suivant un
+    // retrait. Elle avait la logique à l'envers : un retrait REND de la place,
+    // il n'en consomme pas. Un client qui retire 20 000 $ puis ne verse rien
+    // l'année suivante a plus d'espace libre que jamais — et le signal disait
+    // « au plafond chaque année ». L'exemption ne servait qu'aux années où le
+    // client verse PLUS que le plafond annuel, ce que ce test ne regarde pas.
+    if (cotise < plafond * 0.95) {
       anneesSousPlafond.push(a);
     }
   }
 
-  // LA PREUVE d'abord : cotiser plus que la période ne le permet, retraits
-  // d'ici compris, exige des droits créés ailleurs.
-  if (totalCotise > plafondPeriode + totalRetraits + 1) {
-    return { etat: 'depasse-cumul', depuis, totalCotise, plafondPeriode, anneesSousPlafond };
+  // LA PREUVE : cotiser plus que TOUT ce que le client a pu accumuler depuis
+  // ses 18 ans, retraits d'ici compris, exige des droits créés ailleurs.
+  //
+  // Sans `plafondCumulatif`, rien n'est prouvable : on se tait plutôt que
+  // d'accuser. Le comparateur de période (`plafondPeriode`) reste calculé pour
+  // l'affichage, mais il ne décide plus — il condamnait le cas d'accueil le
+  // plus banal (voir l'en-tête).
+  if (plafondCumulatif !== null && totalCotise > plafondCumulatif + totalRetraits + 1) {
+    return { etat: 'depasse-cumul', depuis, totalCotise, plafondPeriode, plafondCumulatif, anneesSousPlafond };
   }
   // « MAXIMISÉ » EXIGE AU MOINS UNE ANNÉE COMPLÈTE — vu le 12 août sur un
   // dossier réel : un client dont la première cotisation date de l'année
@@ -107,11 +138,11 @@ export function analyserMaximisation(
   // est pire que le silence.
   if (anneesSousPlafond.length === 0) {
     if (anneeCourante - depuis < 1) {
-      return { etat: 'indetermine', depuis, totalCotise, plafondPeriode, anneesSousPlafond };
+      return { etat: 'indetermine', depuis, totalCotise, plafondPeriode, plafondCumulatif, anneesSousPlafond };
     }
-    return { etat: 'maximise', depuis, totalCotise, plafondPeriode, anneesSousPlafond };
+    return { etat: 'maximise', depuis, totalCotise, plafondPeriode, plafondCumulatif, anneesSousPlafond };
   }
-  return { etat: 'sous-plafond', depuis, totalCotise, plafondPeriode, anneesSousPlafond };
+  return { etat: 'sous-plafond', depuis, totalCotise, plafondPeriode, plafondCumulatif, anneesSousPlafond };
 }
 
 /** Ce que le serveur dérive du livre et passe au moteur — jamais deviné. */

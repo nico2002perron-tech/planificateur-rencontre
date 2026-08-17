@@ -120,11 +120,15 @@ export async function signauxDuLivre(
 
   // LA CHAÎNE UNIQUE — exactement le même calcul que l'écran (resumeCeli).
   // Voir l'en-tête de verdict-celi.ts : ces deux surfaces divergeaient.
-  const { droits: droitsCeli } = verdictCeliDuLivre(profil, livre, annee);
+  const { droits: droitsCeli, plafond } = verdictCeliDuLivre(profil, livre, annee);
 
+  // LE PLAFOND CUMULATIF EST LE COMPARATEUR DE LA PREUVE (17 août 2026) : il
+  // était calculé ici même et jamais passé, si bien que le signal comparait
+  // les cotisations à la seule période vue dans nos livres. Voir signaux-livre.
   const parAnnee = deriverCeliParAnnee(livre);
   const maximisation = analyserMaximisation(
-    parAnnee.cotisations, parAnnee.retraits, plafondsCeliParAnnee(), annee
+    parAnnee.cotisations, parAnnee.retraits, plafondsCeliParAnnee(), annee,
+    plafond.montant
   );
   return { droitsCeli, maximisation };
 }
