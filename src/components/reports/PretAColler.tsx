@@ -559,6 +559,74 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   } | null>(null);
   const [historiqueErreur, setHistoriqueErreur] = useState<string | null>(null);
 
+  // ── CE QUE LE MOTEUR DÉTECTE, VU AVANT DE GÉNÉRER (17 août 2026) ──
+  //
+  // Demande de Nicolas : « voir avant de mettre dans le PDF ce qu'il détecte
+  // comme opportunité ». Jusqu'ici il fallait quitter le composeur, ouvrir
+  // « Profils fiscaux », cocher là-bas, puis revenir générer — le détour même
+  // que ce parcours existe pour supprimer.
+  //
+  // RIEN N'EST COCHÉ PAR DÉFAUT, et la règle ne bouge pas : le moteur DÉTECTE,
+  // le planificateur CHOISIT. Une piste juste sur papier peut être inopportune
+  // en rencontre pour des raisons que le moteur ne connaît pas.
+  type ConstatVu = {
+    strategie: string; titre: string; titreClient: string;
+    statut: 'calcule' | 'montant-a-confirmer' | 'indisponible' | 'non-applicable';
+    montantEstime: number | null; libelleMontant: string; explication: string;
+    donneesManquantes: string[]; dejaEnOrdre: boolean;
+  };
+  const [constats, setConstats] = useState<ConstatVu[] | null>(null);
+  const [selection, setSelection] = useState<string[]>([]);
+  const [detectionEnCours, setDetectionEnCours] = useState(false);
+
+  const rafraichirDetection = useCallback(async () => {
+    const nom = clientName.trim();
+    if (!nom || !estLocalNavigateur) return;
+    setDetectionEnCours(true);
+    try {
+      // LES POSITIONS DÉJÀ COLLÉES COMPTENT — vu au rendu le 17 août : le
+      // panneau annonçait « aucun relevé de positions n'a été importé » alors
+      // que le planificateur venait de les coller à l'écran. Elles ne
+      // rejoignaient la base qu'à la GÉNÉRATION, donc trop tard pour être vues.
+      // On les dépose d'abord ; la route refuse d'elle-même un texte illisible
+      // et n'écrase alors aucun bon relevé.
+      if (rawPositions.trim()) {
+        await fetch('/api/base-locale/positions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nomClient: nom, texte: rawPositions }),
+        }).catch(() => null);
+      }
+      const r = await fetch(`/api/base-locale/strategies?nom=${encodeURIComponent(nom)}`);
+      if (!r.ok) { setConstats(null); return; }
+      const d = await r.json();
+      setConstats(d.constats ?? []);
+      setSelection(d.selection?.strategies ?? []);
+    } catch {
+      setConstats(null);
+    } finally {
+      setDetectionEnCours(false);
+    }
+  }, [clientName, estLocalNavigateur, rawPositions]);
+
+  /** Coche ou décoche une piste — enregistré aussitôt, daté côté serveur. */
+  const basculerPiste = useCallback(async (strategie: string) => {
+    const nom = clientName.trim();
+    if (!nom) return;
+    const suivantes = selection.includes(strategie)
+      ? selection.filter((x) => x !== strategie)
+      : [...selection, strategie];
+    setSelection(suivantes);                       // réponse immédiate à l'œil
+    try {
+      const r = await fetch('/api/base-locale/strategies', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom, strategies: suivantes }),
+      });
+      const d = await r.json();
+      // LE SERVEUR FAIT FOI : il refuse toute piste hors catalogue.
+      if (d.selection?.strategies) setSelection(d.selection.strategies);
+    } catch { /* l'écran garde l'état optimiste ; le prochain rafraîchissement tranche */ }
+  }, [clientName, selection]);
+
   const importerHistorique = useCallback(async () => {
     const nom = clientName.trim();
     if (!nom || !historiquePaste.trim()) return;
@@ -582,6 +650,8 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         return;
       }
       setHistoriqueResume(d.resume ?? null);
+      // Le livre vient de grandir : ce que le moteur détecte a changé.
+      void rafraichirDetection();
       // Le brut est archivé et fusionné : on libère la zone pour éviter de le
       // renvoyer une seconde fois à la génération du PDF.
       setHistoriquePaste('');
@@ -3326,10 +3396,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                       </span>
                     </span>
                     <span className="mt-1 block text-xs text-text-muted">
-                      Une page datée, avec les seules stratégies cochées pour ce client dans
-                      <strong> Profils fiscaux</strong>. Rien n&apos;est coché par défaut : si la
-                      liste est vide, la page n&apos;apparaît pas. En attente de révision par un
-                      fiscaliste — la page le dit elle-même.
+                      Une page datée, avec les seules pistes que vous cochez ci-dessous. Rien n&apos;est coché par défaut : si rien ne l&apos;est, la page n&apos;apparaît pas. En attente de révision par un fiscaliste — la page le dit elle-même.
                     </span>
                   </span>
                 </label>
@@ -3398,6 +3465,89 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                     {historiqueErreur && (
                       <p className="mt-2 text-xs font-medium text-red-700">{historiqueErreur}</p>
                     )}
+                    {/* ── CE QUI EST DÉTECTÉ, AVANT DE GÉNÉRER ────────────
+                        Le moteur détecte, le planificateur choisit. Rien n'est
+                        coché par défaut. */}
+                    <div className="mt-4 border-t border-gray-200 pt-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-text-main">Ce qui est détecté</span>
+                        <button
+                          type="button"
+                          onClick={() => void rafraichirDetection()}
+                          disabled={!clientName.trim() || detectionEnCours}
+                          className="rounded border border-gray-300 px-2 py-0.5 text-[11px] font-medium text-text-muted disabled:opacity-40"
+                        >
+                          {detectionEnCours ? 'Analyse…' : constats ? 'Rafraîchir' : 'Voir les opportunités'}
+                        </button>
+                      </div>
+
+                      {constats && constats.length > 0 && (
+                        <>
+                          <p className="mt-1 text-xs text-text-muted">
+                            Cochez ce qui doit entrer dans le PDF. Rien n&apos;est coché par
+                            défaut — une piste juste sur papier peut être inopportune en
+                            rencontre. Les montants de natures différentes ne s&apos;additionnent pas.
+                          </p>
+                          <ul className="mt-2 space-y-1.5">
+                            {constats.map((c) => {
+                              const coche = selection.includes(c.strategie);
+                              const ton = c.statut === 'calcule'
+                                ? 'border-emerald-300 bg-emerald-50'
+                                : c.statut === 'montant-a-confirmer'
+                                  ? 'border-amber-300 bg-amber-50'
+                                  : 'border-gray-200 bg-gray-50';
+                              return (
+                                <li key={c.strategie}>
+                                  <label className={`flex cursor-pointer gap-2 rounded-lg border px-2.5 py-2 ${ton} ${
+                                    coche ? 'ring-1 ring-brand-primary' : ''}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={coche}
+                                      onChange={() => void basculerPiste(c.strategie)}
+                                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                    />
+                                    <span className="min-w-0">
+                                      <span className="flex flex-wrap items-baseline gap-x-2">
+                                        <span className="text-xs font-semibold text-text-main">{c.titre}</span>
+                                        {c.statut === 'calcule' && c.montantEstime !== null && (
+                                          <span className="text-xs font-bold tabular-nums text-emerald-800">
+                                            {Math.round(c.montantEstime).toLocaleString('fr-CA')} $
+                                            <span className="ml-1 font-normal text-text-muted">{c.libelleMontant}</span>
+                                          </span>
+                                        )}
+                                        {c.statut === 'montant-a-confirmer' && (
+                                          <span className="text-[11px] font-medium text-amber-800">à confirmer</span>
+                                        )}
+                                        {c.dejaEnOrdre && (
+                                          <span className="text-[11px] text-emerald-700">déjà en ordre</span>
+                                        )}
+                                      </span>
+                                      <span className="mt-0.5 block text-[11px] leading-snug text-text-muted">
+                                        {c.explication.length > 190 ? c.explication.slice(0, 190) + '…' : c.explication}
+                                      </span>
+                                      {c.donneesManquantes.length > 0 && (
+                                        <span className="mt-0.5 block text-[11px] text-amber-800">
+                                          Pour aller plus loin : {c.donneesManquantes.join(' · ')}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                          <p className="mt-2 text-[11px] text-text-muted">
+                            {selection.length === 0
+                              ? 'Aucune piste cochée : la page fiscale n’apparaîtra pas dans le PDF.'
+                              : `${selection.length} piste${selection.length > 1 ? 's' : ''} ira${selection.length > 1 ? 'ont' : ''} dans le PDF.`}
+                          </p>
+                        </>
+                      )}
+                      {constats && constats.length === 0 && (
+                        <p className="mt-1 text-xs text-text-muted">Aucune piste détectée pour ce client.</p>
+                      )}
+                    </div>
+
                     {historiqueResume && (
                       <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
                         <strong>

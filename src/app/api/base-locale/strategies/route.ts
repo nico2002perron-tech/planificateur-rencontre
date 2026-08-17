@@ -18,15 +18,29 @@ import { hydraterProfil, signauxDuLivre } from '@/lib/profils/hydrater';
 export async function GET(req: NextRequest) {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
 
+  // PAR IDENTIFIANT *OU* PAR NOM — le nom ajouté le 17 août 2026.
+  //
+  // Le composeur de cours cibles ne connaît QUE le nom du client : c'est lui
+  // que Nicolas saisit, et c'est lui qui nomme le dossier. Sans cette entrée,
+  // voir ce que le moteur détecte exigeait de quitter l'écran pour aller
+  // chercher un identifiant ailleurs — soit exactement le détour que le
+  // parcours doit supprimer. `profilPourClient` réutilise le pseudonyme
+  // existant, ou en crée un : demander la détection d'un client suffit à
+  // l'inscrire, ce qui est le comportement voulu ici.
   const id = req.nextUrl.searchParams.get('id');
-  if (!id) return NextResponse.json({ error: 'Identifiant requis' }, { status: 400 });
-
-  const profil = await lireProfil(id);
-  if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
+  const nomDemande = req.nextUrl.searchParams.get('nom');
+  if (!id && !nomDemande?.trim()) {
+    return NextResponse.json({ error: 'Identifiant ou nom requis' }, { status: 400 });
+  }
 
   const jour = new Date().toISOString().slice(0, 10);
+  const profil = id
+    ? await lireProfil(id)
+    : await profilPourClient(nomDemande!.trim(), jour);
+  if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
+
   const annee = Number.parseInt(jour.slice(0, 4), 10);
-  const nomDuClient = await nomPour(id);
+  const nomDuClient = nomDemande?.trim() ?? (await nomPour(profil.id));
   const resultat = analyser(
     await hydraterProfil(profil, nomDuClient, annee), null, jour,
     parametresReee(annee), await signauxDuLivre(profil, nomDuClient, annee)
