@@ -4,12 +4,41 @@
 import type { LigneTransaction, FluxCompte } from './types';
 import { canoniserCompte, compteCiteDansTexte } from './identifiant-compte';
 
-/** Lit un nombre au format québécois : « 1 234,56 » → 1234.56. */
+/**
+ * Lit un nombre au format quebecois : « 1 234,56 » rend 1234.56.
+ *
+ * LE SEPARATEUR DE MILLIERS ANGLAIS — defaut trouve le 17 aout 2026.
+ *
+ * La version d'origine remplacait toute virgule par un point, puis laissait
+ * `parseFloat` faire le reste. Sur « 1,234.56 » — le format anglais, que
+ * produit un Excel configure en anglais ou un export d'une autre source — cela
+ * donnait « 1.234.56 », dont `parseFloat` ne garde que « 1.234 ».
+ *
+ * Autrement dit : les montants etaient DIVISES PAR MILLE, en silence, et le
+ * resultat restait un nombre plausible. C'est la pire forme d'erreur — celle
+ * qui ne leve rien et qu'aucun total n'a l'air de contredire.
+ *
+ * La regle qui tranche : quand une virgule ET un point coexistent, celui qui
+ * apparait EN DERNIER est le separateur decimal, et l'autre marque les
+ * milliers. Un seul des deux, on garde la lecture quebecoise (virgule
+ * decimale), qui est le format mesure sur le grand livre.
+ */
 export function nombre(brut: string | null | undefined): number | null {
-  const t = String(brut ?? '')
-    .replace(/[\s $]/g, '')
-    .replace(/\((.*)\)/, '-$1')       // « (1 234,56) » = négatif
-    .replace(/,/g, '.');
+  let t = String(brut ?? '')
+    .replace(/[\s $]/g, '')
+    .replace(/\((.*)\)/, '-$1');      // « (1 234,56) » = negatif
+
+  const derniereVirgule = t.lastIndexOf(',');
+  const dernierPoint = t.lastIndexOf('.');
+  if (derniereVirgule >= 0 && dernierPoint >= 0) {
+    // Les deux sont la : le dernier est le decimal, l'autre separe les milliers.
+    t = dernierPoint > derniereVirgule
+      ? t.replace(/,/g, '')                       // 1,234.56
+      : t.replace(/\./g, '').replace(/,/g, '.');  // 1.234,56
+  } else {
+    t = t.replace(/,/g, '.');                     // 1234,56 — le format mesure
+  }
+
   if (t === '' || t === '-') return null;
   const n = Number.parseFloat(t);
   return Number.isFinite(n) ? n : null;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
 import { dossierTransactions } from '@/lib/base-locale/chemins';
-import { importerCollage, lireHistorique } from '@/lib/profils/historique';
+import { importerCollage, lireHistorique, diagnostiquerCollage } from '@/lib/profils/historique';
 import { ecrireProfil, profilPourClient } from '@/lib/profils/stockage';
 import { deriverHistoriqueRegime, observerTransferts } from '@/lib/profils/deriver';
 
@@ -33,6 +33,13 @@ export async function POST(req: NextRequest) {
   const date = new Date().toISOString().slice(0, 10);
   const resume = await importerCollage({ nomClient: nom, texte, horodatage: date });
 
+  // UN REFUS MUET EST UN PIÈGE (17 août 2026). Le parseur est strict — il refuse
+  // plutôt que de deviner, et c'est la bonne doctrine. Mais quand il ne retient
+  // AUCUNE ligne, le planificateur voyait « 0 transaction » sans savoir quoi
+  // corriger. Trois formats d'Excel très ordinaires produisaient ce silence :
+  // colonnes tronquées, points-virgules, dates JJ/MM/AAAA. On le lui dit.
+  const diagnostic = resume.lues === 0 ? diagnostiquerCollage(texte) : null;
+
   // Le profil est RECALCULÉ depuis le livre complet du client, jamais
   // incrémenté : l'opération reste rejouable à l'identique.
   const profil = await profilPourClient(nom, date);
@@ -46,6 +53,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     resume: { ...resume, dossier: dossierTransactions(nom) },
+    diagnostic,
     profil: aJour,
     transferts: observerTransferts(livre, 'celi'),
   });

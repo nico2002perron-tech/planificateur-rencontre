@@ -36,6 +36,32 @@ describe('nombre — format québécois', () => {
     expect(nombre('')).toBeNull();
     expect(nombre(undefined)).toBeNull();
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LE SÉPARATEUR DE MILLIERS ANGLAIS — défaut trouvé le 17 août 2026.
+  //
+  // « 1,234.56 » devenait « 1.234.56 », dont parseFloat ne garde que 1.234 :
+  // les montants étaient DIVISÉS PAR MILLE en silence, et le résultat restait
+  // un nombre plausible. Un export d'Excel configuré en anglais suffisait.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('LE FORMAT ANGLAIS n’est plus divisé par mille', () => {
+    expect(nombre('1,234.56')).toBe(1234.56);
+    expect(nombre('1,234,567.89')).toBe(1234567.89);
+    expect(nombre('26,000.00')).toBe(26000);
+  });
+
+  it('le format européen à points de milliers se lit aussi', () => {
+    expect(nombre('1.234,56')).toBe(1234.56);
+  });
+
+  it('NON-RÉGRESSION : le format mesuré sur le grand livre est intact', () => {
+    // Un seul séparateur : la lecture québécoise fait foi, comme avant.
+    expect(nombre('1234,56')).toBe(1234.56);
+    expect(nombre('1234.56')).toBe(1234.56);
+    expect(nombre('12')).toBe(12);
+    expect(nombre('-1 000,00')).toBe(-1000);
+    expect(nombre('(500,00)')).toBe(-500);
+  });
 });
 
 describe('RÈGLE 1 — l’échelle par 100 des obligations', () => {

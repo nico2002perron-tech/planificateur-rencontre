@@ -33,6 +33,64 @@ function cleLigne(l: LigneTransaction): string {
   return [l.noCompte, l.date, l.type, l.symbole, l.total, l.quantite, l.solde].join('|');
 }
 
+/**
+ * POURQUOI UN COLLAGE N'A RIEN DONNÉ — mesuré le 17 août 2026.
+ *
+ * Le parseur est strict, et il a raison de l'être : il refuse plutôt que de
+ * deviner. Mais un refus muet est un piège. Trois situations d'Excel très
+ * ordinaires produisaient « 0 transaction ajoutée » sans un mot d'explication,
+ * et rien ne disait au planificateur ce qu'il devait changer :
+ *
+ *   · les colonnes tronquées (18 au lieu de 20) — une sélection partielle ;
+ *   · le point-virgule comme séparateur — un export d'Excel en français ;
+ *   · les dates en JJ/MM/AAAA — un format régional.
+ *
+ * Cette fonction ne parse rien : elle REGARDE ce qui a échoué et le dit en
+ * français. Elle ne rend jamais de faux diagnostic — sans motif reconnu, elle
+ * rend `null` et l'appelant s'en tient au comptage.
+ */
+export function diagnostiquerCollage(texte: string): string | null {
+  const lignes = texte.split(/\r?\n/).filter((l) => l.trim());
+  if (lignes.length === 0) return 'Le collage est vide.';
+
+  // On ignore une éventuelle ligne d'en-tête pour juger sur les données.
+  const echantillon = lignes.slice(0, 40).filter((l) => l.includes('\t') || l.includes(';') || l.includes(','));
+  if (echantillon.length === 0) {
+    return 'Les colonnes ne sont pas séparées : collez depuis Excel (ou Croesus) plutôt que depuis un document texte, pour que les colonnes soient conservées.';
+  }
+
+  const avecTabulations = echantillon.filter((l) => l.includes('\t'));
+  if (avecTabulations.length === 0) {
+    const pv = echantillon.filter((l) => l.split(';').length >= 10).length;
+    if (pv > 0) {
+      return 'Vos colonnes sont séparées par des points-virgules. Le collage doit venir directement d’Excel (colonnes sélectionnées, puis Ctrl+C), pas d’un fichier CSV enregistré.';
+    }
+    return 'Les colonnes ne sont pas séparées par des tabulations. Sélectionnez les cellules dans Excel et copiez-les directement.';
+  }
+
+  // Assez de tabulations, mais pas assez de colonnes ?
+  const colonnes = avecTabulations.map((l) => l.split('\t').length);
+  const maxColonnes = Math.max(...colonnes);
+  if (maxColonnes < 20) {
+    return `Il manque des colonnes : ${maxColonnes} trouvée${maxColonnes > 1 ? 's' : ''} alors que l’historique en demande 20. Sélectionnez TOUTES les colonnes du rapport de transactions, de la première à la dernière (le numéro de compte est dans la dernière).`;
+  }
+
+  // Les colonnes y sont : c'est donc la date ou le numéro de compte.
+  const assezLarges = avecTabulations.filter((l) => l.split('\t').length >= 20);
+  const dates = assezLarges.map((l) => (l.split('\t')[5] || '').trim()).filter(Boolean);
+  const bonnesDates = dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (dates.length > 0 && bonnesDates.length === 0) {
+    const exemple = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(dates[0]) ? ' (elles ressemblent à JJ/MM/AAAA)' : '';
+    return `Les dates ne sont pas au format AAAA-MM-JJ${exemple}. Dans Excel, mettez la colonne de date au format « 2026-03-15 » avant de copier.`;
+  }
+
+  const comptes = assezLarges.map((l) => (l.split('\t')[19] || '').trim()).filter(Boolean);
+  if (assezLarges.length > 0 && comptes.length === 0) {
+    return 'La dernière colonne (le numéro de compte) est vide. Vérifiez que la sélection va bien jusqu’à la colonne du compte.';
+  }
+  return null;
+}
+
 /** Lit un collage brut : lignes tabulées, 20 colonnes, en-tête ignoré. */
 export function parserCollage(texte: string): { lignes: LigneTransaction[]; ignorees: number } {
   const lignes: LigneTransaction[] = [];

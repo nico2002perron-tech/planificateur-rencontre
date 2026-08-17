@@ -575,6 +575,12 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
         throw new Error(e.error ?? 'Import refusé');
       }
       const d = await r.json();
+      // LE COLLAGE N'A RIEN DONNÉ : dire POURQUOI, jamais juste « 0 ».
+      if (d.diagnostic) {
+        setHistoriqueErreur(d.diagnostic);
+        setHistoriqueResume(null);
+        return;
+      }
       setHistoriqueResume(d.resume ?? null);
       // Le brut est archivé et fusionné : on libère la zone pour éviter de le
       // renvoyer une seconde fois à la génération du PDF.
@@ -3349,10 +3355,22 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                       entretient le livre tout seul.
                     </p>
 
+                    {/* Le message MENE au champ : il etait plus bas dans la
+                        page, sous deux autres sections. Dire « indiquez le nom »
+                        sans dire ou est une devinette. */}
                     {!clientName.trim() && (
-                      <p className="mt-2 text-xs font-medium text-amber-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const champ = document.getElementById('champ-nom-client');
+                          champ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          champ?.querySelector('input')?.focus();
+                        }}
+                        className="mt-2 block text-left text-xs font-semibold text-amber-800 underline decoration-amber-400 underline-offset-2"
+                      >
                         Indiquez d&apos;abord le nom du client — c&apos;est lui qui nomme le dossier.
-                      </p>
+                        Cliquez ici pour aller au champ.
+                      </button>
                     )}
 
                     <textarea
@@ -3606,21 +3624,39 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               </button>
             </div>
 
-            {/* Nom du client — requis seulement si on enregistre au Journal */}
-            <div className="flex items-center gap-3 px-1 py-2 mb-1 rounded-2xl bg-blue-50/40 border border-blue-100">
-              <label className="text-xs font-bold text-gray-700 pl-2 whitespace-nowrap">
-                Nom du client {saveToJournal ? '*' : '(optionnel)'}
-              </label>
-              <input
-                value={clientName}
-                onChange={(e) => onClientNameChange?.(e.target.value)}
-                placeholder={saveToJournal ? 'Obligatoire — classe ce lot dans le Journal des cibles' : 'Optionnel — apparaît sur le PDF, non enregistré'}
-                className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm text-text-main"
-              />
-              {saveToJournal && !clientName.trim() && (
-                <span className="text-xs font-semibold text-amber-700 pr-2 whitespace-nowrap">⚠ requis</span>
-              )}
-            </div>
+            {/* NOM DU CLIENT — requis des qu'on enregistre OU qu'on fait du
+                fiscal. Il l'etait deja trois fois cote code (l'import de
+                l'historique, le champ `collages`, la section fiscale de la
+                route), mais l'etiquette annoncait « (optionnel) » meme la case
+                fiscale cochee : on demandait au planificateur de deviner. */}
+            {(() => {
+              const nomRequis = saveToJournal || pdfOptions.includeOptimisationsFiscales;
+              const manque = nomRequis && !clientName.trim();
+              return (
+                <div
+                  id="champ-nom-client"
+                  className={`flex items-center gap-3 px-1 py-2 mb-1 rounded-2xl border ${
+                    manque ? 'bg-amber-50 border-amber-300' : 'bg-blue-50/40 border-blue-100'}`}
+                >
+                  <label className="text-xs font-bold text-gray-700 pl-2 whitespace-nowrap">
+                    Nom du client {nomRequis ? '*' : '(optionnel)'}
+                  </label>
+                  <input
+                    value={clientName}
+                    onChange={(e) => onClientNameChange?.(e.target.value)}
+                    placeholder={
+                      nomRequis
+                        ? 'Obligatoire — c’est lui qui nomme le dossier du client'
+                        : 'Optionnel — apparaît sur le PDF, non enregistré'
+                    }
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm text-text-main"
+                  />
+                  {manque && (
+                    <span className="text-xs font-semibold text-amber-700 pr-2 whitespace-nowrap">requis</span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Conviction (1-5) — pertinente uniquement si on enregistre au Journal */}
             {saveToJournal && (
