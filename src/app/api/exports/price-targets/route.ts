@@ -9,6 +9,7 @@ import { enrichReportData } from '@/lib/pdf/enrich-report-data';
 import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 import { modeFiscalActif } from '@/lib/base-locale/mode';
 import { nourrirBaseLocale } from '@/lib/base-locale/nourrir';
+import { memoriserLogos } from '@/lib/base-locale/logos';
 import { profilPourClient } from '@/lib/profils/stockage';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { analyser, restreindre } from '@/lib/profils/strategies';
@@ -57,6 +58,13 @@ export async function POST(req: NextRequest) {
     // revenus) — PARTAGÉS avec l'export HTML interactif pour que les deux
     // formats partent exactement des mêmes données. Voir enrich-report-data.ts.
     const reportData = await enrichReportData(base);
+
+    // LES LOGOS SE MÉMORISENT AU PASSAGE (17 août 2026). Ce flux-ci va déjà les
+    // chercher chez le fournisseur — c'est une sortie inventoriée de longue
+    // date. On les garde sur le poste pour que le document fiscal AUTONOME
+    // puisse les afficher sans jamais faire d'appel : le volet fiscal n'a
+    // aucune sortie réseau, et il n'en gagne pas une pour une image.
+    await memoriserLogos(reportData.logos);
 
     // ── SECTION FISCALE : jointe ICI, jamais reçue du navigateur ──────────────
     //

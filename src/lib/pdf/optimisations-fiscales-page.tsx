@@ -37,7 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Page, Text, View, Svg, Path } from '@react-pdf/renderer';
+import { Page, Text, View, Svg, Path, Image } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
@@ -137,7 +137,7 @@ function IconeStrategie({ strategie, eteinte }: { strategie: string; eteinte: bo
   );
 }
 
-function CarteConstat({ constat }: { constat: Constat }) {
+function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<string, string> }) {
   const t = TON[constat.statut];
   const gestes = gestesDe(constat);
   return (
@@ -214,10 +214,22 @@ function CarteConstat({ constat }: { constat: Constat }) {
             <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Gain cristallisé</Text>
           </View>
           {constat.plan.map((l) => (
-            <View key={l.symbole} style={{ flexDirection: 'row', paddingVertical: 1.2 }}>
-              <Text style={{ flex: 2, fontSize: 7, color: '#334155' }}>
-                {l.symbole}{l.partiel ? '  (en partie)' : ''}
-              </Text>
+            <View key={l.symbole} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 1.2 }}>
+              {/* LE LOGO DU TITRE, quand il est déjà sur le poste. Il vient du
+                  cache local nourri par les cours cibles — le document fiscal
+                  ne va JAMAIS le chercher lui-même (voir base-locale/logos.ts).
+                  Absent, la ligne s'affiche comme avant : le symbole se suffit. */}
+              <View style={{ flex: 2, flexDirection: 'row', alignItems: 'center' }}>
+                {logos?.[l.symbole] && (
+                  <Image
+                    src={logos[l.symbole]}
+                    style={{ width: 9, height: 9, marginRight: 3.5, objectFit: 'contain' }}
+                  />
+                )}
+                <Text style={{ fontSize: 7, color: '#334155' }}>
+                  {l.symbole}{l.partiel ? '  (en partie)' : ''}
+                </Text>
+              </View>
               <Text style={{ flex: 1.6, fontSize: 7, color: '#334155', textAlign: 'right' }}>{fmt(l.vendre)}</Text>
               <Text style={{ flex: 1.6, fontSize: 7, color: '#334155', textAlign: 'right' }}>{fmt(l.gain)}</Text>
             </View>
@@ -336,10 +348,20 @@ export function OptimisationsFiscalesPage({
   resultat,
   piedInterne = false,
   essaiIA = false,
+  logos,
 }: {
   resultat: ResultatAnalyse;
   /** Des textes reformulés par l'IA d'essai figurent sur la page. */
   essaiIA?: boolean;
+  /**
+   * Le logo de chaque symbole (data URI), pour le plan de récolte.
+   *
+   * TOUJOURS fourni par l'appelant, JAMAIS cherché ici : le document fiscal
+   * n'a aucune sortie réseau, et il ne doit pas en gagner une. La source est
+   * le cache local nourri par les cours cibles (base-locale/logos.ts). Ce qui
+   * manque manque — la ligne s'affiche alors avec le seul symbole.
+   */
+  logos?: Record<string, string>;
   /**
    * Rend la mention « usage interne » en pied de CETTE page aussi.
    *
@@ -415,7 +437,7 @@ export function OptimisationsFiscalesPage({
       )}
 
       {aTravailler.map((c) => (
-        <CarteConstat key={c.strategie} constat={c} />
+        <CarteConstat key={c.strategie} constat={c} logos={logos} />
       ))}
 
       {enOrdre.length > 0 && <BlocDejaEnOrdre constats={enOrdre} />}

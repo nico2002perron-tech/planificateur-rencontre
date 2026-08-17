@@ -2163,7 +2163,9 @@ export function PriceTargetsDocument({ data }: { data: PriceTargetReportData }) 
         <DeploymentPage deployment={deployment} />
       )}
 
-      {fiscal && <OptimisationsFiscalesPage resultat={fiscal} />}
+      {/* Les logos sont DEJA charges pour ce rapport (enrich-report-data) :
+          la page fiscale les reutilise, sans un appel de plus. */}
+      {fiscal && <OptimisationsFiscalesPage resultat={fiscal} logos={logos} />}
 
       {yearActivity && (
         <GrowthSourcesPage activity={yearActivity} orientation={orientation} />

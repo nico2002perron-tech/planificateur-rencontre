@@ -30,6 +30,21 @@ Mis à jour le **7 août 2026**. À relire avant tout ajout d'appel sortant.
 **Levée du verrou « fictifs seulement »** : une seule condition à retirer dans
 `iaEssaiPermise()` (`appel-llm-essai.ts`) — à ne faire que sur feu de la
 conformité iA.
+
+### Les logos du plan de récolte — une sortie ÉVITÉE (17 août 2026)
+
+Mettre le logo des titres sur le plan de récolte demandait de les chercher chez
+FMP. Le faire depuis le document fiscal aurait ouvert une sortie dans le seul
+volet qui n'en a aucune, et cette sortie aurait transporté **les symboles des
+positions d'un client** — sa composition de portefeuille.
+
+Décision : **aucun appel depuis le volet fiscal.** Les cours cibles vont déjà
+chercher ces logos (sortie inventoriée en 3d) ; on les garde sur le disque au
+passage (`base-locale/logos.ts`), et le document fiscal ne lit que ce cache. Un
+titre sans logo en cache s'affiche avec son seul symbole.
+
+C'est la règle de la section 4 appliquée à la lettre : le tuyau existait, mais
+y faire passer les positions d'un dossier fiscal aurait été un **nouvel usage**.
 | `src/app/api/base-locale/*` | lecture/écriture disque local, 404 hors localhost |
 | `POST /api/exports/price-targets`, champ `collages` (12 août 2026) | les textes BRUTS collés dans les cours cibles (relevé de positions, transactions — numéros de comptes inclus) voyagent navigateur → serveur pour nourrir la base locale. **Double barrière** : le navigateur ne joint le champ qu'en localhost (`estLocalNavigateur`), et le serveur ne l'écrit qu'en local (`estLocal()` dans `nourrirBaseLocale`). Depuis Vercel : champ absent ET no-op. Rien ne quitte le poste. |
 

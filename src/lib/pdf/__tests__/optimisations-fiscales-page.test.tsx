@@ -55,6 +55,14 @@ function profilConsolide(modif: (p: ProfilClient) => void = () => {}): ProfilCli
   return p;
 }
 
+/** Un dossier fictif qui produit un PLAN DE RÉCOLTE — la table aux logos. */
+function profilAvecPlan(): ProfilClient {
+  return profilConsolide((p) => {
+    p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+    p.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 20000)])];
+  });
+}
+
 /**
  * Le texte réellement posé sur la page.
  *
@@ -145,6 +153,35 @@ describe('la page se rend', () => {
     );
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     expect(buffer.length).toBeGreaterThan(1000);
+  });
+
+  // LES LOGOS DU PLAN DE RÉCOLTE (17 août 2026). Ils viennent du cache local ;
+  // un logo corrompu ne doit jamais faire échouer la GÉNÉRATION du document —
+  // c'est le livrable, et une image manquante n'est pas une raison de le perdre.
+  it('rend le plan AVEC les logos fournis', async () => {
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const resultat = analyser(profilAvecPlan(), null, DATE);
+    const plan = resultat.constats.find((c) => c.plan && c.plan.length > 0);
+    expect(plan).toBeDefined();
+
+    const buffer = await renderToBuffer(
+      React.createElement(Document, null,
+        React.createElement(OptimisationsFiscalesPage, {
+          resultat, logos: { [plan!.plan![0].symbole]: PNG },
+        }))
+    );
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('SANS logo, le plan se rend quand même — le symbole se suffit', async () => {
+    const resultat = analyser(profilAvecPlan(), null, DATE);
+    const buffer = await renderToBuffer(
+      React.createElement(Document, null,
+        React.createElement(OptimisationsFiscalesPage, { resultat, logos: {} }))
+    );
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    // Le symbole reste imprimé, avec ou sans image.
+    expect(textesDe(React.createElement(OptimisationsFiscalesPage, { resultat })).join('')).toContain('GAGNANT');
   });
 });
 

@@ -56,6 +56,12 @@ export type DonneesDocumentFiscal = {
   /** `instantane` = portefeuille seul · `complet` = fiche rempli. */
   preset: 'instantane' | 'complet';
   /**
+   * Le logo de chaque symbole, pour le plan de récolte. Vient du CACHE LOCAL nourri par
+   * les cours cibles : ce document ne fait aucun appel réseau, et n'en fera
+   * pas pour une image. Voir base-locale/logos.ts.
+   */
+  logos?: Record<string, string>;
+  /**
    * VRAI quand des textes ont été reformulés par l'IA d'essai (dossier fictif).
    * Le document LE DIT : un texte poli par un modèle qui ne s'annonce pas
    * serait un mensonge d'origine, même sur un dossier inventé.
@@ -172,6 +178,7 @@ export function OptimisationsFiscalesDocument({ donnees }: { donnees: DonneesDoc
         resultat={donnees.resultat}
         piedInterne={donnees.resultat.revisionFiscalisteRequise}
         essaiIA={donnees.essaiIA === true}
+        logos={donnees.logos}
       />
     </Document>
   );

@@ -19,6 +19,7 @@ import { hydraterProfil, signauxDuLivre } from '@/lib/profils/hydrater';
 import { analyser, restreindre } from '@/lib/profils/strategies';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { OptimisationsFiscalesDocument } from '@/lib/pdf/optimisations-fiscales-document';
+import { logosMemorises } from '@/lib/base-locale/logos';
 import { reformuler, identifiantsDuProfil } from '@/lib/profils/reformuler';
 import { iaEssaiPermise, construireAppelEssai } from '@/lib/profils/appel-llm-essai';
 
@@ -101,9 +102,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // LES LOGOS DU PLAN DE RÉCOLTE — LUS SUR LE DISQUE, jamais cherchés.
+    //
+    // Cette route est celle du volet fiscal : elle n'a AUCUNE sortie réseau et
+    // n'en gagne pas une pour une image. Les logos viennent du cache que les
+    // cours cibles ont nourri (base-locale/logos.ts). Un titre sans logo en
+    // cache s'affiche avec son seul symbole — comme avant.
+    const symbolesDuPlan = resultat.constats.flatMap((c) => (c.plan ?? []).map((l) => l.symbole));
+    const logos = symbolesDuPlan.length ? await logosMemorises(symbolesDuPlan) : {};
+
     const buffer = await renderToBuffer(
       React.createElement(OptimisationsFiscalesDocument, {
-        donnees: { resultat, nomClient: nomClient.trim(), preset: choisi, essaiIA },
+        donnees: { resultat, nomClient: nomClient.trim(), preset: choisi, essaiIA, logos },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any
     );
