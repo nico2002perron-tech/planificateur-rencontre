@@ -26,6 +26,7 @@ import {
   Wallet, ListChecks, UserPlus, Users, FileText, Download, Search, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ouvrirPdf } from '@/lib/pdf/ouvrir-pdf';
 import type { Badge as BadgeProfil, CouleurBadge } from '@/lib/profils/badges';
 
 // ── Types de la charge utile servie par /api/base-locale/profils ─────────────
@@ -287,12 +288,11 @@ export function EcranFiscal({ racine }: { racine: string }) {
       if (!res.ok) throw new Error((await res.json()).error ?? 'Génération impossible');
       const chemin = res.headers.get('X-Archive-Chemin');
       const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `optimisations-fiscales-${new Date().toISOString().slice(0, 10)}.pdf`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setInfo(chemin ? `PDF généré · archivé dans ${chemin}` : 'PDF généré.');
+      // Le document s'OUVRE (17 août 2026) : il est relu avant d'être remis, et
+      // il est de toute façon déjà archivé dans le dossier du client.
+      const sortie = ouvrirPdf(blob, `optimisations-fiscales-${new Date().toISOString().slice(0, 10)}.pdf`);
+      const geste = sortie === 'ouvert' ? 'PDF ouvert dans un nouvel onglet' : 'PDF téléchargé';
+      setInfo(chemin ? `${geste} · archivé dans ${chemin}` : `${geste}.`);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : 'Génération impossible');
     } finally { setEnCours(false); }

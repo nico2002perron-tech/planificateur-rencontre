@@ -18,6 +18,7 @@ import {
   type ActivityPeriod,
 } from '@/lib/portfolio/year-activity';
 import { buildDeploymentSummary, type DeploymentPosition } from '@/lib/portfolio/deployment';
+import { ouvrirPdf } from '@/lib/pdf/ouvrir-pdf';
 import {
   ClipboardPaste, Sparkles, RotateCcw, TrendingUp,
   DollarSign, BarChart3, Shield, Landmark, Wallet, Package, AlertTriangle,
@@ -1582,19 +1583,13 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
       const releveArchive = res.headers.get('X-Releve-Archive');
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      // Nom de fichier NEUTRE volontairement : le nom du client ne doit pas se
-      // retrouver en clair dans le dossier Téléchargements (souvent synchronisé
-      // OneDrive). Le nom reste à l'intérieur du PDF. Pour réintégrer le nom dans
-      // le fichier, remettre un suffixe basé sur clientName ici.
-      a.download = `cours-cibles-${new Date().toISOString().split('T')[0]}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      const bouts = ['PDF téléchargé'];
+      // LE PDF S'OUVRE, il ne tombe plus dans Téléchargements (17 août 2026).
+      // Nom de fichier NEUTRE volontairement — il ne sert que si le navigateur
+      // bloque la fenêtre : le nom du client ne doit pas se retrouver en clair
+      // dans le dossier Téléchargements (souvent synchronisé OneDrive). Le nom
+      // reste à l'intérieur du PDF.
+      const sortie = ouvrirPdf(blob, `cours-cibles-${new Date().toISOString().split('T')[0]}.pdf`);
+      const bouts = [sortie === 'ouvert' ? 'PDF ouvert dans un nouvel onglet' : 'PDF téléchargé'];
       if (cheminArchive) bouts.push(`archivé dans ${decodeURIComponent(cheminArchive)}`);
       if (livreNouvelles !== null) bouts.push(`livre : +${livreNouvelles} transaction(s)`);
       if (releveArchive) bouts.push('relevé du jour archivé');
