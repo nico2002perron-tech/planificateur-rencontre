@@ -41,7 +41,7 @@ function cleLigne(l: LigneTransaction): string {
  * ordinaires produisaient « 0 transaction ajoutée » sans un mot d'explication,
  * et rien ne disait au planificateur ce qu'il devait changer :
  *
- *   · les colonnes tronquées (18 au lieu de 20) — une sélection partielle ;
+ *   · les colonnes tronquées (moins de 18) — une sélection partielle ;
  *   · le point-virgule comme séparateur — un export d'Excel en français ;
  *   · les dates en JJ/MM/AAAA — un format régional.
  *
@@ -71,52 +71,76 @@ export function diagnostiquerCollage(texte: string): string | null {
   // Assez de tabulations, mais pas assez de colonnes ?
   const colonnes = avecTabulations.map((l) => l.split('\t').length);
   const maxColonnes = Math.max(...colonnes);
-  if (maxColonnes < 20) {
-    return `Il manque des colonnes : ${maxColonnes} trouvée${maxColonnes > 1 ? 's' : ''} alors que l’historique en demande 20. Sélectionnez TOUTES les colonnes du rapport de transactions, de la première à la dernière (le numéro de compte est dans la dernière).`;
+  // 18 ET 20 colonnes sont acceptees depuis le 18 aout (voir parserCollage) :
+  // le seuil suit, sinon le diagnostic reclamerait de corriger ce qui marche.
+  if (maxColonnes < 18) {
+    return `Il manque des colonnes : ${maxColonnes} trouvée${maxColonnes > 1 ? 's' : ''} alors que l’historique en demande 18 ou 20. Sélectionnez TOUTES les colonnes du rapport de transactions, de la première à la dernière (le numéro de compte est dans la dernière).`;
   }
 
   // Les colonnes y sont : c'est donc la date ou le numéro de compte.
-  const assezLarges = avecTabulations.filter((l) => l.split('\t').length >= 20);
-  const dates = assezLarges.map((l) => (l.split('\t')[5] || '').trim()).filter(Boolean);
+  const decalageDe = (l: string) => (l.split('\t').length >= 20 ? 0 : 2);
+  const assezLarges = avecTabulations.filter((l) => l.split('\t').length >= 18);
+  const dates = assezLarges.map((l) => (l.split('\t')[5 - decalageDe(l)] || '').trim()).filter(Boolean);
   const bonnesDates = dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
   if (dates.length > 0 && bonnesDates.length === 0) {
     const exemple = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(dates[0]) ? ' (elles ressemblent à JJ/MM/AAAA)' : '';
     return `Les dates ne sont pas au format AAAA-MM-JJ${exemple}. Dans Excel, mettez la colonne de date au format « 2026-03-15 » avant de copier.`;
   }
 
-  const comptes = assezLarges.map((l) => (l.split('\t')[19] || '').trim()).filter(Boolean);
+  const comptes = assezLarges.map((l) => (l.split('\t')[19 - decalageDe(l)] || '').trim()).filter(Boolean);
   if (assezLarges.length > 0 && comptes.length === 0) {
     return 'La dernière colonne (le numéro de compte) est vide. Vérifiez que la sélection va bien jusqu’à la colonne du compte.';
   }
   return null;
 }
 
-/** Lit un collage brut : lignes tabulées, 20 colonnes, en-tête ignoré. */
+/** Lit un collage brut : lignes tabulées, 18 ou 20 colonnes, en-tête ignoré. */
 export function parserCollage(texte: string): { lignes: LigneTransaction[]; ignorees: number } {
   const lignes: LigneTransaction[] = [];
   let ignorees = 0;
   for (const brut of texte.split(/\r?\n/)) {
     if (!brut.trim()) continue;
     const c = brut.split('\t');
-    if (c.length < 20) { ignorees++; continue; }
-    const date = (c[5] || '').trim();
-    const noCompte = (c[19] || '').trim();
+
+    // LES DEUX EXPORTS DE CROESUS, LUS PAR LA MEME ZONE — 18 aout 2026.
+    //
+    // Le piege que la cartographie a trouve : DEUX parseurs lisaient le meme
+    // collage avec deux colonnes d'ecart. Celui de l'ecran (activite de
+    // l'annee) attend 18 colonnes ; celui-ci en exigeait 20. Le seul collage
+    // qui satisfaisait les deux etait un export a 20 colonnes AVEC en-tetes,
+    // et aucun texte ne le disait — d'ou des imports « 0 transaction » sans
+    // raison visible.
+    //
+    // La mesure tranche : la carte a 18 colonnes est EXACTEMENT celle-ci
+    // moins ses deux premieres (`indVM`, `description`). Decalage constant de
+    // 2, pas deux formats differents. On l'absorbe ici plutot que de toucher
+    // au parseur d'activite, qui tourne deja en production sur les cours
+    // cibles : ce fichier devient tolerant, l'autre ne bouge pas.
+    const decalage = c.length >= 20 ? 0 : c.length >= 18 ? 2 : -1;
+    if (decalage < 0) { ignorees++; continue; }
+    const col = (i: number) => (c[i - decalage] || '').trim();
+
+    const date = col(5);
+    const noCompte = col(19);
     if (!noCompte || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { ignorees++; continue; }
     lignes.push({
       date,
-      dateReglement: (c[4] || '').trim(),
-      nom: (c[2] || '').trim(),
-      note: (c[3] || '').trim(),
-      type: (c[7] || '').trim(),
-      symbole: (c[8] || '').trim(),
-      quantite: nombre(c[9]),
-      prix: nombre(c[10]),
-      devise: (c[11] || '').trim(),
-      total: nombre(c[12]),
-      gainsPertes: nombre(c[14]),
-      solde: nombre(c[18]),
+      dateReglement: col(4),
+      nom: col(2),
+      note: col(3),
+      type: col(7),
+      symbole: col(8),
+      quantite: nombre(col(9)),
+      prix: nombre(col(10)),
+      devise: col(11),
+      total: nombre(col(12)),
+      gainsPertes: nombre(col(14)),
+      solde: nombre(col(18)),
       noCompte,
-      description: (c[1] || '').trim(),
+      // La description n'existe QUE dans l'export a 20 colonnes : sur 18, la
+      // colonne 1 est la note, pas la description. On rend vide plutot que
+      // de recopier un champ voisin.
+      description: decalage === 0 ? col(1) : '',
     });
   }
   return { lignes, ignorees };

@@ -125,11 +125,26 @@ export const TYPE_PAR_LETTRE_VMBL: Record<string, string> = {
 export function typeDeCompte(noCompte: string): string | null {
   const d = decomposerCompte(noCompte);
   if (d?.vmbl) return TYPE_PAR_LETTRE_VMBL[d.milieu.slice(-1)] ?? null;
-  // iA et consorts : c'est le suffixe qui porte le régime. On garde la lecture
-  // par dernier caractère même quand la décomposition échoue — elle a toujours
-  // fonctionné sur les formats qu'on n'a pas encore catalogués.
-  const suffixe = d ? d.suffixe : canoniserCompte(noCompte).slice(-1);
-  return TYPE_PAR_SUFFIXE[suffixe] ?? null;
+
+  // UN IDENTIFIANT REFUSÉ N'A PAS DE RÉGIME — corrigé le 18 août 2026.
+  //
+  // Le repli lisait le dernier caractère MÊME quand `decomposerCompte` avait
+  // refusé l'identifiant, et lui appliquait la table iA. C'était l'unique
+  // chemin du dépôt où « celiapp » pouvait sortir sans préfixe iA prouvé —
+  // un régime de 2023 posé sur un compte que rien ne rattache à iA. Le même
+  // repli rangeait aussi des lignes dans les seaux CELI, REER et REEE sur la
+  // foi d'une seule lettre.
+  //
+  // La règle du dépôt ne laisse pas le choix : « un compte au régime non
+  // prouvé est ÉCARTÉ, jamais présumé ». `null` se déclare, une invention non.
+  //
+  // ⚠ À FAIRE VÉRIFIER PAR NICOLAS : si son livre contenait des numéros que
+  // `decomposerCompte` refuse, leurs cotisations cessent d'être comptées, ce
+  // qui GONFLERAIT l'espace CELI calculé. Les formes observées jusqu'ici
+  // (« 37-XXXX-L ») se décomposent toutes ; le repli ne devrait donc jamais
+  // avoir servi. La mesure qui le confirmerait est à lancer par lui.
+  if (!d) return null;
+  return TYPE_PAR_SUFFIXE[d.suffixe] ?? null;
 }
 
 /** Vrai pour un vieux numéro VMBL (« 4A-… », « 6A-… », « 6AAZCI0 »). */

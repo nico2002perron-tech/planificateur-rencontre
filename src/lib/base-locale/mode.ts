@@ -22,11 +22,35 @@ import 'server-only';
  * variable disparaîtrait d'une version à l'autre.
  */
 export function estLocal(): boolean {
+  // ── 1. REFUS EXPLICITE DE L'HÉBERGEUR ──────────────────────────────────────
+  // Vercel pose ces variables sur toutes ses exécutions (build comme runtime).
   if (process.env.VERCEL) return false;
   if (process.env.VERCEL_ENV) return false;
   if (process.env.VERCEL_URL) return false;
-  return true;
+
+  // ── 2. UNE PREUVE POSITIVE, pas seulement une absence — 18 août 2026 ───────
+  //
+  // La version d'origine s'arrêtait au refus ci-dessus : tout ce qui n'était
+  // pas Vercel passait pour « local », y compris un conteneur, une autre
+  // plateforme d'hébergement, ou une machine de collègue. La doctrine promet
+  // « 404 hors localhost » ; le code ne vérifiait jamais localhost.
+  //
+  // On exige donc désormais que le serveur soit ATTACHÉ À LA BOUCLE LOCALE.
+  // `HOSTNAME` est ce que Next expose ; sans lui, `next dev` n'écoute que
+  // 127.0.0.1 par défaut — l'absence de variable reste donc du local.
+  //
+  // ÉCHAPPATOIRE ASSUMÉE : `BASE_LOCALE_AUTORISER=1` laisse Nicolas exécuter
+  // ailleurs que sur la boucle locale s'il le décide un jour (une machine
+  // dédiée hors ligne, par exemple). C'est un geste explicite, pas un défaut.
+  if (process.env.BASE_LOCALE_AUTORISER === '1') return true;
+
+  const hote = (process.env.HOSTNAME ?? process.env.HOST ?? '').trim();
+  if (hote === '') return true;                       // défaut de `next dev`
+  return BOUCLE_LOCALE.has(hote.toLowerCase());
 }
+
+/** Les hôtes qui désignent la machine elle-même. */
+const BOUCLE_LOCALE = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
 
 /**
  * Le drapeau du volet fiscal. Séparé de `estLocal()` pour deux raisons :

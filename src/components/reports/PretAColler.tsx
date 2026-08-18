@@ -3417,7 +3417,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                     <p className="mt-1 text-xs text-text-muted">
                       Depuis <strong>l&apos;ouverture des comptes</strong>, pas seulement cette
                       année : les droits de cotisation CELI se mesurent sur la totalité des
-                      cotisations. Collez l&apos;export Croesus complet (20 colonnes). Les collages
+                      cotisations. Le même export que ci-dessus fait l&apos;affaire (18 ou 20 colonnes). Les collages
                       qui se chevauchent sont dédoublonnés — ensuite, chaque cours cibles
                       entretient le livre tout seul.
                     </p>

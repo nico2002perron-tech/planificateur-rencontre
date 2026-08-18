@@ -187,3 +187,55 @@ describe('racineBaseLocale — la base ne peut pas tomber dans le dépôt', () =
     expect(racineBaseLocale()).toBe(path.resolve(dehors));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// « HORS LOCALHOST » — la preuve positive du 18 août 2026.
+//
+// `estLocal()` ne vérifiait que l'ABSENCE de Vercel : tout autre hébergement
+// passait pour local, alors que la doctrine promet « 404 hors localhost ».
+// ─────────────────────────────────────────────────────────────────────────────
+describe('estLocal — la boucle locale, prouvée', () => {
+  const sauve = { ...process.env };
+  afterEach(() => { process.env = { ...sauve }; });
+
+  it('refuse Vercel, sous chacune de ses variables', async () => {
+    const { estLocal } = await import('../mode');
+    for (const v of ['VERCEL', 'VERCEL_ENV', 'VERCEL_URL']) {
+      process.env = { ...sauve, [v]: '1' };
+      expect(estLocal()).toBe(false);
+    }
+  });
+
+  it('sans HOSTNAME, c’est le défaut de next dev : local', async () => {
+    const { estLocal } = await import('../mode');
+    process.env = { ...sauve };
+    delete process.env.VERCEL; delete process.env.VERCEL_ENV; delete process.env.VERCEL_URL;
+    delete process.env.HOSTNAME; delete process.env.HOST;
+    expect(estLocal()).toBe(true);
+  });
+
+  it('accepte les hôtes de la boucle locale', async () => {
+    const { estLocal } = await import('../mode');
+    for (const h of ['localhost', '127.0.0.1', '::1', '0.0.0.0', 'LOCALHOST']) {
+      process.env = { ...sauve, HOSTNAME: h };
+      delete process.env.VERCEL; delete process.env.VERCEL_ENV; delete process.env.VERCEL_URL;
+      expect(estLocal()).toBe(true);
+    }
+  });
+
+  it('REFUSE un hôte qui n’est pas la machine — le trou qu’on ferme', async () => {
+    const { estLocal } = await import('../mode');
+    for (const h of ['10.0.0.12', 'planif.interne.local', 'monserveur']) {
+      process.env = { ...sauve, HOSTNAME: h };
+      delete process.env.VERCEL; delete process.env.VERCEL_ENV; delete process.env.VERCEL_URL;
+      expect(estLocal()).toBe(false);
+    }
+  });
+
+  it('l’échappatoire explicite de Nicolas rouvre la porte', async () => {
+    const { estLocal } = await import('../mode');
+    process.env = { ...sauve, HOSTNAME: '10.0.0.12', BASE_LOCALE_AUTORISER: '1' };
+    delete process.env.VERCEL; delete process.env.VERCEL_ENV; delete process.env.VERCEL_URL;
+    expect(estLocal()).toBe(true);
+  });
+});

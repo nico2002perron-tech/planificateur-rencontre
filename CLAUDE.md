@@ -6,6 +6,18 @@ Tout ce que Claude lit (fichiers, sorties de terminal, captures d'écran) transi
 par l'API de son fournisseur. En conséquence, dans toute session ouverte dans ce
 dépôt :
 
+- ⛔ **`C:\planificateur-donnees` NE S'OUVRE PAS.** Ni `ls`, ni `cat`, ni script
+  de mesure, ni comptage « anonyme » — pas même pour vérifier un correctif.
+  Énumérer les dossiers d'un client, c'est déjà lire sa liste de clients.
+  **Ajouté le 18 août 2026 sur reprise de Nicolas** : Claude s'y était servi
+  pour compter des lignes, et des noms réels étaient apparus dans une sortie
+  d'API affichée en session. Le régime « comptages et motifs » couvrait les
+  exports Croesus, pas la base de travail — il ne s'y étend pas.
+  - **Vérifier un correctif se fait sur des données FICTIVES**, dans un dossier
+    temporaire (`BASE_LOCALE_RACINE`) ou par un client fictif créé puis
+    supprimé. Jamais sur la vraie base.
+  - **Si une mesure sur les vraies données est indispensable**, c'est Nicolas
+    qui la lance et qui colle le résultat, caviardé par lui.
 - **Aucune donnée client réelle ne s'affiche, ne se sauvegarde, ne se recopie.**
   Ni nom, ni prénom (enfants compris), ni numéro de compte, ni relevé collé.
 - **Les sondes et scripts de mesure impriment des agrégats, des comptages et des

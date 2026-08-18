@@ -459,7 +459,7 @@ export function EcranFiscal({ racine }: { racine: string }) {
 
             <div>
               <p className="text-sm text-text-muted">
-                <strong>Historique complet</strong> depuis l’ouverture des comptes (20 colonnes).
+                <strong>Historique complet</strong> depuis l’ouverture des comptes (18 ou 20 colonnes).
                 Chaque collage est archivé tel quel ; seules les transactions inédites sont ajoutées.
               </p>
               <textarea

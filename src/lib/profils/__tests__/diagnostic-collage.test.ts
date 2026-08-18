@@ -21,12 +21,45 @@ describe('diagnostiquerCollage', () => {
     expect(diagnostiquerCollage('')).toMatch(/vide/i);
   });
 
-  it('colonnes TRONQUÉES : dit combien il en manque et où est le compte', () => {
-    const tronque = ligne().split(T).slice(0, 18).join(T);
+  // ───────────────────────────────────────────────────────────────────────────
+  // LES DEUX EXPORTS DE CROESUS — le piège du 18 août 2026.
+  //
+  // L'écran (activité de l'année) lit 18 colonnes, le grand livre en exigeait
+  // 20 : le même collage ne pouvait pas satisfaire les deux, et l'import
+  // rendait « 0 transaction » sans raison visible. La carte à 18 est celle à
+  // 20 moins ses deux premières colonnes — décalage constant, pas deux formats.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('un export à 18 colonnes est LU, et lu juste', () => {
+    // Les deux premières colonnes (indVM, description) en moins.
+    const a18 = ligne().split(T).slice(2).join(T);
+    expect(a18.split(T)).toHaveLength(18);
+    const lues = parserCollage(a18).lignes;
+    expect(lues).toHaveLength(1);
+    // Les champs tombent au bon endroit, pas décalés de deux.
+    expect(lues[0].date).toBe('2026-03-15');
+    expect(lues[0].noCompte).toBe('37-FICT-A');
+    expect(lues[0].type).toBe('Achat');
+    expect(lues[0].symbole).toBe('AAA');
+    expect(lues[0].total).toBe(-1000);
+    // La description n'existe pas sur 18 colonnes : vide, jamais un voisin.
+    expect(lues[0].description).toBe('');
+    expect(diagnostiquerCollage(a18)).toBeNull();
+  });
+
+  it('les deux formats produisent LA MÊME ligne (hors description)', () => {
+    const a20 = ligne();
+    const a18 = a20.split(T).slice(2).join(T);
+    const l20 = parserCollage(a20).lignes[0];
+    const l18 = parserCollage(a18).lignes[0];
+    expect({ ...l18, description: '' }).toEqual({ ...l20, description: '' });
+  });
+
+  it('colonnes VRAIMENT tronquées : dit combien il en manque et où est le compte', () => {
+    const tronque = ligne().split(T).slice(0, 12).join(T);
     expect(parserCollage(tronque).lignes).toHaveLength(0);   // le parseur refuse
     const d = diagnostiquerCollage(tronque);
-    expect(d).toMatch(/18/);
-    expect(d).toMatch(/20/);
+    expect(d).toMatch(/12/);
+    expect(d).toMatch(/18 ou 20/);
     expect(d).toMatch(/num[ée]ro de compte/i);
   });
 
