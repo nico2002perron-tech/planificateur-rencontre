@@ -42,6 +42,18 @@ export type Demographie = {
    * tout le profil.
    */
   dateNaissance: string | null;
+  /**
+   * L'ANNÉE seule — la voie rapide (18 août 2026).
+   *
+   * Pour le plafond CELI cumulatif, c'est l'année des 18 ans qui fixe le
+   * départ : l'année de naissance suffit, et le résultat est EXACT, pas
+   * approché. Demander une date complète pour ce calcul, c'est demander trois
+   * fois plus de frappe pour la même réponse.
+   *
+   * `dateNaissance` reste prioritaire quand elle existe (elle sert à d'autres
+   * calculs d'âge). Ce champ est le raccourci, pas un doublon.
+   */
+  anneeNaissance: number | null;
   /** Dérivé de dateNaissance à la lecture quand elle existe ; sinon saisi. */
   age: number | null;
   etatCivil: EtatCivil | null;
@@ -323,6 +335,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
     version: 1,
     demographie: {
       dateNaissance: null,
+      anneeNaissance: null,
       age: null, etatCivil: null, province: null,
       conjoint: { age: null, trancheRevenu: null },
       enfants: [],

@@ -150,4 +150,13 @@ export type SignauxLivre = {
   /** Le verdict des droits CELI, calculé par la MÊME chaîne que l'écran. */
   droitsCeli: ResultatDroitsCeli | null;
   maximisation: SignalMaximisation | null;
+  /**
+   * Vrai quand le plafond cumulatif a été pris AU MAXIMUM faute de connaître
+   * l'année de naissance — ajouté le 18 août 2026.
+   *
+   * Ce n'est pas un détail : sans l'année, le moteur suppose que le client
+   * avait 18 ans en 2009, ce qui SURESTIME son espace CELI. Le dire permet de
+   * demander les quatre chiffres qui rendent le chiffre exact.
+   */
+  plafondParDefautMaximal: boolean;
 };

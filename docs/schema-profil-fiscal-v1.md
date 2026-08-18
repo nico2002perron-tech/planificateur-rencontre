@@ -314,6 +314,31 @@ Une passe inverse sans filtre explicite ferait apparaître **~424 comptes VMBL**
 comme absents du relevé. D'où le prédicat `estCompteIA()`, écrit pour cette
 passe et appelé par elle.
 
+### 18 août 2026 — `demographie.anneeNaissance` : la voie rapide
+
+**Demande de Nicolas** : « je veux que ce soit extrêmement friendly, marquer la
+date de naissance de façon super vite ».
+
+**Le fait qui la rend possible** : pour le plafond CELI cumulatif, seule
+l'ANNÉE compte — c'est l'année des 18 ans qui fixe le départ du cumul. Quatre
+chiffres donnent donc un résultat **exact**, pas approché ; une date complète
+ne dirait rien de plus pour ce calcul.
+
+| champ | usage |
+|---|---|
+| `dateNaissance` | la date exacte — prioritaire quand elle existe |
+| `anneeNaissance` | l'année seule, saisie en quatre frappes |
+
+L'ordre de dérivation est : date exacte, puis année seule, puis `age` saisi.
+Ce n'est pas un doublon : c'est un raccourci qui rend le même chiffre.
+
+**Le moteur la RÉCLAME quand elle change le résultat, et seulement là.** Sans
+elle, `plafondCeliCumulatif` suppose 18 ans en 2009 et prend le plafond
+maximal, ce qui **surestime** l'espace. `SignauxLivre.plafondParDefautMaximal`
+porte l'information jusqu'à la stratégie 8, qui l'ajoute alors à ses données
+manquantes — et le détecteur la classe naturellement en tête, puisqu'elle est
+la moins chère du catalogue.
+
 ### ⚠ UNE MESURE À FAIRE, qui débloque 433 comptes
 
 Ouvrir un relevé de positions pour un client porteur d'un compte `4A`/`6A` et

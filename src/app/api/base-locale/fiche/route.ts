@@ -10,7 +10,7 @@
 // champ à la fois, au fil de la conversation.
 import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
-import { lireProfil, ecrireProfil } from '@/lib/profils/stockage';
+import { profilPourClient, lireProfil, ecrireProfil } from '@/lib/profils/stockage';
 import type {
   ProfilClient, EtatCivil, TrancheRevenu, ReponseTernaire, EnfantBeneficiaire,
 } from '@/lib/profils/types';
@@ -39,12 +39,17 @@ export async function POST(req: NextRequest) {
 
   const corps = (await req.json()) as Record<string, unknown>;
   const id = typeof corps.id === 'string' ? corps.id : null;
-  if (!id) return NextResponse.json({ error: 'Identifiant requis' }, { status: 400 });
-
-  const profil = await lireProfil(id);
-  if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
+  // PAR NOM AUSSI — 18 août 2026. Le composeur de cours cibles ne connaît que
+  // le nom du client ; exiger un identifiant l'obligeait à quitter l'écran
+  // pour répondre à une question posée sur cet écran-là.
+  const nomDemande = typeof corps.nom === 'string' ? corps.nom.trim() : '';
+  if (!id && !nomDemande) {
+    return NextResponse.json({ error: 'Identifiant ou nom requis' }, { status: 400 });
+  }
 
   const jour = new Date().toISOString().slice(0, 10);
+  const profil = id ? await lireProfil(id) : await profilPourClient(nomDemande, jour);
+  if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
   const refus: string[] = [];
 
   // ── Démographie ───────────────────────────────────────────────────────────
@@ -54,6 +59,18 @@ export async function POST(req: NextRequest) {
     else if (typeof v === 'string' && /^(19|20)\d{2}-\d{2}-\d{2}$/.test(v)) {
       profil.demographie.dateNaissance = v;
     } else refus.push('dateNaissance');
+  }
+  // L'ANNÉE SEULE — la voie rapide (18 août 2026). Quatre chiffres suffisent
+  // au plafond CELI cumulatif, et le résultat est exact : c'est l'année des
+  // 18 ans qui fixe le départ. On borne à un intervalle plausible plutôt que
+  // d'accepter n'importe quel entier.
+  if ('anneeNaissance' in corps) {
+    const v = corps.anneeNaissance;
+    const n = typeof v === 'string' ? Number.parseInt(v, 10) : v;
+    if (v === null || v === '') profil.demographie.anneeNaissance = null;
+    else if (typeof n === 'number' && Number.isInteger(n) && n >= 1900 && n <= new Date().getFullYear()) {
+      profil.demographie.anneeNaissance = n;
+    } else refus.push('anneeNaissance');
   }
   if ('age' in corps) {
     const a = age(corps.age);

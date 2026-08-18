@@ -113,7 +113,7 @@ export async function signauxDuLivre(
   nomClient: string | null,
   annee: number
 ): Promise<SignauxLivre> {
-  const vide: SignauxLivre = { droitsCeli: null, maximisation: null };
+  const vide: SignauxLivre = { droitsCeli: null, maximisation: null, plafondParDefautMaximal: false };
   if (!nomClient?.trim()) return vide;
   const livre = await lireHistorique(nomClient);
   if (livre.length === 0) return vide;
@@ -130,5 +130,5 @@ export async function signauxDuLivre(
     parAnnee.cotisations, parAnnee.retraits, plafondsCeliParAnnee(), annee,
     plafond.montant
   );
-  return { droitsCeli, maximisation };
+  return { droitsCeli, maximisation, plafondParDefautMaximal: plafond.parDefautMaximal };
 }

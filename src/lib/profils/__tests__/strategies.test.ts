@@ -109,6 +109,7 @@ describe('le contrat', () => {
         borne: 21500, conditionsManquantes: [], transfertsATrancher: 0,
       },
       maximisation: null,
+      plafondParDefautMaximal: false,
     };
 
     for (const externes of ['oui', 'inconnu'] as const) {
@@ -923,6 +924,7 @@ describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', 
       montant: null, borne: 50000, conditionsManquantes: ["le client n'a pas confirmé"],
       transfertsATrancher: 0, ...droits,
     },
+    plafondParDefautMaximal: false,
     maximisation: max === null ? null : {
       etat: 'sous-plafond' as const, depuis: 2015, totalCotise: 40000,
       plafondPeriode: 70000, plafondCumulatif: 102000, anneesSousPlafond: [2019, 2022], ...max,

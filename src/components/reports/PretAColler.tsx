@@ -579,6 +579,32 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
   const [selection, setSelection] = useState<string[]>([]);
   const [detectionEnCours, setDetectionEnCours] = useState(false);
 
+  // L'ANNÉE DE NAISSANCE EN QUATRE CHIFFRES (18 août 2026).
+  //
+  // Demande de Nicolas : « que ce soit extrêmement friendly, marquer la date
+  // de naissance de façon super vite ». La bonne nouvelle est arithmétique :
+  // pour le plafond CELI cumulatif, seule l'ANNÉE compte — c'est l'année des
+  // 18 ans qui fixe le départ. Quatre chiffres donnent donc un résultat EXACT,
+  // pas approché, et une date complète ne dirait rien de plus.
+  //
+  // Le champ s'enregistre DÈS LA QUATRIÈME FRAPPE, sans bouton, et relance la
+  // détection : on tape 1985, la piste se chiffre sous les yeux.
+  const [anneeNaissance, setAnneeNaissance] = useState('');
+  const [anneeEnregistree, setAnneeEnregistree] = useState(false);
+
+  const enregistrerAnnee = useCallback(async (valeur: string) => {
+    const nom = clientName.trim();
+    const n = Number.parseInt(valeur, 10);
+    if (!nom || valeur.length !== 4 || !Number.isFinite(n)) return false;
+    try {
+      const r = await fetch('/api/base-locale/fiche', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom, anneeNaissance: n }),
+      });
+      return r.ok;
+    } catch { return false; }
+  }, [clientName]);
+
   const rafraichirDetection = useCallback(async () => {
     const nom = clientName.trim();
     if (!nom || !estLocalNavigateur) return;
@@ -3546,6 +3572,45 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                                           Pour aller plus loin : {c.donneesManquantes.join(' · ')}
                                         </span>
                                       )}
+
+                                      {/* LA QUESTION EST POSÉE LÀ OÙ ELLE BLOQUE.
+                                          Quatre chiffres, aucun bouton : à la
+                                          quatrième frappe c'est enregistré et
+                                          la détection se relance. Pour le
+                                          plafond CELI, l'année suffit et le
+                                          résultat est EXACT. */}
+                                      {c.donneesManquantes.some((d) => d.includes('année de naissance')) && (
+                                        <span
+                                          className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border-2 border-dashed px-2.5 py-2"
+                                          style={{ borderColor: DUO.blue, backgroundColor: '#eff9ff' }}
+                                          onClick={(e) => e.preventDefault()}
+                                        >
+                                          <span className="text-[11px] font-bold text-text-main">
+                                            Né en&nbsp;?
+                                          </span>
+                                          <input
+                                            value={anneeNaissance}
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            placeholder="1985"
+                                            aria-label="Année de naissance du client"
+                                            onChange={async (e) => {
+                                              const v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                              setAnneeNaissance(v);
+                                              setAnneeEnregistree(false);
+                                              if (v.length === 4 && await enregistrerAnnee(v)) {
+                                                setAnneeEnregistree(true);
+                                                void rafraichirDetection();
+                                              }
+                                            }}
+                                            className="w-20 rounded-lg border-2 px-2 py-1 text-center text-lg font-extrabold tabular-nums"
+                                            style={{ borderColor: DUO.blue }}
+                                          />
+                                          <span className="text-[11px] text-text-muted">
+                                            L’année suffit : c’est elle qui fixe le départ du plafond CELI.
+                                          </span>
+                                        </span>
+                                      )}
                                     </span>
                                   </label>
                                 </li>
@@ -3562,6 +3627,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                               : `${selection.length} piste${selection.length > 1 ? 's' : ''} ira${selection.length > 1 ? 'ont' : ''} dans le PDF.`}
                           </div>
                         </>
+                      )}
+                      {/* LA CONFIRMATION VIT ICI, pas dans la carte : répondre
+                          à la question fait disparaître la carte qui la posait,
+                          et le message serait parti avec elle. */}
+                      {anneeEnregistree && (
+                        <p className="mt-2 text-xs font-bold" style={{ color: '#3a7d00' }}>
+                          Année de naissance enregistrée ({anneeNaissance}) — le plafond CELI est
+                          maintenant exact, plus le maximum par défaut.
+                        </p>
                       )}
                       {constats && constats.length === 0 && (
                         <p className="mt-1 text-xs text-text-muted">Aucune piste détectée pour ce client.</p>
@@ -3970,7 +4044,56 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
           </div>
         </div>
       ) : (
-        <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
+        <div className="flex flex-col gap-3">
+          {/* ── LA BANNIÈRE QUI TAPE SUR L'ÉPAULE (18 août 2026) ─────────────
+              Jusqu'ici, c'est le planificateur qui devait PENSER à cocher la
+              case fiscale. Or les positions qu'il vient de coller suffisent à
+              savoir qu'il y a matière : un compte non enregistré avec des
+              gains ou des pertes latents, c'est une cristallisation possible.
+              On le dit — sans rien affirmer sur le montant, qui exige encore
+              l'historique et les réponses de la fiche. */}
+          {estLocalNavigateur && (() => {
+            // LES MÊMES LETTRES QUE LE MOTEUR FISCAL (TYPE_PAR_SUFFIXE) :
+            // `accountType` porte ici le CODE BRUT du compte, pas un libellé.
+            // A, B, E, F, J = non enregistré, donc imposable.
+            const IMPOSABLE = new Set(['A', 'B', 'E', 'F', 'J']);
+            const imposables = holdings.filter(
+              (h) => !excludedRows.has(h._key)
+                && IMPOSABLE.has((h.accountType || '').trim().toUpperCase())
+                && h.marketValue > 0 && h.bookValue > 0
+                && Math.abs(h.marketValue - h.bookValue) > 500
+            );
+            if (imposables.length === 0) return null;
+            const gains = imposables.filter((h) => h.marketValue > h.bookValue).length;
+            const pertes = imposables.length - gains;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  setPdfOptions((o) => ({ ...o, includeOptimisationsFiscales: true }));
+                  setShowPdfBuilder(true);
+                }}
+                className="flex w-full items-start gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all active:translate-y-[1px]"
+                style={{ borderColor: '#c5a365', backgroundColor: '#fdf8f0', boxShadow: '0 3px 0 0 #c5a365' }}
+              >
+                <Sparkles className="mt-0.5 h-5 w-5 shrink-0" style={{ color: '#c5a365' }} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-extrabold text-text-main">
+                    Il y a peut-être une piste fiscale sur ce portefeuille
+                  </span>
+                  <span className="mt-0.5 block text-xs text-text-muted">
+                    {gains > 0 && `${gains} position${gains > 1 ? 's' : ''} en gain latent`}
+                    {gains > 0 && pertes > 0 && ' et '}
+                    {pertes > 0 && `${pertes} en perte latente`}
+                    {' '}dans un compte non enregistré. Cliquez pour voir ce que le moteur
+                    détecte — il vous dira quelles données lui manquent pour chiffrer.
+                  </span>
+                </span>
+              </button>
+            );
+          })()}
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
           <button
             onClick={() => setShowPdfBuilder(true)}
             className="flex items-center gap-2.5 px-7 py-3 rounded-2xl text-white font-extrabold text-sm
@@ -4000,6 +4123,7 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
               {copiedSummary ? 'Copié' : 'Copier le résumé'}
             </button>
           )}
+          </div>
         </div>
       )}
 

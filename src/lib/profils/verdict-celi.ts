@@ -90,7 +90,14 @@ export function verdictCeliDuLivre(
   const observes = observerTransferts(livre, 'celi');
   const douteux = croiserTransferts(observes, profil.consolidation.transfertsResolus);
 
+  // TROIS SOURCES, DANS CET ORDRE : la date exacte, puis l'année seule (la
+  // voie rapide — elle rend le MÊME plafond, puisque `plafondCeliCumulatif`
+  // ne se sert de l'âge que pour retrouver l'année de naissance), puis l'âge
+  // saisi à la main, qui vieillit mal.
   const age = ageALaDate(profil.demographie.dateNaissance, `${anneeCourante}-12-31`)
+    ?? (profil.demographie.anneeNaissance !== null
+      ? anneeCourante - profil.demographie.anneeNaissance
+      : null)
     ?? profil.demographie.age;
   const plafond = plafondCeliCumulatif(age, anneeCourante);
 

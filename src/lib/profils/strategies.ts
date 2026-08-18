@@ -1251,6 +1251,18 @@ function strategieDroitsCotisation(
 
   const disclaimer = ' Avant toute cotisation, le chiffre à croire est celui de Mon dossier ARC — une cotisation excédentaire coûte 1 % par mois.';
 
+  // L'ANNÉE DE NAISSANCE, RÉCLAMÉE SEULEMENT QUAND ELLE CHANGE LE CHIFFRE
+  // (18 août 2026). Sans elle, `plafondCeliCumulatif` suppose que le client
+  // avait 18 ans en 2009 et prend le plafond MAXIMAL : l'espace annoncé est
+  // alors surestimé. Quatre chiffres suffisent à le rendre exact — c'est la
+  // donnée manquante la moins chère du catalogue, et le détecteur la classe
+  // donc naturellement en tête.
+  const manqueAnnee = signaux?.plafondParDefautMaximal === true;
+  const questionAnnee = manqueAnnee ? ['l’année de naissance du client'] : [];
+  const phraseAnnee = manqueAnnee
+    ? ' Ce montant suppose que le client avait 18 ans en 2009 : son année de naissance le rendrait exact.'
+    : '';
+
   if (droits.statut === 'calcule' && droits.montant !== null) {
     if (droits.montant <= 0) {
       return {
@@ -1288,8 +1300,8 @@ function strategieDroitsCotisation(
         explication:
           `Vu d’ici, ${argent(droits.montant)} d’espace CELI restent ouverts — l’historique est complet et les ` +
           'transferts sont tranchés, mais le client détient des comptes ailleurs : tant que ce point n’est pas ' +
-          `confirmé, ce chiffre reste une borne.${phraseMotif}${phraseReer}${disclaimer}`,
-        donneesManquantes: ['la confirmation qu’aucun compte n’est détenu ailleurs'],
+          `confirmé, ce chiffre reste une borne.${phraseAnnee}${phraseMotif}${phraseReer}${disclaimer}`,
+        donneesManquantes: ['la confirmation qu’aucun compte n’est détenu ailleurs', ...questionAnnee],
       };
     }
 
@@ -1297,8 +1309,8 @@ function strategieDroitsCotisation(
       ...base, statut: 'calcule', portee: 'complete', montantEstime: droits.montant,
       explication:
         `En date du dossier, ${argent(droits.montant)} d’espace CELI restent ouverts — les trois conditions sont réunies ` +
-        `(historique complet, aucun compte ailleurs confirmé, transferts tranchés).${phraseMotif}${phraseReer}${disclaimer}`,
-      donneesManquantes: [],
+        `(historique complet, aucun compte ailleurs confirmé, transferts tranchés).${phraseAnnee}${phraseMotif}${phraseReer}${disclaimer}`,
+      donneesManquantes: questionAnnee,
     };
   }
 
@@ -1314,8 +1326,8 @@ function strategieDroitsCotisation(
       (borne !== null
         ? `Vu d’ici, jusqu’à ${argent(borne)} d’espace CELI pourraient être ouverts — c’est une borne, pas le droit réel : ${droits.conditionsManquantes.join(' ; ')}.`
         : `L’espace CELI n’est pas calculable : ${droits.conditionsManquantes.join(' ; ')}.`) +
-      phraseMotif + phraseReer + disclaimer,
-    donneesManquantes: droits.conditionsManquantes,
+      phraseAnnee + phraseMotif + phraseReer + disclaimer,
+    donneesManquantes: [...droits.conditionsManquantes, ...questionAnnee],
   };
 }
 

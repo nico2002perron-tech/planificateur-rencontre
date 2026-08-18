@@ -112,6 +112,7 @@ export async function GET(req: NextRequest) {
             donsAnnuelsMoyens: complet.intentions.donsAnnuelsMoyens,
             fictif: complet.fictif ?? false,
             dateNaissance: complet.demographie.dateNaissance,
+            anneeNaissance: complet.demographie.anneeNaissance,
           }
         : null,
       selection: complet?.selectionStrategies ?? { strategies: [], dateSelection: null },
