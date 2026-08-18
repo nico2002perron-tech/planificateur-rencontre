@@ -3469,13 +3469,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                         Le moteur détecte, le planificateur choisit. Rien n'est
                         coché par défaut. */}
                     <div className="mt-4 border-t border-gray-200 pt-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-text-main">Ce qui est détecté</span>
+                      <div className="flex items-center gap-2.5">
+                        <Sparkles className="h-4 w-4" style={{ color: DUO.green }} />
+                        <span className="text-sm font-extrabold text-text-main">Ce qui est détecté</span>
                         <button
                           type="button"
                           onClick={() => void rafraichirDetection()}
                           disabled={!clientName.trim() || detectionEnCours}
-                          className="rounded border border-gray-300 px-2 py-0.5 text-[11px] font-medium text-text-muted disabled:opacity-40"
+                          className="rounded-xl border-2 px-2.5 py-1 text-[11px] font-bold text-white transition-all active:translate-y-[1px] active:shadow-none disabled:opacity-40"
+                          style={{ backgroundColor: DUO.green, borderColor: DUO.green, boxShadow: `0 2px 0 0 ${DUO.greenDark}` }}
                         >
                           {detectionEnCours ? 'Analyse…' : constats ? 'Rafraîchir' : 'Voir les opportunités'}
                         </button>
@@ -3491,37 +3493,51 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                           <ul className="mt-2 space-y-1.5">
                             {constats.map((c) => {
                               const coche = selection.includes(c.strategie);
+                              // MÊME LANGUE VISUELLE QUE LE RESTE DU COMPOSEUR
+                              // (18 août) : bordure de 2 px, relief posé sous
+                              // la carte, pastille de statut, montant en
+                              // chiffre-titre. Le bloc fiscal était plat au
+                              // milieu de cartes vivantes.
                               const ton = c.statut === 'calcule'
-                                ? 'border-emerald-300 bg-emerald-50'
+                                ? { bord: '#58CC02', fond: 'bg-[#f0fce8]', pastille: 'bg-[#58CC02] text-white', mot: 'chiffré' }
                                 : c.statut === 'montant-a-confirmer'
-                                  ? 'border-amber-300 bg-amber-50'
-                                  : 'border-gray-200 bg-gray-50';
+                                  ? { bord: '#FFC800', fond: 'bg-[#fff8e7]', pastille: 'bg-[#FFC800] text-[#5c3d00]', mot: 'à confirmer' }
+                                  : { bord: '#cbd5e1', fond: 'bg-gray-50', pastille: 'bg-gray-200 text-gray-700', mot: c.statut === 'non-applicable' ? 'sans objet' : 'donnée manquante' };
                               return (
                                 <li key={c.strategie}>
-                                  <label className={`flex cursor-pointer gap-2 rounded-lg border px-2.5 py-2 ${ton} ${
-                                    coche ? 'ring-1 ring-brand-primary' : ''}`}>
+                                  <label
+                                    className={`flex cursor-pointer gap-2.5 rounded-2xl border-2 px-3 py-2.5 transition-all ${ton.fond} ${
+                                      coche ? 'ring-2 ring-offset-1' : ''}`}
+                                    style={{
+                                      borderColor: ton.bord,
+                                      boxShadow: coche ? `0 3px 0 0 ${ton.bord}` : undefined,
+                                      ...(coche ? { ['--tw-ring-color' as string]: ton.bord } : {}),
+                                    }}
+                                  >
                                     <input
                                       type="checkbox"
                                       checked={coche}
                                       onChange={() => void basculerPiste(c.strategie)}
-                                      className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                      className="mt-1 h-4 w-4 shrink-0 accent-[#58CC02]"
                                     />
-                                    <span className="min-w-0">
-                                      <span className="flex flex-wrap items-baseline gap-x-2">
-                                        <span className="text-xs font-semibold text-text-main">{c.titre}</span>
-                                        {c.statut === 'calcule' && c.montantEstime !== null && (
-                                          <span className="text-xs font-bold tabular-nums text-emerald-800">
-                                            {Math.round(c.montantEstime).toLocaleString('fr-CA')} $
-                                            <span className="ml-1 font-normal text-text-muted">{c.libelleMontant}</span>
-                                          </span>
-                                        )}
-                                        {c.statut === 'montant-a-confirmer' && (
-                                          <span className="text-[11px] font-medium text-amber-800">à confirmer</span>
-                                        )}
+                                    <span className="min-w-0 flex-1">
+                                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        <span className="text-sm font-extrabold text-text-main">{c.titre}</span>
+                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${ton.pastille}`}>
+                                          {ton.mot}
+                                        </span>
                                         {c.dejaEnOrdre && (
-                                          <span className="text-[11px] text-emerald-700">déjà en ordre</span>
+                                          <span className="text-[11px] font-medium text-emerald-700">déjà en ordre</span>
                                         )}
                                       </span>
+                                      {c.statut === 'calcule' && c.montantEstime !== null && (
+                                        <span className="mt-1 flex items-baseline gap-1.5">
+                                          <span className="text-xl font-extrabold tabular-nums text-[#3a7d00]">
+                                            {Math.round(c.montantEstime).toLocaleString('fr-CA')} $
+                                          </span>
+                                          <span className="text-[11px] text-text-muted">{c.libelleMontant}</span>
+                                        </span>
+                                      )}
                                       <span className="mt-0.5 block text-[11px] leading-snug text-text-muted">
                                         {c.explication.length > 190 ? c.explication.slice(0, 190) + '…' : c.explication}
                                       </span>
@@ -3536,11 +3552,15 @@ export function ResultsView({ result, onReset, clientName = '', onClientNameChan
                               );
                             })}
                           </ul>
-                          <p className="mt-2 text-[11px] text-text-muted">
+                          <div
+                            className={`mt-3 rounded-2xl border-2 px-3 py-2 text-xs font-bold ${
+                              selection.length === 0 ? 'border-gray-200 bg-gray-50 text-text-muted' : 'text-[#3a7d00]'}`}
+                            style={selection.length === 0 ? undefined : { borderColor: DUO.green, backgroundColor: '#f0fce8' }}
+                          >
                             {selection.length === 0
                               ? 'Aucune piste cochée : la page fiscale n’apparaîtra pas dans le PDF.'
                               : `${selection.length} piste${selection.length > 1 ? 's' : ''} ira${selection.length > 1 ? 'ont' : ''} dans le PDF.`}
-                          </p>
+                          </div>
                         </>
                       )}
                       {constats && constats.length === 0 && (

@@ -64,15 +64,31 @@ function fmtDate(iso: string): string {
  * client — « pas de chiffre ici » —, mais leurs mots diffèrent. C'est le texte
  * qui porte la nuance, pas la couleur.
  */
-const TON: Record<Constat['statut'], { fond: string; bord: string; encre: string; mot: string }> = {
+const TON: Record<Constat['statut'], {
+  fond: string; bord: string; encre: string; mot: string;
+  /** Le bandeau d'en-tête de la carte, et sa pastille de statut. */
+  bandeau: string; pastilleFond: string; pastilleEncre: string;
+}> = {
   // Passage « présentation » du 5 août : les fonds viennent maintenant de la
   // palette Duolingo de la charte (styles.ts), plus francs que les gris-verts
   // d'origine. LES STATUTS EUX-MÊMES N'ONT PAS BOUGÉ — quatre statuts, quatre
   // mots, la même règle. C'est la couleur qui s'anime, pas la sémantique.
-  calcule: { fond: C.duoGreenBg, bord: C.duoGreen, encre: '#2f6b12', mot: 'chiffré' },
-  'montant-a-confirmer': { fond: '#fff8e7', bord: C.duoYellow, encre: '#8a5a00', mot: 'à confirmer' },
-  indisponible: { fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'donnée manquante' },
-  'non-applicable': { fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'sans objet' },
+  calcule: {
+    fond: C.duoGreenBg, bord: C.duoGreen, encre: '#2f6b12', mot: 'chiffré',
+    bandeau: C.duoGreenPale, pastilleFond: C.duoGreen, pastilleEncre: '#ffffff',
+  },
+  'montant-a-confirmer': {
+    fond: '#fff8e7', bord: C.duoYellow, encre: '#8a5a00', mot: 'à confirmer',
+    bandeau: '#fff1c9', pastilleFond: C.duoYellow, pastilleEncre: '#5c3d00',
+  },
+  indisponible: {
+    fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'donnée manquante',
+    bandeau: '#e8eef5', pastilleFond: '#c2cddb', pastilleEncre: '#33455c',
+  },
+  'non-applicable': {
+    fond: '#f6f8fb', bord: '#c2cddb', encre: '#4a5b70', mot: 'sans objet',
+    bandeau: '#e8eef5', pastilleFond: '#c2cddb', pastilleEncre: '#33455c',
+  },
 };
 
 /**
@@ -128,12 +144,23 @@ function IconeStrategie({ strategie, eteinte }: { strategie: string; eteinte: bo
   // Un constat sans chiffre porte son icône en gris : la couleur signale qu'il
   // y a quelque chose à faire, pas seulement de quoi on parle.
   const trait = eteinte ? '#94a3b8' : icone.couleur;
+  // LA PASTILLE RONDE — 18 août 2026. L'icône flottait nue à côté du titre ;
+  // le reste du rapport pose ses symboles sur une surface. Un rond blanc de
+  // 17 pt lui donne le même poids qu'un bouton, et le bandeau coloré derrière.
   return (
-    <Svg viewBox="0 0 24 24" style={{ width: 13, height: 13, marginRight: 5 }}>
-      {icone.traits.map((d, i) => (
-        <Path key={i} d={d} stroke={trait} strokeWidth={2} fill="none" strokeLinecap="round" />
-      ))}
-    </Svg>
+    <View
+      style={{
+        width: 17, height: 17, borderRadius: 9, marginRight: 6,
+        backgroundColor: '#ffffff',
+        alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <Svg viewBox="0 0 24 24" style={{ width: 11, height: 11 }}>
+        {icone.traits.map((d, i) => (
+          <Path key={i} d={d} stroke={trait} strokeWidth={2.2} fill="none" strokeLinecap="round" />
+        ))}
+      </Svg>
+    </View>
   );
 }
 
@@ -141,80 +168,127 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
   const t = TON[constat.statut];
   const gestes = gestesDe(constat);
   return (
+    // LA CARTE, SUR LE MOULE DU RESTE DU RAPPORT — refonte du 18 août 2026.
+    //
+    // Mesuré avant de toucher à quoi que ce soit : les autres pages du rapport
+    // emploient des rayons de 10 et des chiffres jusqu'à 24 pt ; cette page
+    // avait des rayons de 2 et plafonnait à 8 pt. Elle se lisait comme un
+    // formulaire administratif glissé au milieu de pages vivantes — c'est
+    // exactement ce que Nicolas a vu.
+    //
+    // On reprend donc l'idiome maison (cf. YearSummaryPanel) : carte à rayon
+    // 10, bandeau d'en-tête coloré, corps blanc. Ce qui NE bouge pas : quatre
+    // statuts, quatre mots, et aucun montant hors du statut « calcule ».
     <View
       style={{
-        marginBottom: 7,
-        paddingVertical: 6,
-        paddingHorizontal: 8,
-        backgroundColor: t.fond,
-        borderLeftWidth: 2.5,
-        borderLeftColor: t.bord,
-        borderLeftStyle: 'solid',
-        borderRadius: 2,
+        marginBottom: 9,
+        borderRadius: 10,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: t.bord,
+        borderStyle: 'solid',
+        backgroundColor: '#ffffff',
       }}
       wrap={false}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: t.bandeau,
+          paddingHorizontal: 9,
+          paddingVertical: 6,
+        }}
+      >
         <IconeStrategie strategie={constat.strategie} eteinte={constat.statut !== 'calcule'} />
         {/* LE TITRE CLIENT, pas le titre du catalogue. « Cristallisation de
             pertes » est du vocabulaire de metier ; l'ecran de selection le
             garde, le document remis au client dit ce que ca change pour lui. */}
-        <Text style={{ fontSize: 9.5, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
+        <Text style={{ flex: 1, fontSize: 10, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
           {constat.titreClient}
         </Text>
-        <Text style={{ marginLeft: 6, fontSize: 6.4, color: t.encre, textTransform: 'uppercase' }}>
-          {t.mot}
-        </Text>
+        {/* LA PASTILLE DE STATUT — le mot dans une puce pleine plutôt qu'en
+            petites capitales grises. Quatre statuts, quatre mots : la
+            sémantique ne bouge pas, seule sa mise en évidence change. */}
+        <View
+          style={{
+            borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2,
+            backgroundColor: t.pastilleFond,
+          }}
+        >
+          <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: t.pastilleEncre }}>
+            {t.mot}
+          </Text>
+        </View>
+      </View>
 
+      <View style={{ paddingHorizontal: 9, paddingTop: 7, paddingBottom: 8 }}>
         {/* LE MONTANT N'APPARAÎT QUE SI LE STATUT EST « calcule ».
             C'est la garde centrale : `montantEstime` est déjà null ailleurs
             (strategies.ts le verrouille et le teste), mais on ne dépend pas
-            d'une seule barrière pour un chiffre qui atteint le client. */}
+            d'une seule barrière pour un chiffre qui atteint le client.
+
+            IL DEVIENT UN CHIFFRE-TITRE (18 août) : 20 pt, comme les nombres
+            des autres pages. Il était à 12 pt en bout de ligne, où il se
+            lisait comme une note de bas de page. */}
         {constat.statut === 'calcule' && constat.montantEstime !== null && (
-          <Text
+          <View
             style={{
-              marginLeft: 'auto', fontSize: 12, fontFamily: 'Montserrat',
-              fontWeight: 800, color: t.encre,
+              flexDirection: 'row', alignItems: 'baseline',
+              marginBottom: 5, paddingBottom: 5,
+              borderBottomWidth: 0.7, borderBottomColor: t.bord, borderBottomStyle: 'solid',
             }}
           >
-            {fmt(constat.montantEstime)}
-          </Text>
+            <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: t.encre }}>
+              {fmt(constat.montantEstime)}
+            </Text>
+            {/* CE QUE LE MONTANT EST. Sans cette ligne, trois chiffres de
+                natures différentes s'alignent et se lisent comme trois
+                économies comparables — alors que des droits de cotisation ne
+                sont pas une économie. C'est le défaut qui a fait retirer le
+                total de la page. */}
+            <Text style={{ marginLeft: 6, flex: 1, fontSize: 7, color: t.encre, lineHeight: 1.3 }}>
+              {constat.libelleMontant}
+              {constat.recurrence === 'annuel' ? ', par année' : ', une seule fois'}
+            </Text>
+          </View>
         )}
-      </View>
 
-      {/* CE QUE LE MONTANT EST. Sans cette ligne, trois chiffres de natures
-          différentes s'alignent en colonne et se lisent comme trois économies
-          comparables — alors que des droits de cotisation ne sont pas une
-          économie. C'est le défaut qui a fait retirer le total de la page. */}
-      {constat.statut === 'calcule' && constat.montantEstime !== null && (
-        <Text style={{ marginTop: 1, fontSize: 6.4, color: t.encre, textAlign: 'right' }}>
-          {constat.libelleMontant}
-          {constat.recurrence === 'annuel' ? ', par année' : ', une seule fois'}
+        <Text style={{ fontSize: 7.6, color: '#334155', lineHeight: 1.45 }}>
+          {constat.explication}
         </Text>
-      )}
 
-      <Text style={{ marginTop: 2.5, fontSize: 7.4, color: '#334155', lineHeight: 1.4 }}>
-        {constat.explication}
-      </Text>
-
-      {constat.donneesManquantes.length > 0 && (
-        <Text style={{ marginTop: 2.5, fontSize: 6.6, color: t.encre, lineHeight: 1.35 }}>
-          Pour aller plus loin : {constat.donneesManquantes.join(' · ')}
-        </Text>
-      )}
+        {constat.donneesManquantes.length > 0 && (
+          <View
+            style={{
+              marginTop: 5, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 5,
+              backgroundColor: t.fond,
+            }}
+          >
+            <Text style={{ fontSize: 6.9, color: t.encre, lineHeight: 1.35 }}>
+              Pour aller plus loin : {constat.donneesManquantes.join(' · ')}
+            </Text>
+          </View>
+        )}
 
       {/* LE PLAN DE RÉCOLTE — quoi vendre, pour combien, et pourquoi cet
           ordre. Présent seulement sur un constat calculé : un plan vers un
           montant non confirmé serait une marche à suivre vers un chiffre faux. */}
       {constat.plan && constat.plan.length > 0 && (
-        <View style={{ marginTop: 4, paddingLeft: 6 }}>
-          <View style={{ flexDirection: 'row', paddingBottom: 1.5, borderBottomWidth: 0.6, borderBottomColor: '#cbd5e1', borderBottomStyle: 'solid' }}>
+        <View
+          style={{
+            marginTop: 6, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6,
+            backgroundColor: '#ffffff',
+            borderWidth: 1, borderColor: t.bord, borderStyle: 'solid',
+          }}
+        >
+          <View style={{ flexDirection: 'row', paddingBottom: 3, borderBottomWidth: 0.8, borderBottomColor: t.bord, borderBottomStyle: 'solid' }}>
             <Text style={{ flex: 2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>Titre</Text>
             <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Vendre (environ)</Text>
             <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Gain cristallisé</Text>
           </View>
           {constat.plan.map((l) => (
-            <View key={l.symbole} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 1.2 }}>
+            <View key={l.symbole} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 2.2 }}>
               {/* LE LOGO DU TITRE, quand il est déjà sur le poste. Il vient du
                   cache local nourri par les cours cibles — le document fiscal
                   ne va JAMAIS le chercher lui-même (voir base-locale/logos.ts).
@@ -223,7 +297,7 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
                 {logos?.[l.symbole] && (
                   <Image
                     src={logos[l.symbole]}
-                    style={{ width: 9, height: 9, marginRight: 3.5, objectFit: 'contain' }}
+                    style={{ width: 11, height: 11, marginRight: 4.5, objectFit: 'contain' }}
                   />
                 )}
                 <Text style={{ fontSize: 7, color: '#334155' }}>
@@ -249,9 +323,16 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
           (demarches.ts) : elles sont en nombre fini et un fiscaliste peut les
           relire une par une. */}
       {gestes.map((g, i) => (
-        <View key={i} style={{ marginTop: 4, paddingLeft: 6 }}>
+        <View
+          key={i}
+          style={{
+            marginTop: 5, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6,
+            backgroundColor: '#f8fafc',
+            borderLeftWidth: 2, borderLeftColor: t.bord, borderLeftStyle: 'solid',
+          }}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-            <Text style={{ fontSize: 7.4, fontFamily: 'Open Sans', fontWeight: 600, color: C.navy }}>
+            <Text style={{ fontSize: 7.8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
               {g.libelle}
             </Text>
             <Text style={{ marginLeft: 5, fontSize: 6, color: '#64748b' }}>
@@ -259,12 +340,13 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
             </Text>
           </View>
           {g.demarches.map((d, j) => (
-            <Text key={j} style={{ marginTop: 1, fontSize: 6.8, color: '#475569', lineHeight: 1.35 }}>
+            <Text key={j} style={{ marginTop: 2, fontSize: 7, color: '#475569', lineHeight: 1.4 }}>
               {j + 1}. {d}
             </Text>
           ))}
         </View>
       ))}
+      </View>
     </View>
   );
 }
