@@ -38,11 +38,12 @@ import 'server-only';
 import { lireHistorique, lireDernierReleve } from './historique';
 import { deriverComptes } from './comptes';
 import {
-  deriverTransactionsAnnee, deriverCotisationsAnnee, deriverCeliParAnnee,
+  deriverTransactionsAnnee, deriverCotisationsAnnee,
 } from './deriver';
 import { plafondsCeliParAnnee } from './parametres-fiscaux';
 import { analyserMaximisation, type SignauxLivre } from './signaux-livre';
 import { verdictCeliDuLivre, ageALaDate } from './verdict-celi';
+import { construireLigneDuTemps, vueCeliParAnnee } from './ligne-du-temps';
 import type { ProfilClient } from './types';
 
 // `ageALaDate` vit désormais dans verdict-celi.ts, avec le calcul dont il
@@ -99,6 +100,12 @@ export async function hydraterProfil(
     comptes,
     transactionsAnnee: deriverTransactionsAnnee(livre, annee),
     cotisationsAnnee: deriverCotisationsAnnee(livre, annee),
+    // LA LIGNE DU TEMPS, EN PARALLÈLE des dérivations ci-dessus (19 août 2026).
+    // Additive : rien ne la consomme encore — strategies.ts et le PDF lisent
+    // toujours les champs historiques. Les deux systèmes coexistent le temps
+    // d'être comparés (voir parite-derivations.test.ts) ; `undefined` quand le
+    // livre est vide, comme les autres champs dérivés restent alors vierges.
+    ligneDuTemps: livre.length > 0 ? construireLigneDuTemps(livre) : undefined,
   };
 }
 
@@ -125,10 +132,25 @@ export async function signauxDuLivre(
   // LE PLAFOND CUMULATIF EST LE COMPARATEUR DE LA PREUVE (17 août 2026) : il
   // était calculé ici même et jamais passé, si bien que le signal comparait
   // les cotisations à la seule période vue dans nos livres. Voir signaux-livre.
-  const parAnnee = deriverCeliParAnnee(livre);
-  const maximisation = analyserMaximisation(
-    parAnnee.cotisations, parAnnee.retraits, plafondsCeliParAnnee(), annee,
-    plafond.montant
-  );
+  // LA VUE DE LA TIMELINE, depuis le 20 août 2026 — deriverCeliParAnnee reste
+  // comme TÉMOIN de parité (parite-derivations.test.ts) jusqu'au prochain lot.
+  //
+  // Ce que la bascule change, et pourquoi c'est le bon côté :
+  //   · D5 — une cotisation USD n'est PLUS fondue dans les dollars canadiens.
+  //     L'ancien la mêlait au nominal : un client qui cotisait en US pouvait
+  //     sortir « au plafond » (question supprimée) ou « depasse-cumul »
+  //     (fausse accusation). Exclue et déclarée, elle rend au pire une
+  //     question de plus en rencontre — c'est le produit.
+  //   · D1 — les retraits restent la BORNE SUPÉRIEURE (fermes + à confirmer
+  //     = exactement ce que l'ancien comptait, en CAD) : sous-compter
+  //     fabriquerait une fausse « preuve d'historique externe » (12 août).
+  //     Les droits CELI, eux, ne passent pas par ici (deriverHistoriqueRegime).
+  //
+  // LA VUE PASSE ENTIÈRE depuis le 20 août (petit lot « completude ») : le
+  // signal lit lui-même deviseEtrangere / retraitsAConfirmer / ambigus /
+  // portee, rétrograde les états qui en dépendent et rapporte les limites —
+  // impossible de lui donner les nombres sans la complétude qui les qualifie.
+  const vue = vueCeliParAnnee(construireLigneDuTemps(livre));
+  const maximisation = analyserMaximisation(vue, plafondsCeliParAnnee(), annee, plafond.montant);
   return { droitsCeli, maximisation, plafondParDefautMaximal: plafond.parDefautMaximal };
 }

@@ -33,6 +33,42 @@ function tx(over: Record<string, unknown> = {}) {
 const T = '\t';
 const lig = (...c: string[]) => { const a = new Array(13).fill(''); c.forEach((v, i) => { a[i] = v; }); return a.join(T); };
 
+// LA VUE DE LA TIMELINE, FABRIQUÉE POUR LES TESTS d'analyserMaximisation —
+// depuis le 20 août 2026 le signal reçoit la vue ENTIÈRE (nombres + complétude),
+// plus jamais deux dictionnaires nus. Par défaut : complétude PROPRE, portée
+// « interne-seulement » (celle de tout vrai livre) — les tests historiques
+// prouvent ainsi que des données complètes gardent le comportement d'avant.
+type VueCeli = import('../ligne-du-temps').VueCeliParAnnee;
+const vueDe = (
+  cotisations: Record<string, number>,
+  sorties: { fermes?: Record<string, number>; aConfirmer?: Record<string, number> } = {},
+  completude: Partial<VueCeli['completude']> = {}
+): VueCeli => {
+  const fermes = sorties.fermes ?? {};
+  const aConfirmer = sorties.aConfirmer ?? {};
+  const retraits: Record<string, number> = {};
+  for (const a of new Set([...Object.keys(fermes), ...Object.keys(aConfirmer)])) {
+    retraits[a] = (fermes[a] ?? 0) + (aConfirmer[a] ?? 0);
+  }
+  return {
+    cotisations, retraits,
+    detail: {
+      retraitsFermes: fermes, retraitsAConfirmer: aConfirmer,
+      sources: { cotisations: {}, retraitsFermes: {}, retraitsAConfirmer: {} },
+    },
+    completude: {
+      deviseEtrangere: { cotisations: {}, retraits: {} },
+      horsCadPresent: false, evenementsAmbigus: 0, evenementsAImpact: 0, portee: 'interne-seulement',
+      // DEPUIS LE 20 AOÛT (§13), c'est `evenementsAImpact` qui bloque, pas
+      // `evenementsAmbigus` : un test qui pose des ambigus veut, sauf mention
+      // contraire, qu'ils PUISSENT changer un chiffre.
+      ...(completude.evenementsAmbigus !== undefined && completude.evenementsAImpact === undefined
+        ? { evenementsAImpact: completude.evenementsAmbigus } : {}),
+      ...completude,
+    },
+  };
+};
+
 beforeAll(async () => {
   racine = await fs.mkdtemp(path.join(os.tmpdir(), 'hydrater-'));
   process.env.BASE_LOCALE_RACINE = racine;
@@ -106,6 +142,36 @@ describe('hydraterProfil', () => {
     const { hydraterProfil, profilVierge } = await outils();
     const h = await hydraterProfil(profilVierge('f', DATE), CLIENT, ANNEE);
     expect(h.transactionsAnnee.gainsRealises).not.toBe(13999);
+  });
+
+  it('PORTE la ligne du temps — dérivée du même livre, en PARALLÈLE des champs historiques (19 août 2026)', async () => {
+    const { hydraterProfil, profilVierge } = await outils();
+    const h = await hydraterProfil(profilVierge('f', DATE), CLIENT, ANNEE);
+    expect(h.ligneDuTemps).toBeDefined();
+    const t = h.ligneDuTemps!;
+    expect(t.portee).toBe('interne-seulement');
+    // L'invariant de partition tient sur un vrai dossier hydraté : rien ne disparaît.
+    const somme = Object.values(t.diagnostics.dispositions).reduce((s, n) => s + n, 0);
+    expect(somme).toBe(t.diagnostics.lignesLues);
+    expect(t.diagnostics.lignesLues).toBeGreaterThan(0);
+    // Et la PARITÉ vaut aussi sur un vrai dossier : la cotisation CELI du livre
+    // paraît au même montant des deux côtés.
+    const cotiTimeline = t.parAnnee[String(ANNEE)]?.celi.cotisations['CAD']?.montant ?? 0;
+    expect(cotiTimeline).toBe(h.cotisationsAnnee.celi);
+  });
+
+  it('SANS livre, pas de ligne du temps — undefined, jamais une coquille vide qui aurait l’air d’une donnée', async () => {
+    // ⚠ Honnêteté du test (contre-expertise du 19 août) : un client sans
+    // dossier emprunte le retour ANTICIPÉ de hydraterProfil — le profil sort
+    // IDENTIQUE, donc `ligneDuTemps` est absent par construction, pas par la
+    // garde `livre.length > 0`. On assertit les deux faits séparément.
+    const { hydraterProfil, profilVierge } = await outils();
+    const nu = profilVierge('f', DATE);
+    const h = await hydraterProfil(nu, 'Client Sans Dossier Fictif', ANNEE);
+    expect(h).toBe(nu);                       // le retour anticipé, explicite
+    expect(h.ligneDuTemps).toBeUndefined();
+    // La garde elle-même est tenue par construireLigneDuTemps([]) → structure
+    // vide portée 'inconnue' (ligne-du-temps.test.ts, « timeline vide »).
   });
 
   it('DÉRIVE les cotisations de l’année — le badge vert « 0 $ » était un faux positif', async () => {
@@ -204,8 +270,8 @@ describe('analyserMaximisation — le motif des cotisations', () => {
   it('au plafond chaque année → « maximise »', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     const m = analyserMaximisation(
-      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 3000 },
-      {}, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+      vueDe({ '2023': 6500, '2024': 7000, '2025': 7000, '2026': 3000 }),
+      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
     );
     expect(m.etat).toBe('maximise');
     expect(m.depuis).toBe(2023);
@@ -213,15 +279,15 @@ describe('analyserMaximisation — le motif des cotisations', () => {
 
   it('l’ANNÉE COURANTE inachevée ne compte jamais « sous-plafond »', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
-    const m = analyserMaximisation({ '2025': 7000, '2026': 0 }, {}, { '2025': 7000, '2026': 7000 }, 2026);
+    const m = analyserMaximisation(vueDe({ '2025': 7000, '2026': 0 }), { '2025': 7000, '2026': 7000 }, 2026);
     expect(m.etat).toBe('maximise');
   });
 
   it('des années sous le plafond → « sous-plafond », années nommées', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     const m = analyserMaximisation(
-      { '2023': 2000, '2024': 7000, '2025': 1000 },
-      {}, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+      vueDe({ '2023': 2000, '2024': 7000, '2025': 1000 }),
+      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
     );
     expect(m.etat).toBe('sous-plafond');
     expect(m.anneesSousPlafond).toEqual([2023, 2025]);
@@ -239,7 +305,7 @@ describe('analyserMaximisation — le motif des cotisations', () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     // 40 ans, premier CELI ouvert ici en 2024, 95 000 $ de droits légitimes.
     const m = analyserMaximisation(
-      { '2024': 95000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
+      vueDe({ '2024': 95000 }), { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
       102000        // plafond cumulatif depuis 2009
     );
     expect(m.etat).not.toBe('depasse-cumul');
@@ -248,7 +314,7 @@ describe('analyserMaximisation — le motif des cotisations', () => {
   it('cotiser plus que les DROITS ACCUMULÉS → « depasse-cumul », la PREUVE', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     const m = analyserMaximisation(
-      { '2024': 120000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
+      vueDe({ '2024': 120000 }), { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026,
       102000
     );
     expect(m.etat).toBe('depasse-cumul');
@@ -259,7 +325,7 @@ describe('analyserMaximisation — le motif des cotisations', () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     // 120 000 versés, mais 30 000 retirés ici : les droits reviennent.
     const m = analyserMaximisation(
-      { '2024': 60000, '2026': 60000 }, { '2024': 30000 },
+      vueDe({ '2024': 60000, '2026': 60000 }, { fermes: { '2024': 30000 } }),
       { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026, 102000
     );
     expect(m.etat).not.toBe('depasse-cumul');
@@ -268,7 +334,7 @@ describe('analyserMaximisation — le motif des cotisations', () => {
   it('SANS plafond cumulatif, aucune preuve n’est affirmée', async () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     const m = analyserMaximisation(
-      { '2024': 500000 }, {}, { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026, null
+      vueDe({ '2024': 500000 }), { '2024': 7000, '2025': 7000, '2026': 7000 }, 2026, null
     );
     expect(m.etat).not.toBe('depasse-cumul');
   });
@@ -278,8 +344,8 @@ describe('analyserMaximisation — le motif des cotisations', () => {
     // 2024 : retrait de 20 000 → 2025 a plus de place que jamais, et 0 $ versé.
     // L'ancienne exemption suspendait le verdict et disait « au plafond ».
     const m = analyserMaximisation(
-      { '2023': 6500, '2024': 7000, '2025': 0 },
-      { '2024': 20000 }, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 },
+      vueDe({ '2023': 6500, '2024': 7000, '2025': 0 }, { fermes: { '2024': 20000 } }),
+      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 },
       2026, 102000
     );
     expect(m.etat).toBe('sous-plafond');
@@ -290,10 +356,164 @@ describe('analyserMaximisation — le motif des cotisations', () => {
     const { analyserMaximisation } = await import('../signaux-livre');
     // 2024 : retrait de 20 000 ; 2025 : recotisation de 20 000 — légitime.
     const m = analyserMaximisation(
-      { '2023': 6500, '2024': 7000, '2025': 20000 },
-      { '2024': 20000 }, { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
+      vueDe({ '2023': 6500, '2024': 7000, '2025': 20000 }, { fermes: { '2024': 20000 } }),
+      { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 }, 2026
     );
     expect(m.etat).toBe('maximise');
+  });
+});
+
+describe('analyserMaximisation — les limites de complétude (20 août 2026)', () => {
+  const PLAFONDS = { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 7000 };
+  const MAXIMISE = { '2023': 6500, '2024': 7000, '2025': 7000, '2026': 3000 };
+
+  it('données complètes : la seule limite est la portée, rien n’est rétrogradé', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe(MAXIMISE), PLAFONDS, 2026);
+    expect(m.etat).toBe('maximise');
+    expect(m.limites.limitations).toEqual(['portee-incomplete']);
+    expect(m.limites.portee).toBe('interne-seulement');
+  });
+
+  it('cotisation USD seulement : jamais « aucune cotisation » — l’indéterminé DÉCLARE la devise', async () => {
+    // Le zéro de totalCotise est un zéro DE PÉRIMÈTRE : le dossier 100 % USD
+    // ne doit jamais ressembler à un dossier sans cotisations.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe({}, {}, {
+      deviseEtrangere: { cotisations: { '2024': { USD: 5000 } }, retraits: {} },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026, 102000);
+    expect(m.etat).toBe('indetermine');
+    expect(m.totalCotise).toBe(0);
+    expect(m.limites.limitations).toContain('devise-etrangere');
+    expect(m.limites.cotisationsEtrangeresPresentes).toBe(true);
+    expect(m.limites.devisesEtrangeres).toEqual(['USD']);
+  });
+
+  it('aucun faux « maximisé » : CAD au plafond + cotisations USD → indéterminé', async () => {
+    // Des cotisations non comptées pourraient faire du « probablement seulement
+    // ici » l'exact contraire (un depasse-cumul) : l'état fort ne survit pas.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe(MAXIMISE, {}, {
+      deviseEtrangere: { cotisations: { '2025': { USD: 3000 } }, retraits: {} },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026);
+    expect(m.etat).toBe('indetermine');
+    expect(m.limites.limitations).toContain('devise-etrangere');
+  });
+
+  it('« sous-plafond » + cotisations USD → indéterminé, les années restent exposées', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe({ '2023': 2000, '2024': 7000, '2025': 1000 }, {}, {
+      deviseEtrangere: { cotisations: { '2023': { USD: 4000 } }, retraits: {} },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026);
+    expect(m.etat).toBe('indetermine');
+    // Les faits CAD restent des faits — sur un périmètre déclaré partiel.
+    expect(m.anneesSousPlafond).toEqual([2023, 2025]);
+  });
+
+  it('retraits USD : la « preuve » depasse-cumul ne tient plus', async () => {
+    // Des retraits non comptés abaissent artificiellement le seuil : accuser
+    // quand même serait exactement le défaut du 12 août.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe({ '2024': 120000 }, {}, {
+      deviseEtrangere: { cotisations: {}, retraits: { '2024': { USD: 30000 } } },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026, 102000);
+    expect(m.etat).toBe('indetermine');
+    expect(m.limites.retraitsEtrangersPresents).toBe(true);
+  });
+
+  it('cotisations USD n’affaiblissent PAS la preuve : depasse-cumul TIENT, la limite s’affiche', async () => {
+    // Exclure des cotisations RÉDUIT le total vu : une preuve qui tombe sur le
+    // sous-ensemble CAD tient a fortiori avec le reste.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe({ '2024': 120000 }, {}, {
+      deviseEtrangere: { cotisations: { '2024': { USD: 8000 } }, retraits: {} },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026, 102000);
+    expect(m.etat).toBe('depasse-cumul');
+    expect(m.limites.limitations).toContain('devise-etrangere');
+  });
+
+  it('retraits USD ne rétrogradent pas « maximise » : aucun test par année ne lit les retraits', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe(MAXIMISE, {}, {
+      deviseEtrangere: { cotisations: {}, retraits: { '2024': { USD: 10000 } } },
+      horsCadPresent: true,
+    }), PLAFONDS, 2026);
+    expect(m.etat).toBe('maximise');
+    expect(m.limites.limitations).toContain('devise-etrangere');
+  });
+
+  it('sorties à confirmer : l’état tient, le total et la limite sont déclarés', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe(MAXIMISE, { aConfirmer: { '2024': 12000 } }), PLAFONDS, 2026);
+    expect(m.etat).toBe('maximise');
+    expect(m.limites.limitations).toContain('retraits-a-confirmer');
+    expect(m.limites.totalRetraitsAConfirmer).toBe(12000);
+  });
+
+  it('la borne GONFLÉE par les à-confirmer évite le faux depasse-cumul — jamais l’inverse', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    // TÉMOIN : avec 5 000 $ de retraits fermes seulement, 115 000 $ cotisés
+    // dépassent 102 000 + 5 000 → la preuve tombe.
+    const temoin = analyserMaximisation(
+      vueDe({ '2024': 115000 }, { fermes: { '2024': 5000 } }), PLAFONDS, 2026, 102000
+    );
+    expect(temoin.etat).toBe('depasse-cumul');
+    // AVEC 12 000 $ à confirmer EN PLUS : le seuil monte à 119 000 — la donnée
+    // ambiguë ne peut qu'EMPÊCHER l'accusation, jamais la fabriquer.
+    const m = analyserMaximisation(
+      vueDe({ '2024': 115000 }, { fermes: { '2024': 5000 }, aConfirmer: { '2024': 12000 } }),
+      PLAFONDS, 2026, 102000
+    );
+    expect(m.etat).not.toBe('depasse-cumul');
+    expect(m.limites.totalRetraitsAConfirmer).toBe(12000);
+  });
+
+  it('une preuve qui tombe MALGRÉ la borne gonflée reste ferme — et dit ses à-confirmer', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(
+      vueDe({ '2024': 130000 }, { fermes: { '2024': 5000 }, aConfirmer: { '2024': 12000 } }),
+      PLAFONDS, 2026, 102000
+    );
+    expect(m.etat).toBe('depasse-cumul');
+    expect(m.limites.limitations).toContain('retraits-a-confirmer');
+  });
+
+  it('événements ambigus : aucune conclusion forte n’y survit', async () => {
+    // Un ambigu peut cacher une cotisation non comptée COMME un renversement
+    // d'une cotisation comptée — la direction est inconnue.
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const maxi = analyserMaximisation(vueDe(MAXIMISE, {}, { evenementsAmbigus: 2 }), PLAFONDS, 2026);
+    expect(maxi.etat).toBe('indetermine');
+    const preuve = analyserMaximisation(
+      vueDe({ '2024': 120000 }, {}, { evenementsAmbigus: 1 }), PLAFONDS, 2026, 102000
+    );
+    expect(preuve.etat).toBe('indetermine');
+    expect(preuve.limites.limitations).toContain('evenements-ambigus');
+  });
+
+  it('portée inconnue : la limite est déclarée', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe({}, {}, { portee: 'inconnue' }), PLAFONDS, 2026);
+    expect(m.etat).toBe('indetermine');
+    expect(m.limites.limitations).toContain('portee-incomplete');
+    expect(m.limites.portee).toBe('inconnue');
+  });
+
+  it('plusieurs limites à la fois : TOUTES conservées, dans l’ordre fixe', async () => {
+    const { analyserMaximisation } = await import('../signaux-livre');
+    const m = analyserMaximisation(vueDe(MAXIMISE, { aConfirmer: { '2025': 2000 } }, {
+      deviseEtrangere: { cotisations: { '2024': { USD: 1000 } }, retraits: {} },
+      horsCadPresent: true, evenementsAmbigus: 3,
+    }), PLAFONDS, 2026);
+    expect(m.limites.limitations).toEqual([
+      'devise-etrangere', 'retraits-a-confirmer', 'evenements-ambigus', 'portee-incomplete',
+    ]);
+    expect(m.etat).toBe('indetermine');
   });
 });
 
@@ -312,7 +532,7 @@ describe('« maximisé » exige au moins une année complète', () => {
     // Vu sur un dossier réel : « au plafond chaque année depuis 2026 » alors
     // qu'aucune année n'était terminée. Le silence vaut mieux qu'un signal vide.
     const { analyserMaximisation } = await import('../signaux-livre');
-    const m = analyserMaximisation({ '2026': 7000 }, {}, { '2026': 7000 }, 2026);
+    const m = analyserMaximisation(vueDe({ '2026': 7000 }), { '2026': 7000 }, 2026);
     expect(m.etat).toBe('indetermine');
   });
 });

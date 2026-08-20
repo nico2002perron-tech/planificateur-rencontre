@@ -143,6 +143,19 @@ export function deriverTransactionsAnnee(lignes: LigneTransaction[], annee: numb
  * Mêmes règles que partout — partie double, étiquettes, virements internes —
  * appliquées année par année, compte par compte.
  */
+/**
+ * ⚠ TÉMOIN DE PARITÉ depuis le 20 août 2026 — plus consommée en production.
+ *
+ * `signauxDuLivre` (hydrater.ts) lit désormais `vueCeliParAnnee(timeline)`.
+ * Cette fonction reste TELLE QUELLE le temps d'un lot : c'est elle que
+ * `parite-derivations.test.ts` compare à la timeline, divergence par
+ * divergence (D1 à D6). La retirer, c'est retirer le témoin — décision du
+ * prochain lot, pas un ménage en passant.
+ *
+ * ⚠ Son défaut D5 est VOULU intact ici : elle FOND les devises au nominal
+ * (6 000 CAD + 1 000 US = « 7 000 »). C'est le comportement historique que
+ * le témoin doit continuer d'exhiber.
+ */
 export function deriverCeliParAnnee(lignes: LigneTransaction[]): {
   cotisations: Record<string, number>;
   retraits: Record<string, number>;
@@ -206,17 +219,27 @@ export function deriverCotisationsAnnee(lignes: LigneTransaction[], annee: numbe
  * a cotiser. C'est le bon cote sur lequel se tromper : on suggere de verifier,
  * jamais de ne rien faire.
  */
+/**
+ * LE BÉNÉFICIAIRE D'UNE NOTE REEE — la primitive, extraite le 19 août 2026 pour
+ * que la ligne du temps réutilise LA MÊME regex plutôt que d'en écrire une
+ * seconde. Comportement inchangé : même motif, même normalisation.
+ * Rend `null` quand la note ne nomme personne — jamais une répartition devinée.
+ */
+const MOTIF_BENEFICIAIRE_REEE = /(?:CONTRIBUTION|COTIS(?:ATION)?)\s+(?:\d{1,2})?([A-ZÀ-ÖØ-Þ]{3,})/i;
+export function beneficiaireReeeDeLaNote(note: string | null | undefined): string | null {
+  const m = MOTIF_BENEFICIAIRE_REEE.exec(note ?? '');
+  return m ? m[1].normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase() : null;
+}
+
 function cotisationsReeeParEnfant(lignes: LigneTransaction[]): Record<string, number> {
-  const MOTIF = /(?:CONTRIBUTION|COTIS(?:ATION)?)\s+(?:\d{1,2})?([A-ZÀ-ÖØ-Þ]{3,})/i;
   const out: Record<string, number> = {};
   for (const l of lignes) {
     if (typeDeCompte(l.noCompte) !== 'reee') continue;
     if (l.type !== 'Cotisation' && l.type !== 'Dépôt') continue;
     const montant = l.total ?? 0;
     if (montant <= 0) continue;
-    const m = MOTIF.exec(l.note ?? '');
-    if (!m) continue;
-    const cle = m[1].normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+    const cle = beneficiaireReeeDeLaNote(l.note);
+    if (!cle) continue;
     out[cle] = (out[cle] ?? 0) + montant;
   }
   return out;

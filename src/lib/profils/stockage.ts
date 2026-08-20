@@ -169,9 +169,16 @@ export async function ecrireProfil(profil: ProfilClient, date: string): Promise<
   if (!estLocal()) throw new Error('Écriture de profil refusée hors exécution locale');
   if (!estPseudonymeValide(profil.id)) throw new Error(`Pseudonyme invalide : ${profil.id}`);
 
+  // LA LIGNE DU TEMPS NE SE PERSISTE PAS — retirée ICI, pas seulement par la
+  // discipline des appelants (19 août 2026). Elle se dérive à la lecture
+  // (hydraterProfil) : un profil hydraté qui repasserait par cette fonction
+  // écrirait sur disque un dérivé daté, qui vieillirait en silence — le défaut
+  // exact que la doctrine « dériver à la lecture » existe pour empêcher.
+  const { ligneDuTemps: _jamaisPersistee, ...persistable } = profil;
+
   const precedent = await lireProfil(profil.id);
   const aJour: ProfilClient = {
-    ...profil,
+    ...persistable,
     version: (precedent?.version ?? 0) + 1,
     dateMiseAJour: date,
   };

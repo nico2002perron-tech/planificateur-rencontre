@@ -918,6 +918,16 @@ describe('LE MOTIF DU ZÉRO DOIT ÊTRE LE VRAI MOTIF — client tout à l’abri
 });
 
 describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', () => {
+  // Des limites NEUTRES par défaut (aucune limitation) : les tests historiques
+  // prouvent ainsi que le texte d'avant reste le texte d'aujourd'hui quand la
+  // vue n'a rien à déclarer. Les tests des limites en passent d'explicites.
+  const limitesNeutres = () => ({
+    limitations: [] as import('../signaux-livre').LimitationMaximisation[],
+    devisesEtrangeres: [] as string[],
+    cotisationsEtrangeresPresentes: false, retraitsEtrangersPresents: false,
+    totalRetraitsAConfirmer: 0, evenementsAmbigus: 0,
+    portee: 'interne-seulement' as const,
+  });
   const signaux = (droits: Partial<import('../droits-celi').ResultatDroitsCeli> | null, max: Partial<import('../signaux-livre').SignalMaximisation> | null = null) => ({
     droitsCeli: droits === null ? null : {
       statut: 'montant-a-confirmer' as const, portee: 'interne-seulement' as const,
@@ -927,7 +937,8 @@ describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', 
     plafondParDefautMaximal: false,
     maximisation: max === null ? null : {
       etat: 'sous-plafond' as const, depuis: 2015, totalCotise: 40000,
-      plafondPeriode: 70000, plafondCumulatif: 102000, anneesSousPlafond: [2019, 2022], ...max,
+      plafondPeriode: 70000, plafondCumulatif: 102000, anneesSousPlafond: [2019, 2022],
+      limites: limitesNeutres(), ...max,
     },
   });
   const dc = (p: ProfilClient, s: ReturnType<typeof signaux> | null) =>
@@ -987,5 +998,96 @@ describe('STRATÉGIE 8 — droits de cotisation, et le signal de maximisation', 
       expect(plat(c.explication)).toMatch(/Mon dossier ARC/);
       expect(plat(c.explication)).toMatch(/1 % par mois/);
     }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // LES LIMITES DU SIGNAL À L'ÉCRAN (20 août 2026) — un « indetermine » qui a
+  // une cause la dit ; la cause devient une question ; aucun jargon.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  it('DEVISE ÉTRANGÈRE : l’indéterminé nomme sa cause — jamais un statut muet', () => {
+    const c = dc(profilConsolide(), signaux({}, {
+      etat: 'indetermine',
+      limites: {
+        ...limitesNeutres(), limitations: ['devise-etrangere', 'portee-incomplete'],
+        devisesEtrangeres: ['USD'], cotisationsEtrangeresPresentes: true,
+      },
+    }));
+    const t = plat(c.explication);
+    expect(t).toMatch(/ne permet pas de conclure/);
+    expect(t).toMatch(/devise étrangère \(USD\)/);
+    expect(t).toMatch(/dollars canadiens n’est pas encore déterminé/);
+    expect(c.donneesManquantes).toContain('l’équivalent en dollars canadiens des mouvements CELI en devise étrangère');
+    // Aucune conclusion forte ne se glisse dans le texte, et aucun jargon.
+    expect(t).not.toMatch(/au plafond chaque année/);
+    expect(t).not.toMatch(/horsCadPresent/);
+  });
+
+  it('SORTIES À CONFIRMER : calcul interne prudent ≠ montant fiscal confirmé, en toutes lettres', () => {
+    const c = dc(profilConsolide(), signaux({}, {
+      etat: 'maximise', anneesSousPlafond: [],
+      limites: { ...limitesNeutres(), limitations: ['retraits-a-confirmer'], totalRetraitsAConfirmer: 12000 },
+    }));
+    const t = plat(c.explication);
+    expect(t).toMatch(/sorties CELI de 12 000 \$ restent à confirmer/);
+    expect(t).toMatch(/peuvent ou non recréer des droits futurs/);
+    expect(t).toMatch(/pas un montant fiscal confirmé/);
+    expect(c.donneesManquantes).toContain('la nature des sorties CELI à confirmer (véritable retrait ou virement interne)');
+  });
+
+  it('PORTÉE : « vu d’ici » se dit désormais en toutes lettres', () => {
+    const c = dc(profilConsolide(), signaux({}, {
+      limites: { ...limitesNeutres(), limitations: ['portee-incomplete'] },
+    }));
+    expect(plat(c.explication)).toMatch(/seules transactions détenues ici/);
+  });
+
+  it('AUCUN FAUX VERT : un « CELI plein » avec des USD au dossier le dit', () => {
+    // Le verdict « plein » vient de la chaîne des droits (hors de ce lot) ;
+    // mais une conclusion forte ne s'affiche plus sans ses limites.
+    const c = dc(profilConsolide(), signaux(
+      { statut: 'calcule', montant: 0, borne: 0, conditionsManquantes: [] },
+      {
+        etat: 'indetermine',
+        limites: {
+          ...limitesNeutres(), limitations: ['devise-etrangere'],
+          devisesEtrangeres: ['USD'], cotisationsEtrangeresPresentes: true, retraitsEtrangersPresents: true,
+        },
+      }
+    ));
+    expect(c.statut).toBe('non-applicable');
+    expect(plat(c.explication)).toMatch(/des cotisations et des retraits CELI en devise étrangère \(USD\)/);
+    expect(c.donneesManquantes).toContain('l’équivalent en dollars canadiens des mouvements CELI en devise étrangère');
+  });
+
+  it('PLUSIEURS LIMITES : toutes les causes s’affichent, aucune n’avale l’autre', () => {
+    const c = dc(profilConsolide(), signaux({}, {
+      etat: 'indetermine',
+      limites: {
+        ...limitesNeutres(),
+        limitations: ['devise-etrangere', 'retraits-a-confirmer', 'evenements-ambigus'],
+        devisesEtrangeres: ['USD'], cotisationsEtrangeresPresentes: true,
+        totalRetraitsAConfirmer: 3000, evenementsAmbigus: 2,
+      },
+    }));
+    const t = plat(c.explication);
+    expect(t).toMatch(/devise étrangère \(USD\)/);
+    expect(t).toMatch(/3 000 \$ restent à confirmer/);
+    expect(t).toMatch(/2 mouvements CELI ambigus/);
+  });
+
+  it('une preuve FERME dit quand même ses limites (USD côté cotisations)', () => {
+    // La matrice de prudence laisse depasse-cumul tenir quand seules des
+    // COTISATIONS étrangères existent — mais la devise ne se tait jamais.
+    const c = dc(profilConsolide(), signaux({}, {
+      etat: 'depasse-cumul', totalCotise: 120000, plafondCumulatif: 102000,
+      limites: {
+        ...limitesNeutres(), limitations: ['devise-etrangere'],
+        devisesEtrangeres: ['USD'], cotisationsEtrangeresPresentes: true,
+      },
+    }));
+    const t = plat(c.explication);
+    expect(t).toMatch(/des droits ont donc été créés ailleurs/);
+    expect(t).toMatch(/devise étrangère \(USD\)/);
   });
 });

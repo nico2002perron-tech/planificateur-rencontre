@@ -304,6 +304,15 @@ export type ProfilClient = {
   comptes: Compte[];
   transactionsAnnee: TransactionsAnnee;
   historiqueVie: HistoriqueVie;
+  /**
+   * LA LIGNE DU TEMPS DES FLUX — dérivée À LA LECTURE par hydraterProfil(),
+   * JAMAIS persistée (même doctrine que `comptes` : un champ figé porterait
+   * un chiffre périmé sans le signaler). Optionnelle et ADDITIVE : absente
+   * d'un profil non hydraté ou sans livre, et rien ne la consomme encore —
+   * elle vit EN PARALLÈLE des dérivations existantes le temps de les
+   * comparer (19 août 2026). Amendement au schéma, section 7.
+   */
+  ligneDuTemps?: import('./ligne-du-temps').LigneDuTemps;
   intentions: Intentions;
   /** Ce que le planificateur a choisi de presenter. Vide = rien au PDF. */
   selectionStrategies: SelectionStrategies;

@@ -95,6 +95,30 @@ export function separerCotisations(lignes: LigneTransaction[]): {
     date: string; compte: string; montant: number; note: string;
     etiquette: EtiquetteApport; compteOrigine: string | null;
   }>;
+  /**
+   * LA TRAÇABILITÉ DE L'ARGENT NEUF — ajouté le 19 août 2026 pour la ligne du
+   * temps des flux, qui doit pouvoir dire DE QUELLES LIGNES un montant vient.
+   *
+   * Les jambes ARGENT retenues comme argent neuf, dans l'ordre de traitement.
+   * Invariant : la somme de leurs `total` vaut exactement `argentNeuf` (pour un
+   * apport en nature étiqueté « cotisation », c'est la jambe argent qui figure
+   * ici — c'est elle qui porte le montant compté ; la jambe titre reste dans la
+   * partie double). Champ ADDITIF : aucun comportement existant ne change.
+   */
+  lignesArgentNeuf: LigneTransaction[];
+  /**
+   * LES PARTIES DOUBLES COMPTÉES — ajouté le 20 août 2026 pour lever le faux
+   * rouge de la vue fiscale : la jambe TITRE consommée par le splice restait
+   * invisible du dehors, et la timeline la retrouvait « ambiguë » comme si la
+   * règle ne l'avait jamais expliquée.
+   *
+   * Une paire par apport en nature dont l'étiquette est « cotisation » (celles
+   * dont la jambe argent est COMPTÉE dans l'argent neuf). Les paires à
+   * étiquette transfert/ambigu n'y sont PAS : leur apport est À TRANCHER
+   * (`apportsATrancher`) — une attente réelle, pas une ligne expliquée.
+   * Champ ADDITIF : aucun comportement existant ne change.
+   */
+  pairesArgentNeuf: Array<{ jambeArgent: LigneTransaction; jambeTitre: LigneTransaction }>;
 } {
   const cotisations = lignes.filter((l) => l.type === 'Cotisation');
   const jambesTitre = cotisations.filter(
@@ -105,6 +129,8 @@ export function separerCotisations(lignes: LigneTransaction[]): {
   );
 
   const restants = [...jambesTitre];
+  const lignesArgentNeuf: LigneTransaction[] = [];
+  const pairesArgentNeuf: Array<{ jambeArgent: LigneTransaction; jambeTitre: LigneTransaction }> = [];
   let apportsEnNature = 0;
   let argentNeuf = 0;
   const parEtiquette: Record<EtiquetteApport, number> = { cotisation: 0, transfert: 0, ambigu: 0 };
@@ -135,6 +161,7 @@ export function separerCotisations(lignes: LigneTransaction[]): {
       } else {
         argentNeuf += montant;
         parEtiquette.cotisation += montant;
+        lignesArgentNeuf.push(argent);
       }
       continue;
     }
@@ -151,6 +178,8 @@ export function separerCotisations(lignes: LigneTransaction[]): {
       // Des titres apportés depuis un compte NON enregistré : ça consomme des
       // droits, exactement comme de l'argent.
       argentNeuf += montant;
+      lignesArgentNeuf.push(argent);
+      pairesArgentNeuf.push({ jambeArgent: argent, jambeTitre: titre });
     } else {
       apportsATrancher.push({
         date: titre.date, compte: titre.noCompte, montant, note: titre.note || argent.note,
@@ -158,7 +187,7 @@ export function separerCotisations(lignes: LigneTransaction[]): {
       });
     }
   }
-  return { argentNeuf, apportsEnNature, parEtiquette, apportsATrancher };
+  return { argentNeuf, apportsEnNature, parEtiquette, apportsATrancher, lignesArgentNeuf, pairesArgentNeuf };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

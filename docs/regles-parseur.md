@@ -321,3 +321,132 @@ numéros VMBL. Sa table est celle des suffixes iA, où `R`/`S` sont **inversés*
 par rapport à VMBL. L'élargir aux 424 comptes VMBL aurait échangé une erreur
 connue contre une erreur neuve et silencieuse, sur précisément les comptes que
 l'élargissement prétendait réparer.
+
+---
+
+## Règle 7 — un libellé de transaction inconnu se DÉCLARE, il ne se range pas
+
+**Établie le 19 août 2026**, à l'ouverture du chantier de la ligne du temps des
+flux. Pas née d'un écart mesuré, celle-ci : née de la lecture du code, qui ne
+connaissait que **quatre types de flux** (`Cotisation`, `Retrait`, `Transfert`,
+`Réception`) — plus `Vente` (deriver.ts, gains/pertes) et `Dépôt` (deriver.ts:214,
+cotisation REEE) — et laissait tout le reste tomber dans « pas un flux » **par
+défaut**. Juste par accident pour un achat ou un dividende ; silencieux pour
+tout libellé jamais vu.
+
+### La règle
+
+> **Chaque ligne reçoit une nature tirée d'une liste blanche de libellés. Un
+> libellé absent de la liste sort en nature `inconnu`, et le diagnostic le
+> COMPTE et le NOMME.** La liste ne grandit que par mesure : un libellé y entre
+> quand un vrai collage l'a montré — jamais par supposition.
+
+Où : `src/lib/profils/flux.ts` → `classerLigne()`, `diagnostiquerClassification()`.
+
+### La liste au 19 août — huit libellés (neuf clés : `Dividende` au singulier est toléré), et c'est peu à dessein
+
+| Libellé | Famille | Preuve |
+|---|---|---|
+| `Cotisation`, `Retrait`, `Transfert`, `Réception` | flux | `regles.ts`, `deriver.ts` |
+| `Dépôt` | flux (même famille que Cotisation) | `deriver.ts:214` — `cotisationsReeeParEnfant` l'accepte ; `deployment.ts:161` le distingue de « Cotisation » (argent frais sans partie double). Deux lectures, **non contradictoires** : c'est de l'argent qui entre, et dans un régime enregistré c'est une cotisation |
+| `Achat`, `Vente` | opération sur titre — **d'un TITRE** ; un Achat/Vente de `1USD`/`1CAD` est `ambigu` (conversion probable, étape 3) | `deriver.ts:120`, fixtures `regles.test.ts`, `deriver.test.ts` |
+| `Dividendes` (et `Dividende`) | revenu | commentaire du type `LigneTransaction` |
+
+**Absents, donc `inconnu` aujourd'hui** : intérêt, frais, impôt, commission,
+échéance, distribution… Le test `flux.test.ts` le documente noir sur blanc
+(« AUCUN libellé prouvé — ils sortent inconnu, pas revenu par analogie »).
+**C'est la mesure d'un vrai collage — comptages par libellé, lancée par Nicolas
+— qui les fera entrer.**
+
+### Ce que la règle 7 porte aussi
+
+- **Le vocabulaire suit le régime** : la même entrée est une `cotisation` dans
+  un CELI et un `apport-capital` dans un comptant. Appeler cotisation une entrée
+  dans une marge est faux.
+- **Un Transfert n'est JAMAIS une cotisation par défaut.** Lu seul, il est
+  `ambigu` — sauf si sa note cite un compte du client (règle 3), et c'est alors
+  un `virement-interne` dont l'autre jambe attend l'étape 4.
+- **La NOTE prime sur le régime** (règles 3 et 5) : une Cotisation ou un Retrait
+  dont la note cite un compte est un `virement-interne`, pas de l'argent neuf —
+  `separerCotisations()` le disait déjà. Et la règle 3 ne dépend pas du suffixe :
+  un Transfert au régime inconnu dont la note cite un compte reste un virement.
+- **On ne cotise pas à un FERR, un FRV, un CRI** (régimes de décaissement) : une
+  « Cotisation » qui y entre est `ambigu` — une transition (REER→FERR) ou un
+  transfert, à rapprocher à l'étape 3. On en RETIRE, par contre.
+- **Un régime non prouvé rend `ambigu`** pour les familles de flux (Cotisation,
+  Retrait, Transfert, Réception) ; une opération sur titre ou un revenu n'en
+  dépendent pas. Un régime connu mais sans vocabulaire (`corpo`) rend `ambigu`
+  aussi — pas « capital par défaut ».
+- **Une ligne sans symbole, un montant illisible** rendent `ambigu`.
+- **La comparaison est sur le libellé ENTIER**, normalisé (accents, casse,
+  espaces) — jamais par sous-chaîne. `Cotisation de rattrapage` est refusé.
+  C'est ce qui distingue cette liste de `detectCategory()` dans
+  `portfolio/year-activity.ts`, qui tolère par sous-chaîne pour le PDF
+  d'activité. Deux outils, deux besoins ; on n'a pas créé un troisième
+  vocabulaire, on en a créé un STRICT là où il n'y en avait aucun.
+
+### Ce que l'étape 2 ne fait pas
+
+Aucun rapprochement entre lignes. Partie double (règle 2), conversion CAD/USD,
+virement à deux jambes, renversement : étape 3, après une mesure du ratio E/F
+sur le livre. Les natures `conversion-devise`, `transfert-regime`, `annule`,
+`frais-impot` sont **déclarées** dans le vocabulaire et **jamais produites** par
+`classerLigne()` — un test balaie 1 152 combinaisons pour le tenir.
+
+### Les cas de test permanents — `src/lib/profils/__tests__/flux.test.ts`
+
+| Cas | Ce qu'il prouve |
+|---|---|
+| libellé `Échange` | `inconnu`, compté, nommé |
+| `Cotisation de rattrapage` | refusé : liste blanche, pas sous-chaîne |
+| `Cotisation` +7 000 dans W | `cotisation`, confiance élevée, motif « provisoire : règle 2 » |
+| `Cotisation` +30 000 dans A | `apport-capital`, sous-type comptant, devise CAD |
+| `Transfert` +20 000 dans W sans note | `ambigu` — T17 du cahier des charges |
+| `Transfert` avec `VIRE DE 37-…-E` | `virement-interne` (règle 3) |
+| `TFR-146(16)` seul | `ambigu` (règle 3, notes non reconnues : l'article autorise l'inter-institution ; règle 4 : dans le doute, la borne) |
+| `Achat` sur un compte au régime inconnu | `operation-titre` — le régime n'y change rien |
+| `Cotisation` sur régime inconnu | `ambigu`, jamais deviné |
+| jambe titre d'une cotisation (`TD`, −20 177,90) | nature `cotisation`, confiance `ambigu`, motif « EN TITRES » |
+| `Cotisation` dans un FERR/CRI/FRV | `ambigu` — régime de décaissement |
+| `Cotisation` avec `CONTRIBUTION REF: <compte>` | `virement-interne` (règle 5) |
+| `Achat` de `1USD` | `ambigu` — conversion probable |
+| `Cotisation` sans symbole, tout signe | `ambigu` — forme illisible |
+| `constructor`, `__proto__` | `inconnu` — la liste est une `Map` |
+| collage décalé (note ou compte dans la colonne type) | `(libellé non textuel)` — rien de nominatif ne sort |
+| balayage 9 × 10 × 4 × 4 × 3 = 4 320 | aucune nature d'étape 3 n'est produite, un motif toujours |
+| diagnostic sur `37-SECR-W` | aucun numéro ni nom dans la sortie |
+
+**Falsifié avant d'être retenu** : un Transfert forcé en cotisation fait tomber
+5 tests (T7, T17, TFR-146(16), Réception, totaux) ; FERR retiré des régimes de
+décaissement en fait tomber 2.
+
+**Contre-expertise du 19 août** : 5 lentilles adverses (non-régression,
+invariants métier, qualité des tests, confidentialité, cohérence documentaire),
+31 trouvailles soumises à des sceptiques indépendants, 30 confirmées, 1
+réfutée. Toutes les confirmées sont corrigées dans cette version ou documentées
+ci-dessus. Le contrat « additif » a tenu sous la lentille non-régression.
+
+---
+
+## ⚠ Incohérence documentée, NON corrigée — la date qui fait l'année fiscale
+
+**Vue le 19 août 2026, décision de Nicolas : on ne change rien, on documente.**
+
+Trois endroits du dépôt parlent de la date fiscale et ne disent pas la même
+chose :
+
+| Où | Ce qu'il dit |
+|---|---|
+| `LigneTransaction.dateReglement` (types.ts) | commentaire : « colonne Traitement — **l'axe fiscal** » |
+| `deriver.ts`, 5 des 7 mentions de `l.date` (l. 58, 116, 151, 155, 173) ; aucune lecture de `dateReglement` | range une ligne dans une année par **`date`** (colonne Transaction) |
+| `demarches.ts`, D3 (remise au client) | « c'est la **date de règlement**, pas la date de l'ordre, qui détermine l'année fiscale » |
+
+Cas concret : une vente ordonnée le 30 décembre, réglée le 2 janvier. Le code la
+compte dans l'année de l'ordre ; le document dit au client qu'elle est dans
+l'année suivante.
+
+**Question au fiscaliste** (schéma, section 8.1, Q6). Tant qu'elle n'est pas
+tranchée, `deriver.ts` reste sur `date`, et la ligne du temps des flux fera de
+même — changer la convention sans avis remplacerait une incohérence connue par
+une erreur nouvelle.
+

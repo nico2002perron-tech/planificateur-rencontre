@@ -35,6 +35,10 @@ import {
   type TransfertObserve, type TransfertDouteux, type ResultatDroitsCeli,
 } from './droits-celi';
 import { plafondCeliCumulatif } from './parametres-fiscaux';
+import { construireLigneDuTemps } from './ligne-du-temps';
+import { vueFiscaleCeli } from './vue-fiscale-celi';
+import { deriverHistoriqueCeliFiscal, comparerDroitsCeli, type HistoriqueCeliFiscal, type Divergence } from './droits-celi-fiscal';
+import { comparerVerdictsCeli, type RapportTemoin } from './temoin-celi';
 import type { LigneTransaction } from '@/lib/parseur-croesus/types';
 import type { ProfilClient, HistoriqueRegime } from './types';
 
@@ -58,6 +62,24 @@ export type ChaineCeli = {
   age: number | null;
   plafond: ReturnType<typeof plafondCeliCumulatif>;
   droits: ResultatDroitsCeli;
+  /**
+   * LA NOUVELLE CHAÎNE, EN PARALLÈLE (20 août 2026, §23 de la migration).
+   * Elle ne décide encore RIEN : `droits` ci-dessus vient toujours de
+   * l'ancienne. Elle est calculée ici, au POINT UNIQUE où le verdict se fait,
+   * pour que la comparaison porte sur les mêmes entrées — et pour qu'il n'y ait
+   * jamais qu'un seul endroit à basculer le jour venu.
+   */
+  fiscal: HistoriqueCeliFiscal | null;
+  /** Chaque écart ancien ↔ nouveau, CLASSÉ. Aucune divergence silencieuse (§15). */
+  divergences: Divergence[];
+  /**
+   * LE RAPPORT DE PHASE TÉMOIN — la comparaison COMPLÈTE (statut, droit,
+   * bornes, portée, questions), classée en six familles. `null` sans livre.
+   *
+   * ⚠ IL N'INFLUENCE RIEN. `droits` reste l'ancien verdict, et c'est lui que
+   * l'écran et le PDF montrent. Ce rapport n'existe que pour être observé.
+   */
+  temoin: RapportTemoin | null;
 };
 
 /**
@@ -78,7 +100,9 @@ export type ChaineCeli = {
 export function verdictCeliDuLivre(
   profil: ProfilClient,
   livre: LigneTransaction[],
-  anneeCourante: number
+  anneeCourante: number,
+  /** Le NOM DU DOSSIER — condensé aussitôt en identifiant anonyme, jamais conservé. */
+  nomDossierPourTemoin = ''
 ): ChaineCeli {
   const historique = deriverHistoriqueRegime(
     livre, 'celi', anneeCourante, profil.historiqueVie.celi.dateImport ?? ''
@@ -108,5 +132,39 @@ export function verdictCeliDuLivre(
   };
   const droits = calculerDroitsCeli(frais, douteux, plafond.montant);
 
-  return { historique: retenu, observes, douteux, age, plafond, droits };
+  // ── LA NOUVELLE CHAÎNE, EN PARALLÈLE — elle ne décide rien encore ──────────
+  // historique Croesus → LigneDuTemps → vueFiscaleCeli → historique fiscal.
+  // On la calcule au MÊME endroit et sur les MÊMES entrées que l'ancienne :
+  // c'est ce qui rend la comparaison honnête, et ce qui fera de la bascule un
+  // changement d'une seule ligne au lieu de branches dispersées.
+  const fiscal = livre.length === 0 ? null : deriverHistoriqueCeliFiscal(
+    vueFiscaleCeli(construireLigneDuTemps(livre)),
+    {
+      anneeCourante,
+      plafondCumulatif: plafond.montant,
+      historiqueExterne: profil.consolidation.historiqueExterne === 'jamais' ? 'jamais'
+        : profil.consolidation.historiqueExterne === 'deja-eu' ? 'deja-eu' : 'inconnu',
+      comptesExternes: profil.consolidation.comptesExternes,
+      dateImport: profil.historiqueVie.celi.dateImport,
+      dateOuverture: retenu.dateOuverture,
+    }
+  );
+  const divergences = fiscal === null ? [] : comparerDroitsCeli(retenu, fiscal);
+
+  // ── LA PHASE TÉMOIN — observer, jamais décider ─────────────────────────────
+  // Le contexte est fait de COMPTAGES : ils expliquent une divergence sans
+  // jamais nommer ce qui l'a causée dans le dossier du client.
+  const timeline = livre.length === 0 ? null : construireLigneDuTemps(livre);
+  const temoin = fiscal === null || timeline === null ? null : comparerVerdictsCeli(
+    nomDossierPourTemoin, retenu, droits, fiscal,
+    {
+      evenementsBloquants: fiscal.completude.evenementsBloquants,
+      devisesNonResolues: fiscal.completude.devisesNonResolues,
+      virementsOrphelins: timeline.relationsVirements.filter((r) => r.jambeContrepartieId === null).length,
+      inconnusAImpact: timeline.evenements.filter((e) => e.regime === 'celi' && e.nature === 'inconnu' && e.impactCompletude !== 'aucun').length,
+      anneesCouvertes: Object.keys(fiscal.parAnnee).length,
+    }
+  );
+
+  return { historique: retenu, observes, douteux, age, plafond, droits, fiscal, divergences, temoin };
 }

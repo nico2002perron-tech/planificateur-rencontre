@@ -29,7 +29,7 @@
 import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
-import type { SignauxLivre } from './signaux-livre';
+import type { SignauxLivre, LimitesMaximisation } from './signaux-livre';
 
 /** Un constat, tel que le contrat du schéma le définit. */
 export type Constat = {
@@ -102,6 +102,32 @@ export type Constat = {
    * un montant non confirmé serait une marche à suivre vers un chiffre faux.
    */
   plan?: LignePlan[];
+  /**
+   * LES MEILLEURS CANDIDATS — nommés MÊME quand le montant ne l'est pas.
+   *
+   * Défaut rapporté par Nicolas le 19 août 2026 : « je ne trouve pas que
+   * c'est bien fait, je trouve que ça dit rien ».
+   *
+   * Mesuré : `plan` n'était attaché qu'À UN SEUL ENDROIT du fichier — la
+   * branche entièrement calculée de la cristallisation de gains. Elle exige
+   * TROIS conditions simultanées (relevé avec PBR, aucun compte ailleurs,
+   * pertes reportées saisies). Dès qu'une manque, le constat sortait sans un
+   * seul nom de titre : « jusqu'à 32 000 $ pourraient être cristallisés ».
+   * Vrai, prudent, et inutilisable en rencontre.
+   *
+   * LA DISTINCTION QUI DÉBLOQUE : le gain latent d'un titre est un FAIT
+   * MESURÉ sur le relevé (valeur marchande − valeur comptable). Il ne dépend
+   * ni de ce qui est détenu ailleurs, ni de l'avis de cotisation. Le montant
+   * ABSORBABLE sans impôt, lui, dépend des deux — et c'est lui, et lui seul,
+   * qui doit rester prudent.
+   *
+   * Donc : `montantEstime` reste `null` hors du statut `calcule` (la doctrine
+   * du moteur tient), et les candidats se nomment quand même.
+   *
+   * Jamais partiels : un candidat est une position entière avec son gain
+   * latent entier. C'est `plan` qui découpe pour atteindre une cible.
+   */
+  candidats?: LignePlan[];
   /**
    * LE CALENDRIER DU GESTE, dicté par le MOTEUR — jamais par un modèle.
    *
@@ -263,11 +289,61 @@ function gainLatent(p: Position): number | null {
  * est atteinte avec le plus petit volume vendu-racheté — moins de
  * transactions, moins de frais.
  *
- * LA PROPORTION EST FISCALEMENT EXACTE, pas approchée : au Canada le PBR est
- * un coût moyen par action (biens identiques), donc vendre une fraction d'une
- * position cristallise exactement cette fraction de son gain latent. C'est ce
- * qui autorise la dernière ligne du plan à être partielle.
+ * ⚠ LA DERNIÈRE LIGNE PEUT ÊTRE PARTIELLE — sous une hypothèse NON VALIDÉE.
+ *
+ * Le calcul suppose que vendre une fraction d'une position cristallise la même
+ * fraction de son gain latent. Cela ne tient que si le prix de base s'applique
+ * uniformément à toute la ligne.
+ *
+ * REPRISE DE NICOLAS, 19 août 2026 : dans Croesus, le PBR affiché est le prix
+ * PAYÉ, et un second achat du même titre crée une position DISTINCTE. La
+ * version précédente de ce commentaire affirmait au contraire, comme un fait
+ * établi, que le PBR est un coût moyen par action. Ce dépôt n'affirme pas une
+ * règle fiscale qu'il n'a pas mesurée : l'affirmation est retirée.
+ *
+ * DEUX CONSÉQUENCES OUVERTES, l'une et l'autre au mandat du fiscaliste
+ * (schéma, section 8) :
+ *   · la proportion de la ligne partielle est-elle exacte, ou approchée ?
+ *   · si le même symbole paraît sur DEUX lignes du relevé, ce plan les traite
+ *     comme deux positions indépendantes — une en perte, l'autre en gain
+ *     sortiraient chacune leur montant. Rien ici ne les regroupe.
  */
+/**
+ * LES N MEILLEURS CANDIDATS, par DENSITÉ (choix de Nicolas, 19 août 2026).
+ *
+ * La densité — gain latent ÷ valeur marchande — plutôt que le gain absolu :
+ * chaque dollar vendu du titre le plus dense cristallise plus de gain, donc la
+ * même cible s'atteint en vendant-rachetant moins de capital. Moins de
+ * transactions, moins de frais.
+ *
+ * VALEUR ABSOLUE, parce que la fonction sert AUX DEUX cristallisations. Pour
+ * les pertes, `g` est négatif : trier sur `g / vm` décroissant remonterait la
+ * perte la PLUS PETITE en premier — l'inverse exact de ce qu'on veut. Trier
+ * sur |g| / vm range correctement les deux signes.
+ *
+ * Ne rend jamais de ligne partielle : un candidat est une position entière.
+ */
+function meilleursCandidats(
+  positions: Array<{ p: PositionSituee; g: number }>,
+  combien: number
+): LignePlan[] {
+  return [...positions]
+    .filter((x) => (x.p.valeurMarchande ?? 0) > 0)
+    .sort((a, b) =>
+      Math.abs(b.g) / (b.p.valeurMarchande as number) -
+      Math.abs(a.g) / (a.p.valeurMarchande as number))
+    .slice(0, combien)
+    .map(({ p, g }) => ({
+      symbole: p.symbole,
+      vendre: Math.round(p.valeurMarchande as number),
+      gain: Math.round(g * 100) / 100,
+      partiel: false,
+    }));
+}
+
+/** Combien de candidats on nomme. Trois : de quoi ouvrir la discussion sans noyer. */
+const COMBIEN_DE_CANDIDATS = 3;
+
 function planifierRecolte(
   enGain: Array<{ p: PositionSituee; g: number }>,
   cible: number
@@ -402,6 +478,10 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     return g !== null && g < 0;
   });
   const pertesLatentes = enPerte.reduce((s, p) => s + Math.abs(gainLatent(p) as number), 0);
+  // Les paires {position, gain} attendues par le sélecteur de candidats et par
+  // le planificateur. `g` reste NÉGATIF : c'est une perte, et l'afficher comme
+  // telle vaut mieux qu'un nombre positif qu'il faudrait interpréter.
+  const enPerteAvecGain = enPerte.map((p) => ({ p, g: gainLatent(p) as number }));
   // LE GAIN NET, PAS LE GAIN BRUT — défaut trouvé le 6 août 2026 sur un client
   // réel de la campagne : 6 728 $ de gains réalisés, mais aussi 4 000 $ de
   // pertes déjà réalisées. Ne regarder que les gains aurait fait recommander
@@ -456,6 +536,7 @@ function strategieCristallisation(profil: ProfilClient): Constat {
 
     return {
       ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
       limiteVisibilite:
         'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
       explication:
@@ -471,6 +552,19 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     dejaEnOrdre: absorbable <= 0,
     portee: 'declaree',
     montantEstime: absorbable > 0 ? absorbable : null,
+    // LE PLAN N'EXISTAIT PAS ICI — la cristallisation de pertes n'a JAMAIS
+    // nommé un titre depuis sa création. Elle disait « 3 positions portent
+    // 18 000 $ de perte latente » sans jamais dire lesquelles.
+    //
+    // `planifierRecolte` raisonne sur des grandeurs POSITIVES (elle décrémente
+    // une cible jusqu'à zéro). On lui passe donc les pertes en valeur absolue,
+    // puis on redonne son signe au gain de chaque ligne — sans quoi le tableau
+    // afficherait une perte comme un gain.
+    plan: absorbable > 0
+      ? planifierRecolte(enPerteAvecGain.map(({ p, g }) => ({ p, g: -g })), absorbable)
+          .map((l) => ({ ...l, gain: -l.gain }))
+      : undefined,
+    candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
     explication: absorbable > 0
       ? `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. ` +
         `En cristalliser ${argent(absorbable)} annulerait le gain net déjà réalisé cette année (${argent(gainsRealises)}` +
@@ -598,9 +692,12 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     if (reportees === null) {
       return {
         ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+        candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
         explication:
           `${argent(gainsLatents)} de gains latents pourraient être récoltés sans impôt si des pertes ` +
-          'd’années passées dormaient au dossier fiscal. Ce montant ne figure que sur l’avis de cotisation.',
+          'd’années passées dormaient au dossier fiscal. Ce montant ne figure que sur l’avis de cotisation. ' +
+          'Les titres les plus denses en gain sont nommés ci-dessous : ce sont eux qu’il faudrait vendre ' +
+          'en premier, le jour où le montant des pertes reportées sera connu.',
         donneesManquantes: ['le montant des pertes en capital reportées (avis de cotisation)'],
       };
     }
@@ -632,6 +729,7 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   if (visibiliteEntamee(profil)) {
     return {
       ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
       limiteVisibilite:
         'chiffrée sur nos comptes seulement — des gains ou pertes réalisés ailleurs changeraient le montant absorbable.',
       explication:
@@ -648,6 +746,7 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     portee: 'declaree',
     montantEstime: montant,
     plan: planifierRecolte(enGain, montant),
+    candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
     explication:
       `${originePertes} restent inutilisées. Vendre puis racheter les positions gagnantes — permis le jour même, ` +
       `la règle des 30 jours ne vise que les pertes — cristallise ${argent(montant)} de gain sans un dollar ` +
@@ -1200,6 +1299,49 @@ export type ParametresReee = {
  * Le « petit disclaimer » demandé est dans chaque branche : l'ARC fait foi,
  * jamais ce document — une cotisation excédentaire coûte 1 % par mois.
  */
+
+/**
+ * LES LIMITES DU SIGNAL, DITES EN MOTS (20 août 2026) — texte GÉNÉRÉ des
+ * limitations structurées, jamais improvisé : même limitation, même phrase.
+ *
+ * Le principe servi ici : un « sous-plafond » ou un « indetermine » muet est
+ * un demi-mensonge quand la vraie raison est « des cotisations en devise
+ * étrangère » ou « des retraits à confirmer ». Le planificateur voit la CAUSE,
+ * et chaque cause chiffrable devient une donnée manquante — donc une question
+ * de rencontre que l'écran des manques sait classer.
+ *
+ * Pas de jargon (« horsCadPresent ») ni de « ⚠ » (absent des polices du PDF) :
+ * des mots, dans la langue du reste du document.
+ */
+function phrasesLimitesMaximisation(l: LimitesMaximisation): { phrase: string; questions: string[] } {
+  let phrase = '';
+  const questions: string[] = [];
+  for (const limitation of l.limitations) {
+    if (limitation === 'devise-etrangere') {
+      const quoi = l.cotisationsEtrangeresPresentes && l.retraitsEtrangersPresents
+        ? 'des cotisations et des retraits'
+        : l.cotisationsEtrangeresPresentes ? 'des cotisations' : 'des retraits';
+      phrase += ` Le dossier porte ${quoi} CELI en devise étrangère (${l.devisesEtrangeres.join(', ')}) : leur équivalent fiscal en dollars canadiens n’est pas encore déterminé — aucun taux n’est inventé à sa place, et l’historique de maximisation reste à confirmer tant qu’il manque.`;
+      questions.push('l’équivalent en dollars canadiens des mouvements CELI en devise étrangère');
+    } else if (limitation === 'retraits-a-confirmer') {
+      phrase += ` Des sorties CELI de ${argent(l.totalRetraitsAConfirmer)} restent à confirmer — véritable retrait ou simple virement interne, elles peuvent ou non recréer des droits futurs : le calcul les compte prudemment comme retraits, mais ce n’est pas un montant fiscal confirmé.`;
+      questions.push('la nature des sorties CELI à confirmer (véritable retrait ou virement interne)');
+    } else if (limitation === 'evenements-ambigus') {
+      phrase += l.evenementsAmbigus === 1
+        ? ' Un mouvement CELI ambigu n’a pas pu être classé et n’est compté nulle part : il doit être tranché avant toute conclusion ferme.'
+        : ` ${l.evenementsAmbigus} mouvements CELI ambigus n’ont pas pu être classés et ne sont comptés nulle part : ils doivent être tranchés avant toute conclusion ferme.`;
+      questions.push('la nature des mouvements CELI ambigus, comptés nulle part');
+    } else if (limitation === 'portee-incomplete') {
+      // Pas de question ici : « des comptes ailleurs ? » est DÉJÀ la question
+      // de rencontre n° 1 du produit — la répéter la ferait compter deux fois.
+      phrase += l.portee === 'inconnue'
+        ? ' L’étendue de l’historique disponible est inconnue : le motif des cotisations ne se lit pas.'
+        : ' Le motif est lu sur les seules transactions détenues ici — un historique ailleurs le changerait.';
+    }
+  }
+  return { phrase, questions };
+}
+
 function strategieDroitsCotisation(
   profil: ProfilClient,
   signaux: SignauxLivre | null
@@ -1247,7 +1389,19 @@ function strategieDroitsCotisation(
     // LE CHIFFRE CITÉ EST LE PLAFOND CUMULATIF, celui qui fonde la preuve — pas
     // celui de la période vue ici, qui ne prouvait rien (voir signaux-livre.ts).
     phraseMotif = ` À noter : les cotisations vues ici (${argent(m.totalCotise)}) dépassent tout ce que les droits accumulés permettent (${argent(m.plafondCumulatif as number)}, retraits compris) : des droits ont donc été créés ailleurs — un CELI détenu à une autre institution.`;
+  } else if (m && m.etat === 'indetermine'
+    && (m.limites.cotisationsEtrangeresPresentes || m.limites.retraitsEtrangersPresents || m.limites.evenementsAmbigus > 0)) {
+    // L'INDÉTERMINÉ QUI A UNE CAUSE LA DIT (20 août 2026) — c'était le trou :
+    // un dossier 100 % USD ou rétrogradé par la matrice de prudence sortait
+    // « indetermine » sans un mot, indiscernable d'un dossier sans motif.
+    phraseMotif = ' Le motif des cotisations CELI ne permet pas de conclure d’ici — voici ce qui l’empêche.';
   }
+
+  // LES LIMITES SUIVENT L'ÉTAT, TOUJOURS — même quand l'état survit (une
+  // preuve « depasse-cumul » qui tient malgré des cotisations USD dit quand
+  // même que des montants USD attendent leur équivalent canadien).
+  const lim = m ? phrasesLimitesMaximisation(m.limites) : { phrase: '', questions: [] as string[] };
+  phraseMotif += lim.phrase;
 
   const disclaimer = ' Avant toute cotisation, le chiffre à croire est celui de Mon dossier ARC — une cotisation excédentaire coûte 1 % par mois.';
 
@@ -1271,8 +1425,12 @@ function strategieDroitsCotisation(
           profil, true,
           'plein d’après les cotisations vues ici — un CELI détenu ailleurs ne ferait que confirmer l’absence de place.'
         ),
-        explication: `Le CELI est plein : aucun droit inutilisé au dossier.${phraseReer}${disclaimer}`,
-        donneesManquantes: [],
+        // LES LIMITES S'AFFICHENT MÊME ICI (20 août 2026) : « plein » est une
+        // conclusion forte — si des montants USD ou des sorties à confirmer
+        // existent, le lecteur doit le savoir avant de la croire. Le verdict
+        // lui-même vient de la chaîne des droits, hors du périmètre de ce lot.
+        explication: `Le CELI est plein : aucun droit inutilisé au dossier.${lim.phrase}${phraseReer}${disclaimer}`,
+        donneesManquantes: [...lim.questions],
       };
     }
 
@@ -1301,7 +1459,7 @@ function strategieDroitsCotisation(
           `Vu d’ici, ${argent(droits.montant)} d’espace CELI restent ouverts — l’historique est complet et les ` +
           'transferts sont tranchés, mais le client détient des comptes ailleurs : tant que ce point n’est pas ' +
           `confirmé, ce chiffre reste une borne.${phraseAnnee}${phraseMotif}${phraseReer}${disclaimer}`,
-        donneesManquantes: ['la confirmation qu’aucun compte n’est détenu ailleurs', ...questionAnnee],
+        donneesManquantes: ['la confirmation qu’aucun compte n’est détenu ailleurs', ...questionAnnee, ...lim.questions],
       };
     }
 
@@ -1310,7 +1468,7 @@ function strategieDroitsCotisation(
       explication:
         `En date du dossier, ${argent(droits.montant)} d’espace CELI restent ouverts — les trois conditions sont réunies ` +
         `(historique complet, aucun compte ailleurs confirmé, transferts tranchés).${phraseAnnee}${phraseMotif}${phraseReer}${disclaimer}`,
-      donneesManquantes: questionAnnee,
+      donneesManquantes: [...questionAnnee, ...lim.questions],
     };
   }
 
@@ -1327,7 +1485,7 @@ function strategieDroitsCotisation(
         ? `Vu d’ici, jusqu’à ${argent(borne)} d’espace CELI pourraient être ouverts — c’est une borne, pas le droit réel : ${droits.conditionsManquantes.join(' ; ')}.`
         : `L’espace CELI n’est pas calculable : ${droits.conditionsManquantes.join(' ; ')}.`) +
       phraseAnnee + phraseMotif + phraseReer + disclaimer,
-    donneesManquantes: [...droits.conditionsManquantes, ...questionAnnee],
+    donneesManquantes: [...droits.conditionsManquantes, ...questionAnnee, ...lim.questions],
   };
 }
 

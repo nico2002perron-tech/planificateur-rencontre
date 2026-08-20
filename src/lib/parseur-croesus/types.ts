@@ -172,3 +172,120 @@ export function estCompteVMBL(noCompte: string): boolean {
 export function estCompteIA(noCompte: string): boolean {
   return decomposerCompte(noCompte)?.prefixe === '37';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LE SOUS-TYPE ET LA DEVISE D'UN COMPTE — ce que le suffixe dit DE PLUS que le
+// régime fiscal. Étape 1 de la ligne du temps des flux (19 août 2026).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `typeDeCompte()` répond à UNE question : « quel régime fiscal ? ». Elle est
+// consommée partout, elle est mesurée, elle ne change pas.
+//
+// Mais le suffixe en dit davantage, et la ligne du temps en a besoin :
+//   · A et B sont tous deux « non-enregistre », mais A est le COMPTANT CAD et B
+//     le COMPTANT USD. Additionner leurs flux sans le savoir mélange les devises.
+//   · E et F sont tous deux « non-enregistre », mais ce sont les DEUX FACES d'un
+//     même compte marge — E en CAD, F en USD. Une conversion CAD→USD s'écrit
+//     comme une sortie de E et une entrée de F. Sans ce lien, le rapprochement
+//     des conversions (étape 3) est impossible.
+//
+// Libellés dictés par Nicolas le 19 août : B = Comptant USD, J = Compte de
+// revenu CAD (un comptant), R = REER. Le lien E/F « deux faces d'une marge »
+// est sa déclaration aussi — NON MESURÉ sur le livre. Il sera mesuré (par
+// comptages) avant que l'étape 3 ne s'y appuie.
+//
+// INVARIANT, testé : `sousTypeCompte(x)?.regime === typeDeCompte(x)` pour tout
+// x. Cette fonction AJOUTE de l'information ; elle ne contredit jamais l'autre.
+
+/** Ce que le suffixe révèle, au-delà du régime. */
+export type SousTypeCompte =
+  | 'comptant' | 'marge' | 'revenu'                  // non-enregistré
+  | 'reer' | 'reer-conjoint' | 'celi' | 'celiapp'
+  | 'ferr' | 'frv' | 'cri' | 'reee';
+
+export type ProfilCompte = {
+  /**
+   * LA LETTRE QUI PORTE LE RÉGIME — le suffixe chez iA (« 37-XXXX-W » → W), le
+   * dernier caractère du bloc du milieu chez VMBL (« 4A-Y3VI-6 » → I). Ce n'est
+   * donc PAS toujours le suffixe de l'identifiant, d'où le nom.
+   */
+  lettre: string;
+  /** IDENTIQUE à `typeDeCompte()` — invariant testé. */
+  regime: string;
+  sousType: SousTypeCompte;
+  /**
+   * La devise que la lettre porte. `null` quand elle ne la porte pas : les
+   * régimes enregistrés (W, S, Z…) ont une devise par position, pas par compte,
+   * et aucune lettre VMBL n'est prouvée porter une devise.
+   */
+  devise: 'CAD' | 'USD' | null;
+  /**
+   * LA TABLE APPLIQUÉE — pas l'institution prouvée. `'suffixe-ia'` veut dire
+   * « lu dans TYPE_PAR_SUFFIXE », et cette table s'applique à tout préfixe non
+   * VMBL (37, mais aussi 00, 36, ~E…). La preuve qu'un compte EST iA relève de
+   * `estCompteIA()`, qui exige le préfixe 37 : un champ qui dirait `'ia'` ici
+   * contredirait ce prédicat pour un compte 00-….
+   */
+  table: 'suffixe-ia' | 'lettre-vmbl';
+};
+
+/**
+ * iA « 37-XXXX-L » — ce que chaque suffixe porte, au complet.
+ * Les régimes viennent de `TYPE_PAR_SUFFIXE` ; les sous-types et devises des
+ * libellés dictés par Nicolas (voir l'en-tête).
+ */
+const PROFIL_PAR_SUFFIXE_IA: Record<string, Omit<ProfilCompte, 'lettre' | 'regime' | 'table'>> = {
+  A: { sousType: 'comptant', devise: 'CAD' },
+  B: { sousType: 'comptant', devise: 'USD' },
+  E: { sousType: 'marge',    devise: 'CAD' },
+  F: { sousType: 'marge',    devise: 'USD' },
+  J: { sousType: 'revenu',   devise: 'CAD' },
+  R: { sousType: 'reer',     devise: null },
+  S: { sousType: 'reer',     devise: null },
+  W: { sousType: 'celi',     devise: null },
+  Q: { sousType: 'celiapp',  devise: null },
+  T: { sousType: 'ferr',     devise: null },
+  Y: { sousType: 'ferr',     devise: null },   // « FERR conj. » : le titulaire est une autre notion
+  P: { sousType: 'frv',      devise: null },
+  N: { sousType: 'cri',      devise: null },
+  Z: { sousType: 'reee',     devise: null },
+};
+
+/**
+ * VMBL — le sous-type EST le régime de la table (aucune lettre VMBL n'est
+ * prouvée porter un sous-type ou une devise). `'reer-conjoint'` y existe :
+ * c'est une valeur que `TypeCompte` ne connaît pas — trouvaille du 19 août,
+ * documentée au schéma, non corrigée ici.
+ */
+const SOUS_TYPE_VMBL: Record<string, SousTypeCompte> = {
+  celi: 'celi', reer: 'reer', 'reer-conjoint': 'reer-conjoint', reee: 'reee', ferr: 'ferr',
+};
+
+/**
+ * Le profil complet d'un compte, ou `null` — pour EXACTEMENT les mêmes
+ * identifiants que `typeDeCompte()` rend `null`.
+ */
+export function sousTypeCompte(noCompte: string): ProfilCompte | null {
+  const regime = typeDeCompte(noCompte);
+  if (regime === null) return null;
+  const d = decomposerCompte(noCompte);
+  if (!d) return null;   // jamais atteint si typeDeCompte a répondu, mais on n'infère pas
+
+  if (d.vmbl) {
+    const sousType = SOUS_TYPE_VMBL[regime];
+    if (!sousType) return null;
+    return { lettre: d.milieu.slice(-1), regime, sousType, devise: null, table: 'lettre-vmbl' };
+  }
+
+  const profil = PROFIL_PAR_SUFFIXE_IA[d.suffixe];
+  if (!profil) return null;
+  return { lettre: d.suffixe, regime, ...profil, table: 'suffixe-ia' };
+}
+
+/** Vrai quand deux suffixes iA sont les deux faces CAD/USD d'un même compte : A/B, E/F. */
+export function suffixesJumeauxDevise(a: string, b: string): boolean {
+  const pa = PROFIL_PAR_SUFFIXE_IA[a.toUpperCase()];
+  const pb = PROFIL_PAR_SUFFIXE_IA[b.toUpperCase()];
+  if (!pa || !pb || !pa.devise || !pb.devise) return false;
+  return pa.sousType === pb.sousType && pa.devise !== pb.devise;
+}
