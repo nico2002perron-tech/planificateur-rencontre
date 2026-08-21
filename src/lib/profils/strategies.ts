@@ -157,6 +157,23 @@ export type Constat = {
    * n'a volontairement aucun seuil de fraîcheur, et n'en acquiert aucun.
    */
   dateDonnees?: string | null;
+  /**
+   * LES DEUX GRANDEURS DE CONTEXTE DE LA CRISTALLISATION DE GAINS — exposées
+   * le 21 août 2026 pour que le document puisse raconter la stratégie sans
+   * rien recalculer.
+   *
+   * Elles existaient déjà, calculées à l'intérieur de la stratégie ; elles n'en
+   * sortaient pas. Le rendu devait donc soit les redériver — interdit —, soit
+   * s'en passer, ce qui rend l'histoire incompréhensible : « voici ce que vous
+   * pouvez récolter » n'a de sens qu'à côté de « voici ce qui dort au dossier ».
+   *
+   * ⚠ AUCUNE RÈGLE NOUVELLE. `pertesDisponiblesCad` garde EXACTEMENT le sens
+   * qu'elle a dans la stratégie : perte nette de l'année + pertes reportées
+   * dont l'unité permet un chiffre ferme. Une reportée d'unité inconnue n'y
+   * entre pas — c'est déjà la doctrine, et l'exposer ne la change pas.
+   */
+  gainsLatentsCad?: number | null;
+  pertesDisponiblesCad?: number | null;
 };
 
 export type LignePlan = {
@@ -906,6 +923,8 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
       ...base, statut: 'montant-a-confirmer',
       portee: visibiliteEntamee(profil) ? 'interne-seulement' : 'declaree',
       montantEstime: null,
+      gainsLatentsCad: gainsLatents,
+      pertesDisponiblesCad: pertesDisponibles,
       candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
       limiteVisibilite: visibiliteEntamee(profil)
         ? 'chiffrée sur nos comptes seulement — des gains ou pertes réalisés ailleurs changeraient le montant absorbable.'
@@ -923,6 +942,8 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     statut: 'calcule',
     portee: 'declaree',
     montantEstime: montant,
+    gainsLatentsCad: gainsLatents,
+    pertesDisponiblesCad: pertesDisponibles,
     // LE CHIFFRE PORTE SA DATE. Sans elle, le document laisserait entendre
     // « valeur d'aujourd'hui » sur des valeurs marchandes qui datent du relevé.
     dateDonnees: completude.dateReleve,

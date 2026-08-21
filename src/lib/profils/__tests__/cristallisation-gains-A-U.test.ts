@@ -645,6 +645,50 @@ describe('S · une ambiguïté CELI totalement étrangère à cette stratégie',
 // T — L'INVARIANT `calcule`, et la traçabilité du plan
 // ═══════════════════════════════════════════════════════════════════════════
 
+describe('les deux grandeurs de contexte sortent de la stratégie', () => {
+  it('gains latents et pertes disponibles sont exposés, sans changer de sens', () => {
+    // Le document doit pouvoir dire « voici ce qui dort au dossier » à côté de
+    // « voici ce que vous pouvez récolter ». Sans ces deux champs il devrait
+    // les redériver — interdit — ou s'en passer, et l'histoire devient
+    // incompréhensible.
+    const c = gains(dossierPropre());
+    expect(c.statut).toBe('calcule');
+    expect(c.gainsLatentsCad).toBe(40000);        // 50 000 − 10 000
+    expect(c.pertesDisponiblesCad).toBe(10000);   // pertes NON ENREGISTRÉES de l'année
+    // Le montant reste le minimum des deux — la règle n'a pas bougé.
+    expect(c.montantEstime).toBe(Math.min(c.gainsLatentsCad!, c.pertesDisponiblesCad!));
+  });
+
+  it('⚠ une perte reportée d’unité inconnue N’ENTRE PAS dans les pertes disponibles', () => {
+    // L'exposition ne desserre aucune admissibilité : c'est déjà la doctrine,
+    // et la sortir du moteur ne doit pas la changer.
+    const c = gains(dossierPropre((p) => {
+      p.droits.pertesCapitalReportees = {
+        montant: 5000, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE,
+      };
+    }));
+    expect(c.pertesDisponiblesCad).toBe(10000);   // PAS 15 000
+  });
+
+  it('une reportée d’unité COMPATIBLE, elle, s’y ajoute', () => {
+    const c = gains(dossierPropre((p) => {
+      p.droits.pertesCapitalReportees = {
+        montant: 5000, unite: 'perte-capital-brute', source: 'avis-cotisation', dateDonnee: DATE,
+      };
+    }));
+    expect(c.pertesDisponiblesCad).toBe(15000);
+  });
+
+  it('les deux grandeurs survivent à un statut dégradé', () => {
+    // C'est là qu'elles servent le plus : dire ce qui existe même quand le
+    // chiffre ferme est impossible.
+    const c = gains(dossierPropre((p) => { p.consolidation.comptesExternes = 'oui'; }));
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.gainsLatentsCad).toBe(40000);
+    expect(c.pertesDisponiblesCad).toBe(10000);
+  });
+});
+
 describe('T · le test positif final', () => {
   it('statut calculé, montant présent, aucune donnée manquante, plan entièrement traçable', () => {
     const p = dossierPropre((x) => {
