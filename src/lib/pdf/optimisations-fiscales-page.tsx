@@ -41,6 +41,11 @@ import { Page, Text, View, Svg, Path, Image } from '@react-pdf/renderer';
 import { styles, C } from './styles';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
+import {
+  montantAffichable, proseSansMontantFerme, ENTETE, raisonsAConfirmer,
+  modeTableau, lignesTableau, COLONNES, mentionDate, mentionPortee,
+} from './rendu-constat';
+
 import { gestesDe, estDejaEnOrdre } from '@/lib/profils/demarches';
 
 // ── Helpers locaux (copies volontaires : price-targets-template importera cette
@@ -64,6 +69,10 @@ function fmtDate(iso: string): string {
  * client — « pas de chiffre ici » —, mais leurs mots diffèrent. C'est le texte
  * qui porte la nuance, pas la couleur.
  */
+// ⚠ TOUTES LES DÉCISIONS DE PRÉSENTATION VIVENT DANS `rendu-constat.ts`.
+// Le JSX ne fait que les appliquer : c'est ce qui rend la protection des
+// chiffres testable sans rendre un document, et impossible à contourner par
+// une phrase bien tournée.
 const TON: Record<Constat['statut'], {
   fond: string; bord: string; encre: string; mot: string;
   /** Le bandeau d'en-tête de la carte, et sa pastille de statut. */
@@ -166,7 +175,18 @@ function IconeStrategie({ strategie, eteinte }: { strategie: string; eteinte: bo
 
 function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<string, string> }) {
   const t = TON[constat.statut];
-  const gestes = gestesDe(constat);
+  // ── LES DÉMARCHES SONT UN TROISIÈME CANAL — refermé le 21 août 2026 ──────
+  //
+  // Trouvé par le verrou anti-fuite : `demarches.ts` lit `constat.montantEstime`
+  // DIRECTEMENT et l'écrit dans des instructions comme « Vendre pour environ
+  // X $ de gain ». Le moteur met ce champ à `null` hors de `calcule`, donc rien
+  // ne fuyait — mais la protection reposait entièrement sur cette discipline,
+  // à un endroit que personne ne surveillait. Un constat forgé avec un statut
+  // dégradé et un montant produisait une marche à suivre chiffrée.
+  //
+  // On ne passe donc aux démarches QUE le montant affichable, et on filtre leur
+  // prose comme celle du constat : une seule règle, appliquée à tous les canaux.
+  const gestes = gestesDe({ ...constat, montantEstime: montantAffichable(constat) });
   return (
     // LA CARTE, SUR LE MOULE DU RESTE DU RAPPORT — refonte du 18 août 2026.
     //
@@ -217,7 +237,7 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
           }}
         >
           <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: t.pastilleEncre }}>
-            {t.mot}
+            {ENTETE[constat.statut].badge}
           </Text>
         </View>
       </View>
@@ -231,7 +251,10 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
             IL DEVIENT UN CHIFFRE-TITRE (18 août) : 20 pt, comme les nombres
             des autres pages. Il était à 12 pt en bout de ligne, où il se
             lisait comme une note de bas de page. */}
-        {constat.statut === 'calcule' && constat.montantEstime !== null && (
+        {/* ⚠ LA PORTE UNIQUE DU CHIFFRE — `montantAffichable` ne rend un
+            montant que sous `calcule`. Un constat forgé avec un statut dégradé
+            ET un montant ne peut rien afficher ici. */}
+        {montantAffichable(constat) !== null && (
           <View
             style={{
               flexDirection: 'row', alignItems: 'baseline',
@@ -240,7 +263,7 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
             }}
           >
             <Text style={{ fontSize: 20, fontFamily: 'Montserrat', fontWeight: 800, color: t.encre }}>
-              {fmt(constat.montantEstime)}
+              {fmt(montantAffichable(constat) as number)}
             </Text>
             {/* CE QUE LE MONTANT EST. Sans cette ligne, trois chiffres de
                 natures différentes s'alignent et se lisent comme trois
@@ -254,27 +277,95 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
           </View>
         )}
 
+        {/* L'ANNONCE DU STATUT — quatre statuts, quatre phrases. Sous
+            `calcule` le chiffre-titre parle déjà ; ailleurs, cette ligne dit
+            d'entrée ce que le document PEUT et NE PEUT PAS conclure. Sans
+            elle, « indisponible » et « non applicable » se lisaient pareil :
+            l'un est un aveu, l'autre une conclusion. */}
+        {constat.statut !== 'calcule' && (
+          <Text style={{
+            marginBottom: 3, fontSize: 8, fontFamily: 'Montserrat',
+            fontWeight: 700, color: t.encre,
+          }}>
+            {ENTETE[constat.statut].annonce}
+          </Text>
+        )}
+
+        {/* ⚠ LA PROSE PASSE PAR LE FILTRE. C'est le second canal par lequel un
+            chiffre pourrait atteindre le client, et le seul qui ne dépendait
+            jusqu'ici que de la vigilance de l'auteur de la stratégie. */}
         <Text style={{ fontSize: 7.6, color: '#334155', lineHeight: 1.45 }}>
-          {constat.explication}
+          {proseSansMontantFerme(constat.explication, constat.statut)}
         </Text>
 
-        {constat.donneesManquantes.length > 0 && (
+        {/* LA DATE DES VALEURS — jamais « aujourd'hui ». Le moteur n'a aucun
+            seuil de fraîcheur ; le document date sans juger. */}
+        {mentionDate(constat.dateDonnees) && (
+          <Text style={{ marginTop: 3, fontSize: 6.6, color: '#64748b' }}>
+            {mentionDate(constat.dateDonnees)}
+          </Text>
+        )}
+        {mentionPortee(constat) && (
+          <Text style={{ marginTop: 2, fontSize: 6.6, color: '#64748b' }}>
+            {mentionPortee(constat)}
+          </Text>
+        )}
+
+        {/* CE QUI EMPÊCHE D'AGIR — alimenté par le moteur, traduit une seule
+            fois (`libelleRaison`). Aucun identifiant technique ne peut
+            atteindre le client, et un test le vérifie. */}
+        {raisonsAConfirmer(constat).length > 0 && (
           <View
             style={{
               marginTop: 5, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 5,
               backgroundColor: t.fond,
             }}
           >
-            <Text style={{ fontSize: 6.9, color: t.encre, lineHeight: 1.35 }}>
-              Pour aller plus loin : {constat.donneesManquantes.join(' · ')}
+            <Text style={{
+              fontSize: 6.9, fontFamily: 'Open Sans', fontWeight: 600,
+              color: t.encre, marginBottom: 2,
+            }}>
+              {ENTETE[constat.statut].titreRaisons}
             </Text>
+            {raisonsAConfirmer(constat).map((r, i) => (
+              <Text key={i} style={{ fontSize: 6.9, color: t.encre, lineHeight: 1.35 }}>
+                {'• ' + r}
+              </Text>
+            ))}
           </View>
         )}
 
-      {/* LE PLAN DE RÉCOLTE — quoi vendre, pour combien, et pourquoi cet
-          ordre. Présent seulement sur un constat calculé : un plan vers un
-          montant non confirmé serait une marche à suivre vers un chiffre faux. */}
-      {constat.plan && constat.plan.length > 0 && (
+      {/* QUOI VENDRE — deux régimes, un seul tableau.
+          ─────────────────────────────────────────────────────────────────────
+          AVANT le 19 août 2026, ce bloc n'affichait que `plan`, présent sur la
+          SEULE branche entièrement calculée de la cristallisation de gains.
+          Partout ailleurs — comptes détenus ailleurs, pertes reportées non
+          saisies — la section ne nommait aucun titre. Nicolas : « je trouve que
+          ça dit rien ».
+
+          Désormais :
+          · `plan`      — la marche à suivre vers un montant CONFIRMÉ. Ses
+                          lignes peuvent être partielles (découpées pour
+                          atteindre la cible).
+          · `candidats` — les 3 meilleurs titres par densité, dès que les
+                          positions sont connues. Jamais partiels, et sans
+                          promesse de montant : ce sont des FAITS du relevé
+                          (valeur marchande − valeur comptable), pas une
+                          estimation fiscale.
+
+          Le plan prime quand il existe ; sinon les candidats. La légende, en
+          bas du tableau, dit lequel des deux on est en train de lire — sans
+          quoi une liste de candidats se lirait comme un ordre d'exécution. */}
+      {(() => {
+        // ⚠ LE MODE VIENT DU MODULE, ET IL FAIT L'AUTORITÉ DU TABLEAU. Un plan
+        // est une marche à suivre ; des candidats sont des observations du
+        // relevé. Confondre les deux fabriquait une instruction de vente à
+        // partir d'un montant que le moteur n'avait jamais recommandé.
+        const mode = modeTableau(constat);
+        if (!mode) return null;
+        const lignes = lignesTableau(constat);
+        const col = COLONNES[mode];
+        return (
         <View
           style={{
             marginTop: 6, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6,
@@ -284,10 +375,10 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
         >
           <View style={{ flexDirection: 'row', paddingBottom: 3, borderBottomWidth: 0.8, borderBottomColor: t.bord, borderBottomStyle: 'solid' }}>
             <Text style={{ flex: 2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>Titre</Text>
-            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Vendre (environ)</Text>
-            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>Gain cristallisé</Text>
+            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>{col.montant}</Text>
+            <Text style={{ flex: 1.6, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b', textAlign: 'right' }}>{col.gain}</Text>
           </View>
-          {constat.plan.map((l) => (
+          {lignes.map((l) => (
             <View key={l.symbole} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 2.2 }}>
               {/* LE LOGO DU TITRE, quand il est déjà sur le poste. Il vient du
                   cache local nourri par les cours cibles — le document fiscal
@@ -309,12 +400,11 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
             </View>
           ))}
           <Text style={{ marginTop: 1.5, fontSize: 6.1, color: '#64748b', lineHeight: 1.3 }}>
-            L’ordre va du titre au gain le plus dense au moins dense : la cible est atteinte en
-            vendant-rachetant le moins possible. Vendre une partie d’une position cristallise la même
-            part de son gain — le prix de base est un coût moyen par action.
+            {col.legende}
           </Text>
         </View>
-      )}
+        );
+      })()}
 
       {/* LES DÉMARCHES, SOUS CHAQUE GESTE.
           Un constat dit ce qui est ; un geste dit ce qu'on fait ; les démarches
@@ -333,7 +423,7 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
         >
           <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
             <Text style={{ fontSize: 7.8, fontFamily: 'Montserrat', fontWeight: 700, color: C.navy }}>
-              {g.libelle}
+              {proseSansMontantFerme(g.libelle, constat.statut)}
             </Text>
             <Text style={{ marginLeft: 5, fontSize: 6, color: '#64748b' }}>
               {PORTEUR[g.porteur]}
@@ -341,7 +431,7 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
           </View>
           {g.demarches.map((d, j) => (
             <Text key={j} style={{ marginTop: 2, fontSize: 7, color: '#475569', lineHeight: 1.4 }}>
-              {j + 1}. {d}
+              {j + 1}. {proseSansMontantFerme(d, constat.statut)}
             </Text>
           ))}
         </View>

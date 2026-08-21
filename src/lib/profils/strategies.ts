@@ -140,6 +140,19 @@ export type Constat = {
    * calendrier fiscal est un danger, pas un appui.
    */
   echeance?: string | null;
+  /**
+   * LA DATE DES VALEURS UTILISÉES — un champ, pas une phrase.
+   *
+   * Ajouté le 21 août 2026 pour le lot PDF. La date existait déjà, mais
+   * seulement NOYÉE dans la prose d'une branche dégradée (« …du relevé du
+   * 2026-06-30 »), et pas du tout sous `calcule`. Le document ne pouvait donc
+   * pas dater son chiffre sans relire du texte — c'est-à-dire sans redériver,
+   * ce que la doctrine du PDF interdit.
+   *
+   * ⚠ AUCUNE RÈGLE FISCALE ICI. C'est une donnée de présentation : le moteur
+   * n'a volontairement aucun seuil de fraîcheur, et n'en acquiert aucun.
+   */
+  dateDonnees?: string | null;
 };
 
 export type LignePlan = {
@@ -618,6 +631,26 @@ function strategieCristallisation(profil: ProfilClient): Constat {
  * barèmes d'imposition fédéral + Québec dans parametres-fiscaux.csv — sous le
  * même verrou fiscaliste. Elle n'est PAS couverte ici.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * GELÉE — « cristallisation de gains v1 », 21 août 2026, décision de Nicolas.
+ *
+ * Première stratégie du dépôt menée jusqu'au bout : assiette fiscale par
+ * régime, unités des pertes reportées, PBR et valeur marchande qualifiés un par
+ * un, devise, portée, perte apparente, biens identiques. Chaque condition
+ * matérielle d'un chiffre ferme est verrouillée par un test, et les neuf
+ * garde-fous ont été cassés un par un pour le prouver — voir
+ * `__tests__/cristallisation-gains-A-U.test.ts`.
+ *
+ * ELLE NE SE MODIFIE PLUS, sauf pour l'une de ces quatre raisons :
+ *   · un bug REPRODUIT sur un dossier réel ;
+ *   · un changement de règle fiscale ;
+ *   · une régression détectée par la suite de tests ;
+ *   · une décision architecturale transversale explicitement autorisée.
+ *
+ * « Ça se lirait mieux » et « tant qu'à y être » n'en font pas partie.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 function strategieCristallisationGains(profil: ProfilClient): Constat {
   const base = {
     strategie: 'cristallisation-gains',
@@ -831,6 +864,7 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
         `${opportunite}Le montant exact ne peut pas être établi : ${completude.explications.join(' ')}` +
         (completude.dateReleve ? ` Les valeurs marchandes utilisées sont celles du relevé du ${completude.dateReleve}.` : ''),
       donneesManquantes: completude.donneesManquantes,
+      dateDonnees: completude.dateReleve,
     };
   }
 
@@ -839,6 +873,9 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     statut: 'calcule',
     portee: 'declaree',
     montantEstime: montant,
+    // LE CHIFFRE PORTE SA DATE. Sans elle, le document laisserait entendre
+    // « valeur d'aujourd'hui » sur des valeurs marchandes qui datent du relevé.
+    dateDonnees: completude.dateReleve,
     // LE PLAN NE NOMME QUE DES POSITIONS PLEINEMENT FIABLES (§17) : `enGain`
     // ne contient plus que des positions à PBR, valeur marchande et devise
     // lisibles. Une position aveugle n'y figure pas — elle est déclarée.
