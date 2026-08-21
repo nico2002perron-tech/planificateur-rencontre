@@ -104,14 +104,23 @@ describe('A · dossier fiable avec un gain courant à absorber', () => {
 // B — LA DEVISE
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('B · une perte en dollars américains', () => {
-  it('ne devient JAMAIS un montant canadien', () => {
-    // AVANT : « calculé, 10 000 $ » sur 10 000 USD de perte.
-    const c = pertes(dossier((p) => { p.comptes = [cpt([pos('USPERDANT', 4000, 14000, 'USD')])]; }));
+describe('B · une perte dont l’unité des valeurs n’est pas établie', () => {
+  it('ne produit JAMAIS un montant canadien', () => {
+    // ⚠ REPOINTÉ LE 21 AOÛT 2026. Ce test visait la DEVISE du titre ; la
+    // mesure a montré que le format rend ses valeurs en CAD même sur les
+    // lignes USD. Le garde vise désormais l'UNITÉ des valeurs.
+    const c = pertes(dossier((p) => { p.comptes = [
+      cpt([{ ...pos('MYSTERE', 4000, 14000), uniteValeursRapport: 'inconnue' }])]; }));
     expect(c.statut).not.toBe('calcule');
     expect(c.montantEstime).toBeNull();
     expect(c.donneesManquantes.join(' ')).toMatch(/dollars canadiens/);
     expect(plat(c.explication)).not.toMatch(/10 000/);
+  });
+
+  it('une position USD dont les valeurs sont en CAD chiffre normalement', () => {
+    const c = pertes(dossier((p) => { p.comptes = [cpt([pos('USPERDANT', 4000, 14000, 'USD')])]; }));
+    expect(c.statut).toBe('calcule');
+    expect(c.montantEstime).toBe(10000);
   });
 
   it('mais une position réellement en dollars canadiens n’est pas bloquée', () => {
@@ -166,7 +175,8 @@ describe('Q · les positions aveugles ne sont jamais proposées à la vente', ()
   const aveugles: Array<[string, Position]> = [
     ['sans prix de base', pos('SANSPBR', 4000, null)],
     ['sans valeur marchande', pos('SANSVM', null, 50000)],
-    ['en devise non résolue', pos('USTITRE', 4000, 14000, 'USD')],
+    ['dont l’unité des valeurs n’est pas établie',
+      { ...pos('MYSTERE', 4000, 14000), uniteValeursRapport: 'inconnue' as const }],
   ];
   for (const [quoi, aveugle] of aveugles) {
     it(`${quoi} : absente du plan ET des candidats`, () => {
@@ -186,7 +196,8 @@ describe('R · aucun plan ferme sous statut dégradé', () => {
   it('le plan n’existe que sur un constat calculé', () => {
     for (const modif of [
       (p: ProfilClient) => { p.consolidation.comptesExternes = 'oui'; },
-      (p: ProfilClient) => { p.comptes = [cpt([pos('USPERDANT', 4000, 14000, 'USD')])]; },
+      (p: ProfilClient) => { p.comptes = [cpt([
+        { ...pos('MYSTERE', 4000, 14000), uniteValeursRapport: 'inconnue' }])]; },
       (p: ProfilClient) => { p.transactionsAnnee.pertesCourantesAValiderPerteApparente = true; },
     ]) {
       const c = pertes(dossier(modif));

@@ -219,6 +219,34 @@ export type Position = {
    * 65 470 $ d'erreur avant correction.
    */
   devise: string;
+  /**
+   * DANS QUELLE UNITÉ LES COLONNES MONÉTAIRES DE CETTE LIGNE SONT-ELLES
+   * EXPRIMÉES ? — ajouté le 21 août 2026, et c'est un correctif de fond.
+   *
+   * ⚠ CE N'EST PAS `devise`. Les deux étaient confondus, et la confusion
+   * bloquait des dossiers pour un motif faux.
+   *
+   *   `devise`                → la monnaie de NÉGOCIATION du titre (colonne 0
+   *                             du relevé). « USD » y signifie « ce titre se
+   *                             transige à New York ».
+   *   `uniteValeursRapport`   → la monnaie des COLONNES 8 et 9 (coût total,
+   *                             valeur marchande), c'est-à-dire des nombres
+   *                             que le moteur consomme.
+   *
+   * MESURÉ LE 21 AOÛT 2026 sur la base réelle, deux fois :
+   *   · sur les lignes d'encaisse « 1USD », valeur marchande ÷ nominal donne
+   *     1,379 et 1,389 — le taux de change. Croesus CONVERTIT.
+   *   · si le coût était resté en USD pendant que la valeur passait en CAD,
+   *     les positions USD montreraient ~38 % d'inflation systématique. Elles
+   *     ne la montrent pas : médiane valeur/coût de 1,085 contre 1,063 pour
+   *     les CAD, et 40 % en perte contre 41 %.
+   *
+   * ⚠ CE CONTRAT APPARTIENT AU FORMAT D'IMPORT, PAS À « CROESUS ». Il vaut
+   * pour l'export de positions à 13 colonnes que nous supportons. Une autre
+   * source, ou un autre réglage de rapport, doit déclarer `inconnue` — et le
+   * moteur dégradera, comme il le faisait à tort pour toutes les positions USD.
+   */
+  uniteValeursRapport?: 'CAD' | 'USD' | 'inconnue';
   categorie: string | null;
   valeurMarchande: number | null;
   /** = PBR. null si absent de l'export → gains latents indisponibles. */

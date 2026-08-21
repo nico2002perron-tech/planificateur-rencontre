@@ -62,8 +62,14 @@ export type QualitePosition = {
   /** Le PBR est-il une donnée ? (0,00 $ CONFIRMÉ en est une ; `null` n'en est pas une.) */
   pbrFiable: boolean;
   vmFiable: boolean;
-  /** La devise permet-elle d'exprimer un gain EN DOLLARS CANADIENS ? */
-  deviseLisibleEnCad: boolean;
+  /**
+   * LES VALEURS DE CETTE POSITION SONT-ELLES EXPRIMÉES EN DOLLARS CANADIENS ?
+   *
+   * ⚠ CE N'EST PAS « le titre se transige-t-il en dollars canadiens ». La
+   * question porte sur l'UNITÉ DES COLONNES MONÉTAIRES, pas sur la monnaie de
+   * négociation — voir `Position.uniteValeursRapport`.
+   */
+  valeursExprimeesEnCad: boolean;
   /** Le gain latent, seulement quand les trois précédents le permettent. */
   gainLatentCad: number | null;
   /** Pourquoi cette position ne peut pas porter de chiffre ferme — vide si elle le peut. */
@@ -110,6 +116,18 @@ export function positionsNonEnregistrees(profil: ProfilClient): PositionSituee[]
 }
 
 /**
+ * L'UNITÉ DES COLONNES MONÉTAIRES D'UNE POSITION.
+ *
+ * Absente = le format d'import historique, dont la mesure du 21 août 2026 a
+ * établi qu'il rend ses valeurs en dollars canadiens. Toute source qui ne peut
+ * pas le garantir doit poser `inconnue` — et le moteur dégradera alors, pour
+ * un motif qui sera vrai cette fois.
+ */
+export function uniteValeursDe(p: Position): 'CAD' | 'USD' | 'inconnue' {
+  return p.uniteValeursRapport ?? 'CAD';
+}
+
+/**
  * Qualifie UNE position. Chaque dimension est mesurée séparément : une position
  * peut avoir un PBR parfait et une valeur marchande absente, et c'est une
  * information différente d’une position sans PBR.
@@ -121,23 +139,39 @@ export function qualifierPosition(p: PositionSituee): QualitePosition {
   // effacerait un gain latent parfaitement connu.
   const pbrFiable = p.valeurComptable !== null;
   const vmFiable = p.valeurMarchande !== null;
-  const deviseLisibleEnCad = (p.devise || 'CAD').toUpperCase() === 'CAD';
+  // ── LE FAUX GARDE, RETIRÉ LE 21 AOÛT 2026 ────────────────────────────────
+  //
+  // Cette ligne lisait `p.devise` — la monnaie de NÉGOCIATION du titre — et en
+  // concluait que ses montants n'étaient pas en dollars canadiens. Les deux
+  // notions n'ont rien à voir, et la mesure l'a tranché : le format d'export
+  // que nous supportons rend ses colonnes monétaires en CAD, y compris sur les
+  // lignes marquées « USD » (encaisse 1USD à 1,379 et 1,389 ; distribution
+  // valeur/coût identique entre lignes CAD et USD).
+  //
+  // Ce que ce faux garde coûtait, mesuré : 14 des 49 positions non enregistrées
+  // (29 %) écartées d'un calcul parfaitement faisable. Pas un faux vert — un
+  // FAUX ROUGE, moins dangereux, tout aussi faux.
+  //
+  // LA VRAIE QUESTION est posée au format, qui seul la connaît. Une source qui
+  // ne déclare rien vaut CAD : c'est le contrat du seul format supporté à ce
+  // jour, et toute nouvelle source devra dire `inconnue` explicitement.
+  const valeursExprimeesEnCad = uniteValeursDe(p) === 'CAD';
 
   if (!pbrFiable) raisons.push('prix de base rajusté absent');
   if (!vmFiable) raisons.push('valeur marchande absente');
-  if (!deviseLisibleEnCad) {
-    raisons.push(`position en ${(p.devise || '').toUpperCase()} — le relevé ne fournit aucune valeur en dollars canadiens`);
+  if (!valeursExprimeesEnCad) {
+    raisons.push('les montants de cette position ne sont pas exprimés en dollars canadiens');
   }
 
   // LE GAIN N'EXISTE QUE SI LES TROIS TIENNENT. Sans PBR on ne sait pas d'où on
   // part ; sans valeur marchande on ne sait pas où on est ; en devise étrangère
   // on ne sait pas dire le résultat en dollars canadiens — et l'ARC exige des
   // dollars canadiens.
-  const gainLatentCad = pbrFiable && vmFiable && deviseLisibleEnCad
+  const gainLatentCad = pbrFiable && vmFiable && valeursExprimeesEnCad
     ? (p.valeurMarchande as number) - (p.valeurComptable as number)
     : null;
 
-  return { position: p, pbrFiable, vmFiable, deviseLisibleEnCad, gainLatentCad, raisons };
+  return { position: p, pbrFiable, vmFiable, valeursExprimeesEnCad, gainLatentCad, raisons };
 }
 
 /** Le même symbole détenu dans PLUSIEURS comptes non enregistrés (§8). */
@@ -184,7 +218,7 @@ export function verifierCompletudeCristallisationGains(
   // ── LES POSITIONS, une dimension à la fois ────────────────────────────────
   const sansPbr = qualites.filter((q) => !q.pbrFiable).length;
   const sansVm = qualites.filter((q) => q.pbrFiable && !q.vmFiable).length;
-  const enDeviseEtrangere = qualites.filter((q) => !q.deviseLisibleEnCad).length;
+  const enDeviseEtrangere = qualites.filter((q) => !q.valeursExprimeesEnCad).length;
 
   if (sansPbr > 0) {
     ajouter('positions-sans-pbr',

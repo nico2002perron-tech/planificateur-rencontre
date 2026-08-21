@@ -96,7 +96,7 @@ export function verifierCompletudeCristallisationPertes(
   const sansPbr = qualites.filter((q) => !q.pbrFiable).length;
   const sansValeurMarchande = qualites.filter((q) => q.pbrFiable && !q.vmFiable).length;
   const deviseNonResolue = qualites.filter(
-    (q) => q.pbrFiable && q.vmFiable && !q.deviseLisibleEnCad
+    (q) => q.pbrFiable && q.vmFiable && !q.valeursExprimeesEnCad
   ).length;
 
   if (sansPbr > 0) {

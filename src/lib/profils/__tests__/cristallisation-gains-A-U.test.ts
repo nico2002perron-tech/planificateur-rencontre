@@ -255,18 +255,43 @@ describe('H · une disposition dont le régime n’est pas prouvé', () => {
 // I / J — LA DEVISE
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('I · une position en dollars américains non résolue', () => {
-  it('ne produit JAMAIS un gain de 5 000 CAD à partir de 10 000 et 15 000 USD', () => {
+describe('I · l’unité des valeurs — pas la devise du titre', () => {
+  // ⚠ HYPOTHÈSE REMPLACÉE LE 21 AOÛT 2026, PAS SUPPRIMÉE.
+  //
+  // Ces tests affirmaient : « position USD → blocage ». C'était FAUX, et
+  // mesuré comme tel : le format d'export que nous supportons rend ses
+  // colonnes monétaires en dollars canadiens, y compris sur les lignes
+  // marquées « USD » (encaisse 1USD à 1,379 et 1,389 ; distribution
+  // valeur/coût identique entre lignes CAD et USD, 40 % contre 41 % en perte).
+  // 14 des 49 positions non enregistrées étaient écartées pour rien.
+  //
+  // Le garde n'est pas retiré — il est REPOINTÉ sur la vraie question :
+  // l'unité des VALEURS, déclarée par le format, et non la monnaie de
+  // NÉGOCIATION du titre.
+
+  it('D4 · une unité de rapport INCONNUE bloque, elle', () => {
     const q = qualifierPosition({
-      ...position('USTITRE', 15000, 10000, 'USD'), compte: compte('non-enregistre', []),
+      ...position('MYSTERE', 15000, 10000, 'CAD'), uniteValeursRapport: 'inconnue',
+      compte: compte('non-enregistre', []),
     });
-    expect(q.deviseLisibleEnCad).toBe(false);
+    expect(q.valeursExprimeesEnCad).toBe(false);
     expect(q.gainLatentCad).toBeNull();          // ni 5 000, ni rien d'autre
   });
 
-  it('bloque le constat, et nomme la devise comme motif', () => {
+  it('D5 · un rapport explicitement en USD n’est JAMAIS lu comme du canadien', () => {
+    const q = qualifierPosition({
+      ...position('USTITRE', 15000, 10000, 'USD'), uniteValeursRapport: 'USD',
+      compte: compte('non-enregistre', []),
+    });
+    expect(q.valeursExprimeesEnCad).toBe(false);
+    expect(q.gainLatentCad).toBeNull();
+  });
+
+  it('bloque le constat, et nomme l’unité comme motif', () => {
     const c = gains(dossierPropre((p) => {
-      p.comptes = [compte('non-enregistre', [position('USTITRE', 15000, 10000, 'USD')])];
+      p.comptes = [compte('non-enregistre', [
+        { ...position('MYSTERE', 15000, 10000), uniteValeursRapport: 'inconnue' },
+      ])];
     }));
     expect(c.statut).toBe('montant-a-confirmer');
     expect(c.montantEstime).toBeNull();
@@ -275,32 +300,71 @@ describe('I · une position en dollars américains non résolue', () => {
   });
 });
 
-describe('J · une position réellement libellée en dollars canadiens', () => {
-  it('n’est PAS bloquée par le garde de devise — il ne bloque pas éternellement', () => {
-    // Le garde regarde la devise DE LA POSITION. Une donnée déjà exprimée en
-    // CAD passe : c'est ce qui distingue une protection d'un refus permanent.
-    for (const devise of ['CAD', 'cad', 'Cad']) {
-      const q = qualifierPosition({
-        ...position('CANADIEN', 15000, 10000, devise), compte: compte('non-enregistre', []),
-      });
-      expect(q.deviseLisibleEnCad, devise).toBe(true);
-      expect(q.gainLatentCad, devise).toBe(5000);
-    }
+describe('J · une position USD dont les valeurs sont en dollars canadiens', () => {
+  it('D2 / D6 · CHIFFRE — c’est le cas que l’ancien garde bloquait à tort', () => {
+    const q = qualifierPosition({
+      ...position('USTITRE', 15000, 10000, 'USD'), uniteValeursRapport: 'CAD',
+      compte: compte('non-enregistre', []),
+    });
+    expect(q.valeursExprimeesEnCad).toBe(true);
+    expect(q.gainLatentCad).toBe(5000);          // 5 000 CAD, pas USD
+
     const c = gains(dossierPropre((p) => {
-      p.comptes = [compte('non-enregistre', [position('CANADIEN', 15000, 10000)])];
+      p.comptes = [compte('non-enregistre', [
+        { ...position('USTITRE', 15000, 10000, 'USD'), uniteValeursRapport: 'CAD' },
+      ])];
     }));
     expect(c.statut).toBe('calcule');
     expect(c.montantEstime).toBe(5000);
   });
 
-  it('une devise ABSENTE est traitée comme du canadien — et c’est une hypothèse assumée', () => {
-    // Le relevé de Croesus laisse parfois la colonne vide sur les titres
-    // canadiens. On le note ici pour que le jour où ce serait faux, le test
-    // dise exactement quelle hypothèse tombe.
-    const q = qualifierPosition({
-      ...position('SANSDEVISE', 15000, 10000, ''), compte: compte('non-enregistre', []),
-    });
-    expect(q.deviseLisibleEnCad).toBe(true);
+  it('D3 · la devise du TITRE ne détermine jamais l’unité des valeurs', () => {
+    // Les deux positions ont exactement les mêmes nombres. Seule la monnaie de
+    // négociation diffère — et elle ne doit rien changer.
+    const usd = qualifierPosition({
+      ...position('USTITRE', 15000, 10000, 'USD'), compte: compte('non-enregistre', []) });
+    const cad = qualifierPosition({
+      ...position('CATITRE', 15000, 10000, 'CAD'), compte: compte('non-enregistre', []) });
+    expect(usd.gainLatentCad).toBe(cad.gainLatentCad);
+    expect(usd.valeursExprimeesEnCad).toBe(cad.valeursExprimeesEnCad);
+  });
+
+  it('D1 · le cas canadien de bout en bout reste évidemment calculable', () => {
+    for (const devise of ['CAD', 'cad', '']) {
+      const q = qualifierPosition({
+        ...position('CANADIEN', 15000, 10000, devise), compte: compte('non-enregistre', []),
+      });
+      expect(q.valeursExprimeesEnCad, devise).toBe(true);
+      expect(q.gainLatentCad, devise).toBe(5000);
+    }
+  });
+
+  it('D8 · les AUTRES gardes restent actifs sur une position USD', () => {
+    // Le correctif ne doit pas devenir un laissez-passer : une position USD
+    // sans prix de base reste bloquée, pour son vrai motif.
+    const sansPbr = qualifierPosition({
+      ...position('USTITRE', 15000, null, 'USD'), compte: compte('non-enregistre', []) });
+    expect(sansPbr.gainLatentCad).toBeNull();
+    const sansVm = qualifierPosition({
+      ...position('USTITRE', null, 10000, 'USD'), compte: compte('non-enregistre', []) });
+    expect(sansVm.gainLatentCad).toBeNull();
+
+    const c = gains(dossierPropre((p) => {
+      p.consolidation.comptesExternes = 'oui';   // portée
+      p.comptes = [compte('non-enregistre', [position('USTITRE', 15000, 10000, 'USD')])];
+    }));
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.donneesManquantes.join(' ')).toMatch(/ailleurs/);
+  });
+
+  it('D9 · le compte reste décrit comme USD, sans fusionner les deux notions', () => {
+    // « Compte non enregistré USD » et « montants fiscaux en CAD » sont deux
+    // informations vraies en même temps. Le correctif ne doit pas effacer la
+    // première pour faire passer la seconde.
+    const p = { ...position('USTITRE', 15000, 10000, 'USD'), compte: compte('non-enregistre', []) };
+    const q = qualifierPosition(p);
+    expect(q.position.devise).toBe('USD');       // la monnaie de négociation SURVIT
+    expect(q.valeursExprimeesEnCad).toBe(true);  // et les valeurs sont en CAD
   });
 });
 
@@ -519,7 +583,8 @@ describe('R · une position matériellement incomplète', () => {
   const aveugles: Array<[string, Position]> = [
     ['sans PBR', position('SANSPBR', 50000, null)],
     ['sans valeur marchande', position('SANSVM', null, 10000)],
-    ['en devise inutilisable', position('USTITRE', 50000, 10000, 'USD')],
+    ['dont l’unité des valeurs n’est pas établie',
+      { ...position('MYSTERE', 50000, 10000), uniteValeursRapport: 'inconnue' as const }],
   ];
 
   for (const [quoi, pos] of aveugles) {
@@ -618,8 +683,9 @@ describe('T · le test positif final', () => {
 
 describe('§2 · les phrases des constats dégradés', () => {
   const degrades: Array<[string, (p: ProfilClient) => void, RegExp[]]> = [
-    ['USD non résolu',
-      (p) => { p.comptes = [compte('non-enregistre', [position('USTITRE', 15000, 10000, 'USD')])]; },
+    ['unité des valeurs non établie',
+      (p) => { p.comptes = [compte('non-enregistre', [
+        { ...position('MYSTERE', 15000, 10000), uniteValeursRapport: 'inconnue' }])]; },
       [/5 000/, /15 000/]],
     ['PBR absent',
       (p) => { p.comptes = [compte('non-enregistre', [position('AVEUGLE', 50000, null)])]; },

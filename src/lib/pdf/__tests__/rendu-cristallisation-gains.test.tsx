@@ -127,8 +127,12 @@ describe('PDF-A · statut calculé', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DEGRADES: Array<[string, (p: ProfilClient) => void, RegExp]> = [
-  ['PDF-B · USD non résolu',
-    (p) => { p.comptes = [compte('non-enregistre', [position('USTITRE', 15000, 10000, 'USD')])]; },
+  ['PDF-B · unité des valeurs non établie',
+      // ⚠ REPOINTÉ LE 21 AOÛT 2026 : ce n'est pas la DEVISE du titre qui
+      // bloque — le format rend ses valeurs en CAD même sur les lignes USD —,
+      // mais l'UNITÉ des valeurs quand elle n'est pas établie.
+    (p) => { p.comptes = [compte('non-enregistre', [
+      { ...position('MYSTERE', 15000, 10000), uniteValeursRapport: 'inconnue' }])]; },
     /dollars canadiens/],
   ['PDF-C · pertes reportées incompatibles',
     (p) => { p.droits.pertesCapitalReportees = {
@@ -262,13 +266,13 @@ describe('PDF-I · candidats sous statut dégradé', () => {
       x.consolidation.comptesExternes = 'oui';
       x.comptes = [compte('non-enregistre', [
         position('BONNE', 50000, 10000),
-        position('USTITRE', 90000, 1000, 'USD'),
+        { ...position('MYSTERE', 90000, 1000), uniteValeursRapport: 'inconnue' as const },
         position('AVEUGLE', 80000, null),
       ])];
     });
     const texte = carteGains(p);
     expect(texte).toMatch(/BONNE/);
-    expect(texte).not.toMatch(/USTITRE/);
+    expect(texte).not.toMatch(/MYSTERE/);
     expect(texte).not.toMatch(/AVEUGLE/);
   });
 });
