@@ -63,6 +63,26 @@ export type PropositionCristallisationGain = {
   ecartCad: number;
   /** JAMAIS NÉGATIF. */
   cibleRestanteCad: number;
+  /**
+   * CETTE POSITION A-T-ELLE ASSEZ DE MATIÈRE POUR PORTER TOUTE LA CIBLE ?
+   *
+   * ⚠ INDÉPENDANT DE LA GRANULARITÉ. C'est une question de CAPACITÉ, pas
+   * d'arrondi : « ce titre suffit-il ? », et non « la quantité entière tombe-t-elle
+   * pile ? ».
+   *
+   * La distinction est née d'un vrai défaut, le 21 août 2026. Le critère unique
+   * était `cibleRestanteCad === 0`, et il était ASYMÉTRIQUE : une quantité qui
+   * DÉPASSE la cible « couvrait », une qui reste 15 $ en dessous sur 12 000 $ ne
+   * couvrait pas — et le moteur ne proposait alors RIEN. Avec des titres
+   * entiers, de quel côté on tombe est un accident d'arrondi.
+   */
+  capaciteCouvreCible: boolean;
+  /**
+   * LA QUANTITÉ RETENUE ATTEINT-ELLE OU DÉPASSE-T-ELLE EFFECTIVEMENT LA CIBLE ?
+   * Question distincte de la précédente, et les deux se disent au client.
+   */
+  executionCouvreEntierementCible: boolean;
+
 
   dateValeurs: string | null;
 };
@@ -158,6 +178,8 @@ export function proposerQuantitePourGain(
       cibleLocaleCad: arrondiSou(cibleLocaleCad),
       ecartCad: arrondiSou(gainRealiseEstimeCad - cibleGainCad),
       cibleRestanteCad: arrondiSou(Math.max(0, cibleGainCad - gainRealiseEstimeCad)),
+      capaciteCouvreCible: gainLatentDisponibleCad >= cibleGainCad,
+      executionCouvreEntierementCible: gainRealiseEstimeCad >= cibleGainCad,
 
       dateValeurs: compte.dateReleve ?? null,
     },
@@ -184,7 +206,8 @@ export function meilleurPlanGainMonoTitre(
     else refus.push(r.refus);
   }
 
-  const couvrantes = propositions.filter((p) => p.cibleRestanteCad === 0);
+  // ⚠ LA CAPACITÉ, PAS L'ARRONDI — voir le champ `capaciteCouvreCible`.
+  const couvrantes = propositions.filter((p) => p.capaciteCouvreCible);
   if (couvrantes.length === 0) {
     return { proposition: null, aucunePositionNeCouvreSeule: true, propositions, refus };
   }

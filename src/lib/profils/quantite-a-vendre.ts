@@ -58,6 +58,26 @@ export type PropositionCristallisationPosition = {
   /** JAMAIS NÉGATIF : ce qu'il reste à couvrir, zéro si la cible est atteinte. */
   cibleRestanteCad: number;
   /**
+   * CETTE POSITION A-T-ELLE ASSEZ DE MATIÈRE POUR PORTER TOUTE LA CIBLE ?
+   *
+   * ⚠ INDÉPENDANT DE LA GRANULARITÉ. C'est une question de CAPACITÉ, pas
+   * d'arrondi : « ce titre suffit-il ? », et non « la quantité entière tombe-t-elle
+   * pile ? ».
+   *
+   * La distinction est née d'un vrai défaut, le 21 août 2026. Le critère unique
+   * était `cibleRestanteCad === 0`, et il était ASYMÉTRIQUE : une quantité qui
+   * DÉPASSE la cible « couvrait », une qui reste 15 $ en dessous sur 12 000 $ ne
+   * couvrait pas — et le moteur ne proposait alors RIEN. Avec des titres
+   * entiers, de quel côté on tombe est un accident d'arrondi.
+   */
+  capaciteCouvreCible: boolean;
+  /**
+   * LA QUANTITÉ RETENUE ATTEINT-ELLE OU DÉPASSE-T-ELLE EFFECTIVEMENT LA CIBLE ?
+   * Question distincte de la précédente, et les deux se disent au client.
+   */
+  executionCouvreEntierementCible: boolean;
+
+  /**
    * LE GAIN NET QUI SUBSISTE APRÈS LA STRATÉGIE — troisième barre du futur
    * graphique « avant / stratégie / après ». `null` quand le gain net avant
    * n'a pas été fourni : le document ne doit pas le déduire lui-même.
@@ -197,6 +217,8 @@ export function proposerQuantitePourPosition(
       // Une sur-réalisation de 6 $ donne écart +6 ET restante 0, pas −6.
       ecartCad: arrondiSou(perteRealiseeEstimeeCad - cibleGlobaleCad),
       cibleRestanteCad: arrondiSou(Math.max(0, cibleGlobaleCad - perteRealiseeEstimeeCad)),
+      capaciteCouvreCible: perteLatenteDisponibleCad >= cibleGlobaleCad,
+      executionCouvreEntierementCible: perteRealiseeEstimeeCad >= cibleGlobaleCad,
       // BORNÉ À ZÉRO : une perte qui dépasse le gain ne rend pas le gain
       // négatif. L'excédent reste dit par `ecartCad`, et n'est requalifié ni en
       // économie d'impôt ni en perte reportable — ce serait une règle fiscale
@@ -213,7 +235,11 @@ export function proposerQuantitePourPosition(
 export type MeilleurMono = {
   /** La proposition retenue, ou `null` si aucune position ne couvre seule. */
   proposition: PropositionCristallisationPosition | null;
-  /** Vrai quand la cible dépasse ce que chaque position peut porter seule. */
+  /**
+   * Vrai quand AUCUNE position n'a la CAPACITÉ de porter toute la cible.
+   * ⚠ Ne dit rien de l'arrondi : une position suffisante dont l'exécution
+   * laisse quelques dollars reste un candidat légitime.
+   */
   aucunePositionNeCouvreSeule: boolean;
   /** Toutes les propositions calculables — l'entrée d'un futur plan multi. */
   propositions: PropositionCristallisationPosition[];
@@ -246,7 +272,10 @@ export function meilleurPlanMonoTitre(
     else refus.push(r.refus);
   }
 
-  const couvrantes = propositions.filter((p) => p.cibleRestanteCad === 0);
+  // ⚠ LA CAPACITÉ, PAS L'ARRONDI. Filtrer sur `cibleRestanteCad === 0` écartait
+  // une position parfaitement suffisante dont la meilleure quantité entière
+  // tombait 15 $ sous la cible — et le moteur ne proposait plus rien du tout.
+  const couvrantes = propositions.filter((p) => p.capaciteCouvreCible);
   if (couvrantes.length === 0) {
     return { proposition: null, aucunePositionNeCouvreSeule: true, propositions, refus };
   }

@@ -322,3 +322,42 @@ describe('gainNetApresCad · distinct de l’écart et de la cible restante', ()
     expect(prop(pos({ symbole: 'AAA' }), 3000).gainNetApresCad).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAPACITÉ ≠ EXÉCUTION — le même correctif, prouvé commun aux deux moteurs
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('capacité et exécution, côté pertes', () => {
+  it('SOUS la cible : la position suffit, l’arrondi laisse 15 $', () => {
+    // 340 unités, 20 000 $ de perte latente → 58,8235 $ l'unité… on prend des
+    // chiffres ronds : 85 $ l'unité, comme la fixture des gains.
+    const p = pos({ symbole: 'PERD', quantite: 340, valeurComptable: 47600, valeurMarchande: 18700 });
+    const r = prop(p, 12000);
+    expect(r.quantiteEstimeeAVendre).toBe(141);
+    expect(r.perteRealiseeEstimeeCad).toBe(11985);
+    expect(r.ecartCad).toBe(-15);
+    expect(r.cibleRestanteCad).toBe(15);
+    expect(r.capaciteCouvreCible).toBe(true);
+    expect(r.executionCouvreEntierementCible).toBe(false);
+
+    const m = meilleurPlanMonoTitre([{ compte: cpt(), position: p }], 12000);
+    expect(m.proposition).not.toBeNull();
+  });
+
+  it('LE CAS RÉEL MESURÉ ne bouge pas : +33,79 $, exécution complète', () => {
+    // Aucune régression visuelle sur la page déjà inspectée.
+    const p = pos({ symbole: 'GSY', quantite: 203, valeurComptable: 24000, valeurMarchande: 8462.59 });
+    const r = prop(p, 8997.81);
+    expect(r.quantiteEstimeeAVendre).toBe(118);
+    expect(r.ecartCad).toBeCloseTo(33.79, 1);
+    expect(r.cibleRestanteCad).toBe(0);
+    expect(r.capaciteCouvreCible).toBe(true);
+    expect(r.executionCouvreEntierementCible).toBe(true);
+  });
+
+  it('capacité insuffisante : la position ne prétend pas couvrir', () => {
+    const p = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 15000, valeurMarchande: 10000 });
+    expect(prop(p, 12000).capaciteCouvreCible).toBe(false);
+    expect(meilleurPlanMonoTitre([{ compte: cpt(), position: p }], 12000).aucunePositionNeCouvreSeule).toBe(true);
+  });
+});

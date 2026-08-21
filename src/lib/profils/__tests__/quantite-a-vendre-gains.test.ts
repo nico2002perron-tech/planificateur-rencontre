@@ -245,3 +245,64 @@ describe('G19 · le moteur suit `montantEstime`, il ne le recalcule pas', () => 
     expect(r.cibleRestanteCad).toBe(15000);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAPACITÉ ≠ EXÉCUTION — le défaut trouvé en construisant la fixture
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('capacité et exécution sont deux questions distinctes', () => {
+  /** 340 unités, 28 900 $ de gain latent → 85 $ l'unité. Le cas de la fixture. */
+  const fixture = pos({
+    symbole: 'FICT', quantite: 340, valeurComptable: 18700, valeurMarchande: 47600,
+  });
+
+  it('SOUS la cible : la position suffit en capacité, l’arrondi laisse 15 $', () => {
+    // ⚠ AVANT LE 21 AOÛT, CE CAS RENDAIT `proposition: null`. Le critère unique
+    // était `cibleRestanteCad === 0` — asymétrique : dépasser « couvrait »,
+    // rester 15 $ en dessous sur 12 000 $ ne couvrait pas, et le moteur ne
+    // proposait plus rien. Avec des titres entiers, de quel côté on tombe est
+    // un accident d'arrondi, pas une propriété du dossier.
+    const r = prop(fixture, 12000);
+    expect(r.quantiteEstimeeAVendre).toBe(141);        // 141,176 → le plus proche
+    expect(r.gainRealiseEstimeCad).toBe(11985);
+    expect(r.ecartCad).toBe(-15);
+    expect(r.cibleRestanteCad).toBe(15);
+    expect(r.capaciteCouvreCible).toBe(true);          // 28 900 ≥ 12 000
+    expect(r.executionCouvreEntierementCible).toBe(false);
+
+    const m = meilleurPlanGainMonoTitre([{ compte: cpt(), position: fixture }], 12000);
+    expect(m.proposition).not.toBeNull();              // et NON `null`
+    expect(m.aucunePositionNeCouvreSeule).toBe(false);
+  });
+
+  it('AU-DESSUS de la cible : même capacité, exécution complète', () => {
+    // 85 × 142 = 12 070 : on choisit 142 quand elle est la plus proche.
+    const r = prop(fixture, 12060);
+    expect(r.quantiteEstimeeAVendre).toBe(142);
+    expect(r.gainRealiseEstimeCad).toBe(12070);
+    expect(r.ecartCad).toBe(10);
+    expect(r.cibleRestanteCad).toBe(0);
+    expect(r.capaciteCouvreCible).toBe(true);
+    expect(r.executionCouvreEntierementCible).toBe(true);
+  });
+
+  it('RÉELLEMENT insuffisante : la capacité, elle, dit non', () => {
+    const petite = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 2000, valeurMarchande: 10000 });
+    const r = prop(petite, 12000);
+    expect(r.gainLatentDisponibleCad).toBe(8000);
+    expect(r.capaciteCouvreCible).toBe(false);
+    expect(r.executionCouvreEntierementCible).toBe(false);
+
+    const m = meilleurPlanGainMonoTitre([{ compte: cpt(), position: petite }], 12000);
+    expect(m.aucunePositionNeCouvreSeule).toBe(true);
+    expect(m.proposition).toBeNull();
+    expect(m.propositions).toHaveLength(1);            // utilisable pour un futur multi
+  });
+
+  it('AUCUNE tolérance n’est introduite : les 15 $ se disent', () => {
+    const r = prop(fixture, 12000);
+    expect(r.cibleGainCad).toBe(12000);
+    expect(r.gainRealiseEstimeCad).toBe(11985);
+    expect(r.cibleRestanteCad).toBe(15);               // ni masqué, ni arrondi à 0
+  });
+});

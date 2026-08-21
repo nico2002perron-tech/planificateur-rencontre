@@ -34,6 +34,7 @@ function proposition(p: Partial<PropositionCristallisationPosition> = {}): Propo
     valeurVenteEstimeeCad: 4898.18, perteRealiseeEstimeeCad: 9031.6,
     cibleGlobaleCad: 8997.81, cibleLocaleCad: 8997.81,
     ecartCad: 33.79, cibleRestanteCad: 0, gainNetApresCad: 0,
+    capaciteCouvreCible: true, executionCouvreEntierementCible: true,
     dateValeurs: '2026-08-21', ...p,
   };
 }
