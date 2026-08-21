@@ -96,7 +96,14 @@ describe('1. Cristallisation de pertes', () => {
     p.transactionsAnnee.gainsRealisesNonEnregistres = 0;
     const c = constat(p, 'cristallisation-pertes');
     expect(c.montantEstime).toBeNull();
-    expect(c.dejaEnOrdre).toBe(true);
+    // ⚠ CHANGÉ LE 21 AOÛT 2026 : « aucun gain à absorber » N'EST PAS
+    // « déjà en ordre ». Le dossier porte de vraies pertes latentes, et une
+    // perte nette en capital se reporte trois ans en arrière puis
+    // indéfiniment vers l'avant. Conclure « rien à faire » exigerait de
+    // connaître les gains des trois années précédentes — que nous n'avons pas.
+    expect(c.dejaEnOrdre).toBe(false);
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.donneesManquantes.join(' ')).toMatch(/trois années précédentes/);
   });
 });
 

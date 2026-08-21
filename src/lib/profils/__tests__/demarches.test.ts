@@ -85,11 +85,28 @@ describe('« Déjà en ordre »', () => {
     expect(estDejaEnOrdre(c)).toBe(true);
   });
 
-  it('AUCUN GAIN RÉALISÉ : rien à cristalliser, et c’est une bonne nouvelle', () => {
+  it('AUCUN GAIN RÉALISÉ mais des pertes latentes : ce n’est PAS « en ordre »', () => {
+    // ⚠ RENVERSÉ LE 21 AOÛT 2026. Ce test affirmait qu’un dossier sans gain
+    // de l’année était « en ordre ». Il porte pourtant 12 000 $ de perte
+    // latente, et une perte nette en capital se reporte sur les trois années
+    // précédentes puis indéfiniment vers l’avant. Le ranger dans « déjà en
+    // ordre » faisait disparaître du document une récolte peut-être utile.
     const c = trouver(profil((x) => {
       x.transactionsAnnee.gainsRealises = 0;
       x.transactionsAnnee.gainsRealisesNonEnregistres = 0;
       x.comptes = [compte([pos('AAA', 8000, 20000)])];
+    }), 'cristallisation-pertes');
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(estDejaEnOrdre(c)).toBe(false);
+  });
+
+  it('AUCUNE PERTE LATENTE : là, « rien à cristalliser » est vrai', () => {
+    // L’autre moitié du même test : sans perte latente, il n’y a
+    // effectivement rien à récolter, ni cette année ni une autre.
+    const c = trouver(profil((x) => {
+      x.transactionsAnnee.gainsRealises = 0;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 0;
+      x.comptes = [compte([pos('AAA', 20000, 8000)])];   // en GAIN, pas en perte
     }), 'cristallisation-pertes');
     expect(c.statut).toBe('non-applicable');
     expect(estDejaEnOrdre(c)).toBe(true);

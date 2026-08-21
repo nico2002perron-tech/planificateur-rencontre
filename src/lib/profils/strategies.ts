@@ -34,6 +34,10 @@ import type { SignauxLivre, LimitesMaximisation } from './signaux-livre';
 import {
   qualifierPosition, verifierCompletudeCristallisationGains, pertesReporteesUtilisables,
 } from './completude-cristallisation';
+import {
+  verifierCompletudeCristallisationPertes, perteLatenteCad,
+  reporteesMentionnablesCommeCapacite,
+} from './completude-cristallisation-pertes';
 
 /** Un constat, tel que le contrat du schéma le définit. */
 export type Constat = {
@@ -452,7 +456,6 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     limiteVisibilite: null,
     dejaEnOrdre: false,
   };
-  const manquantes: string[] = [];
   const nonEnr = positionsNonEnregistrees(profil);
 
   if (profil.comptes.length === 0) {
@@ -473,132 +476,179 @@ function strategieCristallisation(profil: ProfilClient): Constat {
     );
   }
 
-  const aveugles = sansPbr(nonEnr);
-  if (nonEnr.length === 0 || aveugles === nonEnr.length) {
-    manquantes.push(
-      nonEnr.length === 0
-        ? 'un compte non enregistré identifié (le régime de certains comptes reste inconnu)'
-        : 'le prix de base rajusté des positions non enregistrées'
-    );
+  // ── LE GARDE-FOU UNIQUE (21 août 2026) ────────────────────────────────────
+  // Une seule question, posée à un seul endroit : les données matérielles de
+  // CETTE recommandation sont-elles fiables ? Elle recommande de VENDRE À
+  // PERTE — devise, prix de base, valeur marchande, perte apparente, biens
+  // identiques et portée sont donc tous matériels, et non des raffinements.
+  const completude = verifierCompletudeCristallisationPertes(profil);
+
+  if (nonEnr.length === 0) {
     return {
       ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      dateDonnees: completude.dateReleve,
       explication:
-        nonEnr.length === 0
-          ? 'Aucune position non enregistrée n’a pu être identifiée. Un compte dont le régime n’est pas prouvé est écarté plutôt que présumé : vendre à perte dans un CELI détruirait un droit de cotisation sans produire aucune déduction.'
-          : `Le prix de base rajusté manque sur ${aveugles} position${pl(aveugles)} non enregistrée${pl(aveugles)} : le gain ou la perte latente n’est pas calculable.`,
-      donneesManquantes: manquantes,
+        'Aucune position non enregistrée n’a pu être identifiée. Un compte dont le régime n’est pas prouvé est écarté plutôt que présumé : vendre à perte dans un CELI détruirait un droit de cotisation sans produire aucune déduction.',
+      donneesManquantes: ['un compte non enregistré identifié (le régime de certains comptes reste inconnu)'],
     };
   }
 
-  const enPerte = nonEnr.filter((p) => {
-    const g = gainLatent(p);
-    return g !== null && g < 0;
-  });
-  const pertesLatentes = enPerte.reduce((s, p) => s + Math.abs(gainLatent(p) as number), 0);
-  // Les paires {position, gain} attendues par le sélecteur de candidats et par
-  // le planificateur. `g` reste NÉGATIF : c'est une perte, et l'afficher comme
-  // telle vaut mieux qu'un nombre positif qu'il faudrait interpréter.
-  const enPerteAvecGain = enPerte.map((p) => ({ p, g: gainLatent(p) as number }));
+  // AUCUNE POSITION LISIBLE DU TOUT : il n'y a pas de chiffre à confirmer, il
+  // n'y a rien. `indisponible` est plus vrai que « à confirmer ».
+  const lisibles = completude.qualites.filter((q) => q.gainLatentCad !== null).length;
+  if (lisibles === 0) {
+    return {
+      ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
+      dateDonnees: completude.dateReleve,
+      explication:
+        `Aucune position non enregistrée n’est lisible en dollars canadiens : ${completude.explications.join(' ')}`,
+      donneesManquantes: completude.donneesManquantes,
+    };
+  }
+
+  // ── LES POSITIONS EN PERTE — chacune QUALIFIÉE, aucune supposée ───────────
+  // ⚠ `gainLatent()` ne regardait PAS la devise : 10 000 USD de perte
+  // sortaient en « 10 000 $ » canadiens, jusqu'à `calcule`. On réutilise ici
+  // la qualification déjà verrouillée par la stratégie de gains — PBR, valeur
+  // marchande ET devise —, sans y toucher.
+  const enPerteQualifiees = completude.qualites.filter((q) => perteLatenteCad(q) !== null);
+  const enPerteAvecGain = enPerteQualifiees.map((q) => ({
+    p: q.position, g: q.gainLatentCad as number,      // NÉGATIF : c'est une perte
+  }));
+  const pertesLatentes = enPerteQualifiees.reduce((s, q) => s + (perteLatenteCad(q) as number), 0);
+
   // LE GAIN NET, PAS LE GAIN BRUT — défaut trouvé le 6 août 2026 sur un client
   // réel de la campagne : 6 728 $ de gains réalisés, mais aussi 4 000 $ de
   // pertes déjà réalisées. Ne regarder que les gains aurait fait recommander
   // 6 728 $ de ventes là où 2 728 $ suffisent — soit 4 000 $ de ventes
   // inutiles, avec leurs frais et leur sortie de marché, pour un gain fiscal
   // nul. Les pertes déjà prises absorbent déjà leur part.
-  // L'ASSIETTE FISCALE, PAS LA PERFORMANCE — corrigé le 20 août 2026. Ces deux
-  // lignes lisaient `gainsRealises`/`pertesRealisees`, qui additionnent TOUS
-  // les régimes : un gain réalisé dans un REER gonflait le « gain net à
-  // absorber », et le moteur recommandait de vendre à perte pour effacer un
-  // impôt qui n'existe pas. Mesuré : sur les 4 dossiers portant des ventes en
-  // 2026, un voit son gain net absorbable passer de ~10 000 $ à ZÉRO.
+  // L'ASSIETTE FISCALE, PAS LA PERFORMANCE — corrigé le 20 août 2026 : ces
+  // deux lignes additionnaient TOUS les régimes, et un gain réalisé dans un
+  // REER gonflait le « gain net à absorber ».
   const gainsRealises = Math.max(
     0,
     profil.transactionsAnnee.gainsRealisesNonEnregistres - profil.transactionsAnnee.pertesRealiseesNonEnregistrees
   );
   const pertesDejaPrises = profil.transactionsAnnee.pertesRealiseesNonEnregistrees;
-  const reportees = profil.droits.pertesCapitalReportees.montant;
 
   // Ce qu'il est UTILE de cristalliser : ce qui absorbe un gain déjà réalisé.
   // Au-delà, la perte se reporte — utile aussi, mais ce n'est plus le même
   // conseil, et le présenter comme une économie de l'année serait faux.
   const absorbable = Math.min(pertesLatentes, Math.max(0, gainsRealises));
 
-  if (aveugles > 0) {
-    manquantes.push(`le prix de base rajusté de ${aveugles} position${pl(aveugles)}`);
-  }
-  if (visibiliteEntamee(profil)) {
-    manquantes.push('la liste des positions détenues ailleurs qu’ici');
-  }
+  // ── LES PERTES REPORTÉES : UNE CAPACITÉ, OU RIEN ──────────────────────────
+  // La prose disait « À cela s’ajoutent X $ de pertes en capital déjà
+  // reportées » en lisant `.montant` sans regarder `.unite` — une additivité
+  // AFFIRMÉE que la donnée ne garantit pas, et qui sortait sous `calcule`,
+  // donc hors de portée du filtre du document. Le montant ne s'additionne que
+  // si son unité le permet ; sinon il se mentionne comme une donnée à
+  // qualifier, jamais comme une capacité.
+  const reporteesUtilisables = reporteesMentionnablesCommeCapacite(profil);
+  const reporteesSaisies = profil.droits.pertesCapitalReportees;
+  const detailReportees = reporteesUtilisables !== null
+    ? ` À cela s’ajoutent ${argent(reporteesUtilisables)} de pertes en capital déjà reportées d’années passées.`
+    : (reporteesSaisies.montant ?? 0) > 0
+      ? ' Le dossier porte aussi un montant de pertes en capital reportées, dont l’unité reste à qualifier : il n’est pas additionné ici.'
+      : '';
 
-  const detailReportees = reportees !== null && reportees > 0
-    ? ` À cela s’ajoutent ${argent(reportees)} de pertes en capital déjà reportées d’années passées.`
-    : '';
-
-  // RÈGLE TRANSVERSALE : la visibilité entamée dégrade le constat, elle ne
-  // l'annule pas. On dit le chiffre vu ET qu'il est partiel.
-  if (visibiliteEntamee(profil)) {
-    // LE MÊME MOTIF QUE LE CHEMIN NOMINAL — corrigé le 13 août 2026.
-    //
-    // Cette branche disait « mais aucun gain net n'a été réalisé cette année »
-    // dès qu'`absorbable` valait zéro. Or `absorbable` est un MINIMUM : il vaut
-    // aussi zéro quand le client a de vrais gains réalisés mais aucune position
-    // en perte latente. Un client à 10 000 $ de gains lisait alors « 0 position
-    // porte une perte latente de 0 $, mais aucun gain net n'a été réalisé » —
-    // trois affirmations fausses d'un coup. Le chemin nominal (plus bas) avait
-    // reçu ce correctif le 11 août ; celui-ci l'avait manqué.
-    const phrasePertes = pertesLatentes <= 0
-      ? `Aucune position non enregistrée vue ici n’est en perte latente${gainsRealises > 0 ? `, alors que ${argent(gainsRealises)} de gain net a déjà été réalisé cette année` : ''}.`
-      : `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}, ` +
-        // « DONT 0 $ ABSORBERAIT » NE SE DIT PAS. Vu à l'écran le 6 août sur un
-        // client de la campagne : la phrase était exacte et illisible, et elle
-        // laissait croire qu'il y avait quelque chose à faire. Quand il n'y a
-        // aucun gain à absorber, on le dit — la perte reste utile, mais plus tard.
-        (absorbable > 0
-          ? `dont ${argent(absorbable)} absorberait le gain net déjà réalisé cette année (${argent(gainsRealises)}).`
-          : 'mais aucun gain net n’a été réalisé cette année : rien à absorber pour l’instant, et ces pertes restent disponibles pour une année future.');
-
+  // ── LE STATUT DÉGRADÉ — un seul chemin, tous motifs confondus ─────────────
+  if (!completude.peutEtreFerme) {
+    // ⚠ AUCUN CHIFFRE PRÉSENTÉ COMME CERTAIN. Le document rend `explication`
+    // quel que soit le statut ; on dit ce qu'on observe, sans avancer de
+    // montant fiscal.
+    const combien = enPerteQualifiees.length;
+    const observe = combien > 0
+      ? `${combien} position${pl(combien)} non enregistrée${pl(combien)} ${combien > 1 ? 'présentent' : 'présente'} une perte observée selon les données disponibles. `
+      : '';
     return {
-      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      ...base,
+      statut: 'montant-a-confirmer',
+      portee: visibiliteEntamee(profil) ? 'interne-seulement' : 'declaree',
+      montantEstime: null,
+      dateDonnees: completude.dateReleve,
       candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
-      limiteVisibilite:
-        'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.',
+      limiteVisibilite: visibiliteEntamee(profil)
+        ? 'coordonnée sur nos comptes seulement — les positions détenues ailleurs ne peuvent pas entrer dans l’ordre de vente.'
+        : null,
       explication:
-        `${phrasePertes}${detailReportees} Ce constat ne couvre que les comptes détenus ici : un ordre de vente coordonné ` +
-        `exige de connaître aussi les positions détenues ailleurs.`,
-      donneesManquantes: manquantes,
+        `${observe}Le montant à cristalliser ne peut pas être établi : ${completude.explications.join(' ')}`
+        + detailReportees,
+      donneesManquantes: completude.donneesManquantes,
     };
   }
 
+  // ── TOUT EST FIABLE ───────────────────────────────────────────────────────
+  //
+  // TROIS CAS, ET « DÉJÀ EN ORDRE » N'EN COUVRE QU'UN — corrigé le 21 août
+  // 2026. `dejaEnOrdre` valait vrai dès qu'`absorbable` tombait à zéro. Or
+  // `absorbable` est un MINIMUM : il vaut aussi zéro quand le client porte de
+  // vraies pertes latentes mais aucun gain de l'année à absorber. Le dossier
+  // partait alors dans la section « Déjà en ordre » du document — alors qu'une
+  // perte nette en capital se reporte trois ans en arrière et indéfiniment vers
+  // l'avant. Dire « rien à faire » exigerait de connaître les gains des trois
+  // années précédentes, que nous n'avons pas.
+  //
+  // On ne construit PAS ce moteur de report ici : il suffit de ne plus
+  // conclure faussement.
+  if (absorbable > 0) {
+    return {
+      ...base,
+      statut: 'calcule',
+      portee: 'declaree',
+      montantEstime: absorbable,
+      dateDonnees: completude.dateReleve,
+      // LE PLAN NE NOMME QUE DES POSITIONS PLEINEMENT QUALIFIÉES : `enPerteAvecGain`
+      // ne contient que des positions à PBR, valeur marchande et devise lisibles.
+      // `planifierRecolte` raisonne sur des grandeurs POSITIVES — on lui passe
+      // donc les pertes en valeur absolue, puis on redonne son signe au gain de
+      // chaque ligne, sans quoi le tableau afficherait une perte comme un gain.
+      plan: planifierRecolte(enPerteAvecGain.map(({ p, g }) => ({ p, g: -g })), absorbable)
+        .map((l) => ({ ...l, gain: -l.gain })),
+      candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
+      explication:
+        `${enPerteQualifiees.length} position${pl(enPerteQualifiees.length)} non enregistrée${pl(enPerteQualifiees.length)} ${enPerteQualifiees.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. `
+        + `En cristalliser ${argent(absorbable)} annulerait le gain net déjà réalisé cette année (${argent(gainsRealises)}`
+        + `${pertesDejaPrises > 0 ? `, après les ${argent(pertesDejaPrises)} de pertes déjà prises` : ''}).`
+        + detailReportees,
+      donneesManquantes: [],
+    };
+  }
+
+  if (pertesLatentes > 0) {
+    // CAS 2 — des pertes latentes, aucun gain de l'année à absorber.
+    // Ce n'est PAS « déjà en ordre » : la récolte peut encore servir, contre
+    // les gains des trois années passées ou d'une année future. Ce qui manque
+    // pour trancher, c'est l'historique — et il se demande.
+    return {
+      ...base,
+      statut: 'montant-a-confirmer',
+      portee: 'declaree',
+      montantEstime: null,
+      dejaEnOrdre: false,
+      dateDonnees: completude.dateReleve,
+      candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
+      explication:
+        `${enPerteQualifiees.length} position${pl(enPerteQualifiees.length)} non enregistrée${pl(enPerteQualifiees.length)} ${enPerteQualifiees.length > 1 ? 'portent' : 'porte'} une perte latente, `
+        + `et aucun gain net n’a été réalisé cette année${pertesDejaPrises > 0 ? ' (les pertes déjà prises couvrent les gains)' : ''}. `
+        + 'Récolter ces pertes ne réduirait donc aucun impôt de l’année — mais une perte nette en capital se reporte '
+        + 'sur les trois années précédentes et, au-delà, indéfiniment vers l’avant. L’intérêt du geste dépend des gains '
+        + 'déclarés ces trois dernières années, que ce dossier ne contient pas.'
+        + detailReportees,
+      donneesManquantes: ['les gains en capital déclarés lors des trois années précédentes'],
+    };
+  }
+
+  // CAS 1 — aucune perte latente admissible. Là, « rien à faire » est vrai.
   return {
     ...base,
-    statut: absorbable > 0 ? 'calcule' : 'non-applicable',
-    dejaEnOrdre: absorbable <= 0,
+    statut: 'non-applicable',
+    dejaEnOrdre: true,
     portee: 'declaree',
-    montantEstime: absorbable > 0 ? absorbable : null,
-    // LE PLAN N'EXISTAIT PAS ICI — la cristallisation de pertes n'a JAMAIS
-    // nommé un titre depuis sa création. Elle disait « 3 positions portent
-    // 18 000 $ de perte latente » sans jamais dire lesquelles.
-    //
-    // `planifierRecolte` raisonne sur des grandeurs POSITIVES (elle décrémente
-    // une cible jusqu'à zéro). On lui passe donc les pertes en valeur absolue,
-    // puis on redonne son signe au gain de chaque ligne — sans quoi le tableau
-    // afficherait une perte comme un gain.
-    plan: absorbable > 0
-      ? planifierRecolte(enPerteAvecGain.map(({ p, g }) => ({ p, g: -g })), absorbable)
-          .map((l) => ({ ...l, gain: -l.gain }))
-      : undefined,
-    candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
-    explication: absorbable > 0
-      ? `${enPerte.length} position${pl(enPerte.length)} non enregistrée${pl(enPerte.length)} ${enPerte.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. ` +
-        `En cristalliser ${argent(absorbable)} annulerait le gain net déjà réalisé cette année (${argent(gainsRealises)}` +
-        `${pertesDejaPrises > 0 ? `, après les ${argent(pertesDejaPrises)} de pertes déjà prises` : ''}).` +
-        `${detailReportees}`
-      : gainsRealises <= 0
-        // « Les 0 $ de pertes latentes restent disponibles » — vu au rendu du
-        // 11 août : la phrase ne se dit que s'il y a des pertes latentes.
-        ? `Aucun gain net n’a été réalisé cette année${pertesDejaPrises > 0 ? ` (les ${argent(pertesDejaPrises)} de pertes déjà prises couvrent les gains)` : ''} : il n’y a rien à absorber.${pertesLatentes > 0 ? ` Les ${argent(pertesLatentes)} de pertes latentes restent disponibles pour une année future.` : ''}`
-        : 'Aucune position non enregistrée n’est en perte latente.',
-    donneesManquantes: manquantes,
+    montantEstime: null,
+    dateDonnees: completude.dateReleve,
+    explication: 'Aucune position non enregistrée n’est en perte latente : il n’y a rien à cristalliser.',
+    donneesManquantes: [],
   };
 }
 

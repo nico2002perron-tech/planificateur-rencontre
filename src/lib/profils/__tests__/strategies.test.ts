@@ -226,7 +226,15 @@ describe('stratégie 1 — cristallisation de pertes', () => {
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
     expect(c.statut).toBe('montant-a-confirmer');
     expect(c.montantEstime).toBeNull();
-    expect(plat(c.explication)).toMatch(/12 000/);  // le chiffre vu reste dit
+    // CHANGE LE 21 AOUT 2026 : la prose degradee ne porte plus de montant.
+    // Ce n'est pas une perte d'information — le document RETIRE de toute facon
+    // les montants en dollars des proses degradees (proseSansMontantFerme).
+    // L'ecrire dans le moteur faisait donc dire au code une chose que le
+    // document n'affichait pas. Le chiffre observe vit dans les CANDIDATS, ou
+    // il porte son etiquette : « perte latente observée ».
+    expect(plat(c.explication)).not.toMatch(/12 000/);
+    expect(plat(c.explication)).toMatch(/perte observée selon les données disponibles/i);
+    expect(c.candidats?.some((l) => l.symbole === 'AAA')).toBe(true);
     expect(c.portee).toBe('interne-seulement');
   });
 });
@@ -513,8 +521,13 @@ describe('LE GAIN NET — défaut trouvé en campagne, 6 août 2026', () => {
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 40000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
-    expect(c.statut).toBe('non-applicable');
+    // Le dossier porte AAA a 8 000 pour un prix de base de 40 000 : 32 000 de
+    // perte latente. « Plus rien a cristalliser » cette annee, oui ; « rien a
+    // faire », non — la perte se reporte.
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.dejaEnOrdre).toBe(false);
     expect(plat(c.explication)).toMatch(/pertes déjà prises couvrent les gains/);
+    expect(c.donneesManquantes.join(' ')).toMatch(/trois années précédentes/);
   });
 
   it('l’ordre de vente compte lui aussi le gain NET déjà réalisé', () => {
@@ -544,9 +557,12 @@ describe('« dont 0 $ absorberait » ne se dit pas', () => {
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
     expect(c.statut).toBe('montant-a-confirmer');
+    // « dont 0 $ absorberait » ne se dit toujours pas — et desormais AUCUN
+    // montant ne se dit dans une prose degradee (voir le test de visibilite
+    // entamee plus haut). Le chiffre observe est dans les candidats.
     expect(c.explication).not.toMatch(/dont 0/);
-    expect(plat(c.explication)).toMatch(/aucun gain net n’a été réalisé/);
-    expect(plat(c.explication)).toMatch(/13 088/);       // le chiffre vu reste dit
+    expect(plat(c.explication)).not.toMatch(/13 088/);
+    expect(c.candidats?.some((l) => l.symbole === 'AAA')).toBe(true);
   });
 });
 
@@ -741,7 +757,14 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
     const r = analyser(p, null, DATE);
     const pertes = r.constats.find((c) => c.strategie === 'cristallisation-pertes')!;
     const g = r.constats.find((c) => c.strategie === 'cristallisation-gains')!;
-    expect(pertes.statut).toBe('non-applicable');
+    // ⚠ AJUSTE LE 21 AOUT 2026. La 1 n'a toujours rien a absorber cette
+    // annee — mais elle ne dit plus « rien a faire » : le dossier porte une
+    // position en perte latente (PERDANT), et une perte nette en capital se
+    // reporte trois ans en arriere puis indefiniment vers l'avant. Le miroir
+    // tient toujours sur le fond : l'une ne chiffre pas, l'autre chiffre.
+    expect(pertes.statut).toBe('montant-a-confirmer');
+    expect(pertes.montantEstime).toBeNull();
+    expect(pertes.dejaEnOrdre).toBe(false);
     expect(g.statut).toBe('calcule');
   });
 
