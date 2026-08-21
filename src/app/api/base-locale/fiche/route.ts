@@ -38,6 +38,17 @@ function montant(v: unknown): number | null | undefined {
   return Math.round(v * 100) / 100;
 }
 
+/**
+ * UNE DATE QUI EXISTE VRAIMENT — pas seulement dix caracteres bien places.
+ * `2024-02-31` a la bonne forme et n'a jamais existe ; le detour par `Date`
+ * puis la comparaison a la chaine d'origine est ce qui le revele.
+ */
+function estUneDateReelle(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 export async function POST(req: NextRequest) {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
 
@@ -154,13 +165,18 @@ export async function POST(req: NextRequest) {
   // cotisation). Un nombre seul ne dit donc pas ce qu'il vaut.
   //
   // DEUX FORMES ACCEPTÉES, et c'est délibéré :
-  //   · un NOMBRE NU — ce que l'écran envoie encore aujourd'hui. Il est reçu,
-  //     conservé, et marqué `unite: 'inconnue'`. C'est la vérité : le champ
-  //     actuel ne demande pas l'unité. Le moteur refusera de le chiffrer, et
-  //     c'est le comportement voulu tant que l'écran n'a pas été repris.
-  //   · un OBJET { montant, unite, source } — la forme complète. Sans elle,
-  //     l'unité serait un état inatteignable, et le modèle invérifiable de bout
-  //     en bout. La date reste posée ICI, jamais par le client.
+  //   · un OBJET { montant, unite, source, dateDonnee } — la forme complète.
+  //     C'est la SEULE que l'écran produise depuis le 21 août 2026.
+  //   · un NOMBRE NU — la forme d'avant, encore acceptée pour tout appelant
+  //     qui l'utiliserait : reçue, conservée, marquée `unite: 'inconnue'`.
+  //     C'est la vérité de ce qu'un nombre seul dit — rien sur son unité.
+  //
+  // LA DATE VIENT DU CLIENT quand il la fournit — changé le 21 août 2026. Elle
+  // était posée ici, au jour de la saisie, comme pour les droits REER et CELI.
+  // Ce n'est pas la même chose : « quand ai-je tapé ce nombre » n'est pas
+  // « de quand date le document ». Et surtout, rouvrir un vieux dossier pour
+  // enregistrer un détail sans rapport RAJEUNISSAIT sa perte reportée de
+  // plusieurs années d'un coup. Absente, la date du jour reste le défaut.
   if ('pertesCapitalReportees' in corps) {
     const brut = corps.pertesCapitalReportees;
     const objet = brut !== null && typeof brut === 'object' && !Array.isArray(brut)
@@ -168,9 +184,20 @@ export async function POST(req: NextRequest) {
     const m = montant(objet ? objet.montant : brut);
     const unite = objet?.unite;
     const source = objet?.source;
+    const dateFournie = objet?.dateDonnee;
+    // LA DATE EST VALIDÉE COMME AU CALENDRIER, pas seulement sur sa forme.
+    // Le regex seul laissait passer « 2024-02-31 » : l'écran refusait cette
+    // date, l'API l'acceptait. Deux portes d'entrée qui ne disent pas la meme
+    // chose finissent toujours par diverger sur un cas reel.
+    const dateValide =
+      dateFournie === undefined || dateFournie === null ||
+      (typeof dateFournie === 'string' && estUneDateReelle(dateFournie));
 
     if (
-      m === undefined ||
+      // `montant()` refuse deja le negatif, le non-fini et le non-numerique
+      // (voir sa definition en tete de fichier) : inutile de le revérifier ici.
+      // Une garde inatteignable donne l'illusion d'une protection.
+      m === undefined || !dateValide ||
       (unite !== undefined && !UNITES_PERTES_CAPITAL.includes(unite as UnitePertesCapital)) ||
       (source !== undefined && !SOURCES_PERTES_CAPITAL.includes(source as SourcePertesCapital))
     ) {
@@ -184,7 +211,14 @@ export async function POST(req: NextRequest) {
         montant: m,
         unite: (unite as UnitePertesCapital | undefined) ?? 'inconnue',
         source: (source as SourcePertesCapital | undefined) ?? 'inconnue',
-        dateDonnee: jour,
+        // ⚠ JAMAIS `null` QUAND UN MONTANT EXISTE. L'ecran envoie
+        // `dateDonnee: null` a la premiere saisie, tant que le conseiller n'a
+        // pas ouvert le champ de date — et `badges.ts` calcule la peremption a
+        // douze mois A PARTIR DE CETTE DATE. Une date nulle rendait donc le
+        // montant eternellement frais : plus jamais redemande, en silence.
+        // Le nom du champ dit « date du document OU DE LA DONNEE » : a defaut
+        // du document, le jour de la saisie est la meilleure reponse vraie.
+        dateDonnee: typeof dateFournie === 'string' ? dateFournie : jour,
       };
     }
   }
