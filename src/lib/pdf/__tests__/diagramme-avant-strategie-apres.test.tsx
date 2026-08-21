@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DiagrammeAvantStrategieApres } from '../diagramme-avant-strategie-apres';
 import { PageCristallisationPertes } from '../page-cristallisation-pertes';
+import { ParcoursGainCristallise } from '../parcours-gain-cristallise';
 import { PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE } from '../__fixtures__/cristallisation-pertes';
 
 beforeAll(() => {
@@ -81,6 +82,30 @@ describe('apercu', () => {
     fs.writeFileSync('C:/tmp/apercu/diagramme.pdf', buf);
     expect(buf.length).toBeGreaterThan(1000);
   }, 60000);
+
+  it('ecrit le PDF du parcours de GAIN (etape 4, modele visuel neuf)', async () => {
+    const carte = (titre: string, p: React.ComponentProps<typeof ParcoursGainCristallise>) => (
+      <View style={{ marginBottom: 20, padding: 14, borderRadius: 14, backgroundColor: '#ffffff',
+        borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'solid' }}>
+        <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800,
+          color: '#1e293b', marginBottom: 10 }}>{titre}</Text>
+        <ParcoursGainCristallise {...p} />
+      </View>
+    );
+    const buf = await renderToBuffer(
+      <Document><Page size="LETTER" style={{ padding: 40, fontFamily: 'Open Sans', backgroundColor: '#f8fafc' }}>
+        <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800, marginBottom: 16 }}>
+          Essai — parcours du gain cristallisé (étape 4)
+        </Text>
+        {carte('CAS CALCULÉ', {
+          gainRealiseEstimeCad: 11985, pertesDisponiblesCad: 12000, cibleRestanteCad: 15 })}
+        {carte('CAS DÉGRADÉ', {
+          gainRealiseEstimeCad: null, pertesDisponiblesCad: null, cibleRestanteCad: null })}
+      </Page></Document>
+    );
+    fs.writeFileSync('C:/tmp/apercu/parcours-gain.pdf', buf);
+    expect(buf.length).toBeGreaterThan(1000);
+  }, 90000);
 
   it('ecrit le PDF de la PAGE complete, calculee et degradee', async () => {
     const page = (p: typeof PRESENTATION_CALCULEE) => (
