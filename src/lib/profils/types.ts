@@ -247,6 +247,21 @@ export type Position = {
    * moteur dégradera, comme il le faisait à tort pour toutes les positions USD.
    */
   uniteValeursRapport?: 'CAD' | 'USD' | 'inconnue';
+  /**
+   * LE TYPE D'INSTRUMENT, TEL QUE LE RELEVÉ LE DIT — colonne 1, reporté sans
+   * transformation (21 août 2026).
+   *
+   * ⚠ CE N'EST PAS `categorie`, qui reste `null` et le restera. La catégorie
+   * d'actif ne se fabrique pas depuis le type et la devise — un FNB coté en
+   * CAD peut détenir des actions américaines. Ce champ-ci n'infère rien : il
+   * transporte ce que la source affirme d'elle-même.
+   *
+   * Il sert à UNE chose : savoir en quoi une quantité est exprimée. Mesuré sur
+   * la base : « Action » 189, « Obligation » 16, « Fonds d'investissement » 6
+   * (les seuls fractionnaires, tous à 3 décimales), « Autre » 1. Voir
+   * `granulariteVente`.
+   */
+  typeInstrument?: string;
   categorie: string | null;
   valeurMarchande: number | null;
   /** = PBR. null si absent de l'export → gains latents indisponibles. */

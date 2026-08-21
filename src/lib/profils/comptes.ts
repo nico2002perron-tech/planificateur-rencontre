@@ -222,6 +222,9 @@ export function deriverComptes(
           // dont la colonne 0 dit « USD » (mesuré le 21 août 2026). Aucune
           // autre couche n'a le droit de le déduire.
           uniteValeursRapport: 'CAD',
+          // REPORT FIDÈLE, PAS UNE DÉRIVATION : la colonne 1 du relevé, telle
+          // quelle. C'est de la provenance — la source dit ce qu'elle détient.
+          typeInstrument: p.typeInstrument,
           // AUCUNE COLONNE DU RELEVÉ NE PORTE LA CATÉGORIE. Ne jamais la
           // fabriquer depuis typeInstrument + devise : un FNB coté en CAD peut
           // détenir des actions américaines, et « Action » + « CAD » ne fait
