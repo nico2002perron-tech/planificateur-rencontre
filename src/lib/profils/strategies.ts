@@ -26,6 +26,7 @@
 // fiscaliste. Ne pas « réparer » cette divergence sans le lui demander.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { unitePermetUnChiffreFerme } from './types';
 import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
@@ -684,8 +685,22 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     0,
     profil.transactionsAnnee.pertesRealiseesNonEnregistrees - profil.transactionsAnnee.gainsRealisesNonEnregistres
   );
-  const reportees = profil.droits.pertesCapitalReportees.montant;
-  const pertesDisponibles = perteNetteAnnee + (reportees ?? 0);
+  // ── LES PERTES REPORTÉES : LE MONTANT N'ENTRE QUE SI SON UNITÉ LE PERMET ──
+  // Corrigé le 20 août 2026. Ce champ était un nombre nu, additionné tel quel
+  // aux pertes de l'année — qui viennent de Croesus en montants BRUTS. Or il
+  // se saisit aussi bien en perte NETTE (celle de l'avis de cotisation, déjà
+  // au taux d'inclusion). Additionner les deux, puis comparer le total à un
+  // gain latent brut, mélange deux échelles ; et aucune conversion n'est faite
+  // ici, parce qu'un taux d'inclusion codé en dur serait une invention.
+  //
+  // Un montant d'unité inconnue ou incompatible ne DISPARAÎT pas pour autant :
+  // il empêche le chiffre ferme, et le garde-fou dit lequel des deux motifs
+  // s'applique. Le silencieux « rien à récolter » serait le pire des deux.
+  const reportees = profil.droits.pertesCapitalReportees;
+  const reporteesUtilisables = unitePermetUnChiffreFerme(reportees.unite)
+    ? (reportees.montant ?? 0) : 0;
+  const reporteesInutilisables = (reportees.montant ?? 0) > 0 && reporteesUtilisables === 0;
+  const pertesDisponibles = perteNetteAnnee + reporteesUtilisables;
 
   if (enGain.length === 0) {
     return {
@@ -703,10 +718,13 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     };
   }
 
-  if (pertesDisponibles <= 0) {
+  // ⚠ `reporteesInutilisables` NE PASSE PAS PAR ICI : un montant reporté existe
+  // au dossier, seulement il n'est pas comparable. Dire « aucune perte
+  // inutilisée » serait un faux motif — le vrai est plus bas, sous le garde-fou.
+  if (pertesDisponibles <= 0 && !reporteesInutilisables) {
     // Aucune perte connue. Si les reportées n'ont jamais été demandées, c'est
     // une question — pas un « rien à faire » : elles pourraient exister.
-    if (reportees === null) {
+    if (reportees.montant === null) {
       return {
         ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
         candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
@@ -736,12 +754,15 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   }
 
   const montant = Math.round(Math.min(gainsLatents, pertesDisponibles) * 100) / 100;
+  // NE NOMME QUE CE QUI EST RÉELLEMENT COMPTÉ : `reporteesUtilisables` vaut
+  // zéro quand l'unité ne permet pas de les additionner, et cette phrase ne
+  // sert que le chemin entièrement calculé.
   const originePertes =
-    perteNetteAnnee > 0 && (reportees ?? 0) > 0
-      ? `${argent(perteNetteAnnee)} de pertes nettes de l’année et ${argent(reportees as number)} reportées d’années passées`
+    perteNetteAnnee > 0 && reporteesUtilisables > 0
+      ? `${argent(perteNetteAnnee)} de pertes nettes de l’année et ${argent(reporteesUtilisables)} reportées d’années passées`
       : perteNetteAnnee > 0
         ? `${argent(perteNetteAnnee)} de pertes nettes réalisées cette année`
-        : `${argent(reportees as number)} de pertes reportées d’années passées`;
+        : `${argent(reporteesUtilisables)} de pertes reportées d’années passées`;
 
   // ── LE GARDE-FOU UNIQUE — avant tout chiffre ferme (§19) ──────────────────
   // Une seule question, posée à un seul endroit : les données matérielles de
@@ -749,7 +770,9 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   // changer son chiffre ne la bloque pas — une ambiguïté CELI n'a rien à voir
   // avec une récolte de gains en compte non enregistré.
   const completude = verifierCompletudeCristallisationGains(profil, {
-    utilisePertesReportees: (reportees ?? 0) > 0,
+    // L'OBJET COMPLET, PAS UN BOOLÉEN : le garde-fou doit pouvoir distinguer
+    // « unité jamais demandée » de « unité connue mais incompatible ».
+    pertesReporteesUtilisees: (reportees.montant ?? 0) > 0 ? reportees : null,
     pertesCourantesAValider:
       perteNetteAnnee > 0 && profil.transactionsAnnee.pertesCourantesAValiderPerteApparente,
   });

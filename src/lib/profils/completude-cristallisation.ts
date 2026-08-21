@@ -33,7 +33,8 @@
 //   position visible ≠ portefeuille fiscal complet
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ProfilClient, Position, Compte } from './types';
+import { unitePermetUnChiffreFerme } from './types';
+import type { ProfilClient, Position, Compte, PertesCapitalReportees } from './types';
 
 /** Une position, avec le compte où elle vit — la maille de tout ce module. */
 export type PositionSituee = Position & { compte: Compte };
@@ -60,6 +61,7 @@ export type RaisonBlocage =
   | 'regime-de-compte-non-prouve'
   | 'dispositions-regime-indetermine'
   | 'pertes-reportees-unite-non-demontree'
+  | 'pertes-reportees-unite-incompatible'
   | 'perte-courante-a-valider-perte-apparente'
   | 'portee-externe-non-confirmee';
 
@@ -136,12 +138,18 @@ export function biensIdentiquesMultiComptes(positions: PositionSituee[]): string
 /**
  * LA VÉRIFICATION UNIQUE — appelée avant tout `calcule`.
  *
- * `utilisePertesReportees` : la stratégie s'appuie-t-elle sur le champ saisi ?
+ * `pertesReporteesUtilisees` : le champ saisi lorsque la stratégie s'appuie
+ *   dessus, `null` sinon. C'est l'objet complet — montant ET unité — parce que
+ *   la question n'est pas « y a-t-il un montant ? » mais « ce montant est-il
+ *   comparable au gain latent qu'on lui oppose ? ».
  * `pertesCourantesAValider` : une perte de l'année risque-t-elle d'être apparente ?
  */
 export function verifierCompletudeCristallisationGains(
   profil: ProfilClient,
-  options: { utilisePertesReportees: boolean; pertesCourantesAValider: boolean }
+  options: {
+    pertesReporteesUtilisees: PertesCapitalReportees | null;
+    pertesCourantesAValider: boolean;
+  }
 ): CompletudeCristallisation {
   const positions = positionsNonEnregistrees(profil);
   const qualites = positions.map(qualifierPosition);
@@ -204,20 +212,34 @@ export function verifierCompletudeCristallisationGains(
       'le régime des comptes dont proviennent les dispositions non identifiées');
   }
 
-  // ── LES PERTES REPORTÉES : L'UNITÉ N'EST PAS DÉMONTRÉE (§11) ──────────────
-  // Le champ de saisie ne porte AUCUNE mention d'unité — contrairement au champ
-  // voisin, qui précise « avis de cotisation ». Or l’avis rapporte des pertes
-  // en capital NETTES (déjà au taux d'inclusion), tandis que les pertes de
-  // l'année viennent de Croesus en montants BRUTS. Additionner les deux, puis
-  // comparer le total à un gain latent brut, mélange deux unités.
+  // ── LES PERTES REPORTÉES : L'UNITÉ DÉCIDE (§11, précisé le 20 août 2026) ──
+  // Le champ de saisie ne portait AUCUNE mention d'unité — contrairement au
+  // champ voisin, qui précise « avis de cotisation ». Or l’avis rapporte des
+  // pertes en capital NETTES (déjà au taux d'inclusion), tandis que les pertes
+  // de l'année viennent de Croesus en montants BRUTS. Additionner les deux,
+  // puis comparer le total à un gain latent brut, mélange deux unités.
   //
-  // On ne devine pas laquelle a été saisie, et on n'invente aucune conversion :
-  // tant que le champ ne dit pas son unité, il ne peut pas fonder un montant
-  // ferme. La correction est un champ étiqueté, pas une règle de calcul.
-  if (options.utilisePertesReportees) {
-    ajouter('pertes-reportees-unite-non-demontree',
-      'Les pertes en capital reportées viennent d’une saisie manuelle dont l’unité n’est pas établie : une perte en capital nette de l’avis de cotisation et une perte brute ne se comparent pas au même gain. Le montant exact reste à confirmer.',
-      'l’unité des pertes en capital reportées (perte brute ou perte nette de l’avis de cotisation)');
+  // Depuis que le champ porte son unité, le blocage n'est plus automatique : il
+  // suit ce qu'on sait. Une perte BRUTE se compare directement au gain latent,
+  // et la refuser inventerait un motif faux. Une perte NETTE, elle, est bloquée
+  // pour un motif différent — connu, et dit tel quel.
+  const reportees = options.pertesReporteesUtilisees;
+  if (
+    reportees !== null && reportees.montant !== null && reportees.montant > 0 &&
+    !unitePermetUnChiffreFerme(reportees.unite)
+  ) {
+    if (reportees.unite === 'perte-nette-capital-fiscale') {
+      // L'UNITÉ EST CONNUE, ET C'EST PRÉCISÉMENT POURQUOI ON REFUSE : les
+      // rapprocher exigerait de diviser par le taux d'inclusion — un facteur
+      // codé en dur, donc inventé. On nomme ce qui manque, sans le fabriquer.
+      ajouter('pertes-reportees-unite-incompatible',
+        'Les pertes en capital reportées sont inscrites en montant NET, tel que l’avis de cotisation le rapporte, alors que les gains latents d’un portefeuille se mesurent en montant brut. Le moteur ne convertit pas l’un en l’autre : le montant directement utilisable reste à établir.',
+        'le montant BRUT des pertes en capital reportées, ou leur équivalent directement utilisable');
+    } else {
+      ajouter('pertes-reportees-unite-non-demontree',
+        'Les pertes en capital reportées viennent d’une saisie manuelle dont l’unité n’est pas établie : une perte en capital nette de l’avis de cotisation et une perte brute ne se comparent pas au même gain. Le montant exact reste à confirmer.',
+        'l’unité des pertes en capital reportées (perte brute ou perte nette de l’avis de cotisation)');
+    }
   }
 
   // ── LA PERTE APPARENTE (§13-§14) ──────────────────────────────────────────

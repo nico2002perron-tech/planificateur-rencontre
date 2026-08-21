@@ -100,11 +100,99 @@ export type Consolidation = {
   transfertsResolus: TransfertResolu[];
 };
 
+/**
+ * DANS QUELLE UNITÉ LE MONTANT DES PERTES REPORTÉES EST-IL EXPRIMÉ ?
+ *
+ * Trois notions se ressemblent et ne se valent pas :
+ *
+ *   · `perte-capital-brute` — la perte AVANT le taux d'inclusion, telle que
+ *     Croesus la rapporte pour les dispositions de l'année. C'est l'unité dans
+ *     laquelle le moteur travaille : les gains latents (valeur marchande moins
+ *     prix de base) sont eux aussi bruts.
+ *
+ *   · `perte-nette-capital-fiscale` — la « perte en capital nette » telle que
+ *     l'avis de cotisation la reporte, DÉJÀ au taux d'inclusion. La comparer à
+ *     un gain latent brut compare deux échelles différentes. Le moteur ne la
+ *     convertit pas : le taux d'inclusion n'est pas une constante à coder en
+ *     dur, et un facteur inventé serait un chiffre faux de plus.
+ *
+ *   · `montant-normalise-utilisable` — quelqu'un a fait le travail et affirme
+ *     que ce montant est directement consommable par la formule. C'est une
+ *     déclaration humaine, pas une dérivation.
+ *
+ *   · `inconnue` — l'unité n'a pas été demandée, ou pas répondue. Le montant
+ *     est conservé, jamais interprété.
+ */
+export type UnitePertesCapital =
+  | 'perte-nette-capital-fiscale'
+  | 'perte-capital-brute'
+  | 'montant-normalise-utilisable'
+  | 'inconnue';
+
+/** D'où vient le montant saisi. `inconnue` = jamais demandé. */
+export type SourcePertesCapital =
+  | 'avis-cotisation'
+  | 'avis-recotisation'
+  | 'saisie-manuelle'
+  | 'autre'
+  | 'inconnue';
+
+/**
+ * LES PERTES EN CAPITAL REPORTÉES — un montant N'EST PAS une donnée fiscale.
+ *
+ * Ce champ était un `MontantDate` comme les trois autres droits. Il ne pouvait
+ * pas l'être : les droits REER et CELI sont des montants en dollars dont le
+ * sens ne fait aucun doute, alors qu'une perte en capital reportée existe en
+ * deux unités incompatibles — et que le champ de saisie ne demandait pas
+ * laquelle.
+ *
+ * INVARIANT : montant connu + unité inconnue ≠ montant fiscal utilisable.
+ * Le nombre est préservé — c'est une donnée réelle, entrée par un humain — mais
+ * aucune stratégie n'a le droit de le consommer tant que son unité n'est pas
+ * établie. Voir `unitePermetUnChiffreFerme`.
+ */
+export type PertesCapitalReportees = {
+  montant: number | null;
+  unite: UnitePertesCapital;
+  source: SourcePertesCapital;
+  dateDonnee: string | null;
+};
+
+export const UNITES_PERTES_CAPITAL: readonly UnitePertesCapital[] = [
+  'perte-nette-capital-fiscale', 'perte-capital-brute',
+  'montant-normalise-utilisable', 'inconnue',
+] as const;
+
+export const SOURCES_PERTES_CAPITAL: readonly SourcePertesCapital[] = [
+  'avis-cotisation', 'avis-recotisation', 'saisie-manuelle', 'autre', 'inconnue',
+] as const;
+
+/**
+ * L'UNITÉ PERMET-ELLE UN CHIFFRE FERME ? — la seule porte d'entrée du montant
+ * dans un calcul.
+ *
+ * Le moteur compare les pertes disponibles à des gains latents BRUTS (valeur
+ * marchande moins prix de base). Une perte brute se compare directement ; un
+ * montant déclaré normalisé aussi, par construction. Une perte nette de l'avis
+ * de cotisation exigerait une conversion — donc un taux d'inclusion codé en
+ * dur, donc une invention. Et une unité inconnue n'est rien du tout.
+ *
+ * ⚠ Ce prédicat ne dit pas que le montant est JUSTE : il dit qu'il est
+ * COMPARABLE. La fiabilité de la saisie reste une question distincte.
+ */
+export function unitePermetUnChiffreFerme(unite: UnitePertesCapital): boolean {
+  return unite === 'perte-capital-brute' || unite === 'montant-normalise-utilisable';
+}
+
+export function pertesCapitalReporteesVierges(): PertesCapitalReportees {
+  return { montant: null, unite: 'inconnue', source: 'inconnue', dateDonnee: null };
+}
+
 export type Droits = {
   reerInutilises: MontantDate;
   celiInutilises: MontantDate;
   celiConjointInutilises: MontantDate;
-  pertesCapitalReportees: MontantDate;
+  pertesCapitalReportees: PertesCapitalReportees;
 };
 
 export type CotisationsAnnee = {
@@ -410,7 +498,7 @@ export function profilVierge(id: string, date: string): ProfilClient {
       reerInutilises: montantVierge(),
       celiInutilises: montantVierge(),
       celiConjointInutilises: montantVierge(),
-      pertesCapitalReportees: montantVierge(),
+      pertesCapitalReportees: pertesCapitalReporteesVierges(),
     },
     cotisationsAnnee: { reer: 0, celi: 0, reeeParEnfant: {}, portee: 'inconnue' },
     comptes: [],

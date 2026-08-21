@@ -11,7 +11,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { estLocal } from '@/lib/base-locale/mode';
 import { racineBaseLocale } from '@/lib/base-locale/chemins';
-import { profilVierge, type ProfilClient, type Compte } from './types';
+import {
+  profilVierge, pertesCapitalReporteesVierges,
+  UNITES_PERTES_CAPITAL, SOURCES_PERTES_CAPITAL,
+  type ProfilClient, type Compte,
+  type PertesCapitalReportees, type UnitePertesCapital, type SourcePertesCapital,
+} from './types';
 
 export type Correspondance = Record<string, string>;   // pseudonyme → nom
 
@@ -98,6 +103,57 @@ export async function nomPour(id: string): Promise<string | null> {
  * `{...vierge, ...stocke}` remplacerait `demographie` EN ENTIER par la version
  * stockée, ramenant exactement le problème qu'on corrige.
  */
+/**
+ * LES PERTES REPORTÉES D'UN PROFIL ANCIEN — le montant survit, son sens ne
+ * s'invente pas.
+ *
+ * Avant le 20 août 2026, ce champ était un simple `{ montant, dateDonnee }`, et
+ * le champ de saisie ne demandait pas dans quelle unité le montant était
+ * exprimé. Un profil sur disque porte donc un nombre dont personne ne sait s'il
+ * s'agit d'une perte en capital BRUTE ou de la perte NETTE de l'avis de
+ * cotisation — deux échelles qui ne se comparent pas au même gain.
+ *
+ * LA RÈGLE : on garde le nombre, on refuse de le lire. `unite: 'inconnue'` et
+ * `source: 'inconnue'` sont la traduction exacte de ce qu'on sait — c'est-à-dire
+ * rien —, et cela suffit à empêcher toute stratégie de le consommer comme une
+ * perte disponible ferme. Rétrograder un ancien dossier à « à confirmer » est
+ * infiniment moins grave que réinterpréter son nombre en silence.
+ *
+ * ⚠ EN MÉMOIRE SEULEMENT. Cette fonction est appelée à la LECTURE. Elle
+ * n'écrit rien : le fichier sur disque garde sa forme ancienne jusqu'à ce
+ * qu'une écriture délibérée le remplace. Une migration persistée, si elle est
+ * un jour souhaitée, sera un geste séparé et explicite.
+ *
+ * La date, elle, est préservée quand elle existe : elle dit quand la saisie a
+ * été faite, et cette information-là n'est pas ambiguë.
+ */
+function normaliserPertesReportees(lu: unknown): PertesCapitalReportees {
+  const vierge = pertesCapitalReporteesVierges();
+  if (lu === null || lu === undefined) return vierge;
+
+  // FORME LA PLUS ANCIENNE : un nombre nu, sans même la date.
+  if (typeof lu === 'number') {
+    return Number.isFinite(lu)
+      ? { montant: lu, unite: 'inconnue', source: 'inconnue', dateDonnee: null }
+      : vierge;
+  }
+  if (typeof lu !== 'object' || Array.isArray(lu)) return vierge;
+
+  const o = lu as Record<string, unknown>;
+  const montant = typeof o.montant === 'number' && Number.isFinite(o.montant) ? o.montant : null;
+  const dateDonnee = typeof o.dateDonnee === 'string' && o.dateDonnee !== '' ? o.dateDonnee : null;
+
+  // UNE VALEUR HORS ÉNUMÉRATION VAUT « INCONNUE ». Un fichier édité à la main,
+  // ou écrit par une version future, ne doit pas pouvoir faire entrer dans le
+  // moteur une unité qu'il ne connaît pas — le doute est le défaut sûr.
+  const unite = UNITES_PERTES_CAPITAL.includes(o.unite as UnitePertesCapital)
+    ? (o.unite as UnitePertesCapital) : 'inconnue';
+  const source = SOURCES_PERTES_CAPITAL.includes(o.source as SourcePertesCapital)
+    ? (o.source as SourcePertesCapital) : 'inconnue';
+
+  return { montant, unite, source, dateDonnee };
+}
+
 function completerProfil(stocke: Partial<ProfilClient>, id: string, date: string): ProfilClient {
   const v = profilVierge(id, date);
   const fusion = <T extends object>(defaut: T, lu: unknown): T =>
@@ -117,7 +173,13 @@ function completerProfil(stocke: Partial<ProfilClient>, id: string, date: string
       transfertsResolus: Array.isArray(stocke.consolidation?.transfertsResolus)
         ? stocke.consolidation.transfertsResolus : [],
     },
-    droits: fusion(v.droits, stocke.droits),
+    droits: {
+      ...fusion(v.droits, stocke.droits),
+      // ⚠ LE SEUL CHAMP QUI NE PEUT PAS SE FUSIONNER À PLAT — voir plus bas.
+      pertesCapitalReportees: normaliserPertesReportees(
+        (stocke.droits as Record<string, unknown> | undefined)?.pertesCapitalReportees
+      ),
+    },
     cotisationsAnnee: {
       ...fusion(v.cotisationsAnnee, stocke.cotisationsAnnee),
       reeeParEnfant: fusion(v.cotisationsAnnee.reeeParEnfant, stocke.cotisationsAnnee?.reeeParEnfant),

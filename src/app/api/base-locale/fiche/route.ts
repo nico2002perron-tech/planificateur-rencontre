@@ -11,8 +11,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
 import { profilPourClient, lireProfil, ecrireProfil } from '@/lib/profils/stockage';
+import {
+  pertesCapitalReporteesVierges, UNITES_PERTES_CAPITAL, SOURCES_PERTES_CAPITAL,
+} from '@/lib/profils/types';
 import type {
   ProfilClient, EtatCivil, TrancheRevenu, ReponseTernaire, EnfantBeneficiaire,
+  UnitePertesCapital, SourcePertesCapital,
 } from '@/lib/profils/types';
 
 const ETATS: EtatCivil[] = ['celibataire', 'marie', 'conjoint-de-fait', 'veuf', 'divorce'];
@@ -132,7 +136,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Droits — source autoritaire : l'avis de cotisation ────────────────────
-  const DROITS = ['reerInutilises', 'celiInutilises', 'celiConjointInutilises', 'pertesCapitalReportees'] as const;
+  const DROITS = ['reerInutilises', 'celiInutilises', 'celiConjointInutilises'] as const;
   for (const champ of DROITS) {
     if (!(champ in corps)) continue;
     const m = montant(corps[champ]);
@@ -140,6 +144,49 @@ export async function POST(req: NextRequest) {
     // UN MONTANT SANS DATE NE VAUT RIEN : un droit CELI lu il y a trois ans ne
     // dit rien d'aujourd'hui, et badges.ts le redemande passé douze mois.
     profil.droits[champ] = { montant: m, dateDonnee: m === null ? null : jour };
+  }
+
+  // ── Les pertes reportées — un montant ET son unité ────────────────────────
+  //
+  // Ce champ a quitté la boucle ci-dessus le 20 août 2026 : contrairement aux
+  // droits REER et CELI, dont le sens ne fait aucun doute, une perte en capital
+  // reportée existe en deux unités incompatibles (brute, ou nette de l'avis de
+  // cotisation). Un nombre seul ne dit donc pas ce qu'il vaut.
+  //
+  // DEUX FORMES ACCEPTÉES, et c'est délibéré :
+  //   · un NOMBRE NU — ce que l'écran envoie encore aujourd'hui. Il est reçu,
+  //     conservé, et marqué `unite: 'inconnue'`. C'est la vérité : le champ
+  //     actuel ne demande pas l'unité. Le moteur refusera de le chiffrer, et
+  //     c'est le comportement voulu tant que l'écran n'a pas été repris.
+  //   · un OBJET { montant, unite, source } — la forme complète. Sans elle,
+  //     l'unité serait un état inatteignable, et le modèle invérifiable de bout
+  //     en bout. La date reste posée ICI, jamais par le client.
+  if ('pertesCapitalReportees' in corps) {
+    const brut = corps.pertesCapitalReportees;
+    const objet = brut !== null && typeof brut === 'object' && !Array.isArray(brut)
+      ? (brut as Record<string, unknown>) : null;
+    const m = montant(objet ? objet.montant : brut);
+    const unite = objet?.unite;
+    const source = objet?.source;
+
+    if (
+      m === undefined ||
+      (unite !== undefined && !UNITES_PERTES_CAPITAL.includes(unite as UnitePertesCapital)) ||
+      (source !== undefined && !SOURCES_PERTES_CAPITAL.includes(source as SourcePertesCapital))
+    ) {
+      refus.push('pertesCapitalReportees');
+    } else if (m === null) {
+      // EFFACER, C'EST TOUT EFFACER : un montant retiré ne doit pas laisser
+      // derrière lui l'unité de la saisie précédente.
+      profil.droits.pertesCapitalReportees = pertesCapitalReporteesVierges();
+    } else {
+      profil.droits.pertesCapitalReportees = {
+        montant: m,
+        unite: (unite as UnitePertesCapital | undefined) ?? 'inconnue',
+        source: (source as SourcePertesCapital | undefined) ?? 'inconnue',
+        dateDonnee: jour,
+      };
+    }
   }
 
   // ── Le marqueur d'essai ───────────────────────────────────────────────────

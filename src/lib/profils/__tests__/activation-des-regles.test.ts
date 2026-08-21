@@ -123,7 +123,7 @@ describe('2. Cristallisation de gains', () => {
 
   it('S ETEINT : aucune perte disponible', () => {
     const p = dossier();
-    p.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+    p.droits.pertesCapitalReportees = { montant: 0, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE };
     p.transactionsAnnee.pertesRealisees = 0;
     p.transactionsAnnee.pertesRealiseesNonEnregistrees = 0;
     const c = constat(p, 'cristallisation-gains');

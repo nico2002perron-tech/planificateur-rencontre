@@ -146,6 +146,14 @@ describe('LE PIED DE PAGE dit ce que le document EST — défaut du 17 août 202
   });
 });
 
+// ⚠ CES TROIS TESTS RENDENT UN VRAI PDF — polices embarquées comprises. Ils
+// prennent une à deux secondes chacun à froid, et le premier dépassait le
+// délai par défaut de 5 s environ une exécution sur trois quand la suite tourne
+// en parallèle (mesuré le 21 août 2026, après l'ajout des tests de migration).
+// Un échec intermittent est pire qu'un test lent : il apprend à ignorer le
+// rouge. Le délai est donc explicite, et généreux.
+const DELAI_RENDU_PDF = 30_000;
+
 describe('la page se rend', () => {
   it('produit un PDF valide même sur un profil entièrement vide', async () => {
     const resultat = analyser(profilVierge('vide', DATE), null, DATE);
@@ -154,7 +162,7 @@ describe('la page se rend', () => {
     );
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     expect(buffer.length).toBeGreaterThan(1000);
-  });
+  }, DELAI_RENDU_PDF);
 
   // LES LOGOS DU PLAN DE RÉCOLTE (17 août 2026). Ils viennent du cache local ;
   // un logo corrompu ne doit jamais faire échouer la GÉNÉRATION du document —
@@ -172,7 +180,7 @@ describe('la page se rend', () => {
         }))
     );
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, DELAI_RENDU_PDF);
 
   it('SANS logo, le plan se rend quand même — le symbole se suffit', async () => {
     const resultat = analyser(profilAvecPlan(), null, DATE);
@@ -183,7 +191,7 @@ describe('la page se rend', () => {
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     // Le symbole reste imprimé, avec ou sans image.
     expect(textesDe(React.createElement(OptimisationsFiscalesPage, { resultat })).join('')).toContain('GAGNANT');
-  });
+  }, DELAI_RENDU_PDF);
 });
 
 describe('ce qui atteint le client', () => {

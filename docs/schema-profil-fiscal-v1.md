@@ -66,7 +66,25 @@ Version de travail — 4 août 2026. À faire réviser par un fiscaliste avant t
     "reerInutilises":        { "montant": null, "dateDonnee": null },
     "celiInutilises":        { "montant": null, "dateDonnee": null },
     "celiConjointInutilises":{ "montant": null, "dateDonnee": null },
-    "pertesCapitalReportees":{ "montant": null, "dateDonnee": null }
+
+    // ⚠ PAS UN MONTANT COMME LES AUTRES (20 août 2026). Une perte en capital
+    // reportée existe en DEUX unités incompatibles : brute (avant le taux
+    // d'inclusion, comme les dispositions de Croesus) ou nette (celle de l'avis
+    // de cotisation, déjà au taux). Un nombre seul ne dit pas laquelle, et le
+    // moteur ne convertit pas — un taux d'inclusion codé en dur serait inventé.
+    //
+    // INVARIANT : montant connu + unité inconnue ≠ montant fiscal utilisable.
+    // Seules 'perte-capital-brute' et 'montant-normalise-utilisable' ouvrent un
+    // chiffre ferme (voir `unitePermetUnChiffreFerme`). Un profil écrit avant
+    // cette date est relu avec unite/source = 'inconnue' : son nombre est
+    // conservé, jamais réinterprété — la normalisation est EN MÉMOIRE, le
+    // fichier sur disque n'est pas réécrit par une simple lecture.
+    "pertesCapitalReportees": {
+      "montant": null,
+      "unite": "inconnue",   // perte-nette-capital-fiscale | perte-capital-brute | montant-normalise-utilisable | inconnue
+      "source": "inconnue",  // avis-cotisation | avis-recotisation | saisie-manuelle | autre | inconnue
+      "dateDonnee": null
+    }
   },
 
   "cotisationsAnnee": {                  // dérivé automatiquement des transactions Croesus

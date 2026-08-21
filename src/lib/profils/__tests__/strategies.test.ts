@@ -693,7 +693,7 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
     // l'année viennent de Croesus en montants BRUTS. Les additionner, puis
     // comparer le total à un gain latent brut, mélange deux unités.
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.droits.pertesCapitalReportees = { montant: 7500, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE };
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
     });
     const c = gains(p);
@@ -708,7 +708,7 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
 
   it('chiffre aussi le NET DE PERTES de l’année courante', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.droits.pertesCapitalReportees = { montant: 0, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE };
       x.transactionsAnnee.gainsRealises = 1000;
       x.transactionsAnnee.gainsRealisesNonEnregistres = 1000;
       x.transactionsAnnee.pertesRealisees = 6000;   // net −5 000
@@ -730,7 +730,7 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
   it('S’ALLUME EXACTEMENT QUAND LA 1 S’ÉTEINT — les deux faces du même signe', () => {
     // Année à pertes nettes : la 1 n'a rien à absorber, la 7 chiffre.
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.droits.pertesCapitalReportees = { montant: 0, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE };
       x.transactionsAnnee.pertesRealisees = 6000;
       x.transactionsAnnee.pertesRealiseesNonEnregistrees = 6000;
       x.comptes = [compte('non-enregistre', [
@@ -757,7 +757,7 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
 
   it('AUCUNE PERTE, CONFIRMÉ : « déjà en ordre », et c’est une bonne nouvelle', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+      x.droits.pertesCapitalReportees = { montant: 0, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: DATE };
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
     });
     const c = gains(p);
