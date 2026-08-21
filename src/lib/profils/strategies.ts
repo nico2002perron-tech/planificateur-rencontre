@@ -31,7 +31,9 @@ import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
 import type { SignauxLivre, LimitesMaximisation } from './signaux-livre';
-import { qualifierPosition, verifierCompletudeCristallisationGains } from './completude-cristallisation';
+import {
+  qualifierPosition, verifierCompletudeCristallisationGains, pertesReporteesUtilisables,
+} from './completude-cristallisation';
 
 /** Un constat, tel que le contrat du schéma le définit. */
 export type Constat = {
@@ -697,10 +699,42 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   // il empêche le chiffre ferme, et le garde-fou dit lequel des deux motifs
   // s'applique. Le silencieux « rien à récolter » serait le pire des deux.
   const reportees = profil.droits.pertesCapitalReportees;
-  const reporteesUtilisables = unitePermetUnChiffreFerme(reportees.unite)
-    ? (reportees.montant ?? 0) : 0;
+  const reporteesUtilisables = pertesReporteesUtilisables(reportees);
   const reporteesInutilisables = (reportees.montant ?? 0) > 0 && reporteesUtilisables === 0;
   const pertesDisponibles = perteNetteAnnee + reporteesUtilisables;
+
+  // ── « AUCUN GAIN À RÉCOLTER » N'EST VRAI QUE SI ON A PU REGARDER ──────────
+  //
+  // Défaut trouvé le 21 août 2026 par le test I de la matrice A→U, et c'était
+  // un faux négatif livré au client. Un portefeuille non enregistré composé de
+  // titres AMÉRICAINS passait ici : leur PBR et leur valeur marchande sont au
+  // relevé, donc `aveugles` vaut zéro et le garde du haut ne se déclenche pas ;
+  // mais aucune ne peut s'exprimer en dollars canadiens, donc `enGain` est
+  // vide. Le constat sortait alors « non-applicable », avec cette phrase :
+  // « Aucune position non enregistrée vue ici ne porte de gain latent à
+  // récolter » — pendant qu'un gain latent bien réel dormait dans le dossier.
+  //
+  // Le motif du zéro doit être le VRAI motif. Quand des positions existent mais
+  // qu'aucune n'a PU être qualifiée, on ne conclut pas : on dit ce qui manque.
+  const nonQualifiables = qualifiees.filter((q) => q.gainLatentCad === null);
+  if (enGain.length === 0 && nonQualifiables.length > 0) {
+    const completude = verifierCompletudeCristallisationGains(profil, {
+      pertesReporteesUtilisees: (reportees.montant ?? 0) > 0 ? reportees : null,
+      pertesCourantesAValider:
+        perteNetteAnnee > 0 && profil.transactionsAnnee.pertesCourantesAValiderPerteApparente,
+    });
+    const combien = nonQualifiables.length;
+    return {
+      ...base, statut: 'montant-a-confirmer', portee: porteeDe(profil), montantEstime: null,
+      // ⚠ AUCUN CHIFFRE : on ignore précisément ce que ces positions valent.
+      explication:
+        `${combien} position${combien > 1 ? 's non enregistrées n’ont' : ' non enregistrée n’a'} pas pu être ` +
+        `${combien > 1 ? 'lues' : 'lue'} en dollars canadiens : il est impossible de dire s’il y a un gain à ` +
+        `récolter, et l’absence de gain ne peut pas être conclue non plus. ` +
+        completude.explications.join(' '),
+      donneesManquantes: completude.donneesManquantes,
+    };
+  }
 
   if (enGain.length === 0) {
     return {

@@ -36,6 +36,23 @@
 import { unitePermetUnChiffreFerme } from './types';
 import type { ProfilClient, Position, Compte, PertesCapitalReportees } from './types';
 
+/**
+ * LE MONTANT DES PERTES REPORTÉES QUI ENTRE RÉELLEMENT DANS L'ADDITION.
+ *
+ * Extrait de `strategies.ts` le 21 août 2026, en découvrant par le sabotage U
+ * que cette exclusion n'était verrouillée par AUCUN test : le garde-fou de
+ * complétude bloquait déjà le constat, si bien qu'on pouvait supprimer
+ * l'exclusion arithmétique sans faire rougir quoi que ce soit. La protection
+ * existait, mais rien ne la retenait.
+ *
+ * Les deux protections sont volontairement redondantes — l'une empêche le
+ * STATUT `calcule`, l'autre empêche le MONTANT d'être faux. Une fonction pure
+ * rend la seconde observable, donc verrouillable.
+ */
+export function pertesReporteesUtilisables(r: PertesCapitalReportees): number {
+  return unitePermetUnChiffreFerme(r.unite) ? (r.montant ?? 0) : 0;
+}
+
 /** Une position, avec le compte où elle vit — la maille de tout ce module. */
 export type PositionSituee = Position & { compte: Compte };
 
