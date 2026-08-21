@@ -278,6 +278,17 @@ export type Position = {
    * appartient à `granulariteVente(typeInstrument)`, pas à ce champ.
    */
   quantite?: number;
+  /**
+   * LE NOM DU TITRE, TEL QUE LE RELEVÉ L'ÉCRIT — colonne 3, reportée sans
+   * transformation (21 août 2026).
+   *
+   * ⚠ DONNÉE DE PRÉSENTATION, ET RIEN D'AUTRE. Elle sert à écrire
+   * « goeasy Ltd. » sous « GSY » dans le document remis au client. Elle
+   * n'entre dans AUCUN calcul, AUCUNE qualification fiscale, AUCUN choix de
+   * candidat — et surtout pas dans une déduction de catégorie d'actif, que
+   * `comptes.ts` interdit explicitement de fabriquer.
+   */
+  description?: string;
   categorie: string | null;
   valeurMarchande: number | null;
   /** = PBR. null si absent de l'export → gains latents indisponibles. */

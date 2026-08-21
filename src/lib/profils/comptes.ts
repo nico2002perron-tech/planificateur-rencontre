@@ -227,6 +227,8 @@ export function deriverComptes(
           typeInstrument: p.typeInstrument,
           // REPORT FIDÈLE. Son sens dépend du type d'instrument — voir le champ.
           quantite: p.quantite,
+          // PRÉSENTATION SEULEMENT : « goeasy Ltd. » sous « GSY ».
+          description: p.description,
           // AUCUNE COLONNE DU RELEVÉ NE PORTE LA CATÉGORIE. Ne jamais la
           // fabriquer depuis typeInstrument + devise : un FNB coté en CAD peut
           // détenir des actions américaines, et « Action » + « CAD » ne fait

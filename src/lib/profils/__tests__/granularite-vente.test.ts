@@ -69,6 +69,14 @@ describe('Q27-Q29 · quantite est reportée fidèlement, quel que soit son sens'
     expect(par.get('OOO')?.quantite).toBe(30000);
   });
 
+  it('la description traverse elle aussi — présentation seulement', () => {
+    // Elle sert à écrire « goeasy Ltd. » sous « GSY ». Elle n'entre dans aucun
+    // calcul : le test voisin vérifie que `categorie` reste nulle malgré elle.
+    expect(par.get('AAA')?.description).toBe('Titre fictif');
+    expect(par.get('FFF')?.description).toBe('Fonds fictif');
+    for (const p of positions) expect(p.categorie).toBeNull();
+  });
+
   it('Q30 · l’obligation reste NON SUPPORTÉE, quantité présente ou non', () => {
     const oblig = par.get('OOO')!;
     expect(oblig.quantite).toBe(30000);
