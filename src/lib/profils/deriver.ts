@@ -12,6 +12,7 @@ import { typeDeCompte } from '@/lib/parseur-croesus/types';
 import { analyserFluxCompte, estVirementInterne, separerCotisations } from '@/lib/parseur-croesus/regles';
 import type { HistoriqueRegime, TypeCompte } from './types';
 import type { TransfertObserve } from './droits-celi';
+import { racheteDansLaFenetre } from './completude-cristallisation';
 
 /** Les transactions d'un régime donné (celi, reer…), tous comptes confondus. */
 function pourRegime(lignes: LigneTransaction[], regime: TypeCompte): LigneTransaction[] {
@@ -111,24 +112,87 @@ export function observerTransferts(lignes: LigneTransaction[], regime?: TypeComp
     .sort((a, b) => b.date.localeCompare(a.date) || b.montant - a.montant);
 }
 
-/** Les gains et pertes réalisés d'une année — colonne Gains/Pertes de Croesus. */
+/**
+ * Les gains et pertes réalisés d'une année — colonne Gains/Pertes de Croesus.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * LE RÉGIME COMPTE — corrigé le 20 août 2026 (audit des huit stratégies).
+ *
+ * Cette fonction sommait la colonne « Gains/Pertes » de TOUTES les ventes sans
+ * jamais regarder le compte, alors que six lignes plus bas elle filtrait déjà
+ * les retraits PAR RÉGIME : l'outil était là, il n'avait pas été appliqué ici.
+ *
+ * Ce que ça coûtait, mesuré sur la base locale : 171 des 440 dispositions
+ * (39 %) sont dans des comptes enregistrés — REER 128, REEE 25, CELI 12,
+ * FERR 6. Une perte vendue dans un CELI entrait donc dans les « pertes
+ * disponibles » de la cristallisation de gains, où elle n'a aucune existence
+ * fiscale : le moteur invitait à réaliser des gains imposables en les croyant
+ * abrités. Sur les 4 dossiers portant des ventes en 2026, DEUX changent —
+ * dont un où le « gain net absorbable » tombe de ~10 000 $ à ZÉRO.
+ *
+ * LES ANCIENS CHAMPS NE CHANGENT PAS DE SENS. `gainsRealises` et
+ * `pertesRealisees` restent la performance réalisée tous régimes confondus ;
+ * l'assiette fiscale porte un nom qui le dit. Un champ générique dont le sens
+ * change en silence est plus dangereux qu'un champ de plus.
+ *
+ * ⚠ NÉCESSAIRE, PAS SUFFISANT : « non enregistré » ne veut pas dire « perte
+ * admissible ». Pertes apparentes, transferts en nature, personnes affiliées :
+ * rien de tout cela n'est vérifié ici.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 export function deriverTransactionsAnnee(lignes: LigneTransaction[], annee: number) {
   const delAnnee = lignes.filter((l) => l.date.startsWith(String(annee)));
   let gainsRealises = 0;
   let pertesRealisees = 0;
+  let gainsRealisesNonEnregistres = 0;
+  let pertesRealiseesNonEnregistrees = 0;
+  const indetermine = { nombre: 0, gains: 0, pertes: 0 };
   for (const l of delAnnee) {
     if (l.type !== 'Vente' || l.gainsPertes === null) continue;
-    if (l.gainsPertes >= 0) gainsRealises += l.gainsPertes;
-    else pertesRealisees += Math.abs(l.gainsPertes);
+    const gain = l.gainsPertes >= 0;
+    const montant = Math.abs(l.gainsPertes);
+    if (gain) gainsRealises += montant; else pertesRealisees += montant;
+
+    // LE RÉGIME VIENT DE LA PRIMITIVE CANONIQUE — aucune table de suffixes
+    // parallèle ici (consigne §5). `null` = régime NON PROUVÉ, et un régime non
+    // prouvé n'est PAS du non-enregistré : il se compte à part.
+    const regime = typeDeCompte(l.noCompte);
+    if (regime === 'non-enregistre') {
+      if (gain) gainsRealisesNonEnregistres += montant;
+      else pertesRealiseesNonEnregistrees += montant;
+    } else if (regime === null) {
+      indetermine.nombre++;
+      if (gain) indetermine.gains += montant; else indetermine.pertes += montant;
+    }
+    // Tout autre régime est ENREGISTRÉ : la disposition n'a aucun effet sur
+    // l'impôt du client, ni comme gain, ni comme perte. Elle sort de l'assiette.
   }
   const retrait = (regime: TypeCompte) =>
     delAnnee
       .filter((l) => typeDeCompte(l.noCompte) === regime && l.type === 'Retrait' && (l.total ?? 0) < 0)
       .reduce((s, l) => s + Math.abs(l.total as number), 0);
 
+  // LA PERTE APPARENTE, telle que le livre permet de la VOIR (§14) : le rachat
+  // du même titre dans les trente jours d'une vente à perte. Le conjoint et les
+  // comptes détenus ailleurs restent hors de vue — d'où « à valider », pas
+  // « refusée », et surtout jamais « confirmée disponible ».
+  const pertesCourantesAValiderPerteApparente = racheteDansLaFenetre(
+    lignes.map((l) => ({ date: l.date, type: l.type, symbole: l.symbole, noCompte: l.noCompte, gainsPertes: l.gainsPertes })),
+    annee,
+  );
+
+  const arrondi = (x: number) => Math.round(x * 100) / 100;
   return {
-    gainsRealises,
-    pertesRealisees,
+    gainsRealises: arrondi(gainsRealises),
+    pertesRealisees: arrondi(pertesRealisees),
+    gainsRealisesNonEnregistres: arrondi(gainsRealisesNonEnregistres),
+    pertesRealiseesNonEnregistrees: arrondi(pertesRealiseesNonEnregistrees),
+    dispositionsRegimeIndetermine: {
+      nombre: indetermine.nombre,
+      gains: arrondi(indetermine.gains),
+      pertes: arrondi(indetermine.pertes),
+    },
+    pertesCourantesAValiderPerteApparente,
     retraitsReer: retrait('reer'),
     retraitsCeli: retrait('celi'),
     portee: 'interne-seulement' as const,

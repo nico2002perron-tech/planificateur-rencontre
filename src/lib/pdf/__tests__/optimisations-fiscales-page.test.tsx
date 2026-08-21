@@ -58,7 +58,8 @@ function profilConsolide(modif: (p: ProfilClient) => void = () => {}): ProfilCli
 /** Un dossier fictif qui produit un PLAN DE RÉCOLTE — la table aux logos. */
 function profilAvecPlan(): ProfilClient {
   return profilConsolide((p) => {
-    p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+    p.transactionsAnnee.pertesRealisees = 20000;
+    p.transactionsAnnee.pertesRealiseesNonEnregistrees = 20000;
     p.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 20000)])];
   });
 }
@@ -216,6 +217,7 @@ describe('ce qui atteint le client', () => {
   it('le montant apparaît quand il est calculé, avec sa récurrence', () => {
     const texte = rendre(profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     }));
     expect(texte).toMatch(/12 000/);
@@ -233,6 +235,7 @@ describe('ce qui atteint le client', () => {
     // impressionnant qui ne voulait rien dire, sur un document de rencontre.
     const texte = rendre(profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.demographie.conjoint.trancheRevenu = '0-50k';
       x.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
@@ -257,6 +260,7 @@ describe('ce qui atteint le client', () => {
     const texte = rendre(profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     }));
     expect(texte).toMatch(/confirmer/);

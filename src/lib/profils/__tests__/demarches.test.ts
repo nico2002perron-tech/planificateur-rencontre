@@ -31,6 +31,7 @@ describe('les gestes', () => {
   it('un constat CHIFFRÉ porte des gestes et leurs démarches', () => {
     const c = trouver(profil((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte([pos('AAA', 8000, 20000)])];
     }), 'cristallisation-pertes');
     const g = gestesDe(c);
@@ -55,6 +56,7 @@ describe('les gestes', () => {
     const c = trouver(profil((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte([pos('AAA', 8000, 20000)])];
     }), 'cristallisation-pertes');
     const d = gestesDe(c)[0].demarches.join(' ');
@@ -65,6 +67,7 @@ describe('les gestes', () => {
   it('LES DÉMARCHES SONT DÉTERMINISTES : deux appels, le même texte', () => {
     const c = trouver(profil((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte([pos('AAA', 8000, 20000)])];
     }), 'cristallisation-pertes');
     expect(JSON.stringify(gestesDe(c))).toBe(JSON.stringify(gestesDe(c)));
@@ -85,6 +88,7 @@ describe('« Déjà en ordre »', () => {
   it('AUCUN GAIN RÉALISÉ : rien à cristalliser, et c’est une bonne nouvelle', () => {
     const c = trouver(profil((x) => {
       x.transactionsAnnee.gainsRealises = 0;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 0;
       x.comptes = [compte([pos('AAA', 8000, 20000)])];
     }), 'cristallisation-pertes');
     expect(c.statut).toBe('non-applicable');

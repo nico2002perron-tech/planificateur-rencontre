@@ -72,7 +72,13 @@ describe('1. Cristallisation de pertes', () => {
   const dossier = () => base((p) => {
     p.comptes = [compte('non-enregistre', [position('PERDANT', 8000, 20000)])];
     p.transactionsAnnee = {
-      gainsRealises: 12000, pertesRealisees: 0, retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
+      gainsRealises: 12000, pertesRealisees: 0,
+      // L'ASSIETTE FISCALE (20 août 2026) : ces fixtures décrivent un gain en
+      // compte NON ENREGISTRÉ — c'est elle que les cristallisations lisent.
+      gainsRealisesNonEnregistres: 12000, pertesRealiseesNonEnregistrees: 0,
+      dispositionsRegimeIndetermine: { nombre: 0, gains: 0, pertes: 0 },
+      pertesCourantesAValiderPerteApparente: false,
+      retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
     };
   });
 
@@ -87,6 +93,7 @@ describe('1. Cristallisation de pertes', () => {
   it('S ETEINT : aucun gain realise a absorber', () => {
     const p = dossier();
     p.transactionsAnnee.gainsRealises = 0;
+    p.transactionsAnnee.gainsRealisesNonEnregistres = 0;
     const c = constat(p, 'cristallisation-pertes');
     expect(c.montantEstime).toBeNull();
     expect(c.dejaEnOrdre).toBe(true);
@@ -96,10 +103,15 @@ describe('1. Cristallisation de pertes', () => {
 describe('2. Cristallisation de gains', () => {
   const dossier = () => base((p) => {
     p.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 20000)])];
-    p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+    p.transactionsAnnee.pertesRealisees = 20000;
+    p.transactionsAnnee.pertesRealiseesNonEnregistrees = 20000;
   });
 
-  it('S ALLUME : gain latent + pertes reportees, avec un PLAN de recolte', () => {
+  it('S ALLUME : gain latent + pertes COURANTES non enregistrées, avec un PLAN de recolte', () => {
+    // ⚠ LES PERTES COURANTES, PAS LES REPORTÉES — changé le 20 août 2026. Une
+    // perte de l'année vient de Croesus en montant BRUT : son unité est connue.
+    // Le champ saisi des pertes reportées, lui, ne dit pas la sienne, et ne
+    // peut donc plus fonder un chiffre ferme (voir son test dédié).
     const c = constat(dossier(), 'cristallisation-gains');
     expect(c.statut).toBe('calcule');
     expect(c.montantEstime).toBe(20000);            // plafonné aux pertes disponibles
@@ -112,6 +124,8 @@ describe('2. Cristallisation de gains', () => {
   it('S ETEINT : aucune perte disponible', () => {
     const p = dossier();
     p.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
+    p.transactionsAnnee.pertesRealisees = 0;
+    p.transactionsAnnee.pertesRealiseesNonEnregistrees = 0;
     const c = constat(p, 'cristallisation-gains');
     expect(c.montantEstime).toBeNull();
     expect(c.plan).toBeUndefined();
@@ -264,11 +278,18 @@ describe('LE DOSSIER COMPLET — combien de regles s allument a la fois ?', () =
     p.demographie.anneeNaissance = 1985;
     p.revenus = { trancheRevenu: '150-200k', source: 'declare', dateDonnee: DATE };
     p.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
-    p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+    p.transactionsAnnee.pertesRealisees = 20000;
+    p.transactionsAnnee.pertesRealiseesNonEnregistrees = 20000;
     p.intentions.donsAnnuelsMoyens = 5000;
     p.cotisationsAnnee = { reer: 0, celi: 0, reeeParEnfant: {}, portee: 'complete' };
     p.transactionsAnnee = {
-      gainsRealises: 12000, pertesRealisees: 0, retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
+      gainsRealises: 12000, pertesRealisees: 0,
+      // L'ASSIETTE FISCALE (20 août 2026) : ces fixtures décrivent un gain en
+      // compte NON ENREGISTRÉ — c'est elle que les cristallisations lisent.
+      gainsRealisesNonEnregistres: 12000, pertesRealiseesNonEnregistrees: 0,
+      dispositionsRegimeIndetermine: { nombre: 0, gains: 0, pertes: 0 },
+      pertesCourantesAValiderPerteApparente: false,
+      retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
     };
     p.comptes = [compte('non-enregistre', [
       position('GAGNANT', 50000, 20000),
@@ -279,10 +300,21 @@ describe('LE DOSSIER COMPLET — combien de regles s allument a la fois ?', () =
   it('SEPT des huit s allument ; seule la localisation reste bloquee', () => {
     const r = analyser(dossierComplet(), CIBLE, DATE, PARAM_REEE, signauxComplets);
     const chiffrees = r.constats.filter((c) => c.statut === 'calcule').map((c) => c.strategie).sort();
+    // ⚠ SIX, PAS SEPT, DEPUIS LE 20 AOÛT 2026. La cristallisation de GAINS ne
+    // s'allume plus dans ce dossier, et c'est correct : ses pertes disponibles
+    // venaient du champ « pertes en capital reportées », dont l'unité n'est pas
+    // établie (perte brute ou perte nette de l'avis ?). Et elle ne peut pas
+    // s'allumer via les pertes de l'année ici, puisque ce dossier porte un GAIN
+    // net réalisé — c'est ce qui allume sa jumelle, la cristallisation de
+    // pertes. Les deux faces du même signe ne s'allument jamais ensemble.
     expect(chiffrees).toEqual([
-      'celi-conjoint', 'cristallisation-gains', 'cristallisation-pertes',
+      'celi-conjoint', 'cristallisation-pertes',
       'don-titres', 'droits-cotisation', 'ordre-vente', 'subvention-reee',
     ]);
+    const gains = r.constats.find((c) => c.strategie === 'cristallisation-gains')!;
+    expect(gains.statut).toBe('indisponible');
+    expect(gains.montantEstime).toBeNull();
+    expect(gains.donneesManquantes.join(' ')).toMatch(/pertes en capital reportées/);
     // La huitième est bloquée POUR UNE RAISON DITE, pas par oubli.
     const bloquee = r.constats.find((c) => c.strategie === 'localisation-actifs')!;
     expect(bloquee.statut).toBe('indisponible');

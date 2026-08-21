@@ -220,8 +220,57 @@ export type Compte = {
 };
 
 export type TransactionsAnnee = {
+  /**
+   * ⚠ TOUTES LES DISPOSITIONS, TOUS RÉGIMES CONFONDUS — ce n'est PAS l'assiette
+   * fiscale, et ça ne doit jamais servir à un calcul de cristallisation.
+   *
+   * Mesuré le 20 août 2026 sur la base locale : 171 des 440 dispositions du
+   * livre (39 %) sont dans des comptes ENREGISTRÉS — REER 128, REEE 25,
+   * CELI 12, FERR 6. Une perte réalisée dans un CELI n'existe pas fiscalement :
+   * elle n'absorbe aucun gain imposable, et un gain réalisé dans un REER n'est
+   * pas un gain en capital. Ces deux champs les additionnent quand même, parce
+   * qu'ils décrivent la PERFORMANCE réalisée, pas la matière imposable.
+   *
+   * Pour tout raisonnement fiscal, utiliser les deux champs suivants.
+   */
   gainsRealises: number;
   pertesRealisees: number;
+  /**
+   * L'ASSIETTE FISCALE — dispositions en comptes NON ENREGISTRÉS seulement
+   * (20 août 2026). C'est cette base, et elle seule, que les cristallisations
+   * consomment.
+   *
+   * ⚠ NÉCESSAIRE, PAS SUFFISANT : « non enregistré » veut dire « la disposition
+   * a un effet fiscal possible », jamais « la perte est admissible ». Les
+   * pertes apparentes (30 jours), les transferts en nature vers un régime
+   * enregistré, les personnes affiliées et les autres refus ne sont PAS
+   * vérifiés ici — ils viendront avec le lot de cristallisation.
+   */
+  gainsRealisesNonEnregistres: number;
+  pertesRealiseesNonEnregistrees: number;
+  /**
+   * LES DISPOSITIONS DONT LE RÉGIME N'EST PAS PROUVÉ — comptées à part, jamais
+   * assimilées à du non-enregistré. Un compte dont le suffixe n'est pas dans
+   * les tables pourrait être un CELI comme une marge : le supposer imposable
+   * fabriquerait une perte utilisable qui n'existe peut-être pas.
+   *
+   * Elles ne sont PAS dans l'assiette. Le compteur existe pour qu'une stratégie
+   * puisse un jour se dégrader quand elles sont matérielles — ce branchement
+   * n'est pas fait dans ce lot.
+   */
+  dispositionsRegimeIndetermine: { nombre: number; gains: number; pertes: number };
+  /**
+   * UNE PERTE DE L'ANNÉE RISQUE-T-ELLE D'ÊTRE APPARENTE ? (20 août 2026)
+   *
+   * Vrai quand le livre montre le RACHAT du même titre dans les trente jours
+   * d'une vente à perte. C'est ce que les données permettent de voir.
+   *
+   * ⚠ FAUX NE VEUT PAS DIRE « aucune perte apparente » : le conjoint, une
+   * société contrôlée et les comptes détenus ailleurs sont hors de notre vue.
+   * L'absence de rachat visible est une absence de preuve, pas une preuve
+   * d'absence — et le constat le déclare.
+   */
+  pertesCourantesAValiderPerteApparente: boolean;
   retraitsReer: number;
   retraitsCeli: number;
   portee: Portee;
@@ -367,6 +416,9 @@ export function profilVierge(id: string, date: string): ProfilClient {
     comptes: [],
     transactionsAnnee: {
       gainsRealises: 0, pertesRealisees: 0,
+      gainsRealisesNonEnregistres: 0, pertesRealiseesNonEnregistrees: 0,
+      dispositionsRegimeIndetermine: { nombre: 0, gains: 0, pertes: 0 },
+      pertesCourantesAValiderPerteApparente: false,
       retraitsReer: 0, retraitsCeli: 0, portee: 'inconnue',
     },
     historiqueVie: { celi: regimeVierge(), reer: regimeVierge() },

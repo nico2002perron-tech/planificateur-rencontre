@@ -20,6 +20,7 @@ function constatChiffre() {
   p.consolidation.dateConfirmation = DATE;
   p.demographie.etatCivil = 'marie';
   p.transactionsAnnee.gainsRealises = 12000;
+  p.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
   p.comptes = [{
     numero: '37-FICT-A', suffixe: 'A', provenanceNumero: 'livre', presence: 'au-releve', derniereActivite: null, dernierSolde: null, candidats: ['37-FICT-A'],
     type: 'non-enregistre', titulaire: 'client', dateReleve: DATE, encaisse: [],

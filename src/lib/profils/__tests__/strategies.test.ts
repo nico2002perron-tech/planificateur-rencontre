@@ -92,10 +92,16 @@ describe('le contrat', () => {
       p.demographie.enfants = [{ prenom: 'Laurie', age: 8 }];
       p.revenus = { trancheRevenu: '100-150k', source: 'declare', dateDonnee: DATE };
       p.droits.celiConjointInutilises = { montant: 48000, dateDonnee: DATE };
-      p.droits.pertesCapitalReportees = { montant: 20000, dateDonnee: DATE };
+      p.transactionsAnnee.pertesRealisees = 20000;
+      p.transactionsAnnee.pertesRealiseesNonEnregistrees = 20000;
       p.intentions.donsAnnuelsMoyens = 5000;
       p.transactionsAnnee = {
-        gainsRealises: 12000, pertesRealisees: 0, retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
+        gainsRealises: 12000, pertesRealisees: 0,
+        // L'ASSIETTE FISCALE (20 août 2026) — gain en compte NON ENREGISTRÉ.
+        gainsRealisesNonEnregistres: 12000, pertesRealiseesNonEnregistrees: 0,
+        dispositionsRegimeIndetermine: { nombre: 0, gains: 0, pertes: 0 },
+        pertesCourantesAValiderPerteApparente: false,
+        retraitsReer: 0, retraitsCeli: 0, portee: 'complete',
       };
       p.comptes = [compte('non-enregistre', [
         position('GAGNANT', 50000, 20000),
@@ -171,6 +177,7 @@ describe('stratégie 1 — cristallisation de pertes', () => {
   it('calcule ce qui absorbe un gain déjà réalisé', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];  // −12 000
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -181,6 +188,7 @@ describe('stratégie 1 — cristallisation de pertes', () => {
   it('PLAFONNE au gain réalisé : une perte au-delà se REPORTE, elle n’économise pas cette année', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 3000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 3000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 50000)])];  // −42 000
     });
     expect(trouver(analyser(p, null, DATE), 'cristallisation-pertes').montantEstime).toBe(3000);
@@ -191,6 +199,7 @@ describe('stratégie 1 — cristallisation de pertes', () => {
     // produire la moindre déduction.
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte(null, [position('AAA', 8000, 20000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -211,6 +220,7 @@ describe('stratégie 1 — cristallisation de pertes', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -320,6 +330,7 @@ describe('stratégie 5 — ordre de vente', () => {
   it('ordonne en commençant par la perte, et chiffre le gain net de l’année', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 1000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 1000;
       x.comptes = [compte('non-enregistre', [
         position('GAIN', 20000, 5000),        // +15 000
         position('PERTE', 3000, 9000),        // −6 000
@@ -341,6 +352,7 @@ describe('l’angle mort', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
       x.historiqueVie.celi.cotisationsTotales = 4000;
       x.historiqueVie.celi.dateOuverture = '2015-03-12';
@@ -366,6 +378,7 @@ describe('la limite de visibilité — la matière de l’angle mort', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     });
     const r = analyser(p, null, DATE);
@@ -378,6 +391,7 @@ describe('la limite de visibilité — la matière de l’angle mort', () => {
   it('reste NULL quand la visibilité est complète', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     });
     for (const c of analyser(p, null, DATE).constats) expect(c.limiteVisibilite).toBeNull();
@@ -404,6 +418,7 @@ describe('restreindre — le planificateur choisit, le moteur détecte', () => {
   const complet = () => analyser(profilConsolide((x) => {
     x.consolidation.comptesExternes = 'oui';
     x.transactionsAnnee.gainsRealises = 12000;
+    x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
     x.intentions.donsAnnuelsMoyens = 5000;
     x.historiqueVie.celi.cotisationsTotales = 4000;
     x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000), position('BBB', 50000, 10000)])];
@@ -453,6 +468,7 @@ describe('le vocabulaire du document', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 20000)])];
     });
     const r = analyser(p, null, DATE);
@@ -478,7 +494,9 @@ describe('LE GAIN NET — défaut trouvé en campagne, 6 août 2026', () => {
     // sortie de marché, pour un gain fiscal nul.
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 6728;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 6728;
       x.transactionsAnnee.pertesRealisees = 4000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 4000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 40000)])];  // −32 000
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -489,7 +507,9 @@ describe('LE GAIN NET — défaut trouvé en campagne, 6 août 2026', () => {
   it('des pertes qui couvrent tous les gains : plus rien à cristalliser', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 3000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 3000;
       x.transactionsAnnee.pertesRealisees = 9000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 9000;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 40000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -500,7 +520,9 @@ describe('LE GAIN NET — défaut trouvé en campagne, 6 août 2026', () => {
   it('l’ordre de vente compte lui aussi le gain NET déjà réalisé', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 6728;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 6728;
       x.transactionsAnnee.pertesRealisees = 4000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 4000;
       x.comptes = [compte('non-enregistre', [position('GAIN', 20000, 5000)])];  // +15 000
     });
     const c = trouver(analyser(p, { positions: [{ symbole: 'X', poidsCible: 1 }] }, DATE), 'ordre-vente');
@@ -517,6 +539,7 @@ describe('« dont 0 $ absorberait » ne se dit pas', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';           // -> branche « à confirmer »
       x.transactionsAnnee.gainsRealises = 0;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 0;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 21088)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -616,6 +639,7 @@ describe('LE DÉTECTEUR ACTIONNABLE', () => {
       x.demographie.etatCivil = 'celibataire';
       x.intentions.donsAnnuelsMoyens = 0;
       x.transactionsAnnee.gainsRealises = 0;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 0;
       x.comptes = [compte('non-enregistre', [position('AAA', 8000, 5000)])];
     });
     const r = restreindre(analyser(p, null, DATE), ['celi-conjoint', 'don-titres', 'cristallisation-pertes']);
@@ -650,22 +674,45 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
   const gains = (p: ProfilClient) =>
     analyser(p, null, DATE).constats.find((c) => c.strategie === 'cristallisation-gains')!;
 
-  it('chiffre le gain absorbable par les pertes REPORTÉES', () => {
+  it('chiffre le gain absorbable par les pertes de l’année (unité connue)', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 7500;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 7500;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];  // +40 000
     });
     const c = gains(p);
     expect(c.statut).toBe('calcule');
     expect(c.montantEstime).toBe(7500);          // plafonné aux pertes, pas aux gains
-    expect(plat(c.explication)).toMatch(/7 500 \$ de pertes reportées/);
+    expect(plat(c.explication)).toMatch(/7 500 \$ de pertes nettes réalisées cette année/);
+  });
+
+  it('K · les pertes REPORTÉES seules ne chiffrent plus : leur unité n’est pas démontrée', () => {
+    // Le champ de saisie ne porte aucune mention d'unité — contrairement au
+    // champ voisin, qui précise « avis de cotisation ». Or l'avis rapporte des
+    // pertes en capital NETTES (déjà au taux d'inclusion) et les pertes de
+    // l'année viennent de Croesus en montants BRUTS. Les additionner, puis
+    // comparer le total à un gain latent brut, mélange deux unités.
+    const p = profilConsolide((x) => {
+      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
+    });
+    const c = gains(p);
+    expect(c.statut).toBe('montant-a-confirmer');
+    expect(c.montantEstime).toBeNull();
+    expect(plat(c.explication)).toMatch(/unité n’est pas établie/);
+    expect(c.donneesManquantes.join(' ')).toMatch(/unité des pertes en capital reportées/);
+    // ⚠ AUCUN CHIFFRE PRÉSENTÉ COMME CERTAIN dans un statut dégradé (§21) :
+    // le PDF affiche l'explication quel que soit le statut.
+    expect(plat(c.explication)).not.toMatch(/7 500 \$/);
   });
 
   it('chiffre aussi le NET DE PERTES de l’année courante', () => {
     const p = profilConsolide((x) => {
       x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
       x.transactionsAnnee.gainsRealises = 1000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 1000;
       x.transactionsAnnee.pertesRealisees = 6000;   // net −5 000
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 6000;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 20000, 12000)])];  // +8 000
     });
     expect(gains(p).montantEstime).toBe(5000);
@@ -673,7 +720,8 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
 
   it('PLAFONNE aux gains latents quand les pertes dépassent', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 90000, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 90000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 90000;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 15000, 12000)])];  // +3 000
     });
     expect(gains(p).montantEstime).toBe(3000);
@@ -684,6 +732,7 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
     const p = profilConsolide((x) => {
       x.droits.pertesCapitalReportees = { montant: 0, dateDonnee: DATE };
       x.transactionsAnnee.pertesRealisees = 6000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 6000;
       x.comptes = [compte('non-enregistre', [
         position('GAGNANT', 20000, 12000),
         position('PERDANT', 4000, 9000),
@@ -719,18 +768,26 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
   it('JAMAIS un montant quand des comptes existent ailleurs', () => {
     const p = profilConsolide((x) => {
       x.consolidation.comptesExternes = 'oui';
-      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 7500;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 7500;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
     });
     const c = gains(p);
     expect(c.statut).toBe('montant-a-confirmer');
     expect(c.montantEstime).toBeNull();
-    expect(plat(c.explication)).toMatch(/7 500/);   // le chiffre vu reste dit
+    // ⚠ CHANGÉ LE 20 AOÛT 2026 : le constat disait le chiffre dans sa prose,
+    // et le PDF rend cette prose quel que soit le statut — un montant dégradé
+    // atteignait donc le client sous forme de phrase. Il dit maintenant
+    // qu'une occasion existe, et ce qui manque pour la chiffrer.
+    expect(plat(c.explication)).not.toMatch(/7 500 \$/);
+    expect(plat(c.explication)).toMatch(/occasion existe probablement|ne peut pas être établi/);
+    expect(c.donneesManquantes.length).toBeGreaterThan(0);
   });
 
   it('un compte au régime INCONNU reste écarté, jamais présumé non enregistré', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 7500;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 7500;
       x.comptes = [compte(null, [position('GAGNANT', 50000, 10000)])];
     });
     expect(gains(p).statut).toBe('indisponible');
@@ -738,7 +795,8 @@ describe('STRATÉGIE 7 — cristallisation de GAINS, le miroir de la 1', () => {
 
   it('ses gestes disent le rachat immédiat — pas de règle des 30 jours pour un gain', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 7500, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 7500;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 7500;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 50000, 10000)])];
     });
     const g = gestesDe(gains(p));
@@ -754,7 +812,9 @@ describe('« 0 $ de pertes latentes » ne se dit pas', () => {
     // absorberait » du 5 août. Un zéro narratif est un mensonge de précision.
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 1000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 1000;
       x.transactionsAnnee.pertesRealisees = 6000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 6000;
       x.comptes = [compte('non-enregistre', [position('GAGNANT', 62000, 14000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-pertes');
@@ -766,7 +826,8 @@ describe('« 0 $ de pertes latentes » ne se dit pas', () => {
 
 describe('LE PLAN DE RÉCOLTE — quoi vendre, et pourquoi cet ordre', () => {
   const avecPositions = () => profilConsolide((x) => {
-    x.droits.pertesCapitalReportees = { montant: 10000, dateDonnee: DATE };
+    x.transactionsAnnee.pertesRealisees = 10000;
+    x.transactionsAnnee.pertesRealiseesNonEnregistrees = 10000;
     x.comptes = [compte('non-enregistre', [
       position('DENSE', 10000, 2000),     // gain 8 000, densité 80 %
       position('MOYEN', 20000, 14000),    // gain 6 000, densité 30 %
@@ -807,7 +868,8 @@ describe('LE PLAN DE RÉCOLTE — quoi vendre, et pourquoi cet ordre', () => {
 
   it('pertes qui dépassent les gains : tout se vend, rien de partiel', () => {
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 50000, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 50000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 50000;
       x.comptes = [compte('non-enregistre', [
         position('DENSE', 10000, 2000),
         position('MOYEN', 20000, 14000),
@@ -824,7 +886,8 @@ describe('UN COMPTE CORPO EST UN AUTRE CONTRIBUABLE — défaut du 12 août', ()
     // Trouvé par la contre-expertise : le plan mélangeait les comptes corpo et
     // personnels — une compensation qui n'existe pas en droit fiscal.
     const p = profilConsolide((x) => {
-      x.droits.pertesCapitalReportees = { montant: 10000, dateDonnee: DATE };
+      x.transactionsAnnee.pertesRealisees = 10000;
+      x.transactionsAnnee.pertesRealiseesNonEnregistrees = 10000;
       x.comptes = [compte('corpo', [position('CORPO-GAGNANT', 50000, 10000)])];
     });
     const c = trouver(analyser(p, null, DATE), 'cristallisation-gains');
@@ -835,6 +898,7 @@ describe('UN COMPTE CORPO EST UN AUTRE CONTRIBUABLE — défaut du 12 août', ()
   it('la cristallisation de pertes ignore aussi les positions corpo', () => {
     const p = profilConsolide((x) => {
       x.transactionsAnnee.gainsRealises = 12000;
+      x.transactionsAnnee.gainsRealisesNonEnregistres = 12000;
       x.comptes = [compte('corpo', [position('CORPO-PERDANT', 8000, 20000)])];
     });
     // Depuis le 12 août : « non-applicable » (aucun compte personnel imposable),

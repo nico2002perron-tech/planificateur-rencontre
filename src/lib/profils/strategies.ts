@@ -30,6 +30,7 @@ import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
 import type { SignauxLivre, LimitesMaximisation } from './signaux-livre';
+import { qualifierPosition, verifierCompletudeCristallisationGains } from './completude-cristallisation';
 
 /** Un constat, tel que le contrat du schéma le définit. */
 export type Constat = {
@@ -488,11 +489,17 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   // 6 728 $ de ventes là où 2 728 $ suffisent — soit 4 000 $ de ventes
   // inutiles, avec leurs frais et leur sortie de marché, pour un gain fiscal
   // nul. Les pertes déjà prises absorbent déjà leur part.
+  // L'ASSIETTE FISCALE, PAS LA PERFORMANCE — corrigé le 20 août 2026. Ces deux
+  // lignes lisaient `gainsRealises`/`pertesRealisees`, qui additionnent TOUS
+  // les régimes : un gain réalisé dans un REER gonflait le « gain net à
+  // absorber », et le moteur recommandait de vendre à perte pour effacer un
+  // impôt qui n'existe pas. Mesuré : sur les 4 dossiers portant des ventes en
+  // 2026, un voit son gain net absorbable passer de ~10 000 $ à ZÉRO.
   const gainsRealises = Math.max(
     0,
-    profil.transactionsAnnee.gainsRealises - profil.transactionsAnnee.pertesRealisees
+    profil.transactionsAnnee.gainsRealisesNonEnregistres - profil.transactionsAnnee.pertesRealiseesNonEnregistrees
   );
-  const pertesDejaPrises = profil.transactionsAnnee.pertesRealisees;
+  const pertesDejaPrises = profil.transactionsAnnee.pertesRealiseesNonEnregistrees;
   const reportees = profil.droits.pertesCapitalReportees.montant;
 
   // Ce qu'il est UTILE de cristalliser : ce qui absorbe un gain déjà réalisé.
@@ -656,16 +663,26 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     };
   }
 
-  const enGain = nonEnr
-    .map((p) => ({ p, g: gainLatent(p) }))
-    .filter((x): x is { p: PositionSituee; g: number } => x.g !== null && x.g > 0);
+  // ── LES POSITIONS RETENUES : chacune qualifiée, aucune supposée ────────────
+  // Avant le 20 août, `gainLatent` acceptait toute position dont le PBR et la
+  // valeur marchande étaient présents — sans regarder la DEVISE. Une position
+  // en dollars américains produisait donc un « gain » que le document affichait
+  // en dollars canadiens. Désormais une position n'entre que si son PBR, sa
+  // valeur marchande ET sa devise permettent d'exprimer un gain EN CAD.
+  const qualifiees = nonEnr.map(qualifierPosition);
+  const enGain = qualifiees
+    .filter((q) => q.gainLatentCad !== null && q.gainLatentCad > 0)
+    .map((q) => ({ p: q.position, g: q.gainLatentCad as number }));
   const gainsLatents = enGain.reduce((somme, x) => somme + x.g, 0);
 
   // Les pertes disponibles : le net de l'année (jamais négatif) + les
   // reportées de l'avis de cotisation, quand elles sont connues.
+  // L'ASSIETTE FISCALE, PAS LA PERFORMANCE (20 août 2026) : une perte vendue
+  // dans un CELI n'absorbe aucun gain imposable — elle n'existe pas pour le
+  // fisc. Le miroir de la correction faite en stratégie 1.
   const perteNetteAnnee = Math.max(
     0,
-    profil.transactionsAnnee.pertesRealisees - profil.transactionsAnnee.gainsRealises
+    profil.transactionsAnnee.pertesRealiseesNonEnregistrees - profil.transactionsAnnee.gainsRealisesNonEnregistres
   );
   const reportees = profil.droits.pertesCapitalReportees.montant;
   const pertesDisponibles = perteNetteAnnee + (reportees ?? 0);
@@ -726,17 +743,37 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
         ? `${argent(perteNetteAnnee)} de pertes nettes réalisées cette année`
         : `${argent(reportees as number)} de pertes reportées d’années passées`;
 
-  if (visibiliteEntamee(profil)) {
+  // ── LE GARDE-FOU UNIQUE — avant tout chiffre ferme (§19) ──────────────────
+  // Une seule question, posée à un seul endroit : les données matérielles de
+  // CETTE stratégie sont-elles suffisamment fiables ? Ce qui ne peut pas
+  // changer son chiffre ne la bloque pas — une ambiguïté CELI n'a rien à voir
+  // avec une récolte de gains en compte non enregistré.
+  const completude = verifierCompletudeCristallisationGains(profil, {
+    utilisePertesReportees: (reportees ?? 0) > 0,
+    pertesCourantesAValider:
+      perteNetteAnnee > 0 && profil.transactionsAnnee.pertesCourantesAValiderPerteApparente,
+  });
+
+  if (!completude.peutEtreFerme) {
+    // ⚠ AUCUN CHIFFRE PRÉSENTÉ COMME CERTAIN dans un statut dégradé (§21) : le
+    // PDF affiche `explication` quel que soit le statut. On dit ce qu'on sait
+    // — des gains latents existent, une opportunité existe peut-être — sans
+    // jamais avancer le montant comme s'il était établi.
+    const opportunite = completude.candidatesFiables.length > 0
+      ? `${completude.candidatesFiables.length} position${completude.candidatesFiables.length > 1 ? 's' : ''} non enregistrée${completude.candidatesFiables.length > 1 ? 's portent' : ' porte'} un gain latent chiffrable en dollars canadiens, et des pertes semblent disponibles : une occasion existe probablement. `
+      : '';
     return {
-      ...base, statut: 'montant-a-confirmer', portee: 'interne-seulement', montantEstime: null,
+      ...base, statut: 'montant-a-confirmer',
+      portee: visibiliteEntamee(profil) ? 'interne-seulement' : 'declaree',
+      montantEstime: null,
       candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
-      limiteVisibilite:
-        'chiffrée sur nos comptes seulement — des gains ou pertes réalisés ailleurs changeraient le montant absorbable.',
+      limiteVisibilite: visibiliteEntamee(profil)
+        ? 'chiffrée sur nos comptes seulement — des gains ou pertes réalisés ailleurs changeraient le montant absorbable.'
+        : null,
       explication:
-        `${originePertes} restent inutilisées, et ${argent(gainsLatents)} de gains latents sont détenus ici. ` +
-        `Jusqu’à ${argent(montant)} de gain pourraient être cristallisés sans impôt — à confirmer une fois ` +
-        'les comptes détenus ailleurs connus.',
-      donneesManquantes: ['la liste des positions détenues ailleurs qu’ici'],
+        `${opportunite}Le montant exact ne peut pas être établi : ${completude.explications.join(' ')}` +
+        (completude.dateReleve ? ` Les valeurs marchandes utilisées sont celles du relevé du ${completude.dateReleve}.` : ''),
+      donneesManquantes: completude.donneesManquantes,
     };
   }
 
@@ -745,6 +782,9 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     statut: 'calcule',
     portee: 'declaree',
     montantEstime: montant,
+    // LE PLAN NE NOMME QUE DES POSITIONS PLEINEMENT FIABLES (§17) : `enGain`
+    // ne contient plus que des positions à PBR, valeur marchande et devise
+    // lisibles. Une position aveugle n'y figure pas — elle est déclarée.
     plan: planifierRecolte(enGain, montant),
     candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
     explication:
@@ -1112,7 +1152,7 @@ function strategieOrdreVente(profil: ProfilClient, cible: PortefeuilleCible | nu
   // Meme correction que la cristallisation : le gain DEJA realise est net des
   // pertes deja prises, sinon le gain imposable annonce est surestime.
   const dejaRealise =
-    profil.transactionsAnnee.gainsRealises - profil.transactionsAnnee.pertesRealisees;
+    profil.transactionsAnnee.gainsRealisesNonEnregistres - profil.transactionsAnnee.pertesRealiseesNonEnregistrees;
   const gainNet = parImpact.reduce((s, x) => s + x.g, 0) + dejaRealise;
 
   return {
