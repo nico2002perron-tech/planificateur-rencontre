@@ -27,6 +27,11 @@ function prop(p: Position, cible: number, c = cpt()) {
   if (!r.ok) throw new Error(`refusée : ${r.refus.motif}`);
   return r.proposition;
 }
+function prop2(p: Position, cible: number, gainNetAvant: number, c = cpt()) {
+  const r = proposerQuantitePourPosition(c, p, cible, gainNetAvant);
+  if (!r.ok) throw new Error(`refusée : ${r.refus.motif}`);
+  return r.proposition;
+}
 function motif(p: Position, cible = 5000, c = cpt()) {
   const r = proposerQuantitePourPosition(c, p, cible);
   return r.ok ? null : r.refus.motif;
@@ -237,5 +242,83 @@ describe('Q32 · le meilleur mono-titre est déterministe', () => {
     ], 3000);
     expect(m.proposition?.symbole).toBe('AAA');
     expect(m.refus.map((r) => r.motif)).toEqual(['obligation-nominal-non-supporte']);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// L'INVARIANT FINAL — verrouillé sur le RÉSULTAT, pas sur son mécanisme
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('invariant · la quantité proposée tient toujours dans la position', () => {
+  it('sur un large balayage de cibles, jamais plus que le détenu', () => {
+    // ⚠ CE TEST NE FAIT PAS CONFIANCE AU MÉCANISME ACTUEL. La borne vient
+    // aujourd'hui de `cibleLocaleCad` ; si demain elle venait d'ailleurs, ou
+    // de nulle part, c'est ce test-ci qui doit tomber.
+    const c = cpt();
+    const cas = [
+      pos({ symbole: 'AAA', quantite: 203, valeurComptable: 24000, valeurMarchande: 8463 }),
+      pos({ symbole: 'FFF', typeInstrument: "Fonds d'investissement",
+        quantite: 527.731, valeurComptable: 12000, valeurMarchande: 10000 }),
+      pos({ symbole: 'USD1', devise: 'USD', quantite: 17, valeurComptable: 9000, valeurMarchande: 1200 }),
+    ];
+    for (const p of cas) {
+      for (const cible of [1, 33.79, 500, 8997.81, 15537.41, 99999, 1e9]) {
+        const r = proposerQuantitePourPosition(c, p, cible);
+        if (!r.ok) continue;
+        const q = r.proposition.quantiteEstimeeAVendre;
+        expect(q, `${p.symbole} @ ${cible}`).toBeGreaterThan(0);
+        expect(q, `${p.symbole} @ ${cible}`).toBeLessThanOrEqual(r.proposition.quantiteDetenue);
+      }
+    }
+  });
+
+  it('une cible ÉNORME vend la position entière, jamais davantage', () => {
+    const p = pos({ symbole: 'AAA', quantite: 203, valeurComptable: 24000, valeurMarchande: 8463 });
+    const r = prop(p, 1e9);
+    expect(r.quantiteEstimeeAVendre).toBe(203);
+    expect(r.quantiteEstimeeAVendre).toBe(r.quantiteDetenue);
+    expect(r.cibleRestanteCad).toBeGreaterThan(0);   // la cible reste loin
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// gainNetApresCad — LA TROISIÈME BARRE, ET ELLE NE SE DÉDUIT PAS
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('gainNetApresCad · distinct de l’écart et de la cible restante', () => {
+  it('couverture COMPLÈTE avec léger dépassement : après = 0, restante = 0, écart > 0', () => {
+    // Le cas réel mesuré : 203 actions, 15 537,41 $ de perte latente.
+    const p = pos({ symbole: 'GSY', quantite: 203, valeurComptable: 24000, valeurMarchande: 8462.59 });
+    const r = prop2(p, 8997.81, 8997.81);
+    expect(r.quantiteEstimeeAVendre).toBe(118);
+    expect(r.perteRealiseeEstimeeCad).toBeCloseTo(9031.6, 1);
+    expect(r.ecartCad).toBeCloseTo(33.79, 1);
+    expect(r.cibleRestanteCad).toBe(0);
+    expect(r.gainNetApresCad).toBe(0);               // JAMAIS −33,79
+  });
+
+  it('couverture PARTIELLE : les trois chiffres disent trois choses', () => {
+    const p = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 15000, valeurMarchande: 10000 });
+    const r = prop2(p, 8998, 8998);
+    expect(r.perteRealiseeEstimeeCad).toBe(5000);
+    expect(r.ecartCad).toBe(-3998);                  // sous la cible
+    expect(r.cibleRestanteCad).toBe(3998);           // ce qu'il manque
+    expect(r.gainNetApresCad).toBe(3998);            // le gain qui subsiste
+  });
+
+  it('⚠ la cible n’est PAS le gain net : les deux se fournissent séparément', () => {
+    // `absorbable = min(pertesLatentes, gainsRealises)` — quand les pertes sont
+    // insuffisantes, la cible est PLUS PETITE que le gain à compenser. Déduire
+    // l'un de l'autre donnerait un « après » faussement nul.
+    const p = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 15000, valeurMarchande: 10000 });
+    const r = prop2(p, 5000, 20000);                 // cible 5 000, gain net 20 000
+    expect(r.perteRealiseeEstimeeCad).toBe(5000);
+    expect(r.ecartCad).toBe(0);                      // la CIBLE est atteinte
+    expect(r.cibleRestanteCad).toBe(0);
+    expect(r.gainNetApresCad).toBe(15000);           // mais 15 000 $ de gain restent
+  });
+
+  it('sans gain net fourni, le champ vaut null — jamais une déduction', () => {
+    expect(prop(pos({ symbole: 'AAA' }), 3000).gainNetApresCad).toBeNull();
   });
 });

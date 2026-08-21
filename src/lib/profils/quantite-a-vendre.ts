@@ -57,6 +57,23 @@ export type PropositionCristallisationPosition = {
   ecartCad: number;
   /** JAMAIS NÉGATIF : ce qu'il reste à couvrir, zéro si la cible est atteinte. */
   cibleRestanteCad: number;
+  /**
+   * LE GAIN NET QUI SUBSISTE APRÈS LA STRATÉGIE — troisième barre du futur
+   * graphique « avant / stratégie / après ». `null` quand le gain net avant
+   * n'a pas été fourni : le document ne doit pas le déduire lui-même.
+   *
+   * ⚠ TROIS NOTIONS QUI NE SE CONFONDENT JAMAIS :
+   *   `ecartCad`         — de combien la perte dépasse ou manque LA CIBLE
+   *   `cibleRestanteCad` — combien de perte manque encore pour l'atteindre
+   *   `gainNetApresCad`  — combien de GAIN NET reste une fois la perte appliquée
+   *
+   * ⚠ ET LA CIBLE N'EST PAS LE GAIN NET. La stratégie pose
+   * `absorbable = min(pertesLatentes, gainsRealises)` : quand les pertes
+   * latentes sont insuffisantes, la cible est PLUS PETITE que le gain net à
+   * compenser. Les déduire l'une de l'autre serait faux — d'où l'intrant
+   * séparé, et le `null` quand il manque.
+   */
+  gainNetApresCad: number | null;
 
   dateValeurs: string | null;
 };
@@ -87,7 +104,13 @@ const arrondiSou = (x: number) => Math.round(x * 100) / 100;
 export function proposerQuantitePourPosition(
   compte: Compte,
   position: Position,
-  cibleGlobaleCad: number
+  cibleGlobaleCad: number,
+  /**
+   * Le gain net en capital AVANT la stratégie, quand l'appelant le connaît.
+   * Absent = `gainNetApresCad` vaudra `null` : on ne l'invente pas depuis la
+   * cible, qui peut être plus petite (voir le champ).
+   */
+  gainNetAvantCad?: number
 ): ResultatProposition {
   const id = positionId(compte, position);
   const refus = (motif: MotifSansQuantite): ResultatProposition =>
@@ -174,6 +197,13 @@ export function proposerQuantitePourPosition(
       // Une sur-réalisation de 6 $ donne écart +6 ET restante 0, pas −6.
       ecartCad: arrondiSou(perteRealiseeEstimeeCad - cibleGlobaleCad),
       cibleRestanteCad: arrondiSou(Math.max(0, cibleGlobaleCad - perteRealiseeEstimeeCad)),
+      // BORNÉ À ZÉRO : une perte qui dépasse le gain ne rend pas le gain
+      // négatif. L'excédent reste dit par `ecartCad`, et n'est requalifié ni en
+      // économie d'impôt ni en perte reportable — ce serait une règle fiscale
+      // que ce module n'a pas.
+      gainNetApresCad: gainNetAvantCad === undefined
+        ? null
+        : arrondiSou(Math.max(0, gainNetAvantCad - perteRealiseeEstimeeCad)),
 
       dateValeurs: compte.dateReleve ?? null,
     },
@@ -205,12 +235,13 @@ export type MeilleurMono = {
  */
 export function meilleurPlanMonoTitre(
   positions: Array<{ compte: Compte; position: Position }>,
-  cibleGlobaleCad: number
+  cibleGlobaleCad: number,
+  gainNetAvantCad?: number
 ): MeilleurMono {
   const propositions: PropositionCristallisationPosition[] = [];
   const refus: RefusQuantite[] = [];
   for (const { compte, position } of positions) {
-    const r = proposerQuantitePourPosition(compte, position, cibleGlobaleCad);
+    const r = proposerQuantitePourPosition(compte, position, cibleGlobaleCad, gainNetAvantCad);
     if (r.ok) propositions.push(r.proposition);
     else refus.push(r.refus);
   }
