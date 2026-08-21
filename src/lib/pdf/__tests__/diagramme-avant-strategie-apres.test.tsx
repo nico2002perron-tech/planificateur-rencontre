@@ -4,6 +4,7 @@ import { Document, Page, View, Text, Font, renderToBuffer } from '@react-pdf/ren
 import fs from 'node:fs';
 import path from 'node:path';
 import { DiagrammeAvantStrategieApres } from '../diagramme-avant-strategie-apres';
+import { PageCristallisationPertes } from '../page-cristallisation-pertes';
 import { PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE } from '../__fixtures__/cristallisation-pertes';
 
 beforeAll(() => {
@@ -80,4 +81,22 @@ describe('apercu', () => {
     fs.writeFileSync('C:/tmp/apercu/diagramme.pdf', buf);
     expect(buf.length).toBeGreaterThan(1000);
   }, 60000);
+
+  it('ecrit le PDF de la PAGE complete, calculee et degradee', async () => {
+    const page = (p: typeof PRESENTATION_CALCULEE) => (
+      <Page size="LETTER" style={{ paddingHorizontal: 40, paddingVertical: 34,
+        fontFamily: 'Open Sans', backgroundColor: '#f8fafc' }}>
+        <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800,
+          color: '#1e293b', marginBottom: 14 }}>
+          Réduire l’impôt sur vos gains de l’année
+        </Text>
+        <PageCristallisationPertes presentation={p} />
+      </Page>
+    );
+    const buf = await renderToBuffer(
+      <Document>{page(PRESENTATION_CALCULEE)}{page(PRESENTATION_DEGRADEE)}</Document>
+    );
+    fs.writeFileSync('C:/tmp/apercu/page.pdf', buf);
+    expect(buf.length).toBeGreaterThan(1000);
+  }, 90000);
 });
