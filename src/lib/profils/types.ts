@@ -262,6 +262,22 @@ export type Position = {
    * `granulariteVente`.
    */
   typeInstrument?: string;
+  /**
+   * LA QUANTITÉ, TELLE QUE LE RELEVÉ LA DIT — colonne 2, reportée sans
+   * transformation (21 août 2026).
+   *
+   * ⚠ SON SENS DÉPEND DE `typeInstrument`, et c'est pourquoi elle ne s'appelle
+   * ni `nombreActions` ni `nombreUnites` :
+   *
+   *   Action                 → des unités
+   *   Fonds d'investissement → des parts, au millième
+   *   Obligation             → une VALEUR NOMINALE, pas un décompte
+   *
+   * Un nom qui prétendrait « actions » rendrait faux le tiers des cas et
+   * inviterait à diviser une perte par un nominal. La sémantique exécutable
+   * appartient à `granulariteVente(typeInstrument)`, pas à ce champ.
+   */
+  quantite?: number;
   categorie: string | null;
   valeurMarchande: number | null;
   /** = PBR. null si absent de l'export → gains latents indisponibles. */

@@ -225,6 +225,8 @@ export function deriverComptes(
           // REPORT FIDÈLE, PAS UNE DÉRIVATION : la colonne 1 du relevé, telle
           // quelle. C'est de la provenance — la source dit ce qu'elle détient.
           typeInstrument: p.typeInstrument,
+          // REPORT FIDÈLE. Son sens dépend du type d'instrument — voir le champ.
+          quantite: p.quantite,
           // AUCUNE COLONNE DU RELEVÉ NE PORTE LA CATÉGORIE. Ne jamais la
           // fabriquer depuis typeInstrument + devise : un FNB coté en CAD peut
           // détenir des actions américaines, et « Action » + « CAD » ne fait

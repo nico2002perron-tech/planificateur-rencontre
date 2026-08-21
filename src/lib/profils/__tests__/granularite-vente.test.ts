@@ -40,6 +40,57 @@ describe('Q19 · typeInstrument traverse le parseur sans être transformé', () 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Q27 / Q28 / Q29 / Q30 — LA QUANTITÉ TRAVERSE, SON SENS RESTE AU TYPE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Q27-Q29 · quantite est reportée fidèlement, quel que soit son sens', () => {
+  const releve = [
+    ['CAD', 'Action', '300', 'Titre fictif', 'FICT-A', 'AAA', '50', '40', '15000', '12000'],
+    ['CAD', "Fonds d'investissement", '527.731', 'Fonds fictif', 'FICT-A', 'FFF', '10', '9', '5277.31', '4749.58'],
+    ['CAD', 'Obligation', '30000', 'Oblig fictive', 'FICT-A', 'OOO', '100', '95', '30000', '28500'],
+  ].map((c) => c.join(String.fromCharCode(9))).join(String.fromCharCode(10));
+  const positions = deriverComptes(releve, [], { dateReleve: '2026-08-19' })
+    .comptes.flatMap((c) => c.positions);
+  const par = new Map(positions.map((p) => [p.symbole, p]));
+
+  it('Q27 · une action : 300 reste 300', () => {
+    expect(par.get('AAA')?.quantite).toBe(300);
+  });
+
+  it('Q28 · un fonds : 527,731 n’est ni tronqué ni arrondi', () => {
+    expect(par.get('FFF')?.quantite).toBe(527.731);
+    expect(par.get('FFF')?.quantite).not.toBe(527);
+    expect(par.get('FFF')?.quantite).not.toBe(528);
+  });
+
+  it('Q29 · une obligation : 30 000 est reporté — c’est un NOMINAL, pas 30 000 titres', () => {
+    // ⚠ Ce test ne dit QUE le report fidèle. Il ne prétend rien sur ce que
+    // cette valeur permet d'exécuter : voir Q30 juste en dessous.
+    expect(par.get('OOO')?.quantite).toBe(30000);
+  });
+
+  it('Q30 · l’obligation reste NON SUPPORTÉE, quantité présente ou non', () => {
+    const oblig = par.get('OOO')!;
+    expect(oblig.quantite).toBe(30000);
+    expect(granulariteVente(oblig.typeInstrument)).toEqual({
+      supportee: false, raison: 'obligation-nominal-non-supporte',
+    });
+    // Transporter une donnée n'est pas savoir l'utiliser.
+    expect(quantitesExecutablesVoisines(300, oblig.quantite!, oblig.typeInstrument)).toEqual([]);
+  });
+
+  it('l’aller-retour d’un fonds survit jusqu’à la quantification en millièmes', () => {
+    for (const attendue of [527.731, 379.659, 1204.123]) {
+      const ligne = ['CAD', "Fonds d'investissement", String(attendue), 'F', 'FICT-A', 'FFF', '1', '1', '100', '90'].join(String.fromCharCode(9));
+      const q = deriverComptes(ligne, [], { dateReleve: '2026-08-19' })
+        .comptes.flatMap((c) => c.positions)[0].quantite!;
+      expect(q, String(attendue)).toBe(attendue);
+      expect(depuisMilliemes(enMilliemes(q)), String(attendue)).toBe(attendue);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // LA POLITIQUE PAR TYPE
 // ═══════════════════════════════════════════════════════════════════════════
 
