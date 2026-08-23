@@ -47,6 +47,8 @@ export const ENTETE_CRISTALLISATION_PERTES: EnteteStrategie = {
   // oubli : le type l'exige, on répond `null`. En ajouter un décalerait toute
   // la page de 13 pt — un changement visuel qui appartient à Nicolas.
   sousTitre: null,
+  // Le rouge d'action : le filet dit de quelle stratégie on parle.
+  accent: '#e05252',
 };
 
 export function CarteAction({ p, logos }: {

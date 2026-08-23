@@ -39,6 +39,9 @@
 import React from 'react';
 import { Page, Text, View, Svg, Path, Image } from '@react-pdf/renderer';
 import { styles, C } from './styles';
+import {
+  FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, STYLE_PAGE_FISCALE,
+} from './page-fiscale';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
 import {
@@ -550,7 +553,15 @@ export function OptimisationsFiscalesPage({
   const aTravailler = resultat.constats.filter((c) => !estDejaEnOrdre(c));
 
   return (
-    <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fffdf9' }]}>
+    // ⚠ LE MÊME CONTRAT QUE LES PAGES DE STRATÉGIE. Le `#fffdf9` était posé ici
+    // en override inline ; il vit maintenant dans `page-fiscale.ts`, avec le
+    // format et les marges, pour que toutes les pages du document s'accordent
+    // sans qu'on ait à s'en souvenir. Le rendu de CETTE page est inchangé.
+    <Page
+      size={FORMAT_PAGE_FISCALE}
+      orientation={ORIENTATION_PAGE_FISCALE}
+      style={STYLE_PAGE_FISCALE}
+    >
       <SectionHeader
         title="Optimisations fiscales"
         subtitle={`Au ${dateLisible}, selon les données au dossier`}
@@ -679,6 +690,17 @@ export function OptimisationsFiscalesPage({
           </Text>
         </View>
       )}
+      {/* ⚠ LE PIED GARDE LE NOM DU DOCUMENT HÔTE quand la page est intégrée au
+          PDF de cours cibles — un test le verrouille, et c'est juste : une page
+          intégrée porte le nom du document qui la contient.
+
+          MAIS DANS LE DOCUMENT FISCAL AUTONOME, ce défaut fait porter à la page
+          de synthèse « Analyse des cours cibles 1.2 » pendant que les pages de
+          stratégie portent « Optimisations fiscales ». Vu en assemblant le
+          document intégré. Le corriger demande de dire à la page dans QUEL
+          document elle se trouve — une prop de plus, posée par l'assembleur.
+          C'est le même geste que le branchement du registre, donc la même
+          attente : voir le rapport du 23 août 2026. */}
       <PageFooterV12
         libelle={
           piedInterne

@@ -43,7 +43,11 @@
 import React from 'react';
 import { Page, View, Text } from '@react-pdf/renderer';
 import { LogoSocieteFiscal } from './logo-societe-fiscal';
+import { PageFooterV12 } from './year-activity-pages';
 import { argent } from './rendu-constat';
+import {
+  FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, STYLE_PAGE_FISCALE,
+} from './page-fiscale';
 
 /**
  * Les teintes NEUTRES, communes aux deux stratégies. Opaques (contrainte 1).
@@ -64,6 +68,12 @@ export const NEUTRE = {
   page: '#f8fafc',
 } as const;
 
+/** Le bleu nuit des titres du document — celui de `styles.ts`. */
+const NAVY = '#03045e';
+
+/** Le pied de page du document fiscal — pas celui des cours cibles. */
+export const LIBELLE_PIED_FISCAL = 'Groupe Financier Ste-Foy — Optimisations fiscales';
+
 // Le formateur canonique vit dans `rendu-constat`, qui ignore le moteur de
 // rendu — l'adaptateur de présentation en a besoin sans dépendre du PDF.
 export { argent } from './rendu-constat';
@@ -81,6 +91,15 @@ import type { ValidationAvantExecution } from './rendu-constat';
 export type EnteteStrategie = {
   titre: string;
   sousTitre: string | null;
+  /**
+   * Le filet de couleur sous le titre.
+   *
+   * ⚠ OBLIGATOIRE, ET PROPRE À LA STRATÉGIE. La page de synthèse porte le même
+   * filet en or ; c'est ce trait qui fait que les pages de stratégie se lisent
+   * comme des chapitres du MÊME document et non comme des feuilles rapportées.
+   * La teinte, elle, reste celle de la stratégie — c'est ce qui les distingue.
+   */
+  accent: string;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -271,16 +290,20 @@ export function ValidationsAvantExecution({ validations, apparenceConfirme }: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function EnTeteStrategie({ entete }: { entete: EnteteStrategie }) {
+  // ⚠ LA MÊME GRAMMAIRE QUE `SectionHeader` DE LA PAGE DE SYNTHÈSE : 16 pt
+  // Montserrat, filet de 1,5 pt, sous-titre gris. Le titre était en 13 pt sans
+  // filet — cohérent avec son aperçu isolé, étranger au document réel. Regardé
+  // sur PDF avant d'être adopté.
   return (
-    <View>
-      <Text style={{
-        fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800,
-        color: NEUTRE.encre, marginBottom: entete.sousTitre ? 2 : 14,
-      }}>
+    <View style={{
+      marginBottom: 18, paddingBottom: 9,
+      borderBottomWidth: 1.5, borderBottomColor: entete.accent, borderBottomStyle: 'solid',
+    }}>
+      <Text style={{ fontSize: 16, fontFamily: 'Montserrat', fontWeight: 800, color: NAVY }}>
         {entete.titre}
       </Text>
       {entete.sousTitre && (
-        <Text style={{ fontSize: 8, color: NEUTRE.gris, marginBottom: 14 }}>
+        <Text style={{ marginTop: 4, fontSize: 7.5, color: NEUTRE.gris }}>
           {entete.sousTitre}
         </Text>
       )}
@@ -299,20 +322,33 @@ export function EnTeteStrategie({ entete }: { entete: EnteteStrategie }) {
  * Le titre est maintenant rendu ICI, une seule fois. Un harnais qui en
  * rajouterait un ferait doublon, et le test d'assemblage le voit.
  */
-export function PageStrategieFiscale({ entete, pied, children }: {
+export function PageStrategieFiscale({ entete, pied, libellePied, children }: {
   entete: EnteteStrategie;
   /** Mention de pied éventuelle (usage interne) — un nœud, jamais un import. */
   pied?: React.ReactNode;
+  /** Le libellé du pied de page, quand le document en impose un. */
+  libellePied?: string;
   children: React.ReactNode;
 }) {
   return (
-    <Page size="LETTER" style={{
-      paddingHorizontal: 40, paddingVertical: 34,
-      fontFamily: 'Open Sans', backgroundColor: NEUTRE.page,
-    }}>
+    // ⚠ LE FORMAT ET LE FOND VIENNENT DU CONTRAT COMMUN, pas d'ici. Ces pages
+    // étaient en LETTER sur #f8fafc parce que leur APERÇU l'était ; le document
+    // remis est en A4 sur #fffdf9. Voir `page-fiscale.ts` pour l'arbitrage.
+    <Page
+      size={FORMAT_PAGE_FISCALE}
+      orientation={ORIENTATION_PAGE_FISCALE}
+      style={STYLE_PAGE_FISCALE}
+    >
       <EnTeteStrategie entete={entete} />
       {children}
       {pied}
+      {/* ⚠ LE PIED EST POSÉ ICI, PAS PAR L'APPELANT. Une page sans numéro dans
+          un document numéroté est un trou : les pages de stratégie sortaient
+          sans pied ni pagination pendant que la synthèse affichait « 3 / 7 ». */}
+      {/* ⚠ ET SON LIBELLÉ NOMME LE BON DOCUMENT. Le défaut par défaut de
+          `PageFooterV12` est « Analyse des cours cibles 1.2 » : vu sur PDF, une
+          page de stratégie fiscale portait en pied le nom d'un autre rapport. */}
+      <PageFooterV12 libelle={libellePied ?? LIBELLE_PIED_FISCAL} />
     </Page>
   );
 }

@@ -23,6 +23,9 @@ import {
   EnTeteStrategie, PageStrategieFiscale, NEUTRE,
 } from '../langage-fiscal';
 import {
+  FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, FOND_PAGE_FISCALE, STYLE_PAGE_FISCALE,
+} from '../page-fiscale';
+import {
   STRATEGIES_VISUELLES, CLES_STRATEGIES_VISUELLES, type CleStrategieVisuelle,
 } from '../strategies-visuelles';
 import { PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE } from '../__fixtures__/cristallisation-pertes';
@@ -313,7 +316,7 @@ describe('LF4 · les trois contraintes de rendu, sur toute la famille', () => {
           { libelle: 'Confirmée', statut: 'confirme' },
           { libelle: 'À confirmer', statut: 'a-confirmer' },
         ]} />),
-      ...textesDe(<EnTeteStrategie entete={{ titre: 'T', sousTitre: 'S' }} />),
+      ...textesDe(<EnTeteStrategie entete={{ titre: 'T', sousTitre: 'S', accent: '#c5a365' }} />),
     ].join('');
     for (const glyphe of ['↓', '↑', '→', '←', '⚠', '✓', '✔', '✗', '•']) {
       expect(rendus, glyphe).not.toContain(glyphe);
@@ -375,9 +378,9 @@ describe('LF5 · le comportement des primitives', () => {
   });
 
   it('`EnTeteStrategie` sans sous-titre ne laisse pas de ligne fantôme', () => {
-    const sans = textesDe(<EnTeteStrategie entete={{ titre: 'Titre seul', sousTitre: null }} />);
+    const sans = textesDe(<EnTeteStrategie entete={{ titre: 'Titre seul', sousTitre: null, accent: '#c5a365' }} />);
     expect(sans).toEqual(['Titre seul']);
-    const avec = textesDe(<EnTeteStrategie entete={{ titre: 'T', sousTitre: 'S' }} />);
+    const avec = textesDe(<EnTeteStrategie entete={{ titre: 'T', sousTitre: 'S', accent: '#c5a365' }} />);
     expect(avec).toEqual(['T', 'S']);
   });
 
@@ -390,17 +393,36 @@ describe('LF5 · le comportement des primitives', () => {
     expect(rendu.props.wrap).toBe(false);
   });
 
-  it('la géométrie de page est celle qui a été inspectée sur PDF', () => {
-    // Les six pages rastérisées avant/après l'extraction sont identiques au
-    // pixel. Ce test empêche la dérive silencieuse de ce qui a été regardé.
-    const p = <PageStrategieFiscale entete={{ titre: 'T', sousTitre: null }}>{null}</PageStrategieFiscale>;
+  it('la géométrie vient du CONTRAT commun, pas de la page', () => {
+    // ⚠ CE TEST DISAIT « LETTER · #f8fafc » — le format et le fond d'un APERÇU,
+    // décidés hors de tout document. Le document remis est en A4 sur #fffdf9 ;
+    // les pages de stratégie s'y conforment, et la conversion a été rendue et
+    // regardée plutôt que subie. Voir `page-fiscale.ts`.
+    const p = <PageStrategieFiscale entete={{ titre: 'T', sousTitre: null, accent: '#c5a365' }}>{null}</PageStrategieFiscale>;
     const rendu = (p.type as (x: unknown) => {
-      props: { size?: string; style?: Record<string, unknown> };
+      props: { size?: string; orientation?: string; style?: Record<string, unknown> };
     })(p.props);
-    expect(rendu.props.size).toBe('LETTER');
-    expect(rendu.props.style).toMatchObject({
-      paddingHorizontal: 40, paddingVertical: 34,
-      fontFamily: 'Open Sans', backgroundColor: NEUTRE.page,
-    });
+    expect(rendu.props.size).toBe(FORMAT_PAGE_FISCALE);
+    expect(rendu.props.orientation).toBe(ORIENTATION_PAGE_FISCALE);
+    expect(rendu.props.style).toBe(STYLE_PAGE_FISCALE);
+  });
+
+  it('le contrat de page est UN SEUL — la synthèse et les stratégies le partagent', () => {
+    // ⚠ SANS CE TEST, LE CONTRAT REDEVIENT UNE HABITUDE. Le `#fffdf9` était un
+    // override inline posé à chaque `<Page>` ; il en restait un seul le jour où
+    // quelqu'un en ajoutait un deuxième, légèrement différent.
+    expect(FORMAT_PAGE_FISCALE).toBe('A4');
+    expect(FOND_PAGE_FISCALE).toBe('#fffdf9');
+    expect(STYLE_PAGE_FISCALE.backgroundColor).toBe(FOND_PAGE_FISCALE);
+    // Les marges sont celles du document, pas celles de l'aperçu. Le bas de
+    // 50 pt loge `PageFooterV12` — le réduire ferait chevaucher le pied.
+    expect(STYLE_PAGE_FISCALE).toMatchObject({ padding: 36, paddingTop: 44, paddingBottom: 50 });
+
+    // Et AUCUNE page du document fiscal ne redéclare son format ou son fond.
+    for (const f of [...familleFiscale(), 'src/lib/pdf/optimisations-fiscales-page.tsx']) {
+      const source = sansCommentaires(fs.readFileSync(f, 'utf8'));
+      expect(source, `${f} : format en dur`).not.toMatch(/size="(A4|LETTER)"/);
+      expect(source, `${f} : fond en dur`).not.toMatch(/backgroundColor: '#fffdf9'/);
+    }
   });
 });

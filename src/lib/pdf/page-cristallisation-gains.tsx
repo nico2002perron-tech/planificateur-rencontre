@@ -48,6 +48,8 @@ const C = {
 export const ENTETE_CRISTALLISATION_GAINS: EnteteStrategie = {
   titre: TITRE_PRESENTATION,
   sousTitre: SOUS_TITRE_PRESENTATION,
+  // Le vert d'action des gains — même trait que la synthèse, autre teinte.
+  accent: '#2f8f4e',
 };
 
 function CarteActionGain({ p, logos }: {
