@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { estLocal } from '@/lib/base-locale/mode';
 import { listerProfils, lireProfil, ecrireProfil, profilPourClient, nomPour } from '@/lib/profils/stockage';
 import { resumeCeli } from '@/lib/profils/resume';
-import type { ProfilClient } from '@/lib/profils/types';
+import { typeTitulaireDe, type ProfilClient } from '@/lib/profils/types';
 import { badgesProfil, questionsRencontre, resumeBadges } from '@/lib/profils/badges';
 import { deriverComptes } from '@/lib/profils/comptes';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
@@ -111,6 +111,9 @@ export async function GET(req: NextRequest) {
             droits: complet.droits,
             donsAnnuelsMoyens: complet.intentions.donsAnnuelsMoyens,
             fictif: complet.fictif ?? false,
+            // Le défaut sûr est `particulier` — un profil antérieur au champ
+            // n’est pas « ni l’un ni l’autre ».
+            typeTitulaire: typeTitulaireDe(complet),
             dateNaissance: complet.demographie.dateNaissance,
             anneeNaissance: complet.demographie.anneeNaissance,
           }

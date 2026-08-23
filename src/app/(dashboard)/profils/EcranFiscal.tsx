@@ -51,6 +51,8 @@ type Detection = {
 
 type Fiche = {
   fictif?: boolean;
+  /** Déclaré par le planificateur — jamais déduit du nom ni d’un compte. */
+  typeTitulaire?: 'particulier' | 'entreprise';
   dateNaissance?: string | null;
   age: number | null;
   etatCivil: string | null;
@@ -548,6 +550,19 @@ export function EcranFiscal({ racine }: { racine: string }) {
             </span>
           </header>
           <div className="px-4 py-2">
+            {/* ⚠ DÉCLARÉ, JAMAIS DEVINÉ. Le nom du client, « INC. », « LTÉE »,
+                « Gestion », « Holding » ou le suffixe d'un compte ne décident
+                rien : un particulier peut porter un compte au suffixe
+                inhabituel, une société peut porter un nom de famille. Et c'est
+                une propriété du DOSSIER, pas d'un compte. */}
+            <Ligne question="Dossier d’entreprise"
+              aide="désactive les stratégies réservées aux particuliers (CELI, REER, REEE, CELI du conjoint)">
+              <Choix
+                valeur={courant.fiche?.typeTitulaire === 'entreprise' ? 'oui' : 'non'}
+                options={[['non', 'Non — particulier'], ['oui', 'Oui — entreprise']]}
+                onChoisir={(v) => void ecrireFiche('typeTitulaire', v === 'oui' ? 'entreprise' : 'particulier')}
+              />
+            </Ligne>
             <Ligne question="Dossier fictif — bac d’essai"
               aide="active l’IA de reformulation sur ce dossier seulement (aucune donnée réelle)">
               <Choix

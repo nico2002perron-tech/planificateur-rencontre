@@ -497,9 +497,32 @@ export type Intentions = {
 };
 
 /** Le profil complet — `profils/<pseudonyme>.json`. */
+/**
+ * PARTICULIER OU ENTREPRISE — déclaré, jamais deviné.
+ *
+ * ⚠ AUCUNE DÉDUCTION AUTOMATIQUE. Ni « INC. », ni « LTÉE », ni « Gestion », ni
+ * « Holding », ni le nom du client, ni le suffixe d'un compte ne suffisent : un
+ * particulier peut détenir un compte au suffixe inhabituel, une société peut
+ * porter un nom de famille, et se tromper d'entité fiscale n'est pas une
+ * imprécision — c'est recommander à un contribuable les stratégies d'un autre.
+ *
+ * ⚠ ET C'EST UNE PROPRIÉTÉ DU PROFIL, PAS D'UN COMPTE. Un compte A, E ou autre
+ * ne dit rien du propriétaire. Le planificateur le déclare une fois.
+ */
+export type TypeTitulaire = 'particulier' | 'entreprise';
+
 export type ProfilClient = {
   /** Pseudonyme — jamais de nom ni de numéro de compte réel. */
   id: string;
+  /**
+   * LE TYPE D'ENTITÉ DU DOSSIER — `particulier` par défaut.
+   *
+   * Un profil écrit avant ce champ n'en porte pas : les lectures passent donc
+   * par `typeTitulaireDe()`, qui répond `particulier` plutôt que `undefined`.
+   * Le défaut sûr est celui qui laisse les stratégies personnelles s'appliquer,
+   * parce que c'est le cas de la quasi-totalité des dossiers.
+   */
+  typeTitulaire?: TypeTitulaire;
   dateMiseAJour: string;
   /** Incrémenté à chaque rencontre. */
   version: number;
@@ -585,8 +608,20 @@ export function profilVierge(id: string, date: string): ProfilClient {
       venteEntreprisePrevue: null, achatImmobilierPrevu: null, testamentAJour: null,
     },
     selectionStrategies: { strategies: [], dateSelection: null },
+    typeTitulaire: 'particulier',
     fictif: false,
   };
+}
+
+/**
+ * LE TYPE D'ENTITÉ, AVEC SON DÉFAUT — la seule porte de lecture.
+ *
+ * Un profil antérieur au champ répond `particulier`. Passer par cette fonction
+ * plutôt que par `profil.typeTitulaire` évite qu'un `undefined` se propage
+ * jusqu'à une comparaison qui le traiterait comme « ni l'un ni l'autre ».
+ */
+export function typeTitulaireDe(profil: { typeTitulaire?: TypeTitulaire }): TypeTitulaire {
+  return profil.typeTitulaire === 'entreprise' ? 'entreprise' : 'particulier';
 }
 
 /**

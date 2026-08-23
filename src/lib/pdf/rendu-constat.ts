@@ -170,6 +170,11 @@ export const ENTETE: Record<StatutConstat, EnteteStatut> = {
  * vérifie qu'aucun kebab-case ne franchit la page.
  */
 const TRADUCTIONS: Record<string, string> = {
+  // ⚠ CE N'EST PAS UNE DONNÉE MANQUANTE, c'est un motif de NON-APPLICABILITÉ.
+  // Sans cette entrée, le slug tombait dans le repli « une donnée du dossier
+  // reste à confirmer » — qui laisserait croire qu'en la fournissant, la
+  // stratégie s'appliquerait. Elle ne s'appliquera jamais à une société.
+  'titulaire-entreprise': 'ce dossier est identifié comme un dossier d’entreprise',
   'positions-sans-pbr': 'le prix de base rajusté de certaines positions',
   'positions-sans-valeur-marchande': 'la valeur marchande de certaines positions',
   'devise-etrangere-non-convertie': 'la valeur en dollars canadiens des positions en devise étrangère',

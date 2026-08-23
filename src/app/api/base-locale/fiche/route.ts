@@ -67,6 +67,16 @@ export async function POST(req: NextRequest) {
   if (!profil) return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
   const refus: string[] = [];
 
+  // ── TYPE D'ENTITÉ — déclaré, jamais deviné ────────────────────────────────
+  // ⚠ AUCUNE DÉDUCTION DEPUIS LE NOM. « INC. », « LTÉE », « Gestion »,
+  // « Holding » ne décident rien : c'est le planificateur qui déclare, et cette
+  // route n'accepte que les deux valeurs du type.
+  if ('typeTitulaire' in corps) {
+    const v = corps.typeTitulaire;
+    if (v === 'entreprise' || v === 'particulier') profil.typeTitulaire = v;
+    else refus.push('typeTitulaire');
+  }
+
   // ── Démographie ───────────────────────────────────────────────────────────
   if ('dateNaissance' in corps) {
     const v = corps.dateNaissance;

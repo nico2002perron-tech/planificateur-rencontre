@@ -26,8 +26,9 @@
 // fiscaliste. Ne pas « réparer » cette divergence sans le lui demander.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { unitePermetUnChiffreFerme } from './types';
+import { unitePermetUnChiffreFerme, typeTitulaireDe, type TypeTitulaire } from './types';
 import { construirePlanExecution, type PlanExecution } from './plan-execution';
+import { strategieApplicableA, RAISON_TITULAIRE_ENTREPRISE } from './applicabilite-titulaire';
 import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
@@ -1804,6 +1805,50 @@ function rangQuestion(q: string): number {
  * un `new Date()` caché — sinon deux rendus du même dossier porteraient deux
  * dates et rien ne dirait laquelle fait foi.
  */
+/**
+ * LA FRONTIÈRE D'APPLICABILITÉ — appliquée à UN SEUL ENDROIT.
+ *
+ * ⚠ APRÈS COUP, ET DÉLIBÉRÉMENT. Chaque stratégie calcule son verdict sans
+ * rien savoir du type d'entité ; c'est ici qu'on le neutralise. L'alternative
+ * — un `if (entreprise)` en tête de chaque stratégie — se serait dégradée à
+ * la première stratégie ajoutée, et celle-là aurait recommandé un CELI à une
+ * société de gestion.
+ *
+ * ⚠ ON NEUTRALISE TOUT CE QUI ENGAGE : montant, plan, candidats, échéance,
+ * démarches. Laisser `plan` derrière un statut `non-applicable` rendrait un
+ * ordre de vente sous un titre qui dit « sans objet ».
+ *
+ * ⚠ ET LA STRATÉGIE NE DISPARAÎT PAS. Elle sort `non-applicable` avec son
+ * motif : le document doit pouvoir DIRE « ce dossier est un dossier
+ * d'entreprise » plutôt que d'escamoter une piste que le planificateur
+ * s'attend à voir.
+ */
+function selonLeTitulaire(constat: Constat, titulaire: TypeTitulaire): Constat {
+  if (strategieApplicableA(constat.strategie, titulaire)) return constat;
+  return {
+    ...constat,
+    statut: 'non-applicable',
+    portee: 'inconnue',
+    montantEstime: null,
+    // ⚠ CES TROIS-LÀ SONT DÉFENSIFS, ET LE SABOTAGE LE DIT : aucune des quatre
+    // stratégies aujourd'hui bloquées ne produit de plan ni de candidats, donc
+    // les retirer ne fait rougir aucun test. On les garde quand même — une
+    // stratégie ajoutée demain à la matrice en produira, et un ordre de vente
+    // sous un titre « sans objet » serait le pire des rendus.
+    plan: undefined,
+    planExecution: undefined,
+    candidats: undefined,
+    echeance: undefined,
+    dejaEnOrdre: false,
+    limiteVisibilite: null,
+    explication:
+      'Ce dossier est identifié comme un dossier d’entreprise. Cette stratégie '
+      + 'repose sur un régime que seule une personne physique peut détenir : elle '
+      + 'ne s’y applique pas.',
+    donneesManquantes: [RAISON_TITULAIRE_ENTREPRISE],
+  };
+}
+
 export function analyser(
   profil: ProfilClient,
   portefeuilleCible: PortefeuilleCible | null,
@@ -1820,7 +1865,7 @@ export function analyser(
     strategieDonTitres(profil),
     strategieReee(profil, parametresReee),
     strategieOrdreVente(profil, portefeuilleCible),
-  ];
+  ].map((c) => selonLeTitulaire(c, typeTitulaireDe(profil)));
 
   const questions = [...new Set(constats.flatMap((c) => c.donneesManquantes))]
     .sort((a, b) => rangQuestion(a) - rangQuestion(b) || a.localeCompare(b));
