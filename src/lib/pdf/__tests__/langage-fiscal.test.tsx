@@ -259,11 +259,22 @@ describe('LF4 · les trois contraintes de rendu, sur toute la famille', () => {
     }
   });
 
-  it('contrainte 1 · aucune couleur hexadécimale à huit caractères', () => {
-    // react-pdf les rend arbitrairement — un `#ffffff55` sortait VERT.
+  it('contrainte 1 · aucune couleur à canal alpha, LITTÉRALE OU CONSTRUITE', () => {
+    // ⚠ LE MOTIF LITTÉRAL NE SUFFISAIT PAS, ET ÇA S'EST PAYÉ.
+    //
+    // `logo-societe-fiscal` fabriquait sa teinte par collage — `${couleur}55` —
+    // ce qu'aucune recherche de `'#........'` ne peut voir. Mesuré sur le PDF
+    // rendu : la bordure de la pastille sortait en #004B55, un SARCELLE FONCÉ,
+    // là où l'intention était un rose pâle #F4BEBA. Le fond, lui, sortait juste.
+    // C'est exactement le bug du `#ffffff55` vert, resté vivant deux mois dans
+    // un fichier que le scan prétendait couvrir.
+    //
+    // Un « # suivi de huit chiffres » n'est qu'UNE façon d'écrire un alpha.
     for (const f of familleFiscale()) {
       const source = sansCommentaires(fs.readFileSync(f, 'utf8'));
-      const fautifs = source.match(/['"]#[0-9a-fA-F]{8}['"]/g) ?? [];
+      const litterales = source.match(/['"`]#[0-9a-fA-F]{8}['"`]/g) ?? [];
+      const collees = source.match(/\$\{[^}]+\}[0-9a-fA-F]{2}`/g) ?? [];
+      const fautifs = [...litterales, ...collees];
       expect(fautifs, `${f} → ${fautifs.join(', ')}`).toEqual([]);
     }
   });

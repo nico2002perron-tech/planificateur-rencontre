@@ -176,3 +176,36 @@ saboter `LigneChiffree` fait rougir **trois batteries d'un coup** — `LF3`,
 
 Six pages rastérisées avant et après l'extraction : **six hachages identiques**.
 Aucun pixel n'a bougé.
+
+---
+
+# La garde `#rrggbbaa` était aveugle — mesure du 23 août 2026
+
+La contrainte « jamais de couleur à canal alpha » était vérifiée par une
+recherche de `'#........'` dans les sources. `logo-societe-fiscal.tsx`
+fabriquait la sienne **en collant** l'alpha au code : `` `${couleur}22` ``.
+Aucune recherche de littéral ne pouvait la voir.
+
+Mesuré sur le PDF rendu, pastille du titre fictif `FICT` (`#FF4B4B`) :
+
+| | intention | rendu réel |
+|---|---|---|
+| fond `#FF4B4B22` | `#F0E0DB` | `#F0E1DC` — juste |
+| bordure `#FF4B4B55` | `#F4BEBA` rose pâle | **`#004B55` — sarcelle foncé** |
+
+C'est exactement le bug du `#ffffff55` qui sortait vert, resté vivant dans un
+fichier que le scan prétendait couvrir.
+
+**Correctif.** `teinteClaire(couleur, part)` mélange à la main, en opaque. Les
+parts restent celles d'origine — 13 % et 33 %. Le mélange se fait sur **blanc** :
+exact sur les cartes blanches, et à une dizaine d'unités par canal sur les
+cartes teintées, où l'œil ne distingue pas les deux roses. Un opaque ne peut
+pas s'adapter au fond ; c'est le prix, et il est petit.
+
+**Le scan couvre maintenant les deux écritures** — littérale et collée — sur une
+famille de fichiers **découverte**, plus listée à la main.
+
+**Étendue du changement visuel**, mesurée pixel par pixel : quatre pastilles de
+26 × 26 pt sur trois pages. `gains-p1` 0,126 % de la page, `pertes-p1` 0,247 %,
+`pertes-p3` 0,122 %. Les trois autres pages : **zéro pixel**. Aucun texte,
+aucun chiffre, aucune géométrie n'a bougé.

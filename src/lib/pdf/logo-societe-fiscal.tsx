@@ -26,6 +26,29 @@ import { View, Text, Image } from '@react-pdf/renderer';
 import { duoColor } from '@/components/models/simulation/constants';
 
 /**
+ * UNE TEINTE CLAIRE D'UNE COULEUR — calculée, pas déléguée à un canal alpha.
+ *
+ * ⚠ CE N'EST PAS UNE COQUETTERIE. La pastille demandait sa teinte en collant
+ * l'alpha au code hexadécimal : `` `${couleur}22` ``. react-pdf ne gère pas
+ * l'alpha à huit chiffres et rend une couleur arbitraire — MESURÉ sur le PDF
+ * rendu, la bordure `#FF4B4B55` sortait en **#004B55, un sarcelle foncé**, là
+ * où l'intention était le rose pâle #F4BEBA. C'est le même bug que le
+ * `#ffffff55` qui sortait VERT, et il a survécu parce qu'une couleur COLLÉE
+ * échappe à toute recherche de `'#........'`.
+ *
+ * On mélange donc à la main, sur blanc : c'est le fond de la carte dans la
+ * quasi-totalité des cas, et l'écart avec les fonds teintés est de deux ou
+ * trois unités par canal — invisible, et surtout déterministe.
+ */
+export function teinteClaire(couleur: string, part: number): string {
+  const canal = (i: number) => {
+    const c = parseInt(couleur.slice(1 + i * 2, 3 + i * 2), 16);
+    return Math.round(c * part + 255 * (1 - part));
+  };
+  return `#${[0, 1, 2].map((i) => canal(i).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
  * LE TICKER LISIBLE — sans les suffixes de place boursière.
  *
  * « GSY.TO » se présente au client comme « GSY ». Même nettoyage que le web,
@@ -70,8 +93,10 @@ export function LogoSocieteFiscal({ symbole, logos, taille = 22 }: {
     <View
       style={{
         width: taille, height: taille, borderRadius: taille * 0.28,
-        backgroundColor: `${couleur}22`,
-        borderWidth: 1.4, borderColor: `${couleur}55`, borderStyle: 'solid',
+        // 13 % et 33 % — les mêmes parts que les `22` et `55` d'origine, mais
+        // calculées en opaque au lieu d'être confiées au moteur de rendu.
+        backgroundColor: teinteClaire(couleur, 0x22 / 255),
+        borderWidth: 1.4, borderColor: teinteClaire(couleur, 0x55 / 255), borderStyle: 'solid',
         alignItems: 'center', justifyContent: 'center',
       }}
     >
