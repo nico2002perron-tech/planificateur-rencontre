@@ -250,3 +250,39 @@ describe('V17 · aucune couleur hexadécimale à huit caractères', () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V19 — UN TIRET N'EST PAS UNE VALEUR
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('V19 · une donnée absente ne porte pas la couleur du sens', () => {
+  it('le tiret du gain net restant n’est plus peint en vert', () => {
+    // ⚠ DÉFAUT REPÉRÉ EN INSPECTANT LA PAGE DES GAINS, présent ici aussi : le
+    // « — » sortait dans la couleur du chiffre qu'il remplace, donc se lisait
+    // comme un montant. SABOTAGE : rendre `couleur` inconditionnelle le
+    // repeint en #3f9142 et fait rougir ce test.
+    //
+    // Le texte seul ne voit rien — « — » est présent dans les deux cas. Il faut
+    // descendre jusqu'à la couleur.
+    const noeuds: { texte: string; couleur?: string }[] = [];
+    const visiter = (n: unknown): void => {
+      if (n === null || n === undefined || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach(visiter); return; }
+      const el = n as { type?: unknown; props?: Record<string, unknown> };
+      if (!el.props) return;
+      if (typeof el.type === 'function') {
+        visiter((el.type as (p: unknown) => unknown)(el.props));
+        return;
+      }
+      const enfants = el.props.children;
+      const style = (el.props.style ?? {}) as { color?: string };
+      if (typeof enfants === 'string') noeuds.push({ texte: enfants, couleur: style.color });
+      visiter(enfants);
+    };
+    visiter(<PageCristallisationPertes presentation={PRESENTATION_DEGRADEE} />);
+
+    const tirets = noeuds.filter((n) => n.texte === '—');
+    expect(tirets.length, 'la page dégradée doit porter des tirets').toBeGreaterThan(0);
+    for (const t of tirets) expect(t.couleur, 'tiret peint en couleur de valeur').toBe('#64748b');
+  });
+});

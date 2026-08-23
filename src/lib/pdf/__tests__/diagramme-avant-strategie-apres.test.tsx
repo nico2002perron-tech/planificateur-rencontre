@@ -6,7 +6,11 @@ import path from 'node:path';
 import { DiagrammeAvantStrategieApres } from '../diagramme-avant-strategie-apres';
 import { PageCristallisationPertes } from '../page-cristallisation-pertes';
 import { ParcoursGainCristallise } from '../parcours-gain-cristallise';
+import { PageCristallisationGains } from '../page-cristallisation-gains';
 import { PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE } from '../__fixtures__/cristallisation-pertes';
+import {
+  PRESENTATION_GAINS_CALCULEE, PRESENTATION_GAINS_DEGRADEE,
+} from '../__fixtures__/cristallisation-gains';
 
 beforeAll(() => {
   const F = path.join(process.cwd(), 'public', 'fonts');
@@ -82,6 +86,26 @@ describe('apercu', () => {
     fs.writeFileSync('C:/tmp/apercu/diagramme.pdf', buf);
     expect(buf.length).toBeGreaterThan(1000);
   }, 60000);
+
+  it('ecrit le PDF de la PAGE GAINS, calculee et degradee', async () => {
+    // ⚠ LES MÊMES OBJETS QUE LA BATTERIE DE TESTS. L'aperçu que j'inspecte à
+    // l'œil et la page mise sous test décrivent alors exactement la même chose.
+    const calc = PRESENTATION_GAINS_CALCULEE;
+    const degr = PRESENTATION_GAINS_DEGRADEE;
+
+    const page = (pr: typeof calc) => (
+      <Page size="LETTER" style={{ paddingHorizontal: 40, paddingVertical: 34,
+        fontFamily: 'Open Sans', backgroundColor: '#f8fafc' }}>
+        <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800,
+          color: '#1e293b', marginBottom: 2 }}>{pr.titre}</Text>
+        <Text style={{ fontSize: 8, color: '#64748b', marginBottom: 14 }}>{pr.sousTitre}</Text>
+        <PageCristallisationGains presentation={pr} />
+      </Page>
+    );
+    const buf = await renderToBuffer(<Document>{page(calc)}{page(degr)}</Document>);
+    fs.writeFileSync('C:/tmp/apercu/page-gains.pdf', buf);
+    expect(buf.length).toBeGreaterThan(1000);
+  }, 90000);
 
   it('ecrit le PDF du parcours de GAIN (etape 4, modele visuel neuf)', async () => {
     const carte = (titre: string, p: React.ComponentProps<typeof ParcoursGainCristallise>) => (

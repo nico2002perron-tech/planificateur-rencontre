@@ -188,10 +188,16 @@ export function CarteAction({ p, logos }: {
 
 export function CarteDeclaration({ p }: { p: PresentationCristallisationPertes }) {
   const e5 = p.etape5;
+  // ⚠ UN TIRET N'EST PAS UNE VALEUR. Peint en vert — la couleur du gain net
+  // restant — il se lit comme un montant sur le PDF dégradé. Défaut repéré en
+  // inspectant la page des gains ; c'est le même défaut, corrigé aux deux.
   const ligne = (libelle: string, valeur: number | null, couleur = C.encre, signe = '') => (
     <View style={{ flexDirection: 'row', marginBottom: 3 }}>
       <Text style={{ flex: 1, fontSize: 7.6, color: C.gris }}>{libelle}</Text>
-      <Text style={{ fontSize: 8.6, fontFamily: 'Montserrat', fontWeight: 700, color: couleur }}>
+      <Text style={{
+        fontSize: 8.6, fontFamily: 'Montserrat', fontWeight: 700,
+        color: valeur === null ? C.gris : couleur,
+      }}>
         {valeur === null ? '—' : `${signe}${argent(valeur)}`}
       </Text>
     </View>

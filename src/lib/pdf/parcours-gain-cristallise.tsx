@@ -41,12 +41,12 @@ function Jalon({ moment, titre, montant, note, couleur, fond, bord }: {
 }) {
   return (
     <View style={{
-      borderRadius: 11, padding: 10, backgroundColor: fond,
+      borderRadius: 11, padding: 7, backgroundColor: fond,
       borderWidth: 1, borderColor: bord, borderStyle: 'solid',
-    }}>
+    }} wrap={false}>
       <Text style={{
         fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600,
-        color: couleur, letterSpacing: 0.7, marginBottom: 3,
+        color: couleur, letterSpacing: 0.7, marginBottom: 2,
       }}>
         {moment}
       </Text>
@@ -57,12 +57,12 @@ function Jalon({ moment, titre, montant, note, couleur, fond, bord }: {
           Le jalon garde sa place et sa hauteur — un blanc se lirait « cassé ». */}
       {montant !== null && (
         <Text style={{
-          marginTop: 4, fontSize: 15, fontFamily: 'Montserrat', fontWeight: 800, color: couleur,
+          marginTop: 2, fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: couleur,
         }}>
           {montant}
         </Text>
       )}
-      <Text style={{ marginTop: 4, fontSize: 6.8, color: C.gris, lineHeight: 1.4 }}>
+      <Text style={{ marginTop: 2, fontSize: 6.6, color: C.gris, lineHeight: 1.35 }}>
         {note}
       </Text>
     </View>
@@ -79,9 +79,9 @@ function Jalon({ moment, titre, montant, note, couleur, fond, bord }: {
  */
 function Lien() {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 4 }}>
-      <View style={{ width: 2, height: 10, backgroundColor: C.gris, borderRadius: 1 }} />
-      <View style={{ width: 7, height: 7, marginTop: -3, backgroundColor: C.gris, borderRadius: 3.5 }} />
+    <View style={{ alignItems: 'center', paddingVertical: 1 }} wrap={false}>
+      <View style={{ width: 2, height: 7, backgroundColor: C.gris, borderRadius: 1 }} />
+      <View style={{ width: 6, height: 6, marginTop: -2.5, backgroundColor: C.gris, borderRadius: 3 }} />
     </View>
   );
 }
@@ -125,8 +125,8 @@ export function ParcoursGainCristallise({
         couleur={C.perte} fond={C.perteFond} bord={C.perteBord}
       />
       <Lien />
-      {/* ⚠ CONDITIONNEL, ET SANS CHIFFRE. Le rachat n'est ni planifie ni
-          execute : c'est une eventualite dont on explique la mecanique. */}
+      {/* ⚠ CONDITIONNEL, ET SANS CHIFFRE. Le rachat n'est ni planifié ni
+          exécuté : c'est une éventualité dont on explique la mécanique. */}
       <Jalon
         moment="PLUS TARD" titre="Si des unités sont rachetées" montant={null}
         note={
