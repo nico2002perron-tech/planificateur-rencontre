@@ -40,9 +40,14 @@ const ANNEE = 2026;
 // ─────────────────────────────────────────────────────────────────────────────
 
 function position(
-  symbole: string, vm: number | null, pbr: number | null, devise = 'CAD'
+  symbole: string, vm: number | null, pbr: number | null, devise = 'CAD',
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
 ): Position {
-  return { symbole, devise, categorie: null, valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null };
+  return {
+    symbole, devise, categorie: null, uniteValeursRapport: 'CAD',
+    quantite, typeInstrument,
+    valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
+  };
 }
 
 function compte(

@@ -27,6 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { unitePermetUnChiffreFerme } from './types';
+import { construirePlanExecution, type PlanExecution } from './plan-execution';
 import type {
   ProfilClient, StatutConstat, Portee, Compte, Position,
 } from './types';
@@ -110,6 +111,19 @@ export type Constat = {
    * un montant non confirmé serait une marche à suivre vers un chiffre faux.
    */
   plan?: LignePlan[];
+  /**
+   * LE PLAN D'EXÉCUTION CANONIQUE — la SEULE réponse à « combien vendre ».
+   *
+   * ⚠ `plan` CI-DESSUS EN EST DÉSORMAIS DÉRIVÉ, pas calculé à part. Deux
+   * moteurs répondaient à la même question et le document affichait les deux :
+   * mesuré le 23 août 2026, ils pouvaient nommer des titres différents, des
+   * montants différents, ou l'un un plan et l'autre rien.
+   *
+   * Ce champ porte des quantités RÉELLEMENT EXÉCUTABLES — action entière, part
+   * au millième — là où `plan` ne portait que des dollars, avec des lignes
+   * « en partie » qu'aucun conseiller ne peut passer telles quelles.
+   */
+  planExecution?: PlanExecution;
   /**
    * LES MEILLEURS CANDIDATS — nommés MÊME quand le montant ne l'est pas.
    *
@@ -379,6 +393,26 @@ function meilleursCandidats(
     }));
 }
 
+/**
+ * L'ADAPTATEUR DU PLAN CANONIQUE VERS L'ANCIEN FORMAT.
+ *
+ * ⚠ UN ADAPTATEUR, PAS UN SECOND MOTEUR. `reformuler.ts` et la route des
+ * logos lisent `LignePlan[]` ; les casser pour migrer le rendu aurait été
+ * gratuit. Ils reçoivent donc EXACTEMENT les chiffres du plan canonique, dans
+ * la forme qu'ils attendent.
+ *
+ * `partiel` garde son sens : la position n'est pas vendue en entier. Il se
+ * LIT maintenant sur la quantité, plus sur une division de dollars.
+ */
+function lignesHeritees(plan: PlanExecution, signe: 1 | -1): LignePlan[] {
+  return plan.lignes.map((l) => ({
+    symbole: l.symbole,
+    vendre: Math.round(l.valeurVenteEstimeeCad),
+    gain: Math.round(signe * l.montantRealiseEstimeCad * 100) / 100,
+    partiel: l.quantiteAVendre < l.quantiteDetenue,
+  }));
+}
+
 /** Combien de candidats on nomme. Trois : de quoi ouvrir la discussion sans noyer. */
 const COMBIEN_DE_CANDIDATS = 3;
 
@@ -609,6 +643,13 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   // On ne construit PAS ce moteur de report ici : il suffit de ne plus
   // conclure faussement.
   if (absorbable > 0) {
+    // ⚠ LE PLAN SE CALCULE UNE FOIS, ICI. Il alimente le tableau de la synthèse
+    // ET la page en cinq étapes — c'est tout l'objet du plan canonique.
+    const planPertes = construirePlanExecution(
+      'perte',
+      enPerteAvecGain.map(({ p }) => ({ compte: p.compte, position: p })),
+      absorbable
+    );
     return {
       ...base,
       statut: 'calcule',
@@ -620,8 +661,11 @@ function strategieCristallisation(profil: ProfilClient): Constat {
       // `planifierRecolte` raisonne sur des grandeurs POSITIVES — on lui passe
       // donc les pertes en valeur absolue, puis on redonne son signe au gain de
       // chaque ligne, sans quoi le tableau afficherait une perte comme un gain.
-      plan: planifierRecolte(enPerteAvecGain.map(({ p, g }) => ({ p, g: -g })), absorbable)
-        .map((l) => ({ ...l, gain: -l.gain })),
+      // ⚠ UN SEUL MOTEUR DE QUANTITÉ. `planExecution` fait foi ; `plan` en est
+      // l'adaptation pour les consommateurs historiques. Les deux portent donc
+      // nécessairement les mêmes titres et les mêmes montants.
+      planExecution: planPertes,
+      plan: lignesHeritees(planPertes, -1),
       candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
       explication:
         `${enPerteQualifiees.length} position${pl(enPerteQualifiees.length)} non enregistrée${pl(enPerteQualifiees.length)} ${enPerteQualifiees.length > 1 ? 'portent' : 'porte'} une perte latente de ${argent(pertesLatentes)}. `
@@ -937,6 +981,11 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     };
   }
 
+  const planGains = construirePlanExecution(
+    'gain',
+    enGain.map(({ p }) => ({ compte: p.compte, position: p })),
+    montant
+  );
   return {
     ...base,
     statut: 'calcule',
@@ -950,7 +999,8 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     // LE PLAN NE NOMME QUE DES POSITIONS PLEINEMENT FIABLES (§17) : `enGain`
     // ne contient plus que des positions à PBR, valeur marchande et devise
     // lisibles. Une position aveugle n'y figure pas — elle est déclarée.
-    plan: planifierRecolte(enGain, montant),
+    planExecution: planGains,
+    plan: lignesHeritees(planGains, 1),
     candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
     explication:
       `${originePertes} restent inutilisées. Vendre puis racheter les positions gagnantes — permis le jour même, ` +

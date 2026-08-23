@@ -31,8 +31,17 @@ import type { LigneTransaction } from '@/lib/parseur-croesus/types';
 const DATE = '2026-08-21';
 const ANNEE = 2026;
 
-function pos(s: string, vm: number | null, pbr: number | null, devise = 'CAD'): Position {
-  return { symbole: s, devise, categorie: null, valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null };
+// ⚠ QUANTITÉ ET TYPE : le plan canonique exige des quantités EXÉCUTABLES.
+// Sans eux, il refuse la position — comme il le ferait sur un relevé muet.
+function pos(
+  s: string, vm: number | null, pbr: number | null, devise = 'CAD',
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
+): Position {
+  return {
+    symbole: s, devise, categorie: null, uniteValeursRapport: 'CAD',
+    quantite, typeInstrument,
+    valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
+  };
 }
 
 function cpt(positions: Position[], numero = 'FICT-1', dateReleve: string | null = '2026-08-19'): Compte {

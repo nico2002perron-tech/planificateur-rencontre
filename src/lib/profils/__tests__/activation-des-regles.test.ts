@@ -23,8 +23,14 @@ import type { SignauxLivre } from '../signaux-livre';
 const DATE = '2026-08-18';
 const PARAM_REEE = { tauxScee: 0.20, tauxIqee: 0.10, cotisationSubventionnee: 2500 };
 
-const position = (symbole: string, vm: number, pbr: number): Position => ({
-  symbole, devise: 'CAD', categorie: null,
+// ⚠ QUANTITÉ ET TYPE : le plan canonique exige des quantités EXÉCUTABLES.
+// Sans eux, il refuse la position — comme sur un relevé muet.
+const position = (
+  symbole: string, vm: number, pbr: number,
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
+): Position => ({
+  symbole, devise: 'CAD', categorie: null, uniteValeursRapport: 'CAD',
+  quantite, typeInstrument,
   valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
 });
 
@@ -124,8 +130,15 @@ describe('2. Cristallisation de gains', () => {
     expect(c.montantEstime).toBe(20000);            // plafonné aux pertes disponibles
     expect(c.plan).toBeDefined();
     expect(c.plan!.length).toBeGreaterThan(0);
-    // La somme du plan vaut EXACTEMENT la cible — c'est ce qui rend le plan sûr.
-    expect(c.plan!.reduce((s, l) => s + l.gain, 0)).toBe(c.montantEstime);
+    // ⚠ LA SOMME NE TOMBE PLUS « EXACTEMENT » SUR LA CIBLE, ET C'EST LE POINT.
+    // Elle le faisait quand le plan divisait des DOLLARS ; un plan en unités
+    // entières atterrit à moins d'une unité près, et le DIT.
+    const somme = c.plan!.reduce((s, l) => s + l.gain, 0);
+    const gainParUnite = 30000 / 100;   // GAGNANT : 30 000 $ de gain sur 100 unités
+    expect(Math.abs(somme - c.montantEstime!)).toBeLessThan(gainParUnite);
+    // Et le plan canonique porte l'écart au lieu de le gommer.
+    expect(c.planExecution!.ecartCad).toBeCloseTo(somme - c.montantEstime!, 2);
+    expect(c.planExecution!.lignes.every((l) => Number.isInteger(l.quantiteAVendre))).toBe(true);
   });
 
   it('S ETEINT : aucune perte disponible', () => {

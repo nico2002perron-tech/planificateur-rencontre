@@ -38,8 +38,16 @@ beforeAll(() => {
   Font.registerHyphenationCallback((mot) => [mot]);
 });
 
-function position(symbole: string, vm: number | null, pbr: number | null): Position {
-  return { symbole, devise: 'CAD', categorie: null, valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null };
+// ⚠ QUANTITÉ ET TYPE : le plan canonique exige des quantités EXÉCUTABLES.
+function position(
+  symbole: string, vm: number | null, pbr: number | null,
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
+): Position {
+  return {
+    symbole, devise: 'CAD', categorie: null, uniteValeursRapport: 'CAD',
+    quantite, typeInstrument,
+    valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
+  };
 }
 function compte(type: Compte['type'], positions: Position[]): Compte {
   return {

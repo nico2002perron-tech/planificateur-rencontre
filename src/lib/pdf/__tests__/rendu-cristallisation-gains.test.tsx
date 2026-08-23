@@ -50,8 +50,16 @@ function rendre(resultat: ResultatAnalyse): string {
 // Les fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-function position(s: string, vm: number | null, pbr: number | null, devise = 'CAD'): Position {
-  return { symbole: s, devise, categorie: null, valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null };
+// ⚠ QUANTITÉ ET TYPE : le plan canonique exige des quantités EXÉCUTABLES.
+function position(
+  s: string, vm: number | null, pbr: number | null, devise = 'CAD',
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
+): Position {
+  return {
+    symbole: s, devise, categorie: null, uniteValeursRapport: 'CAD',
+    quantite, typeInstrument,
+    valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
+  };
 }
 
 function compte(type: Compte['type'], positions: Position[], numero = 'FICT-1'): Compte {

@@ -14,9 +14,16 @@ import { profilVierge, type ProfilClient, type Compte, type Position } from '../
 
 const DATE = '2026-08-05';
 
-function position(symbole: string, vm: number | null, pbr: number | null): Position {
+function position(
+  symbole: string, vm: number | null, pbr: number | null,
+  // ⚠ QUANTITÉ ET TYPE SONT OBLIGATOIRES POUR UN PLAN EXÉCUTABLE. Sans eux, le
+  // plan canonique refuse la position — comme il le ferait sur un relevé muet.
+  // 100 unités par défaut : la valeur marchande donne alors un prix rond.
+  quantite: number | undefined = 100, typeInstrument: string | undefined = 'Action'
+): Position {
   return {
-    symbole, devise: 'CAD', categorie: null,
+    symbole, devise: 'CAD', categorie: null, uniteValeursRapport: 'CAD',
+    quantite, typeInstrument,
     valeurMarchande: vm, valeurComptable: pbr, revenuAnnuel: null,
   };
 }
@@ -864,19 +871,35 @@ describe('LE PLAN DE RÉCOLTE — quoi vendre, et pourquoi cet ordre', () => {
     expect(c.plan![0].symbole).toBe('DENSE');
   });
 
-  it('la dernière ligne est PARTIELLE et la somme tombe exactement sur la cible', () => {
+  it('la dernière ligne est PARTIELLE, en QUANTITÉ exécutable', () => {
+    // ⚠ CE TEST EXIGEAIT « la somme tombe exactement sur la cible » ET
+    // « vendre : 6 667 $ ». Les deux venaient du même défaut : un plan qui
+    // DIVISE DES DOLLARS tombe toujours pile, et propose un montant qu'aucun
+    // conseiller ne peut passer — 6 667 $ d'un titre à 200 $ l'unité, c'est
+    // 33,335 actions. Le plan canonique rend des unités entières, et l'écart
+    // qui en résulte se DIT au lieu d'être gommé.
     const c = trouver(analyser(avecPositions(), null, DATE), 'cristallisation-gains');
-    // Cible 10 000 : DENSE en entier (8 000), puis 2 000 sur MOYEN.
     expect(c.plan).toHaveLength(2);
-    expect(c.plan![0]).toMatchObject({ symbole: 'DENSE', vendre: 10000, gain: 8000, partiel: false });
-    expect(c.plan![1].symbole).toBe('MOYEN');
-    expect(c.plan![1].gain).toBe(2000);
+    expect(c.plan![0]).toMatchObject({ symbole: 'DENSE', partiel: false });
+    // ⚠ LA DEUXIÈME LIGNE N'EST PLUS « MOYEN ». L'ancien moteur descendait la
+    // liste par DENSITÉ ; le plan canonique choisit, parmi les paires qui
+    // couvrent, celle dont l'écart est le plus petit :
+    //   {DENSE, MOYEN}  8 000 + 33 unités × 60 $ =  9 980   écart −20
+    //   {DENSE, LEGER}  8 000 + 67 unités × 30 $ = 10 010   écart +10  ← retenu
+    // Un titre à faible densité tombe plus PRÈS de la cible parce que son pas
+    // est plus fin. C'est la politique demandée, pas un accident.
+    expect(c.plan![1].symbole).toBe('LEGER');
     expect(c.plan![1].partiel).toBe(true);
-    // La proportion est fiscalement exacte : 2 000/6 000 du gain = 1/3 de la
-    // position, donc environ 6 667 $ à vendre.
-    expect(c.plan![1].vendre).toBe(6667);
-    const total = c.plan!.reduce((somme, l) => somme + l.gain, 0);
-    expect(total).toBe(c.montantEstime);
+
+    const p = c.planExecution!;
+    // DENSE part en entier (8 000 de gain), la seconde porte le reste (2 000).
+    expect(p.lignes[0].quantiteAVendre).toBe(p.lignes[0].quantiteDetenue);
+    expect(p.lignes[1].quantiteAVendre).toBeLessThan(p.lignes[1].quantiteDetenue);
+    // Toute quantité est exécutable — l'invariant du plan canonique.
+    expect(p.lignes.every((l) => Number.isInteger(l.quantiteAVendre))).toBe(true);
+    // Et la somme atterrit à moins d'une unité de MOYEN (60 $ de gain/unité).
+    expect(Math.abs(p.montantRealiseTotalCad - c.montantEstime!)).toBeLessThan(60);
+    expect(p.ecartCad).toBeCloseTo(p.montantRealiseTotalCad - c.montantEstime!, 2);
   });
 
   it('AUCUN PLAN sur un montant non confirmé', () => {
