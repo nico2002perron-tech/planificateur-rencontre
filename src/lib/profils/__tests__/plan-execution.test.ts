@@ -307,3 +307,71 @@ describe('PE9 · aucune ligne au-delà du nécessaire', () => {
     expect(p.lignes[1].quantiteAVendre).toBeLessThan(p.lignes[1].quantiteDetenue);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PE10 — LE GAIN NET APRÈS APPARTIENT AU PLAN
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PE10 · `gainNetApresCad` est produit par le plan, jamais par le document', () => {
+  it('sans gain net avant, il vaut null — jamais zéro', () => {
+    // ⚠ « INCONNU ≠ 0 ». Un zéro laisserait lire « il ne reste plus rien à
+    // absorber », alors qu'on ne sait simplement pas ce qu'il y avait avant.
+    expect(perte(5_000).gainNetApresCad).toBeNull();
+    expect(construirePlanExecution('perte', situer([AAA]), 5_000, undefined).gainNetApresCad)
+      .toBeNull();
+  });
+
+  it('exécution INFÉRIEURE au gain avant : la différence exacte', () => {
+    // AAA à 27,7419 $/unité : 180 unités = 4 993,55 réalisés sur une cible de
+    // 5 000. Le gain avant est 20 000, sans rapport avec la cible.
+    const p = construirePlanExecution('perte', situer([AAA]), 5_000, 20_000);
+    expect(p.montantRealiseTotalCad).toBe(4_993.55);
+    expect(p.gainNetApresCad).toBe(20_000 - 4_993.55);
+  });
+
+  it('exécution ÉGALE au gain avant : zéro', () => {
+    const p = construirePlanExecution('perte', situer([AAA]), 5_000, 4_993.55);
+    expect(p.gainNetApresCad).toBe(0);
+  });
+
+  it('exécution SUPÉRIEURE au gain avant : zéro, jamais négatif', () => {
+    // ⚠ UNE PERTE QUI DÉPASSE LE GAIN NE REND PAS LE GAIN NÉGATIF. L'excédent
+    // reste dit par `ecartCad` — le requalifier en perte reportable serait une
+    // règle fiscale que ce module n'a pas.
+    const p = construirePlanExecution('perte', situer([AAA]), 5_000, 1_000);
+    expect(p.montantRealiseTotalCad).toBeGreaterThan(1_000);
+    expect(p.gainNetApresCad).toBe(0);
+  });
+
+  it('la CIBLE n’entre pas dans le calcul — seul le montant exécuté compte', () => {
+    // ⚠ LE TEST QUI COMPTE. Deux plans, même gain avant, cibles différentes :
+    // si le calcul lisait `cibleCad`, les deux « après » seraient différents
+    // de la bonne réponse. Ici la cible vaut 8 998 et l'exécution ~5 000.
+    const p = construirePlanExecution('perte', situer([BBB]), 8_998, 8_998);
+    expect(p.montantRealiseTotalCad).toBeLessThan(8_998);          // BBB ne porte que 3 150
+    expect(p.gainNetApresCad).toBe(8_998 - p.montantRealiseTotalCad);
+    // Et ce n'est PAS ce qu'un calcul sur la cible aurait donné.
+    expect(p.gainNetApresCad).not.toBe(Math.max(0, 8_998 - p.cibleCad));
+  });
+
+  it('plan MULTI : le total du plan COMPLET, pas la première ligne', () => {
+    // ⚠ COMPATIBILITÉ AVEC LE RENDU MULTI À VENIR. Cible 9 000 → deux lignes ;
+    // ne lire que la première rendrait un « après » bien trop élevé, donc
+    // rassurant à tort.
+    const p = construirePlanExecution('perte', situer([AAA, BBB, CCC]), 9_000, 30_000);
+    expect(p.lignes.length).toBeGreaterThanOrEqual(2);
+    expect(p.gainNetApresCad).toBe(30_000 - p.montantRealiseTotalCad);
+    const surLaPremiere = 30_000 - p.lignes[0].montantRealiseEstimeCad;
+    expect(p.gainNetApresCad).not.toBe(surLaPremiere);
+  });
+
+  it('côté GAINS, il vaut null — aucune pseudo-symétrie fiscale', () => {
+    // ⚠ CRISTALLISER UN GAIN N'ABSORBE AUCUN GAIN NET : la capacité fiscale est
+    // déjà au dossier. Le moteur de quantité des gains ne porte d'ailleurs
+    // aucun champ équivalent. Inventer un « après » ici serait une grandeur
+    // fiscale fabriquée par commodité de structure.
+    const p = construirePlanExecution('gain', situer([DDD]), 5_000, 20_000);
+    expect(p.montantRealiseTotalCad).toBeGreaterThan(0);
+    expect(p.gainNetApresCad).toBeNull();
+  });
+});

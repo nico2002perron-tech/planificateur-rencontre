@@ -105,6 +105,35 @@ export type PlanExecution = {
 
   /** Vrai quand un seul titre a suffi — l'issue préférée de la politique. */
   monoTitre: boolean;
+
+  /**
+   * LE GAIN EN CAPITAL NET QUI SUBSISTE UNE FOIS LA PERTE APPLIQUÉE.
+   *
+   * ⚠ IL VIT ICI, ET NULLE PART AILLEURS. Il vivait sur la proposition d'UNE
+   * position ; dès qu'un plan en combine plusieurs, la seule valeur juste se
+   * calcule sur le TOTAL RÉELLEMENT EXÉCUTÉ. Le laisser à la couche
+   * présentation l'obligerait à écrire `max(0, avant − total)` — une règle
+   * fiscale dans le document, donc une seconde source de vérité.
+   *
+   * ⚠ SUR LE MONTANT EXÉCUTÉ, JAMAIS SUR LA CIBLE. La cible est ce qu'on
+   * VISAIT ; le plan atterrit à une unité près, parfois au-dessus. Trois cas
+   * mesurés qui le montrent :
+   *   cible 8 997,81 · exécuté 9 031,60 · avant 8 997,81 → 0
+   *   cible 5 000    · exécuté 5 000    · avant 20 000   → 15 000
+   *   cible 8 998    · exécuté 5 000    · avant 8 998    → 3 998
+   *
+   * ⚠ BORNÉ À ZÉRO. Une perte qui dépasse le gain ne rend pas le gain négatif ;
+   * l'excédent reste dit par `ecartCad`, et n'est requalifié ni en économie
+   * d'impôt ni en perte reportable — ce serait une règle que ce module n'a pas.
+   *
+   * ⚠ ET IL NE VAUT QUE POUR LES PERTES. La cristallisation de GAINS n'absorbe
+   * aucun gain net avec des pertes latentes : elle emploie une capacité fiscale
+   * déjà au dossier. Il n'y a rien qui « reste après », et le moteur de quantité
+   * des gains ne porte d'ailleurs aucun champ équivalent. Ce serait donc une
+   * pseudo-symétrie fiscale : `null` est plus vrai. Voir `pertinentPourLeSens`.
+   */
+  gainNetApresCad: number | null;
+
   /**
    * ⚠ VRAI QUAND LA RECHERCHE EXHAUSTIVE A ÉTÉ BORNÉE. Le plan reste valide et
    * exécutable, mais on ne peut plus affirmer qu'aucune combinaison de même
@@ -250,10 +279,33 @@ function* combinaisons(n: number, k: number): Generator<number[]> {
 // LE PLAN
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * LE GAIN NET APRÈS A-T-IL UN SENS POUR CE PLAN ?
+ *
+ * ⚠ SEULEMENT POUR LES PERTES. Cristalliser une perte ABSORBE un gain net déjà
+ * réalisé : « ce qui reste après » est la question même de la stratégie.
+ * Cristalliser un gain n'absorbe rien — la capacité fiscale est déjà au
+ * dossier, et le moteur de quantité des gains ne porte aucun champ équivalent.
+ * Fabriquer un « après » symétrique inventerait une grandeur fiscale par
+ * simple commodité de structure.
+ */
+function pertinentPourLeSens(sens: SensPlan): boolean {
+  return sens === 'perte';
+}
+
 export function construirePlanExecution(
   sens: SensPlan,
   positions: Array<{ compte: Compte; position: Position }>,
-  cibleCad: number
+  cibleCad: number,
+  /**
+   * LE GAIN EN CAPITAL NET AVANT LA STRATÉGIE, quand l'appelant le connaît.
+   *
+   * ⚠ JAMAIS DÉDUIT DE `cibleCad`. La stratégie pose
+   * `absorbable = min(pertesLatentes, gainsRealises)` : quand les pertes
+   * latentes ne suffisent pas, la cible est PLUS PETITE que le gain à
+   * compenser. Les confondre rendrait un « après » faux.
+   */
+  gainNetAvantCad?: number
 ): PlanExecution {
   const refus: RefusPlan[] = [];
   const candidats: Candidat[] = [];
@@ -285,6 +337,12 @@ export function construirePlanExecution(
       capaciteCouvreCible,
       executionCouvreEntierementCible: realise >= cibleCad,
       monoTitre,
+      // ⚠ `realise` EST LE TOTAL DU PLAN COMPLET — toutes lignes confondues.
+      // Sur un plan à trois titres, ne lire que la première ligne rendrait un
+      // « après » beaucoup trop élevé, donc rassurant à tort.
+      gainNetApresCad: gainNetAvantCad === undefined || !pertinentPourLeSens(sens)
+        ? null
+        : sou(Math.max(0, gainNetAvantCad - realise)),
       rechercheTronquee: tronquee,
       refus,
     };
