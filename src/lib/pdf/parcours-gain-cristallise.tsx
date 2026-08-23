@@ -22,17 +22,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React from 'react';
 import { View, Text } from '@react-pdf/renderer';
-
-const argent = (n: number) => `${n.toLocaleString('fr-CA', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-})} $`;
+import { argent, Manque } from './langage-fiscal';
 
 const C = {
   encre: '#1e293b', gris: '#64748b',
   gain: '#2f8f4e', gainFond: '#e6f4ea', gainBord: '#c3e4cd',
   perte: '#2563a8', perteFond: '#eef4fb', perteBord: '#cbdcf0',
   futur: '#7c6ba0', futurFond: '#f2effa', futurBord: '#ddd5ee',
-  neutre: '#f1f5f9',
 };
 
 function Jalon({ moment, titre, montant, note, couleur, fond, bord }: {
@@ -96,12 +92,10 @@ export function ParcoursGainCristallise({
 }) {
   if (gainRealiseEstimeCad === null || pertesDisponiblesCad === null) {
     return (
-      <View style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, backgroundColor: C.neutre }}>
-        <Text style={{ fontSize: 7.4, color: C.gris, lineHeight: 1.4 }}>
-          Le parcours chiffré ne peut pas être illustré tant que le gain à réaliser
-          n’est pas confirmé.
-        </Text>
-      </View>
+      <Manque texte={
+        'Le parcours chiffré ne peut pas être illustré tant que le gain à réaliser '
+        + 'n’est pas confirmé.'
+      } />
     );
   }
 

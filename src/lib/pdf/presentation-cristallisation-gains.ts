@@ -17,7 +17,10 @@ import type { StatutConstat } from '@/lib/profils/types';
 import type {
   MeilleurMonoGain, PropositionCristallisationGain,
 } from '@/lib/profils/quantite-a-vendre-gains';
-import type { ValidationAvantExecution } from './presentation-cristallisation-pertes';
+import type { ValidationAvantExecution } from './langage-fiscal';
+// ⚠ LE FORMATEUR VIENT DE `rendu-constat`, QUI IGNORE LE MOTEUR DE RENDU.
+// L'adaptateur compose des phrases ; il ne doit pas dépendre du PDF.
+import { argent } from './rendu-constat';
 
 /**
  * ⚠ LE TITRE DE PRÉSENTATION N'EST PAS CELUI DU CATALOGUE.
@@ -81,10 +84,6 @@ export type PresentationCristallisationGains = {
   };
   validationsAvantExecution: ValidationAvantExecution[];
 };
-
-const argent = (n: number) => `${n.toLocaleString('fr-CA', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-})} $`;
 
 export function construirePresentationCristallisationGains(
   constat: Constat,

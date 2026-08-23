@@ -24,6 +24,7 @@ import {
   montantAffichable, proseSansMontantFerme, modeTableau, ENTETE,
   raisonsAConfirmer, estIdentifiantTechnique, mentionDate,
 } from '../rendu-constat';
+import { textesDe } from './_texte-rendu';
 
 const DATE = '2026-08-21';
 
@@ -36,16 +37,7 @@ const DATE = '2026-08-21';
  * chaînes envoyées au moteur de rendu. (Le PDF compressé n'est pas lisible —
  * voir la note du fichier voisin.)
  */
-function textesDe(noeud: unknown): string[] {
-  if (noeud === null || noeud === undefined || noeud === false || noeud === true) return [];
-  if (typeof noeud === 'string') return [noeud];
-  if (typeof noeud === 'number') return [String(noeud)];
-  if (Array.isArray(noeud)) return noeud.flatMap(textesDe);
-  const el = noeud as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  if (typeof el.type === 'function') return textesDe((el.type as (p: unknown) => unknown)(el.props));
-  return textesDe(el.props.children);
-}
+// `textesDe` vit dans le harnais partagé — il existait en cinq copies.
 
 /** Le texte de la page, espaces aplatis — insécables compris. */
 function rendre(resultat: ResultatAnalyse): string {

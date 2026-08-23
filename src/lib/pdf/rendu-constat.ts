@@ -23,6 +23,39 @@ import type { Constat } from '@/lib/profils/strategies';
 import type { StatutConstat } from '@/lib/profils/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0. LE FORMAT DES MONTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * UN MONTANT FISCAL EN TOUTES LETTRES — deux décimales, séparateur canadien.
+ *
+ * ⚠ IL VIT ICI, ET PAS DANS `langage-fiscal.tsx`, POUR UNE RAISON DE COUCHE.
+ * L'adaptateur de présentation en a besoin pour composer ses phrases, et il
+ * doit rester ignorant du moteur de rendu — c'est toute la discipline
+ * « moteur calcule → adaptateur organise → PDF affiche ». Le module de rendu
+ * le réexporte pour les composants.
+ *
+ * ⚠ CE N'EST PAS LE MÊME QUE CELUI DES ÉCRANS ET DES COURRIELS, qui arrondit au
+ * dollar (`Math.round`). Deux fonctions homonymes qui ne rendent PAS la même
+ * chose : les fusionner changerait des montants affichés.
+ */
+export const argent = (n: number) => `${n.toLocaleString('fr-CA', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+})} $`;
+
+/**
+ * UNE VÉRIFICATION À FAIRE AVANT D'EXÉCUTER.
+ *
+ * ⚠ ICI AUSSI POUR UNE RAISON DE COUCHE : les deux adaptateurs produisent ces
+ * listes et doivent rester ignorants du moteur de rendu.
+ */
+export type ValidationAvantExecution = {
+  libelle: string;
+  /** `confirme` exige une donnée AFFIRMATIVE — jamais l'absence d'un motif. */
+  statut: 'confirme' | 'a-confirmer';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. LE CHIFFRE — une seule porte
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -12,25 +12,16 @@ import { PageCristallisationPertes } from '../page-cristallisation-pertes';
 import {
   PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE,
 } from '../__fixtures__/cristallisation-pertes';
+import { textesDe, platDe, noeudsTexte } from './_texte-rendu';
 import type { PresentationCristallisationPertes } from '../presentation-cristallisation-pertes';
 
-/** Le texte réellement posé sur la page — même technique que les tests voisins. */
-function textesDe(n: unknown): string[] {
-  if (n === null || n === undefined || typeof n === 'boolean') return [];
-  if (typeof n === 'string') return [n];
-  if (typeof n === 'number') return [String(n)];
-  if (Array.isArray(n)) return n.flatMap(textesDe);
-  const el = n as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  if (typeof el.type === 'function') return textesDe((el.type as (p: unknown) => unknown)(el.props));
-  return textesDe(el.props.children);
-}
-
+const arbre = (p: PresentationCristallisationPertes, logos?: Record<string, string>) => (
+  <PageCristallisationPertes presentation={p} logos={logos} />
+);
 const rendu = (p: PresentationCristallisationPertes, logos?: Record<string, string>) =>
-  textesDe(<PageCristallisationPertes presentation={p} logos={logos} />);
-/** Joint SANS séparateur : react-pdf colle les fragments d'un même `<Text>`. */
+  textesDe(arbre(p, logos));
 const plat = (p: PresentationCristallisationPertes, l?: Record<string, string>) =>
-  rendu(p, l).join('').replace(/[\s   ]+/g, ' ');
+  platDe(arbre(p, l));
 
 const CALCULEE = () => plat(PRESENTATION_CALCULEE);
 const DEGRADEE = () => plat(PRESENTATION_DEGRADEE);
@@ -264,24 +255,7 @@ describe('V19 · une donnée absente ne porte pas la couleur du sens', () => {
     //
     // Le texte seul ne voit rien — « — » est présent dans les deux cas. Il faut
     // descendre jusqu'à la couleur.
-    const noeuds: { texte: string; couleur?: string }[] = [];
-    const visiter = (n: unknown): void => {
-      if (n === null || n === undefined || typeof n !== 'object') return;
-      if (Array.isArray(n)) { n.forEach(visiter); return; }
-      const el = n as { type?: unknown; props?: Record<string, unknown> };
-      if (!el.props) return;
-      if (typeof el.type === 'function') {
-        visiter((el.type as (p: unknown) => unknown)(el.props));
-        return;
-      }
-      const enfants = el.props.children;
-      const style = (el.props.style ?? {}) as { color?: string };
-      if (typeof enfants === 'string') noeuds.push({ texte: enfants, couleur: style.color });
-      visiter(enfants);
-    };
-    visiter(<PageCristallisationPertes presentation={PRESENTATION_DEGRADEE} />);
-
-    const tirets = noeuds.filter((n) => n.texte === '—');
+    const tirets = noeudsTexte(arbre(PRESENTATION_DEGRADEE)).filter((n) => n.texte === '—');
     expect(tirets.length, 'la page dégradée doit porter des tirets').toBeGreaterThan(0);
     for (const t of tirets) expect(t.couleur, 'tiret peint en couleur de valeur').toBe('#64748b');
   });

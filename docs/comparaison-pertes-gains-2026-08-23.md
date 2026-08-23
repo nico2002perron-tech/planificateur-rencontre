@@ -93,3 +93,86 @@ comportement — donc le même remède, une seule fois.
 3. **NO-GO définitif sur la zone C.** L'étape 4 reste deux composants. Un
    composant unique à deux modes serait un faux partage — et le premier
    raffinement fiscal le ferait diverger.
+
+---
+
+# Suite — l'extraction, exécutée
+
+*Décision 1 appliquée le 23 août 2026. Décisions 2 et 3 respectées : rien de la
+zone B ni de la zone C n'a été touché.*
+
+## Ce qui a été extrait — `src/lib/pdf/langage-fiscal.tsx`
+
+`argent()` · `Etape` · `Carte` · `Manque` · `LigneChiffree` · `EnTeteSociete` ·
+`CarteChiffre` · `ValidationsAvantExecution` · `EnTeteStrategie` ·
+`PageStrategieFiscale` · la palette **neutre** `NEUTRE` · les types
+`EnteteStrategie` et `ValidationAvantExecution`.
+
+Le harnais de test `textesDe` / `platDe` / `noeudsTexte`, qui existait en cinq
+copies, vit dans `src/lib/pdf/__tests__/_texte-rendu.tsx`.
+
+Les deux étapes 4 — restées **deux composants distincts** — consomment
+désormais `argent()` et `Manque` au lieu de leurs copies locales.
+
+## Ce qui n'a PAS été touché
+
+Les deux palettes d'action (rouge côté pertes, vert côté gains), `CarteAction`
+et `CarteActionGain`, `DiagrammeAvantStrategieApres`, `ParcoursGainCristallise`,
+les deux étapes 5, et les validations propres à chaque stratégie.
+
+## Le piège que la revue a attrapé : « identique » se vérifie, il ne se suppose pas
+
+Le bloc « avant d'exécuter » **paraissait** identique. Il ne l'était pas : côté
+pertes une pastille « confirmé » se peint en vert sur fond vert ; côté gains
+elle restait grise quel que soit le statut. Extraire la version des pertes
+imposait silencieusement son rendu aux gains — sur une branche qu'aucune
+fixture n'emprunte, donc invisible à la comparaison au pixel près.
+
+La structure est commune, la **teinte de sens reste à l'appelant**, via un
+paramètre **sans valeur par défaut** : on peut choisir, on ne peut pas hériter
+du voisin par inadvertance.
+
+Deux teintes ont quitté la palette « neutre » du même coup : le vert
+d'approbation et son fond n'y avaient rien à faire — une palette neutre qui
+héberge une couleur de sens est une factorisation déguisée.
+
+## Une garde qui manquait, trouvée en cherchant la règle plutôt que le symptôme
+
+`LigneChiffree` était corrigée et verrouillée. Mais les deux pages écrivaient
+encore `valeur={x === null ? '—' : argent(x)}` sur `CarteChiffre`, **avec une
+couleur d'action** : une perte latente absente sortait en rouge, une perte
+fiscale absente en bleu. Même défaut, autre composant, aucun test.
+
+`CarteChiffre` prend désormais `number | null` : c'est le composant qui décide
+du tiret et de sa couleur. Les pages ne peuvent plus fabriquer le tiret
+elles-mêmes, et un test le vérifie sur leur source.
+
+## Le trou titre / sous-titre, refermé
+
+`EnteteStrategie` a **deux champs obligatoires**, `sousTitre` étant explicitement
+`string | null` : on peut **refuser** un sous-titre, on ne peut pas l'**oublier**.
+`PageStrategieFiscale` exige cet en-tête, et chaque page exporte sa forme
+assemblée (`PageStrategieCristallisationPertes` / `…Gains`) qui porte son titre
+elle-même. Les harnais d'aperçu n'en posent plus.
+
+`strategies-visuelles.ts` est le registre que l'assembleur consommera. La
+batterie `LF1`/`LF2` parcourt ce registre, exige que chaque en-tête déclaré soit
+réellement rendu — y compris sous statut dégradé — et exactement une fois.
+Le test est typé `Record<CleStrategieVisuelle, …>` : **ajouter une stratégie au
+registre sans fixture d'assemblage ne compile pas.**
+
+⚠ Décision laissée à Nicolas : la page des pertes n'a **pas** de sous-titre
+aujourd'hui (`sousTitre: null`). En ajouter un décale toute la page de 13 pt —
+un changement visuel, donc pas un choix d'implémentation.
+
+## Ce que la factorisation a acheté, mesuré
+
+Avant l'extraction, le défaut « un tiret peint de la couleur du chiffre qu'il
+remplace » a dû être trouvé, corrigé et verrouillé **deux fois**. Après :
+saboter `LigneChiffree` fait rougir **trois batteries d'un coup** — `LF3`,
+`PG15` (gains) et `V19` (pertes).
+
+## Non-régression visuelle
+
+Six pages rastérisées avant et après l'extraction : **six hachages identiques**.
+Aucun pixel n'a bougé.

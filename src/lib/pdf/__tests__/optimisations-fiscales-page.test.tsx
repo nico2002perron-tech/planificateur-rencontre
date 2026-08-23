@@ -12,6 +12,7 @@ import path from 'node:path';
 import { OptimisationsFiscalesPage } from '../optimisations-fiscales-page';
 import { analyser } from '@/lib/profils/strategies';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '@/lib/profils/types';
+import { textesDe } from './_texte-rendu';
 
 const DATE = '2026-08-05';
 
@@ -77,21 +78,7 @@ function profilAvecPlan(): ProfilClient {
  * Ce que ça prouve : le CONTENU. Ce que ça ne prouve pas : la mise en page —
  * c'est le rendu réel, plus bas, qui atteste qu'elle tient.
  */
-function textesDe(noeud: unknown): string[] {
-  if (noeud === null || noeud === undefined || noeud === false || noeud === true) return [];
-  if (typeof noeud === 'string') return [noeud];
-  if (typeof noeud === 'number') return [String(noeud)];
-  if (Array.isArray(noeud)) return noeud.flatMap(textesDe);
-
-  const el = noeud as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  // Un composant fonction : on l'exécute pour voir ce qu'il produit.
-  if (typeof el.type === 'function') {
-    const rendu = (el.type as (p: unknown) => unknown)(el.props);
-    return textesDe(rendu);
-  }
-  return textesDe(el.props.children);
-}
+// `textesDe` vit dans le harnais partagé — il existait en cinq copies.
 
 /**
  * Le texte de la page pour un profil donné, espaces aplatis.

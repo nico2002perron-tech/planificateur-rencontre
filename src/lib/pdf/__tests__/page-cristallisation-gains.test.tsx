@@ -19,7 +19,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { Text as TextPdf } from '@react-pdf/renderer';
 import { PageCristallisationGains } from '../page-cristallisation-gains';
 import {
   TITRE_PRESENTATION, SOUS_TITRE_PRESENTATION,
@@ -27,54 +26,15 @@ import {
 import {
   PRESENTATION_GAINS_CALCULEE, PRESENTATION_GAINS_DEGRADEE, PRESENTATION_GAINS_USD,
 } from '../__fixtures__/cristallisation-gains';
+import { textesDe, platDe, noeudsTexte } from './_texte-rendu';
 import type { PresentationCristallisationGains } from '../presentation-cristallisation-gains';
-
-/** Le texte réellement posé sur la page — même technique que les tests voisins. */
-function textesDe(n: unknown): string[] {
-  if (n === null || n === undefined || typeof n === 'boolean') return [];
-  if (typeof n === 'string') return [n];
-  if (typeof n === 'number') return [String(n)];
-  if (Array.isArray(n)) return n.flatMap(textesDe);
-  const el = n as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  if (typeof el.type === 'function') return textesDe((el.type as (p: unknown) => unknown)(el.props));
-  return textesDe(el.props.children);
-}
-
-/**
- * LES `<Text>` AVEC LEUR STYLE — pour verrouiller une COULEUR, pas un mot.
- *
- * ⚠ UN TEST SUR LE TEXTE SEUL NE VOIT PAS LE DÉFAUT DU TIRET VERT : « — » est
- * présent dans les deux cas. Ce qui distingue le bogue de la correction est la
- * couleur, donc il faut descendre jusqu'aux props.
- */
-type NoeudTexte = { texte: string; couleur: string | undefined };
-function noeudsTexte(n: unknown): NoeudTexte[] {
-  if (n === null || n === undefined || typeof n === 'boolean') return [];
-  if (typeof n === 'string' || typeof n === 'number') return [];
-  if (Array.isArray(n)) return n.flatMap(noeudsTexte);
-  const el = n as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  if (el.type === TextPdf) {
-    const style = (el.props.style ?? {}) as { color?: string };
-    return [
-      { texte: textesDe(el.props.children).join(''), couleur: style.color },
-      ...noeudsTexte(el.props.children),
-    ];
-  }
-  if (typeof el.type === 'function') {
-    return noeudsTexte((el.type as (p: unknown) => unknown)(el.props));
-  }
-  return noeudsTexte(el.props.children);
-}
 
 const arbre = (p: PresentationCristallisationGains, logos?: Record<string, string>) =>
   React.createElement(PageCristallisationGains, { presentation: p, logos });
 const jetons = (p: PresentationCristallisationGains, l?: Record<string, string>) =>
   textesDe(arbre(p, l));
-/** Joint SANS séparateur : react-pdf colle les fragments d'un même `<Text>`. */
 const plat = (p: PresentationCristallisationGains, l?: Record<string, string>) =>
-  jetons(p, l).join('').replace(/[\s   ]+/g, ' ');
+  platDe(arbre(p, l));
 
 const CALCULEE = () => plat(PRESENTATION_GAINS_CALCULEE);
 const DEGRADEE = () => plat(PRESENTATION_GAINS_DEGRADEE);
@@ -305,10 +265,9 @@ describe('PG15 · un tiret n’est pas une valeur', () => {
 
   it('et un vrai montant garde SA couleur — sinon la garde serait creuse', () => {
     // ⚠ `toLocaleString('fr-CA')` sépare les milliers par une espace insécable
-    // étroite, pas par une espace ordinaire : comparer au caractère près sans
-    // normaliser donnait un faux rouge.
-    const noeuds = noeudsTexte(arbre(PRESENTATION_GAINS_CALCULEE))
-      .map((n) => ({ ...n, texte: n.texte.replace(/[\s   ]+/g, ' ') }));
+    // étroite, pas par une espace ordinaire : `noeudsTexte` normalise déjà, mais
+    // comparer au caractère près sans normaliser donnait un faux rouge.
+    const noeuds = noeudsTexte(arbre(PRESENTATION_GAINS_CALCULEE));
     const gain = noeuds.find((n) => n.texte === '11 985,00 $' && n.couleur === '#2f8f4e');
     const pertes = noeuds.find((n) => n.texte === '12 000,00 $' && n.couleur === '#2563a8');
     expect(gain, 'le gain réalisé doit rester vert').toBeDefined();

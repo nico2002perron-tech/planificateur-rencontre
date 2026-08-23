@@ -19,10 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React from 'react';
 import { View, Text } from '@react-pdf/renderer';
-
-const ARGENT = (n: number) => `${n.toLocaleString('fr-CA', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-})} $`;
+import { argent as ARGENT, Manque } from './langage-fiscal';
 
 /** Rouge doux = la perte créée · vert doux = le résultat · ardoise = le contexte. */
 const C = {
@@ -93,15 +90,10 @@ export function DiagrammeAvantStrategieApres({
     // un « après » était juste, mais un trou blanc se lit « le document est
     // cassé » plutôt que « la donnée manque ». On dit ce qui manque.
     return (
-      <View style={{
-        borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9,
-        backgroundColor: '#f1f5f9',
-      }}>
-        <Text style={{ fontSize: 7.4, color: C.gris, lineHeight: 1.4 }}>
-          L’effet chiffré ne peut pas être illustré tant que le montant de perte à
-          réaliser n’est pas confirmé.
-        </Text>
-      </View>
+      <Manque texte={
+        'L’effet chiffré ne peut pas être illustré tant que le montant de perte à '
+        + 'réaliser n’est pas confirmé.'
+      } />
     );
   }
 

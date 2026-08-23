@@ -23,11 +23,11 @@ import type {
   PropositionCristallisationPosition, MeilleurMono,
 } from '@/lib/profils/quantite-a-vendre';
 
-export type ValidationAvantExecution = {
-  libelle: string;
-  /** `confirme` exige une donnée AFFIRMATIVE — jamais l'absence d'un motif. */
-  statut: 'confirme' | 'a-confirmer';
-};
+// ⚠ LE TYPE VIT DÉSORMAIS DANS `langage-fiscal`, à côté du composant qui le
+// consomme. Réexporté ici pour les appelants existants — et surtout pour que
+// l'adaptateur des gains cesse d'importer depuis celui des pertes.
+export type { ValidationAvantExecution } from './langage-fiscal';
+import type { ValidationAvantExecution } from './langage-fiscal';
 
 /**
  * L'ACTION — union discriminée, et c'est délibéré (§6).

@@ -4,9 +4,10 @@ import { Document, Page, View, Text, Font, renderToBuffer } from '@react-pdf/ren
 import fs from 'node:fs';
 import path from 'node:path';
 import { DiagrammeAvantStrategieApres } from '../diagramme-avant-strategie-apres';
-import { PageCristallisationPertes } from '../page-cristallisation-pertes';
+import { PageStrategieCristallisationPertes } from '../page-cristallisation-pertes';
 import { ParcoursGainCristallise } from '../parcours-gain-cristallise';
-import { PageCristallisationGains } from '../page-cristallisation-gains';
+import { PageStrategieCristallisationGains } from '../page-cristallisation-gains';
+import { textesDe } from './_texte-rendu';
 import { PRESENTATION_CALCULEE, PRESENTATION_DEGRADEE } from '../__fixtures__/cristallisation-pertes';
 import {
   PRESENTATION_GAINS_CALCULEE, PRESENTATION_GAINS_DEGRADEE,
@@ -23,17 +24,6 @@ beforeAll(() => {
   Font.registerHyphenationCallback((m) => [m]);
 });
 
-/** Le texte réellement posé — même technique que les tests PDF voisins. */
-function textesDe(n: unknown): string[] {
-  if (n === null || n === undefined || typeof n === 'boolean') return [];
-  if (typeof n === 'string') return [n];
-  if (typeof n === 'number') return [String(n)];
-  if (Array.isArray(n)) return n.flatMap(textesDe);
-  const el = n as { type?: unknown; props?: Record<string, unknown> };
-  if (!el.props) return [];
-  if (typeof el.type === 'function') return textesDe((el.type as (p: unknown) => unknown)(el.props));
-  return textesDe(el.props.children);
-}
 const plat = (p: React.ComponentProps<typeof DiagrammeAvantStrategieApres>) =>
   textesDe(<DiagrammeAvantStrategieApres {...p} />).join(' ').replace(/[\s   ]+/g, ' ');
 
@@ -90,19 +80,15 @@ describe('apercu', () => {
   it('ecrit le PDF de la PAGE GAINS, calculee et degradee', async () => {
     // ⚠ LES MÊMES OBJETS QUE LA BATTERIE DE TESTS. L'aperçu que j'inspecte à
     // l'œil et la page mise sous test décrivent alors exactement la même chose.
-    const calc = PRESENTATION_GAINS_CALCULEE;
-    const degr = PRESENTATION_GAINS_DEGRADEE;
-
-    const page = (pr: typeof calc) => (
-      <Page size="LETTER" style={{ paddingHorizontal: 40, paddingVertical: 34,
-        fontFamily: 'Open Sans', backgroundColor: '#f8fafc' }}>
-        <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800,
-          color: '#1e293b', marginBottom: 2 }}>{pr.titre}</Text>
-        <Text style={{ fontSize: 8, color: '#64748b', marginBottom: 14 }}>{pr.sousTitre}</Text>
-        <PageCristallisationGains presentation={pr} />
-      </Page>
+    // ⚠ LE HARNAIS NE POSE PLUS DE TITRE. La page complète le porte elle-même
+    // depuis `langage-fiscal` : c'est ce qui empêche un assembleur réel de la
+    // sortir anonyme, et ce qui interdit deux titres concurrents.
+    const page = (pr: typeof PRESENTATION_GAINS_CALCULEE) => (
+      <PageStrategieCristallisationGains presentation={pr} />
     );
-    const buf = await renderToBuffer(<Document>{page(calc)}{page(degr)}</Document>);
+    const buf = await renderToBuffer(
+      <Document>{page(PRESENTATION_GAINS_CALCULEE)}{page(PRESENTATION_GAINS_DEGRADEE)}</Document>
+    );
     fs.writeFileSync('C:/tmp/apercu/page-gains.pdf', buf);
     expect(buf.length).toBeGreaterThan(1000);
   }, 90000);
@@ -132,15 +118,9 @@ describe('apercu', () => {
   }, 90000);
 
   it('ecrit le PDF de la PAGE complete, calculee et degradee', async () => {
+    // ⚠ MÊME CHOSE ICI : le titre vient de la page, plus du harnais.
     const page = (p: typeof PRESENTATION_CALCULEE) => (
-      <Page size="LETTER" style={{ paddingHorizontal: 40, paddingVertical: 34,
-        fontFamily: 'Open Sans', backgroundColor: '#f8fafc' }}>
-        <Text style={{ fontSize: 13, fontFamily: 'Montserrat', fontWeight: 800,
-          color: '#1e293b', marginBottom: 14 }}>
-          Réduire l’impôt sur vos gains de l’année
-        </Text>
-        <PageCristallisationPertes presentation={p} />
-      </Page>
+      <PageStrategieCristallisationPertes presentation={p} />
     );
     const buf = await renderToBuffer(
       <Document>{page(PRESENTATION_CALCULEE)}{page(PRESENTATION_DEGRADEE)}</Document>

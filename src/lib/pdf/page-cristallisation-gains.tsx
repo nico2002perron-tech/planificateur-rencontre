@@ -1,86 +1,54 @@
 // LA PAGE « CRISTALLISATION DE GAINS » — même langage, autre histoire.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// CE QUI EST REPRIS, ET CE QUI NE L'EST PAS.
+// LA MISE EN PAGE VIENT DE `langage-fiscal.tsx`, comme celle des pertes. Ce
+// fichier ne garde que ce qui est PROPRE aux gains.
 //
-// Repris de la page des pertes : les badges d'étape, les cartes, la
-// typographie, `EnTeteSociete`, `CarteChiffre`, `LogoSocieteFiscal` et son
-// repli, le traitement des statuts dégradés.
+// ⚠ ET CE N'EST PAS LA MÊME HISTOIRE. Les pertes racontent une soustraction ;
+// les gains racontent l'emploi d'une capacité qui dort déjà au dossier.
+// L'étape 4 n'est donc pas le diagramme « avant / stratégie / après » mais un
+// parcours dans le temps — voir `parcours-gain-cristallise.tsx`.
 //
-// PAS repris : l'histoire. Les pertes racontent une soustraction ; les gains
-// racontent l'emploi d'une capacité qui dort déjà au dossier. L'étape 4 n'est
-// donc pas le diagramme « avant / stratégie / après » mais un parcours dans le
-// temps — voir `parcours-gain-cristallise.tsx`.
+// ⚠ CE FICHIER N'IMPORTE PLUS RIEN DE LA PAGE DES PERTES. Il l'a fait un
+// moment — `EnTeteSociete` et `CarteChiffre` y étaient logés — et c'était une
+// dépendance entre deux stratégies sœurs qui n'ont aucune raison de se
+// connaître. Les deux passent maintenant par le module commun.
 //
-// Trois contraintes de rendu, chacune née d'un vrai bug regardé sur PDF :
-//   1. jamais `#rrggbbaa` — react-pdf le rend arbitrairement ;
-//   2. jamais une section vide quand une donnée manque ;
-//   3. jamais un glyphe absent des polices embarquées.
+// Les trois contraintes de rendu et le traitement des valeurs absentes vivent
+// dans ce module commun, une fois pour toutes. Voir son en-tête.
 // ─────────────────────────────────────────────────────────────────────────────
 import React from 'react';
 import { View, Text } from '@react-pdf/renderer';
-import { EnTeteSociete, CarteChiffre } from './page-cristallisation-pertes';
 import { ParcoursGainCristallise } from './parcours-gain-cristallise';
 import { mentionDate } from './rendu-constat';
-import type { PresentationCristallisationGains } from './presentation-cristallisation-gains';
+import {
+  argent, Etape, Carte, Manque, LigneChiffree, EnTeteSociete, CarteChiffre,
+  ValidationsAvantExecution as BlocValidations, PageStrategieFiscale,
+  NEUTRE, type EnteteStrategie,
+} from './langage-fiscal';
+import {
+  TITRE_PRESENTATION, SOUS_TITRE_PRESENTATION,
+  type PresentationCristallisationGains,
+} from './presentation-cristallisation-gains';
 
-const argent = (n: number) => `${n.toLocaleString('fr-CA', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-})} $`;
-
+/**
+ * LA PALETTE DES GAINS — teintes OPAQUES (contrainte 1 du module commun).
+ *
+ * ⚠ LE VERT EST LA COULEUR D'ACTION ICI, pas le rouge : on RÉALISE un gain, on
+ * ne crée pas une perte. Même structure que celle des pertes, rôle inversé —
+ * c'est ce qui distingue les deux pages sans changer de langage, et c'est
+ * exactement pour ça que les deux palettes restent séparées.
+ */
 const C = {
-  encre: '#1e293b', gris: '#64748b', ligne: '#e2e8f0', papier: '#ffffff',
-  badge: '#334155', neutre: '#f1f5f9',
-  // ⚠ LE VERT EST LA COULEUR D'ACTION ICI, pas le rouge : on réalise un gain,
-  // on ne crée pas une perte. Même palette, rôle inversé — c'est ce qui
-  // distingue les deux pages sans changer de langage.
   action: '#2f8f4e', actionFond: '#eef7f1', actionBord: '#c9e5d4',
   cible: '#2563a8', cibleFond: '#eef4fb', cibleBord: '#cbdcf0',
 };
 
-function Etape({ numero, titre, children, teinte = C.badge }: {
-  numero: number; titre: string; children: React.ReactNode; teinte?: string;
-}) {
-  return (
-    <View style={{ marginBottom: 10 }} wrap={false}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
-        <View style={{
-          width: 19, height: 19, borderRadius: 9.5, backgroundColor: teinte,
-          alignItems: 'center', justifyContent: 'center', marginRight: 7,
-        }}>
-          <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: '#ffffff' }}>
-            {numero}
-          </Text>
-        </View>
-        <Text style={{ fontSize: 10.5, fontFamily: 'Montserrat', fontWeight: 800, color: C.encre }}>
-          {titre}
-        </Text>
-      </View>
-      {children}
-    </View>
-  );
-}
-
-function Carte({ children, fond = C.papier, bord = C.ligne }: {
-  children: React.ReactNode; fond?: string; bord?: string;
-}) {
-  return (
-    <View style={{
-      borderRadius: 12, padding: 10, backgroundColor: fond,
-      borderWidth: 1, borderColor: bord, borderStyle: 'solid',
-    }}>
-      {children}
-    </View>
-  );
-}
-
-function Manque({ texte }: { texte: string }) {
-  return (
-    <View style={{ borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, backgroundColor: C.neutre }}>
-      <Text style={{ fontSize: 7.4, color: C.gris, lineHeight: 1.4 }}>{texte}</Text>
-    </View>
-  );
-}
+/** L'en-tête du document, porté par la page elle-même — plus par un harnais. */
+export const ENTETE_CRISTALLISATION_GAINS: EnteteStrategie = {
+  titre: TITRE_PRESENTATION,
+  sousTitre: SOUS_TITRE_PRESENTATION,
+};
 
 function CarteActionGain({ p, logos }: {
   p: PresentationCristallisationGains; logos?: Record<string, string>;
@@ -119,9 +87,9 @@ function CarteActionGain({ p, logos }: {
       </Text>
 
       <View style={{ flexDirection: 'row', marginTop: 7 }}>
-        <CarteChiffre libelle="Valeur de vente estimée" valeur={argent(a.valeurVenteEstimeeCad)} />
+        <CarteChiffre libelle="Valeur de vente estimée" valeur={a.valeurVenteEstimeeCad} />
         <CarteChiffre libelle="Gain réalisé estimé"
-          valeur={argent(a.gainRealiseEstimeCad)} couleur={C.action} />
+          valeur={a.gainRealiseEstimeCad} couleur={C.action} />
       </View>
 
       {/* ⚠ LES −15 $ RESTENT DANS LE BLOC CHIFFRÉ. La phrase d'explication vient
@@ -131,27 +99,27 @@ function CarteActionGain({ p, logos }: {
         flexDirection: 'row', marginTop: 7, paddingTop: 6,
         borderTopWidth: 1, borderTopColor: C.actionBord, borderTopStyle: 'solid',
       }}>
-        <Text style={{ flex: 1, fontSize: 7.2, color: C.gris }}>
+        <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
           Objectif{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: C.encre }}>
+          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
             {argent(a.cibleGainCad)}
           </Text>
         </Text>
-        <Text style={{ fontSize: 7.2, color: C.gris }}>
+        <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
           Écart estimé{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: C.encre }}>
+          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
             {a.ecartCad > 0 ? '+' : ''}{argent(a.ecartCad)}
           </Text>
         </Text>
       </View>
 
       {p.etape3.precisionGranularite && (
-        <Text style={{ marginTop: 6, fontSize: 6.8, color: C.gris, lineHeight: 1.4 }}>
+        <Text style={{ marginTop: 6, fontSize: 6.8, color: NEUTRE.gris, lineHeight: 1.4 }}>
           {p.etape3.precisionGranularite}
         </Text>
       )}
       {a.dateValeurs && (
-        <Text style={{ marginTop: 4, fontSize: 6.4, color: C.gris, lineHeight: 1.35 }}>
+        <Text style={{ marginTop: 4, fontSize: 6.4, color: NEUTRE.gris, lineHeight: 1.35 }}>
           {mentionDate(a.dateValeurs)} Quantité à actualiser avant l’exécution.
         </Text>
       )}
@@ -168,33 +136,16 @@ export function PageCristallisationGains({ presentation: p, logos }: {
   const usd = p.etape3.deviseNegociation
     && p.etape3.deviseNegociation.toUpperCase() !== 'CAD';
 
-  // ⚠ UN TIRET N'EST PAS UNE VALEUR. Peint de la couleur du chiffre — vert pour
-  // le gain réalisé — il se lisait comme un montant sur le PDF dégradé. Une
-  // donnée absente porte la couleur du texte secondaire, jamais celle du sens.
-  const ligne = (libelle: string, valeur: number | null, couleur = C.encre) => (
-    <View style={{ flexDirection: 'row', marginBottom: 3 }}>
-      <Text style={{ flex: 1, fontSize: 7.6, color: C.gris }}>{libelle}</Text>
-      <Text style={{
-        fontSize: 8.6, fontFamily: 'Montserrat', fontWeight: 700,
-        color: valeur === null ? C.gris : couleur,
-      }}>
-        {valeur === null ? '—' : argent(valeur)}
-      </Text>
-    </View>
-  );
-
   return (
     <View>
       <Etape numero={1} titre="Des pertes fiscales sont disponibles">
         <Carte>
           <View style={{ flexDirection: 'row' }}>
             <CarteChiffre libelle="Pertes fiscales disponibles"
-              valeur={e1.pertesDisponiblesCad === null ? '—' : argent(e1.pertesDisponiblesCad)}
-              couleur={C.cible} />
-            <CarteChiffre libelle="Gains latents disponibles"
-              valeur={e1.gainsLatentsCad === null ? '—' : argent(e1.gainsLatentsCad)} />
+              valeur={e1.pertesDisponiblesCad} couleur={C.cible} />
+            <CarteChiffre libelle="Gains latents disponibles" valeur={e1.gainsLatentsCad} />
           </View>
-          <Text style={{ marginTop: 8, fontSize: 7.4, color: C.encre, lineHeight: 1.45 }}>
+          <Text style={{ marginTop: 8, fontSize: 7.4, color: NEUTRE.encre, lineHeight: 1.45 }}>
             {e1.texte}
           </Text>
         </Carte>
@@ -213,7 +164,7 @@ export function PageCristallisationGains({ presentation: p, logos }: {
               <Text style={{ fontSize: 22, fontFamily: 'Montserrat', fontWeight: 800, color: C.cible }}>
                 ≈ {argent(p.etape2.cibleGainCad)}
               </Text>
-              <Text style={{ marginTop: 6, fontSize: 7.4, color: C.encre, lineHeight: 1.45 }}>
+              <Text style={{ marginTop: 6, fontSize: 7.4, color: NEUTRE.encre, lineHeight: 1.45 }}>
                 {p.etape2.texte}
               </Text>
             </>
@@ -224,7 +175,7 @@ export function PageCristallisationGains({ presentation: p, logos }: {
       <Etape numero={3} titre="Quel titre et quelle quantité ?" teinte={C.action}>
         <CarteActionGain p={p} logos={logos} />
         {usd && (
-          <Text style={{ marginTop: 4, fontSize: 6.6, color: C.gris }}>
+          <Text style={{ marginTop: 4, fontSize: 6.6, color: NEUTRE.gris }}>
             Négociation : {p.etape3.deviseNegociation}   ·   Montants fiscaux : {p.etape3.uniteValeursRapport}
           </Text>
         )}
@@ -240,41 +191,48 @@ export function PageCristallisationGains({ presentation: p, logos }: {
 
       <Etape numero={5} titre="Quel est l’effet fiscal estimé ?" teinte={C.cible}>
         <Carte fond={C.cibleFond} bord={C.cibleBord}>
-          {ligne('Pertes fiscales disponibles', e5.pertesDisponiblesCad, C.cible)}
-          {ligne('Gain réalisé estimé', e5.gainRealiseEstimeCad, C.action)}
+          {/* ⚠ `LigneChiffree` porte la règle du tiret : une valeur absente sort
+              en gris, jamais dans la couleur du chiffre qu'elle remplace. */}
+          <LigneChiffree libelle="Pertes fiscales disponibles"
+            valeur={e5.pertesDisponiblesCad} couleur={C.cible} />
+          <LigneChiffree libelle="Gain réalisé estimé"
+            valeur={e5.gainRealiseEstimeCad} couleur={C.action} />
           <View style={{
             marginTop: 3, paddingTop: 5,
             borderTopWidth: 1, borderTopColor: C.cibleBord, borderTopStyle: 'solid',
           }}>
-            {ligne('Capacité encore disponible', e5.capaciteEncoreDisponibleCad)}
+            <LigneChiffree libelle="Capacité encore disponible"
+              valeur={e5.capaciteEncoreDisponibleCad} />
           </View>
-          <Text style={{ marginTop: 7, fontSize: 7.4, color: C.encre, lineHeight: 1.45 }}>
+          <Text style={{ marginTop: 7, fontSize: 7.4, color: NEUTRE.encre, lineHeight: 1.45 }}>
             {e5.texte}
           </Text>
         </Carte>
       </Etape>
 
-      <View style={{ marginTop: 2 }}>
-        <Text style={{
-          fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600,
-          color: C.gris, letterSpacing: 0.6, marginBottom: 5,
-        }}>
-          AVANT D’EXÉCUTER
-        </Text>
-        {p.validationsAvantExecution.map((v, i) => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 3 }}>
-            <View style={{
-              borderRadius: 7, paddingHorizontal: 5, paddingVertical: 1.5,
-              marginRight: 6, backgroundColor: C.neutre,
-            }}>
-              <Text style={{ fontSize: 6, fontFamily: 'Open Sans', fontWeight: 600, color: C.gris }}>
-                {v.statut === 'confirme' ? 'Confirmé' : 'À confirmer'}
-              </Text>
-            </View>
-            <Text style={{ fontSize: 7.4, color: C.encre }}>{v.libelle}</Text>
-          </View>
-        ))}
-      </View>
+      {/* ⚠ LA TEINTE DE « CONFIRMÉ » EST DITE ICI. Les gains laissaient la
+          pastille NEUTRE quel que soit le statut — on conserve ce rendu tel
+          quel plutôt que d'hériter du vert des pertes. */}
+      <BlocValidations validations={p.validationsAvantExecution}
+        apparenceConfirme={{ fond: NEUTRE.fond, texte: NEUTRE.gris }} />
     </View>
+  );
+}
+
+/**
+ * LA PAGE COMPLÈTE — en-tête compris, prête à être posée dans un `Document`.
+ *
+ * C'est CETTE forme que le vrai flux consommera : le titre ne peut plus être
+ * oublié par un assembleur, ni recomposé différemment par chaque harnais.
+ */
+export function PageStrategieCristallisationGains({ presentation, logos, pied }: {
+  presentation: PresentationCristallisationGains;
+  logos?: Record<string, string>;
+  pied?: React.ReactNode;
+}) {
+  return (
+    <PageStrategieFiscale entete={ENTETE_CRISTALLISATION_GAINS} pied={pied}>
+      <PageCristallisationGains presentation={presentation} logos={logos} />
+    </PageStrategieFiscale>
   );
 }
