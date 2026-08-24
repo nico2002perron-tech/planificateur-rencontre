@@ -47,6 +47,7 @@ const NOMS: Record<string, string> = {
   ALFA: 'Alfa Ressources Ltée',
   BRAVO: 'Bravo Technologies du Nord inc.',
   CHARLI: 'Écho Gestion privée du Saint-Laurent',
+  DELTA: 'Delta Industries',
 };
 
 function position(
@@ -60,10 +61,12 @@ function position(
   };
 }
 
-function compte(positions: Position[], numero = 'FICT-1'): Compte {
+function compte(
+  positions: Position[], numero = 'FICT-1', type: Compte['type'] = 'non-enregistre'
+): Compte {
   return {
     numero, suffixe: numero.slice(-1), provenanceNumero: 'livre',
-    type: 'non-enregistre', titulaire: 'client', candidats: [numero],
+    type, titulaire: 'client', candidats: [numero],
     dateReleve: DATE_DOSSIER, presence: 'au-releve',
     derniereActivite: null, dernierSolde: null, encaisse: [], positions,
   };
@@ -143,6 +146,37 @@ export const DOSSIER_GAINS = (): ProfilClient => socle('fict-gains', (p) => {
   };
   p.comptes = [compte([position('CHARLI', 50000, 10000, 400)])];
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (C bis) PARTICULIER · CRISTALLISATION DE **GAINS EN MULTI**
+// ═══════════════════════════════════════════════════════════════════════════
+// Deux positions gagnantes dont AUCUNE ne porte seule la cible : gains latents
+// 12 000 + 15 000 = 27 000, cible `min(27 000, 20 000) = 20 000`. Le plan en
+// retient donc deux, et la seconde n'est vendue qu'en partie.
+export const DOSSIER_GAINS_MULTI = (): ProfilClient => socle('fict-gains-multi', (p) => {
+  p.droits.pertesCapitalReportees = {
+    montant: 20000, unite: 'perte-capital-brute',
+    source: 'avis-cotisation', dateDonnee: DATE_DOSSIER,
+  };
+  p.comptes = [compte([
+    position('CHARLI', 22000, 10000, 400),   // gain latent 12 000
+    position('DELTA', 25000, 10000, 200),    // gain latent 15 000
+  ])];
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (C ter) PARTICULIER · **TOUT EN RÉGIME ENREGISTRÉ**
+// ═══════════════════════════════════════════════════════════════════════════
+// ⚠ CETTE FIXTURE EXISTE PARCE QU'UN SABOTAGE EST PASSÉ INAPERÇU.
+//
+// Remettre « Les gains y croissent déjà libres d'impôt » dans la branche
+// « aucune position imposable » ne faisait rougir aucun test : les sept
+// dossiers de la garde portaient tous un compte non enregistré, donc aucun
+// n'atteignait cette branche. Une phrase interdite y serait restée vivante.
+export const DOSSIER_GAINS_TOUT_ENREGISTRE = (): ProfilClient =>
+  socle('fict-enregistre', (p) => {
+    p.comptes = [compte([position('CHARLI', 50000, 10000, 400)], 'FICT-9', 'celi')];
+  });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // (D) PARTICULIER · LES DEUX STRATÉGIES ALLUMÉES, PERTES EN **MULTI**

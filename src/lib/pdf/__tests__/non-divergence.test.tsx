@@ -22,9 +22,11 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import fs from 'node:fs';
 import {
-  analyser, selonLeTitulaire, type Constat, type ResultatAnalyse,
+  analyser, restreindre, selonLeTitulaire, type Constat, type ResultatAnalyse,
 } from '@/lib/profils/strategies';
 import { montantAffichable, modeTableau } from '../rendu-constat';
+import { gestesDe } from '@/lib/profils/demarches';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import {
   STRATEGIES_VISUELLES, CLES_STRATEGIES_VISUELLES, aUnePageDetaillee,
   type CleStrategieVisuelle,
@@ -33,7 +35,8 @@ import { OptimisationsFiscalesDocument } from '../optimisations-fiscales-documen
 import { OptimisationsFiscalesPage } from '../optimisations-fiscales-page';
 import { LIBELLE_PIED_FISCAL, LIBELLE_PIED_FISCAL_TRAVAIL } from '../langage-fiscal';
 import {
-  DOSSIER_PERTES_MONO, DOSSIER_PERTES_MULTI, DOSSIER_GAINS, DOSSIER_COMPLET,
+  DOSSIER_PERTES_MONO, DOSSIER_PERTES_MULTI, DOSSIER_GAINS, DOSSIER_GAINS_MULTI,
+  DOSSIER_GAINS_TOUT_ENREGISTRE, DOSSIER_COMPLET,
   DOSSIER_A_CONFIRMER, DOSSIER_ENTREPRISE, DATE_DOSSIER, REEE_TEST,
 } from '../__fixtures__/dossiers-document';
 import { textesDe } from './_texte-rendu';
@@ -496,6 +499,132 @@ describe('ND11 · la carte et la page nomment la stratégie de la même façon',
     expect(c.titre).not.toBe(c.titreClient);
   });
 });
+// ═══════════════════════════════════════════════════════════════════════════
+// ND12 · AUCUNE PROMESSE FISCALE ABSOLUE DANS LE RENDU CLIENT DES GAINS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠ LA GARDE EST SCOPÉE À UNE SEULE STRATÉGIE, ET C'EST DÉLIBÉRÉ.
+//
+// Un balayage du document entier attraperait la cristallisation de PERTES, qui
+// écrit « ne réduirait donc aucun impôt de l'année » — une phrase exacte, dans
+// une stratégie hors périmètre. Une garde trop large aurait forcé à toucher du
+// texte qu'on n'a pas audité, ou à s'affaiblir par des exceptions.
+//
+// On lit donc : les champs clients du CONSTAT de gains, sa carte de synthèse
+// rendue seule, et sa page en cinq étapes.
+
+const PROMESSES_INTERDITES: Array<[string, RegExp]> = [
+  ['sans impôt', /sans imp[oô]t/i],
+  ['sans un dollar d’impôt', /sans un dollar d.imp[oô]t/i],
+  ['libre d’impôt', /libres? d.imp[oô]t/i],
+  ['exonéré d’impôt', /exon[eé]r[eé]/i],
+  ['aucun impôt', /aucun imp[oô]t/i],
+  ['0 $ d’impôt', /0\s*\$?\s*d.imp[oô]t/i],
+  // ⚠ ET LES ÉQUIVALENTS, que la consigne interdit nommément : remplacer une
+  // promesse par sa paraphrase ne serait pas une correction.
+  ['sans incidence fiscale', /sans incidence fiscale/i],
+  ['sans conséquence fiscale', /sans cons[eé]quence fiscale/i],
+  ['impôt nul', /imp[oô]t nul/i],
+];
+
+/** Tout ce que la stratégie de gains fait lire à un client, dans un constat. */
+function textesClientsDe(c: Constat): string[] {
+  return [
+    c.titreClient, c.libelleMontant, c.explication,
+    ...c.donneesManquantes,
+    ...gestesDe(c).flatMap((g) => [g.libelle, ...g.demarches]),
+  ];
+}
+
+/** La carte de synthèse RENDUE SEULE — sans les autres stratégies. */
+const carteSeuleDe = (r: ResultatAnalyse, cle: string) =>
+  platDe(syntheseDe(restreindre(r, [cle])));
+
+describe('ND12 · la cristallisation de gains ne promet aucun impôt final', () => {
+  // Les cinq situations demandées, plus les deux branches dégradées dont la
+  // prose a été réécrite — elles ne sont atteintes par aucun autre test.
+  const CAS: Array<[string, () => ProfilClient]> = [
+    ['mono', DOSSIER_GAINS],
+    ['multi', DOSSIER_GAINS_MULTI],
+    ['à confirmer', DOSSIER_A_CONFIRMER],
+    ['deux stratégies', DOSSIER_COMPLET],
+    ['entreprise', DOSSIER_ENTREPRISE],
+    // ⚠ AJOUTÉ APRÈS UN SABOTAGE PASSÉ INAPERÇU : sans dossier entièrement
+    // en régime enregistré, la branche « aucune position imposable » n'était
+    // atteinte par aucun cas, et une phrase interdite y survivait.
+    ['tout en régime enregistré', DOSSIER_GAINS_TOUT_ENREGISTRE],
+    // Aucune perte reportée jamais demandée → branche « indisponible ».
+    ['reportées inconnues', () => {
+      const p = DOSSIER_GAINS();
+      p.droits.pertesCapitalReportees = {
+        montant: null, unite: 'inconnue', source: 'saisie-manuelle', dateDonnee: null,
+      } as ProfilClient['droits']['pertesCapitalReportees'];
+      return p;
+    }],
+    // Reportées déclarées nulles → branche « non-applicable ».
+    ['aucune perte disponible', () => {
+      const p = DOSSIER_GAINS();
+      p.droits.pertesCapitalReportees = {
+        montant: 0, unite: 'perte-capital-brute',
+        source: 'avis-cotisation', dateDonnee: DATE_DOSSIER,
+      };
+      return p;
+    }],
+  ];
+
+  for (const [nom, dossier] of CAS) {
+    it(`${nom} · ni dans le constat, ni dans la carte, ni dans la page`, () => {
+      const r = analyse(dossier());
+      const c = constat(r, 'cristallisation-gains');
+
+      // 1 · les chaînes du constat, telles que le moteur les produit
+      for (const texte of textesClientsDe(c)) {
+        for (const [libelle, motif] of PROMESSES_INTERDITES) {
+          expect(motif.test(texte), `${nom} · « ${libelle} » dans : ${texte}`).toBe(false);
+        }
+      }
+
+      // 2 · la carte de synthèse, rendue seule
+      const carte = carteSeuleDe(r, 'cristallisation-gains');
+      for (const [libelle, motif] of PROMESSES_INTERDITES) {
+        expect(motif.test(carte), `${nom} · carte : « ${libelle} »`).toBe(false);
+      }
+
+      // 3 · la page en cinq étapes, par le registre
+      const page = platDe(STRATEGIES_VISUELLES['cristallisation-gains'].rendre(c));
+      for (const [libelle, motif] of PROMESSES_INTERDITES) {
+        expect(motif.test(page), `${nom} · page : « ${libelle} »`).toBe(false);
+      }
+    });
+  }
+
+  it('les huit situations sont RÉELLEMENT distinctes — sinon la garde est creuse', () => {
+    // ⚠ SANS CE CONTRÔLE, huit dossiers pourraient tomber dans la même branche
+    // et la garde n'en couvrirait qu'une. On exige que les statuts et les
+    // formes de plan observés couvrent bien le calculé mono, le calculé multi
+    // et le dégradé.
+    const vus = CAS.map(([, d]) => {
+      const c = constat(analyse(d()), 'cristallisation-gains');
+      const pe = c.planExecution;
+      return `${c.statut}/${pe ? (pe.monoTitre ? 'mono' : 'multi') : 'sans-plan'}`;
+    });
+    expect(vus).toContain('calcule/mono');
+    expect(vus).toContain('calcule/multi');
+    expect(vus.some((v) => v.startsWith('montant-a-confirmer'))).toBe(true);
+    expect(vus.some((v) => v.startsWith('indisponible'))).toBe(true);
+    expect(vus.some((v) => v.startsWith('non-applicable'))).toBe(true);
+  });
+
+  it('le vocabulaire client suit bien la doctrine du titre', () => {
+    const c = constat(analyse(DOSSIER_GAINS()), 'cristallisation-gains');
+    expect(c.titreClient).toBe(TITRE_CLIENT_CRISTALLISATION_GAINS);
+    expect(c.libelleMontant)
+      .toBe('de gain pouvant être réalisé en utilisant les pertes fiscales disponibles');
+    expect(c.explication).toContain('Le plan vise à réaliser');
+    expect(c.explication).toContain('en utilisant les pertes fiscales disponibles');
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ND10 · LA CARTE RESTE UNE SYNTHÈSE UTILE
 // ═══════════════════════════════════════════════════════════════════════════

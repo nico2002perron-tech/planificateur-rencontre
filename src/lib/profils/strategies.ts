@@ -769,7 +769,12 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     // formulation trop absolue. Voir `titres-strategies.ts` pour le raisonnement.
     titreClient: TITRE_CLIENT_CRISTALLISATION_GAINS,
     echeance: 'Aucune échéance : une perte reportée ne périme pas, et le rachat du même titre est permis le jour même.',
-    libelleMontant: 'de gain cristallisable sans impôt',
+    // ⚠ « de gain cristallisable SANS IMPÔT » : le moteur ne démontre pas
+    // l'absence d'impôt. Il démontre qu'un gain peut être absorbé par des
+    // pertes déjà au dossier — et il reste même de la capacité inutilisée dès
+    // que la quantité entière ne tombe pas pile. Le libellé nomme donc la
+    // MATIÈRE du montant, pas son résultat fiscal.
+    libelleMontant: 'de gain pouvant être réalisé en utilisant les pertes fiscales disponibles',
     recurrence: 'unique' as const,
     sources: sourcesDe(profil),
     limiteVisibilite: null,
@@ -791,7 +796,13 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   if (nonEnr.length === 0 && raisonAucunNonEnregistre(profil) !== 'regimes-inconnus') {
     return constatSansImposable(
       profil, base,
-      'Les gains y croissent déjà libres d’impôt : la cristallisation n’a pas d’objet.'
+      // ⚠ « LIBRES D'IMPÔT » ÉTAIT DOUBLEMENT FAUTIF. C'est une des formules
+      // interdites, et elle est inexacte : dans un REER l'impôt est REPORTÉ,
+      // pas supprimé — il se paiera au retrait. Ce qui est vrai et suffisant,
+      // c'est qu'un gain réalisé dans un régime enregistré ne déclenche rien
+      // au moment de la vente, donc qu'il n'y a rien à cristalliser.
+      'Une vente dans un régime enregistré ne déclenche aucun gain en capital imposable : '
+      + 'la cristallisation n’a pas d’objet.'
     );
   }
 
@@ -908,8 +919,9 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
         ...base, statut: 'indisponible', portee: 'inconnue', montantEstime: null,
         candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
         explication:
-          `${argent(gainsLatents)} de gains latents pourraient être récoltés sans impôt si des pertes ` +
-          'd’années passées dormaient au dossier fiscal. Ce montant ne figure que sur l’avis de cotisation. ' +
+          `${argent(gainsLatents)} de gains latents pourraient être réalisés en s'appuyant sur des ` +
+          'pertes d’années passées, si le dossier fiscal en porte. Ce montant ne figure que sur ' +
+          'l’avis de cotisation. ' +
           'Les titres les plus denses en gain sont nommés ci-dessous : ce sont eux qu’il faudrait vendre ' +
           'en premier, le jour où le montant des pertes reportées sera connu.',
         donneesManquantes: ['le montant des pertes en capital reportées (avis de cotisation)'],
@@ -927,7 +939,8 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
       explication:
         (visibiliteEntamee(profil)
           ? 'Aucune perte inutilisée vue ici — ni cette année, ni reportée. Une perte réalisée dans un compte détenu ailleurs ouvrirait pourtant de la place : le constat reste à confirmer.'
-          : 'Aucune perte inutilisée — ni cette année, ni reportée. Il n’y a rien à récolter à impôt nul, et c’est une bonne chose.'),
+          : 'Aucune perte inutilisée — ni cette année, ni reportée. Il n’y a donc aucune perte à '
+            + 'utiliser pour réaliser un gain, et c’est une bonne chose.'),
       donneesManquantes: visibiliteEntamee(profil) ? ['la liste des positions détenues ailleurs qu’ici'] : [],
     };
   }
@@ -1003,10 +1016,16 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
     planExecution: planGains,
     plan: lignesHeritees(planGains, 1),
     candidats: meilleursCandidats(enGain, COMBIEN_DE_CANDIDATS),
+    // ⚠ LA PHRASE DISAIT « cristallise X $ de gain SANS UN DOLLAR D'IMPÔT ».
+    // C'était une conclusion fiscale que le moteur ne calcule pas : il compare
+    // un gain latent à des pertes disponibles, il n'établit pas l'impôt final
+    // d'une déclaration. Elle nomme maintenant l'INTENTION du plan et les deux
+    // grandeurs qui la fondent — le gain visé et les pertes qu'il mobilise.
     explication:
-      `${originePertes} restent inutilisées. Vendre puis racheter les positions gagnantes — permis le jour même, ` +
-      `la règle des 30 jours ne vise que les pertes — cristallise ${argent(montant)} de gain sans un dollar ` +
-      'd’impôt et remonte d’autant leur prix de base. Ce geste n’a aucune échéance : une perte reportée ne périme pas.',
+      `${originePertes} restent inutilisées. Le plan vise à réaliser ${argent(montant)} de gain en ` +
+      'utilisant les pertes fiscales disponibles. Vendre puis racheter les positions gagnantes est ' +
+      'permis le jour même — la règle des 30 jours ne vise que les pertes — et remonte d’autant leur ' +
+      'prix de base. Ce geste n’a aucune échéance : une perte reportée ne périme pas.',
     donneesManquantes: [],
   };
 }
