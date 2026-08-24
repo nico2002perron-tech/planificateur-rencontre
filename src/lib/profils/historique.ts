@@ -253,6 +253,14 @@ function parserParPosition(rangees: string[][]): ResultatParsing {
 
 export type ResultatImport = {
   lues: number;
+  /**
+   * ⚠ LIGNES EXCLUES PARCE QUE LEUR STRUCTURE CONTREDIT LES EN-TÊTES — pas
+   * réparées, pas devinées. Distinct de `ignorees`, qui compte le décor
+   * ordinaire d'un export (totaux, séparateurs).
+   */
+  incoherentes: number;
+  /** Non nul quand le FORMAT est refusé : rien n'a été importé. */
+  rejet: RejetFormat | null;
   nouvelles: number;
   doublons: number;
   ignorees: number;
@@ -290,7 +298,7 @@ export async function importerCollage(params: {
   await fs.writeFile(cheminBrut, params.texte, 'utf8');
 
   // (b) LA FUSION DÉDOUBLONNÉE.
-  const { lignes, ignorees } = parserCollage(params.texte);
+  const { lignes, ignorees, incoherentes, rejet } = parserCollage(params.texte);
   const cheminLivre = path.join(dossier, 'transactions.json');
   let existantes: LigneTransaction[] = [];
   try {
@@ -318,6 +326,10 @@ export async function importerCollage(params: {
     nouvelles,
     doublons,
     ignorees,
+    // ⚠ REMONTÉS JUSQU'À L'ÉCRAN. Un diagnostic qui reste dans le moteur ne
+    // sert à personne : le planificateur lisait « 0 transaction » sans motif.
+    incoherentes,
+    rejet,
     totalApres: existantes.length,
     cheminBrut,
     comptes,

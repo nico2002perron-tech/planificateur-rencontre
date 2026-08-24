@@ -26,6 +26,7 @@ import {
   Wallet, ListChecks, UserPlus, Users, FileText, Download, Search, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { messageImport, type MessageImport } from '@/lib/profils/message-import';
 import { ouvrirPdf } from '@/lib/pdf/ouvrir-pdf';
 import type { Badge as BadgeProfil, CouleurBadge } from '@/lib/profils/badges';
 import type { PertesCapitalReportees } from '@/lib/profils/types';
@@ -208,6 +209,10 @@ export function EcranFiscal({ racine }: { racine: string }) {
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  // ⚠ TROIS NIVEAUX, PAS DEUX. Un fichier partiellement lu n'est ni un succès
+  // (des lignes ont été exclues) ni une erreur (le reste est importé). Sans ce
+  // troisième état, il fallait choisir entre taire l'exclusion et refuser tout.
+  const [avertissement, setAvertissement] = useState<MessageImport | null>(null);
   const [preset, setPreset] = useState<'instantane' | 'complet'>('complet');
 
   const courant = profils.find((p) => p.id === idCourant) ?? null;
@@ -272,9 +277,21 @@ export function EcranFiscal({ racine }: { racine: string }) {
       if (!res.ok) throw new Error(d.error ?? 'Import impossible');
       if (d.refus) { setErreur(d.refus); return; }
       if (quoi === 'transactions') {
+        // ⚠ LE DIAGNOSTIC DU PARSEUR ATTEINT ENFIN L'ÉCRAN. Il existait déjà
+        // côté moteur — colonnes requises absentes, lignes incohérentes — mais
+        // l'écran n'affichait que le compte de transactions ajoutées. Un
+        // fichier refusé se lisait donc « 0 transaction ».
+        const m = messageImport(d.resume);
         setIdCourant(d.profil.id);
+        if (m.niveau === 'erreur') {
+          // Le collage RESTE dans la zone : le planificateur doit pouvoir
+          // corriger son export sans avoir à le recoller.
+          setErreur([m.titre, ...m.details].join(' '));
+          return;
+        }
         setColleTx('');
-        setInfo(`${d.resume.nouvelles} transaction(s) ajoutée(s) au grand livre.`);
+        if (m.niveau === 'avertissement') setAvertissement(m);
+        else setInfo([m.titre + '.', ...m.details.slice(1)].join(' '));
       } else {
         setCollePos('');
         setInfo(`${d.comptes.length} compte(s) lus au relevé.`);
@@ -287,7 +304,7 @@ export function EcranFiscal({ racine }: { racine: string }) {
 
   async function genererRapport() {
     if (!courant?.nom) return;
-    setEnCours(true); setErreur(null); setInfo(null);
+    setEnCours(true); setErreur(null); setInfo(null); setAvertissement(null);
     try {
       const res = await fetch('/api/base-locale/rapport-fiscal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -417,6 +434,14 @@ export function EcranFiscal({ racine }: { racine: string }) {
 
       {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
       {info && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{info}</p>}
+      {avertissement && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="font-semibold">{avertissement.titre}</p>
+          {avertissement.details.map((d: string, i: number) => (
+            <p key={i} className="mt-0.5 text-amber-800">{d}</p>
+          ))}
+        </div>
+      )}
 
       {/* LE BANDEAU DU DÉTECTEUR — présent à toutes les étapes, parce que la
           prochaine action est toujours la même question : que manque-t-il ? */}
