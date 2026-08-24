@@ -45,6 +45,7 @@ import { Page, View, Text } from '@react-pdf/renderer';
 import { LogoSocieteFiscal } from './logo-societe-fiscal';
 import { PageFooterV12 } from './year-activity-pages';
 import { argent } from './rendu-constat';
+import type { LigneExecution } from '@/lib/profils/plan-execution';
 import {
   FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, STYLE_PAGE_FISCALE,
 } from './page-fiscale';
@@ -281,6 +282,117 @@ export function ValidationsAvantExecution({ validations, apparenceConfirme }: {
           <Text style={{ fontSize: 7.4, color: NEUTRE.encre }}>{v.libelle}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * LA LISTE DES TRANSACTIONS D'UN PLAN À PLUSIEURS TITRES.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⚠ UNE SEULE PRIMITIVE POUR LES DEUX STRATÉGIES. Les pertes et les gains
+ * racontent des histoires différentes, mais « voici les ordres à passer » est
+ * la même phrase des deux côtés : mêmes colonnes, même totalisation. Deux
+ * composants séparés auraient divergé au premier ajustement.
+ *
+ * ⚠ ET AUCUNE LIGNE N'EST PERDUE NI CHOISIE. Afficher `lignes[0]` comme si
+ * elle portait le plan entier réintroduirait exactement la divergence que le
+ * plan canonique vient de supprimer — la carte de synthèse disait un titre, la
+ * page détaillée en disait un autre.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export function ListeTransactions({
+  lignes, couleur, bord, libelleMontant, valeurVenteTotaleCad,
+  montantRealiseTotalCad, cibleCad, ecartCad,
+}: {
+  lignes: LigneExecution[];
+  couleur: string;
+  bord: string;
+  /** « de perte » ou « de gain » — le mot que le total porte. */
+  libelleMontant: string;
+  valeurVenteTotaleCad: number;
+  montantRealiseTotalCad: number;
+  cibleCad: number;
+  ecartCad: number;
+}) {
+  return (
+    <View>
+      {/* L'EN-TÊTE DU TABLEAU — sans lui, quatre nombres alignés ne disent pas
+          ce qu'ils sont. */}
+      <View style={{
+        flexDirection: 'row', paddingBottom: 3, marginBottom: 3,
+        borderBottomWidth: 0.8, borderBottomColor: bord, borderBottomStyle: 'solid',
+      }}>
+        <Text style={{ flex: 1.4, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris }}>
+          Titre
+        </Text>
+        <Text style={{ flex: 1.3, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris }}>
+          Quantité
+        </Text>
+        <Text style={{ flex: 1.2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris, textAlign: 'right' }}>
+          Vente estimée
+        </Text>
+        <Text style={{ flex: 1.2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris, textAlign: 'right' }}>
+          {libelleMontant}
+        </Text>
+      </View>
+
+      {lignes.map((l) => (
+        <View key={l.positionId} style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 3 }}>
+          <View style={{ flex: 1.4 }}>
+            <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: NEUTRE.encre }}>
+              {l.symbole}
+            </Text>
+            {l.description && (
+              <Text style={{ fontSize: 6.2, color: NEUTRE.gris }}>{l.description}</Text>
+            )}
+          </View>
+          <Text style={{ flex: 1.3, fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: couleur }}>
+            ≈ {l.quantiteAVendre.toLocaleString('fr-CA')} {l.uniteQuantite === 'part' ? 'parts' : 'actions'}
+          </Text>
+          <Text style={{ flex: 1.2, fontSize: 7.6, color: NEUTRE.encre, textAlign: 'right' }}>
+            {argent(l.valeurVenteEstimeeCad)}
+          </Text>
+          <Text style={{
+            flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 700,
+            color: couleur, textAlign: 'right',
+          }}>
+            {argent(l.montantRealiseEstimeCad)}
+          </Text>
+        </View>
+      ))}
+
+      {/* LE PIED — total, objectif, écart. Les trois se lisent ensemble. */}
+      <View style={{
+        marginTop: 4, paddingTop: 5,
+        borderTopWidth: 1, borderTopColor: bord, borderTopStyle: 'solid',
+      }}>
+        <View style={{ flexDirection: 'row', marginBottom: 2 }}>
+          <Text style={{ flex: 2.7, fontSize: 7.2, color: NEUTRE.gris }}>
+            Total — {lignes.length} transactions
+          </Text>
+          <Text style={{ flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre, textAlign: 'right' }}>
+            {argent(valeurVenteTotaleCad)}
+          </Text>
+          <Text style={{ flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 800, color: couleur, textAlign: 'right' }}>
+            {argent(montantRealiseTotalCad)}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row' }}>
+          <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
+            Objectif{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {argent(cibleCad)}
+            </Text>
+          </Text>
+          <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
+            Écart estimé{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {ecartCad > 0 ? '+' : ''}{argent(ecartCad)}
+            </Text>
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }

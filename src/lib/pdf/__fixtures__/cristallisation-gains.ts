@@ -8,9 +8,7 @@
 //
 // ⚠ LA SOCIÉTÉ EST FICTIVE. Aucun symbole réel, aucun nom réel.
 import type { Constat } from '@/lib/profils/strategies';
-import type {
-  MeilleurMonoGain, PropositionCristallisationGain,
-} from '@/lib/profils/quantite-a-vendre-gains';
+import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
 import {
   construirePresentationCristallisationGains,
 } from '../presentation-cristallisation-gains';
@@ -22,19 +20,47 @@ import {
  * 15 $ de capacité inutilisée. C'est exactement l'état que la page doit savoir
  * raconter sans le maquiller.
  */
-export function propositionGainFictive(
-  o: Partial<PropositionCristallisationGain> = {}
-): PropositionCristallisationGain {
+export function ligneGainFictive(
+  o: Partial<LigneExecution> = {}
+): LigneExecution {
   return {
     positionId: 'FICT-A|FICT', compteId: 'FICT-A', symbole: 'FICT',
     description: 'Compagnie Fictive Ltée', typeInstrument: 'Action',
     devise: 'CAD', uniteValeursRapport: 'CAD',
-    quantiteDetenue: 340, quantiteEstimeeAVendre: 141, uniteQuantite: 'unite',
-    gainLatentDisponibleCad: 28900, gainParUniteCad: 85, valeurParUniteCad: 140,
-    valeurVenteEstimeeCad: 19740, gainRealiseEstimeCad: 11985,
-    cibleGainCad: 12000, cibleLocaleCad: 12000, ecartCad: -15, cibleRestanteCad: 15,
-    capaciteCouvreCible: true, executionCouvreEntierementCible: false,
+    quantiteDetenue: 340, quantiteAVendre: 141, uniteQuantite: 'unite',
+    valeurVenteEstimeeCad: 19740, montantRealiseEstimeCad: 11985,
+    montantLatentDisponibleCad: 28900,
     dateValeurs: '2026-08-21', ...o,
+  };
+}
+
+const sou = (x: number) => Math.round(x * 100) / 100;
+
+/**
+ * ⚠ UN PLAN LITTÉRAL, PAS UNE SORTIE DU MOTEUR. Le moteur a sa propre batterie ;
+ * ici on veut les chiffres STABLES qui ont été inspectés sur PDF réel, pour que
+ * les assertions visuelles restent comparables d'un lot à l'autre.
+ */
+export function planGainFictif(
+  o: Partial<PlanExecution> & { lignes?: LigneExecution[] } = {}
+): PlanExecution {
+  const lignes = o.lignes ?? [ligneGainFictive()];
+  const realise = sou(lignes.reduce((s, l) => s + l.montantRealiseEstimeCad, 0));
+  const cible = o.cibleCad ?? 12000;
+  return {
+    sens: 'gain',
+    valeurVenteTotaleCad: sou(lignes.reduce((s, l) => s + l.valeurVenteEstimeeCad, 0)),
+    montantRealiseTotalCad: realise,
+    ecartCad: sou(realise - cible),
+    cibleRestanteCad: sou(Math.max(0, cible - realise)),
+    capaciteCouvreCible: true,
+    executionCouvreEntierementCible: realise >= cible,
+    monoTitre: lignes.length === 1,
+    // ⚠ TOUJOURS `null` CÔTÉ GAINS : cristalliser un gain n'absorbe aucun gain
+    // net. Voir `pertinentPourLeSens` dans le plan canonique.
+    gainNetApresCad: null,
+    rechercheTronquee: false, refus: [], ...o,
+    cibleCad: cible, lignes,
   };
 }
 
@@ -50,12 +76,9 @@ export function constatGainFictif(o: Partial<Constat> = {}): Constat {
   } as Constat;
 }
 
-export function monoGainFictif(o?: Partial<PropositionCristallisationGain>): MeilleurMonoGain {
-  return {
-    proposition: propositionGainFictive(o), aucunePositionNeCouvreSeule: false,
-    propositions: [propositionGainFictive(o)], refus: [],
-  };
-}
+/** Raccourci : un plan à un seul titre, éventuellement ajusté. */
+export const monoGainFictif = (o?: Partial<LigneExecution>): PlanExecution =>
+  planGainFictif({ lignes: [ligneGainFictive(o)] });
 
 /** Le cas nominal : un seul titre porte la cible, à 15 $ près. */
 export const PRESENTATION_GAINS_CALCULEE = construirePresentationCristallisationGains(
@@ -81,4 +104,33 @@ export const PRESENTATION_GAINS_DEGRADEE = construirePresentationCristallisation
 /** Le même cas nominal, sur un titre négocié en USD dont les montants sont en CAD. */
 export const PRESENTATION_GAINS_USD = construirePresentationCristallisationGains(
   constatGainFictif(), monoGainFictif({ devise: 'USD', uniteValeursRapport: 'CAD' })
+);
+
+/**
+ * LE CAS MULTI — deux transactions pour une seule cible.
+ *
+ * ⚠ LE CAS COURANT, PAS L'EXCEPTION. Sur le dossier de référence, la cible de
+ * 12 000 $ dépasse de 15 $ le plus gros gain latent d'un seul titre : il en
+ * faut deux. La fixture existe pour que les batteries voient réellement passer
+ * `lignes.length > 1` de bout en bout, sans qu'aucune ligne se perde.
+ */
+export const PRESENTATION_GAINS_MULTI = construirePresentationCristallisationGains(
+  constatGainFictif({ montantEstime: 20000 }),
+  planGainFictif({
+    cibleCad: 20000,
+    monoTitre: false,
+    lignes: [
+      ligneGainFictive({
+        symbole: 'FICT', description: 'Compagnie Fictive Ltée',
+        quantiteAVendre: 141, valeurVenteEstimeeCad: 19740,
+        montantRealiseEstimeCad: 11985, montantLatentDisponibleCad: 11985,
+      }),
+      ligneGainFictive({
+        positionId: 'FICT-A|SECO', symbole: 'SECO', description: 'Seconde Fictive Ltée',
+        quantiteDetenue: 400, quantiteAVendre: 292,
+        valeurVenteEstimeeCad: 32120, montantRealiseEstimeCad: 8030,
+        montantLatentDisponibleCad: 11000,
+      }),
+    ],
+  })
 );

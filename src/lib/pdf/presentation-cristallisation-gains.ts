@@ -14,9 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { Constat } from '@/lib/profils/strategies';
 import type { StatutConstat } from '@/lib/profils/types';
-import type {
-  MeilleurMonoGain, PropositionCristallisationGain,
-} from '@/lib/profils/quantite-a-vendre-gains';
+import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
 import type { ValidationAvantExecution } from './langage-fiscal';
 // ⚠ LE FORMATEUR VIENT DE `rendu-constat`, QUI IGNORE LE MOTEUR DE RENDU.
 // L'adaptateur compose des phrases ; il ne doit pas dépendre du PDF.
@@ -35,16 +33,26 @@ export const TITRE_PRESENTATION = 'Cristallisation de gains';
 export const SOUS_TITRE_PRESENTATION =
   'Réaliser des gains en utilisant vos pertes fiscales disponibles';
 
+/** La ligne du plan, telle quelle — aucun type miroir dans la présentation. */
+export type { LigneExecution };
+
+/**
+ * L'ACTION — même contrat que côté pertes, même union discriminée.
+ *
+ * ⚠ SOUS `a-confirmer`, AUCUNE LIGNE N'EXISTE. C'est ce qui rend impossible
+ * d'afficher une quantité ferme sur un statut dégradé, multi compris.
+ */
 export type ActionGainPresentee =
   | {
       type: 'ferme';
-      quantiteEstimeeAVendre: number;
-      uniteQuantite: 'unite' | 'part';
-      gainRealiseEstimeCad: number;
-      valeurVenteEstimeeCad: number;
+      /** Une ligne = un ordre exécutable. Jamais un montant théorique. */
+      lignes: LigneExecution[];
+      valeurVenteTotaleCad: number;
+      montantRealiseTotalCad: number;
       cibleGainCad: number;
       ecartCad: number;
-      /** La capacité du titre suffit-elle, indépendamment de l'arrondi ? */
+      cibleRestanteCad: number;
+      /** La capacité DISPONIBLE suffit-elle, indépendamment de l'arrondi ? */
       capaciteCouvreCible: boolean;
       executionCouvreEntierementCible: boolean;
       dateValeurs: string | null;
@@ -87,23 +95,40 @@ export type PresentationCristallisationGains = {
 
 export function construirePresentationCristallisationGains(
   constat: Constat,
-  mono: MeilleurMonoGain | null
+  /** LE PLAN CANONIQUE — la seule source de « combien vendre ». */
+  plan: PlanExecution | null
 ): PresentationCristallisationGains {
-  const retenue: PropositionCristallisationGain | null = mono?.proposition ?? null;
-  const ferme = constat.statut === 'calcule' && retenue !== null;
+  const ferme = constat.statut === 'calcule' && plan !== null && plan.lignes.length > 0;
+  // ⚠ « MONO » VIENT DU PLAN, pas d'un comptage refait ici.
+  const monoTitre = ferme && plan!.monoTitre && plan!.lignes.length === 1;
+  /**
+   * ⚠ `seule` NE DÉPEND PAS DU STATUT, ET C'EST UN TEST QUI L'A ÉTABLI.
+   *
+   * L'avoir liée à `ferme` faisait disparaître le CONTEXTE du titre sous un
+   * statut dégradé — symbole, devise, perte latente — alors que seule la
+   * QUANTITÉ doit être retenue. La page dégradée cessait de dire
+   * « Négociation : USD », et V12 l'a vu.
+   *
+   * Ce que le statut interdit, c'est l'action ferme ; ce que le multi interdit,
+   * c'est de nommer un titre qui n'a pas été choisi. Deux questions distinctes.
+   */
+  const planMonoTitre = plan !== null && plan.monoTitre && plan.lignes.length === 1;
+  const seule: LigneExecution | null = planMonoTitre ? plan!.lignes[0] : null;
 
   const action: ActionGainPresentee = ferme
     ? {
         type: 'ferme',
-        quantiteEstimeeAVendre: retenue!.quantiteEstimeeAVendre,
-        uniteQuantite: retenue!.uniteQuantite,
-        gainRealiseEstimeCad: retenue!.gainRealiseEstimeCad,
-        valeurVenteEstimeeCad: retenue!.valeurVenteEstimeeCad,
-        cibleGainCad: retenue!.cibleGainCad,
-        ecartCad: retenue!.ecartCad,
-        capaciteCouvreCible: retenue!.capaciteCouvreCible,
-        executionCouvreEntierementCible: retenue!.executionCouvreEntierementCible,
-        dateValeurs: retenue!.dateValeurs,
+        // ⚠ LES LIGNES DU PLAN, TELLES QUELLES. L'adaptateur organise, il ne
+        // décide pas — aucun tri, aucun filtre, aucune sélection de titre.
+        lignes: plan!.lignes,
+        valeurVenteTotaleCad: plan!.valeurVenteTotaleCad,
+        montantRealiseTotalCad: plan!.montantRealiseTotalCad,
+        cibleGainCad: plan!.cibleCad,
+        ecartCad: plan!.ecartCad,
+        cibleRestanteCad: plan!.cibleRestanteCad,
+        capaciteCouvreCible: plan!.capaciteCouvreCible,
+        executionCouvreEntierementCible: plan!.executionCouvreEntierementCible,
+        dateValeurs: plan!.lignes[0]?.dateValeurs ?? null,
       }
     : { type: 'a-confirmer', raisons: [...constat.donneesManquantes] };
 
@@ -111,10 +136,13 @@ export function construirePresentationCristallisationGains(
   // `capaciteCouvreCible && !executionCouvreEntierementCible` est un état
   // parfaitement normal avec des titres entiers, mais illisible tel quel. On le
   // dit en français plutôt que de laisser deux booléens au composant.
+  // ⚠ ELLE DIT « CE TITRE » : elle n'a donc de sens qu'en MONO. Sur un plan à
+  // plusieurs transactions, la phrase désignerait un titre qui n'a pas été
+  // choisi — un test la verrouille à `null`.
   const precisionGranularite =
-    ferme && retenue!.capaciteCouvreCible && !retenue!.executionCouvreEntierementCible
+    ferme && monoTitre && plan!.capaciteCouvreCible && !plan!.executionCouvreEntierementCible
       ? `Ce titre possède assez de gain latent pour porter la cible. La quantité `
-        + `entière la plus proche laisse ${argent(retenue!.cibleRestanteCad)} de capacité inutilisée.`
+        + `entière la plus proche laisse ${argent(plan!.cibleRestanteCad)} de capacité inutilisée.`
       : null;
 
   return {
@@ -139,26 +167,29 @@ export function construirePresentationCristallisationGains(
     },
 
     etape3: {
-      symbole: retenue?.symbole ?? null,
-      description: retenue?.description ?? null,
-      deviseNegociation: retenue?.devise ?? null,
-      uniteValeursRapport: retenue?.uniteValeursRapport ?? null,
+      // ⚠ NULL SUR UN PLAN MULTI : nommer un titre « principal » fabriquerait
+      // une sélection qui n'existe pas.
+      symbole: seule?.symbole ?? null,
+      description: seule?.description ?? null,
+      deviseNegociation: seule?.devise ?? null,
+      uniteValeursRapport: seule?.uniteValeursRapport ?? null,
       action,
       precisionGranularite,
     },
 
     etape4: {
-      gainRealiseEstimeCad: ferme ? retenue!.gainRealiseEstimeCad : null,
+      // Le TOTAL du plan — jamais la première ligne seule.
+      gainRealiseEstimeCad: ferme ? plan!.montantRealiseTotalCad : null,
       pertesDisponiblesCad: ferme ? (constat.pertesDisponiblesCad ?? null) : null,
-      cibleRestanteCad: ferme ? retenue!.cibleRestanteCad : null,
+      cibleRestanteCad: ferme ? plan!.cibleRestanteCad : null,
     },
 
     // « Capacité encore disponible » dit exactement ce que `cibleRestanteCad`
     // signifie ici : la part de la cible qu'aucune quantité entière n'atteint.
     etape5: {
       pertesDisponiblesCad: constat.pertesDisponiblesCad ?? null,
-      gainRealiseEstimeCad: ferme ? retenue!.gainRealiseEstimeCad : null,
-      capaciteEncoreDisponibleCad: ferme ? retenue!.cibleRestanteCad : null,
+      gainRealiseEstimeCad: ferme ? plan!.montantRealiseTotalCad : null,
+      capaciteEncoreDisponibleCad: ferme ? plan!.cibleRestanteCad : null,
       texte: ferme
         ? 'Le gain réalisé viendrait être absorbé par les pertes fiscales déjà disponibles.'
         : 'L’effet fiscal sera chiffré une fois les données du dossier confirmées.',

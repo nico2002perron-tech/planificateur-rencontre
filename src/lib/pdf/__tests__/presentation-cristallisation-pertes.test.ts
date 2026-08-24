@@ -11,9 +11,7 @@ import {
   construirePresentationCristallisationPertes, avecDescription,
 } from '../presentation-cristallisation-pertes';
 import type { Constat } from '@/lib/profils/strategies';
-import type {
-  MeilleurMono, PropositionCristallisationPosition,
-} from '@/lib/profils/quantite-a-vendre';
+import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
 
 function constat(p: Partial<Constat> = {}): Constat {
   return {
@@ -25,26 +23,43 @@ function constat(p: Partial<Constat> = {}): Constat {
   } as Constat;
 }
 
-function proposition(p: Partial<PropositionCristallisationPosition> = {}): PropositionCristallisationPosition {
+function ligne(p: Partial<LigneExecution> = {}): LigneExecution {
   return {
     positionId: 'FICT-A|XYZ', compteId: 'FICT-A', symbole: 'XYZ',
-    typeInstrument: 'Action', devise: 'CAD', uniteValeursRapport: 'CAD',
-    quantiteDetenue: 203, quantiteEstimeeAVendre: 118, uniteQuantite: 'unite',
-    perteLatenteDisponibleCad: 15537.41, perteParUniteCad: 76.539, valeurParUniteCad: 41.51,
-    valeurVenteEstimeeCad: 4898.18, perteRealiseeEstimeeCad: 9031.6,
-    cibleGlobaleCad: 8997.81, cibleLocaleCad: 8997.81,
-    ecartCad: 33.79, cibleRestanteCad: 0, gainNetApresCad: 0,
-    capaciteCouvreCible: true, executionCouvreEntierementCible: true,
+    description: null, typeInstrument: 'Action', devise: 'CAD',
+    uniteValeursRapport: 'CAD',
+    quantiteDetenue: 203, quantiteAVendre: 118, uniteQuantite: 'unite',
+    valeurVenteEstimeeCad: 4898.18, montantRealiseEstimeCad: 9031.6,
+    montantLatentDisponibleCad: 15537.41,
     dateValeurs: '2026-08-21', ...p,
   };
 }
 
-const mono = (p?: Partial<PropositionCristallisationPosition>): MeilleurMono => ({
-  proposition: proposition(p), aucunePositionNeCouvreSeule: false,
-  propositions: [proposition(p)], refus: [],
+/**
+ * ⚠ UN PLAN LITTÉRAL, pour que le test A8 garde tout son sens : il injecte des
+ * valeurs volontairement INCOHÉRENTES et exige qu'elles ressortent telles
+ * quelles. Un plan calculé par le moteur les « corrigerait » avant l'adaptateur,
+ * et le test ne prouverait plus rien.
+ */
+const mono = (p?: Partial<LigneExecution>, o: Partial<PlanExecution> = {}): PlanExecution => ({
+  sens: 'perte', cibleCad: 8997.81, lignes: [ligne(p)],
+  valeurVenteTotaleCad: 4898.18, montantRealiseTotalCad: 9031.6,
+  ecartCad: 33.79, cibleRestanteCad: 0,
+  capaciteCouvreCible: true, executionCouvreEntierementCible: true,
+  monoTitre: true, gainNetApresCad: 0, rechercheTronquee: false, refus: [], ...o,
 });
 
-const construire = (c = constat(), m: MeilleurMono | null = mono(), g: number | null = 8997.81) =>
+/** L'action FERME, avec la garantie qu'il n'y a qu'une ligne à lire. */
+function seule(p: ReturnType<typeof construire>): LigneExecution {
+  const a = p.etape3.action;
+  if (a.type !== 'ferme') throw new Error('action non ferme');
+  // ⚠ ON VÉRIFIE LE COMPTE AVANT DE LIRE `lignes[0]`. Sans ça, un plan multi
+  // passerait pour un mono et le test lirait une ligne pour le tout.
+  expect(a.lignes).toHaveLength(1);
+  return a.lignes[0];
+}
+
+const construire = (c = constat(), m: PlanExecution | null = mono(), g: number | null = 8997.81) =>
   construirePresentationCristallisationPertes(c, m, g);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -54,13 +69,14 @@ const construire = (c = constat(), m: MeilleurMono | null = mono(), g: number | 
 describe('A1 · statut calculé', () => {
   it('rend une action FERME, avec les chiffres du moteur', () => {
     const p = construire();
-    expect(p.etape3.action.type).toBe('ferme');
-    if (p.etape3.action.type !== 'ferme') throw new Error('action non ferme');
-    expect(p.etape3.action.quantiteEstimeeAVendre).toBe(118);
-    expect(p.etape3.action.uniteQuantite).toBe('unite');
-    expect(p.etape3.action.valeurVenteEstimeeCad).toBe(4898.18);
-    expect(p.etape3.action.perteRealiseeEstimeeCad).toBe(9031.6);
-    expect(p.etape3.action.dateValeurs).toBe('2026-08-21');
+    const p2 = construire();
+    expect(p2.etape3.action.type).toBe('ferme');
+    const l = seule(p2);
+    expect(l.quantiteAVendre).toBe(118);
+    expect(l.uniteQuantite).toBe('unite');
+    expect(l.valeurVenteEstimeeCad).toBe(4898.18);
+    expect(l.montantRealiseEstimeCad).toBe(9031.6);
+    expect(l.dateValeurs).toBe('2026-08-21');
   });
 
   it('les trois barres du graphique sont disponibles', () => {
@@ -93,7 +109,10 @@ describe('A2 · aucune action ferme hors de `calcule`', () => {
       const p = construire(constat({ statut, montantEstime: null,
         donneesManquantes: ['la liste des positions détenues ailleurs'] }), mono());
       expect(p.etape3.action.type, statut).toBe('a-confirmer');
+      // ⚠ AUCUNE LIGNE N'EXISTE sous `a-confirmer` : le TYPE l'interdit, il n'y
+      // a littéralement rien à masquer par mégarde.
       expect(JSON.stringify(p.etape3)).not.toMatch(/118/);
+      expect(JSON.stringify(p.etape3)).not.toMatch(/lignes/);
       if (p.etape3.action.type === 'a-confirmer') {
         expect(p.etape3.action.raisons).toContain('la liste des positions détenues ailleurs');
       }
@@ -106,8 +125,7 @@ describe('A2 · aucune action ferme hors de `calcule`', () => {
   }
 
   it('aucune position retenue : personne n’est nommé', () => {
-    const p = construire(constat({ statut: 'montant-a-confirmer', montantEstime: null }),
-      { proposition: null, aucunePositionNeCouvreSeule: true, propositions: [], refus: [] });
+    const p = construire(constat({ statut: 'montant-a-confirmer', montantEstime: null }), null);
     expect(p.etape1.symbole).toBeNull();
     expect(p.etape2.symbole).toBeNull();
     expect(p.etape2.raisonSelection).toBeNull();
@@ -120,7 +138,7 @@ describe('A2 · aucune action ferme hors de `calcule`', () => {
 
 describe('A3 · un après inconnu ne devient jamais zéro', () => {
   it('aucun 0 inventé, aucun texte « environ 0 $ », graphique non affichable', () => {
-    const p = construire(constat(), mono({ gainNetApresCad: null }));
+    const p = construire(constat(), mono(undefined, { gainNetApresCad: null }));
     expect(p.etape4.gainNetApresCad).toBeNull();
     expect(p.etape4.apresAffichable).toBe(false);
     expect(p.etape5.gainNetApresCad).toBeNull();
@@ -194,8 +212,8 @@ describe('A8 · des valeurs incohérentes ressortent telles quelles', () => {
     // pas 15 000, et l'écart n'est pas 0. Un adaptateur qui recalculerait —
     // « juste ce petit écart » — deviendrait en trois lots un second moteur
     // fiscal, avec ses propres arrondis et aucun garde-fou. Il doit recopier.
-    const p = construire(constat(), mono({
-      gainNetApresCad: 15000, ecartCad: 0, perteRealiseeEstimeeCad: 9031.6,
+    const p = construire(constat(), mono(undefined, {
+      gainNetApresCad: 15000, ecartCad: 0, montantRealiseTotalCad: 9031.6,
     }), 20000);
 
     expect(p.etape4.gainNetAvantCad).toBe(20000);
@@ -209,7 +227,7 @@ describe('A8 · des valeurs incohérentes ressortent telles quelles', () => {
     // `montantEstime` est la grandeur métier. Si l'adaptateur faisait
     // `20 000 − 15 000`, il rendrait 5 000 au lieu de 8 997,81.
     const p = construire(constat({ montantEstime: 8997.81 }),
-      mono({ gainNetApresCad: 15000 }), 20000);
+      mono(undefined, { gainNetApresCad: 15000 }), 20000);
     expect(p.etape5.reductionGainCapitalNetCad).toBe(8997.81);
   });
 });
@@ -226,5 +244,90 @@ describe('validations · « confirmé » exige une donnée affirmative', () => {
     expect(v.length).toBeLessThanOrEqual(3);
     expect(v.every((x) => x.statut === 'a-confirmer')).toBe(true);
     expect(v.map((x) => x.libelle).join(' ')).toMatch(/perte apparente/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A9 — LE PLAN MULTI TRAVERSE L'ADAPTATEUR SANS PERDRE UNE LIGNE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('A9 · un plan à plusieurs titres arrive entier', () => {
+  const planMulti = (): PlanExecution => ({
+    ...mono(),
+    cibleCad: 12000, monoTitre: false,
+    lignes: [
+      ligne({ symbole: 'AAA', quantiteDetenue: 310, quantiteAVendre: 310,
+        valeurVenteEstimeeCad: 12400, montantRealiseEstimeCad: 8600,
+        montantLatentDisponibleCad: 8600 }),
+      ligne({ positionId: 'FICT-A|BBB', symbole: 'BBB', quantiteDetenue: 163,
+        quantiteAVendre: 176, valeurVenteEstimeeCad: 8798.53,
+        montantRealiseEstimeCad: 3401.23, montantLatentDisponibleCad: 3150 }),
+    ],
+    valeurVenteTotaleCad: 21198.53, montantRealiseTotalCad: 12001.23,
+    ecartCad: 1.23, cibleRestanteCad: 0, gainNetApresCad: 0,
+  });
+
+  it('les DEUX lignes sont là, dans l’ordre du plan', () => {
+    const p = construire(constat({ montantEstime: 12000 }), planMulti(), 12000);
+    const a = p.etape3.action;
+    expect(a.type).toBe('ferme');
+    if (a.type !== 'ferme') throw new Error('non ferme');
+    expect(a.lignes).toHaveLength(2);
+    expect(a.lignes.map((l) => l.symbole)).toEqual(['AAA', 'BBB']);
+    expect(a.lignes.map((l) => l.quantiteAVendre)).toEqual([310, 176]);
+  });
+
+  it('les totaux viennent du PLAN, jamais de la première ligne', () => {
+    const p = construire(constat({ montantEstime: 12000 }), planMulti(), 12000);
+    const a = p.etape3.action;
+    if (a.type !== 'ferme') throw new Error('non ferme');
+    expect(a.montantRealiseTotalCad).toBe(12001.23);
+    expect(a.montantRealiseTotalCad).not.toBe(a.lignes[0].montantRealiseEstimeCad);
+    expect(p.etape4.perteRealiseeEstimeeCad).toBe(12001.23);
+  });
+
+  it('AUCUN titre n’est nommé en multi, et la raison de sélection se tait', () => {
+    // ⚠ « cette position suffit à elle seule » serait FAUX sur deux
+    // transactions — et nommer un titre fabriquerait une sélection.
+    const p = construire(constat({ montantEstime: 12000 }), planMulti(), 12000);
+    expect(p.etape1.symbole).toBeNull();
+    expect(p.etape1.perteLatenteDisponibleCad).toBeNull();
+    expect(p.etape2.symbole).toBeNull();
+    expect(p.etape2.couvreSeuleLaCible).toBe(false);
+    expect(p.etape2.raisonSelection).toBeNull();
+    // Et en mono, elle est bien là — sinon la garde serait creuse.
+    expect(construire().etape2.raisonSelection).toMatch(/une seule transaction/);
+  });
+
+  it('`gainNetApresCad` est LU sur le plan, jamais recalculé', () => {
+    // Le plan dit 0 ; un adaptateur qui calculerait `max(0, 12000 − 12001,23)`
+    // trouverait 0 lui aussi. On force donc une valeur que le calcul NE
+    // donnerait PAS, et on exige qu'elle ressorte telle quelle.
+    const p = construire(constat({ montantEstime: 12000 }),
+      { ...planMulti(), gainNetApresCad: 4242 }, 12000);
+    expect(p.etape4.gainNetApresCad).toBe(4242);
+    expect(p.etape5.gainNetApresCad).toBe(4242);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A10 — L'ÉTAPE 1 TRANSPORTE, ELLE NE RETOUCHE PAS
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('A10 · les valeurs de la ligne ressortent telles quelles', () => {
+  it('aucune retouche entre la ligne du plan et l’étape 1', () => {
+    // ⚠ SABOTAGE QUI RESTAIT VERT : multiplier `montantLatentDisponibleCad`
+    // par 1,1 dans l'adaptateur ne faisait rougir personne. Un adaptateur qui
+    // « ajuste » un chiffre devient un second moteur, et c'est exactement la
+    // dérive que le test A8 surveille sur les autres champs.
+    const l = ligne({ montantLatentDisponibleCad: 15537.41, devise: 'CAD' });
+    const pr = construire(constat(), mono({
+      montantLatentDisponibleCad: 15537.41, devise: 'CAD',
+    }));
+    expect(pr.etape1.perteLatenteDisponibleCad).toBe(l.montantLatentDisponibleCad);
+    expect(pr.etape1.symbole).toBe(l.symbole);
+    expect(pr.etape1.compte).toBe(l.compteId);
+    expect(pr.etape1.deviseNegociation).toBe(l.devise);
+    expect(pr.etape1.uniteValeursRapport).toBe(l.uniteValeursRapport);
   });
 });

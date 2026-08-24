@@ -19,9 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { Constat } from '@/lib/profils/strategies';
 import type { StatutConstat } from '@/lib/profils/types';
-import type {
-  PropositionCristallisationPosition, MeilleurMono,
-} from '@/lib/profils/quantite-a-vendre';
+import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
 
 // ⚠ LE TYPE VIT DÉSORMAIS DANS `langage-fiscal`, à côté du composant qui le
 // consomme. Réexporté ici pour les appelants existants — et surtout pour que
@@ -29,22 +27,34 @@ import type {
 export type { ValidationAvantExecution } from './langage-fiscal';
 import type { ValidationAvantExecution } from './langage-fiscal';
 
+/** La ligne du plan, telle quelle — aucun type miroir dans la présentation. */
+export type { LigneExecution };
+
 /**
  * L'ACTION — union discriminée, et c'est délibéré (§6).
  *
  * Sous un statut dégradé, la variante `a-confirmer` n'a AUCUN champ de
- * quantité. Le composant ne peut donc pas « oublier » de la masquer : elle
- * n'existe pas. C'est la sécurité posée avant le JSX plutôt qu'à l'intérieur.
+ * quantité ni aucune ligne. Le composant ne peut donc pas « oublier » de la
+ * masquer : elle n'existe pas. C'est la sécurité posée avant le JSX plutôt
+ * qu'à l'intérieur — et elle vaut aussi pour la forme multi.
+ *
+ * ⚠ LE SINGULIER ÉTAIT UNE HYPOTHÈSE, PAS UNE PROPRIÉTÉ DU PROBLÈME. La mesure
+ * l'a montré : dès que la cible dépasse la plus grosse perte latente d'un
+ * titre, il en faut deux — et c'est le cas courant. L'adaptateur devait alors
+ * choisir un titre, donc DÉCIDER, ce qui n'est pas son rôle.
  */
 export type ActionPresentee =
   | {
       type: 'ferme';
-      quantiteEstimeeAVendre: number;
-      uniteQuantite: 'unite' | 'part';
-      valeurVenteEstimeeCad: number;
-      perteRealiseeEstimeeCad: number;
+      /** Une ligne = un ordre exécutable. Jamais un montant théorique. */
+      lignes: LigneExecution[];
+      valeurVenteTotaleCad: number;
+      montantRealiseTotalCad: number;
       cibleGlobaleCad: number;
       ecartCad: number;
+      cibleRestanteCad: number;
+      capaciteCouvreCible: boolean;
+      executionCouvreEntierementCible: boolean;
       dateValeurs: string | null;
     }
   | { type: 'a-confirmer'; raisons: string[] };
@@ -91,35 +101,55 @@ const VIDE = {
 
 export function construirePresentationCristallisationPertes(
   constat: Constat,
-  mono: MeilleurMono | null,
+  /** LE PLAN CANONIQUE — la seule source de « combien vendre ». */
+  plan: PlanExecution | null,
   /** Le gain net AVANT, quand la stratégie le connaît. Jamais déduit ici. */
   gainNetAvantCad: number | null = null
 ): PresentationCristallisationPertes {
-  const retenue: PropositionCristallisationPosition | null = mono?.proposition ?? null;
-  const ferme = constat.statut === 'calcule' && retenue !== null;
+  const ferme = constat.statut === 'calcule' && plan !== null && plan.lignes.length > 0;
+  // ⚠ « MONO » VIENT DU PLAN, pas d'un comptage refait ici. Le plan sait s'il a
+  // trouvé un titre suffisant ; l'adaptateur ne le redécide pas.
+  const monoTitre = ferme && plan!.monoTitre && plan!.lignes.length === 1;
+  /**
+   * ⚠ `seule` NE DÉPEND PAS DU STATUT, ET C'EST UN TEST QUI L'A ÉTABLI.
+   *
+   * L'avoir liée à `ferme` faisait disparaître le CONTEXTE du titre sous un
+   * statut dégradé — symbole, devise, perte latente — alors que seule la
+   * QUANTITÉ doit être retenue. La page dégradée cessait de dire
+   * « Négociation : USD », et V12 l'a vu.
+   *
+   * Ce que le statut interdit, c'est l'action ferme ; ce que le multi interdit,
+   * c'est de nommer un titre qui n'a pas été choisi. Deux questions distinctes.
+   */
+  const planMonoTitre = plan !== null && plan.monoTitre && plan.lignes.length === 1;
+  const seule: LigneExecution | null = planMonoTitre ? plan!.lignes[0] : null;
 
   // ── ÉTAPE 1 — les faits, pas un roman ────────────────────────────────────
   // Quand aucune position n'est retenue, on ne nomme personne : présenter un
   // titre « au cas où » laisserait croire qu'il a été choisi.
-  const etape1 = retenue === null ? { ...VIDE, gainNetAvantCad } : {
-    symbole: retenue.symbole,
-    description: null as string | null,      // rempli par l'appelant (voir plus bas)
+  // ⚠ ET SUR UN PLAN À PLUSIEURS TITRES, CES CHAMPS N'EN ONT PAS DAVANTAGE.
+  // Nommer un titre « principal » ou sommer les pertes latentes fabriquerait
+  // une sélection qui n'existe pas. Ils valent `null` — `EnTeteSociete`
+  // dégrade déjà proprement, et la carte garde ses chiffres.
+  const etape1 = seule === null ? { ...VIDE, gainNetAvantCad } : {
+    symbole: seule.symbole,
+    description: seule.description,
     gainNetAvantCad,
-    perteLatenteDisponibleCad: retenue.perteLatenteDisponibleCad,
-    compte: retenue.compteId,
-    deviseNegociation: retenue.devise,
-    uniteValeursRapport: retenue.uniteValeursRapport,
+    perteLatenteDisponibleCad: seule.montantLatentDisponibleCad,
+    compte: seule.compteId,
+    deviseNegociation: seule.devise,
+    uniteValeursRapport: seule.uniteValeursRapport,
   };
 
   // ── ÉTAPE 2 — une raison FISCALE, et seulement si elle est démontrée ─────
   // ⚠ Aucun jugement d'investissement : ni « meilleur titre », ni
   // « perspectives », ni « à vendre ». Le moteur démontre une seule chose —
   // que cette position suffit à elle seule — et c'est tout ce qu'on dit.
-  const couvreSeule = mono === null ? null : !mono.aucunePositionNeCouvreSeule;
+  const couvreSeule = plan === null ? null : plan.monoTitre;
   const etape2 = {
-    symbole: retenue?.symbole ?? null,
+    symbole: seule?.symbole ?? null,
     couvreSeuleLaCible: couvreSeule,
-    raisonSelection: ferme && couvreSeule === true
+    raisonSelection: ferme && monoTitre
       ? 'Cette position est retenue parce que sa perte latente permet d’atteindre '
         + 'l’objectif avec une seule transaction.'
       : null,
@@ -129,25 +159,32 @@ export function construirePresentationCristallisationPertes(
   const action: ActionPresentee = ferme
     ? {
         type: 'ferme',
-        quantiteEstimeeAVendre: retenue!.quantiteEstimeeAVendre,
-        uniteQuantite: retenue!.uniteQuantite,
-        valeurVenteEstimeeCad: retenue!.valeurVenteEstimeeCad,
-        perteRealiseeEstimeeCad: retenue!.perteRealiseeEstimeeCad,
-        cibleGlobaleCad: retenue!.cibleGlobaleCad,
-        ecartCad: retenue!.ecartCad,
-        dateValeurs: retenue!.dateValeurs,
+        // ⚠ LES LIGNES DU PLAN, TELLES QUELLES. Aucun tri, aucun filtre, aucune
+        // sélection : l'adaptateur organise, il ne décide pas.
+        lignes: plan!.lignes,
+        valeurVenteTotaleCad: plan!.valeurVenteTotaleCad,
+        montantRealiseTotalCad: plan!.montantRealiseTotalCad,
+        cibleGlobaleCad: plan!.cibleCad,
+        ecartCad: plan!.ecartCad,
+        cibleRestanteCad: plan!.cibleRestanteCad,
+        capaciteCouvreCible: plan!.capaciteCouvreCible,
+        executionCouvreEntierementCible: plan!.executionCouvreEntierementCible,
+        dateValeurs: plan!.lignes[0]?.dateValeurs ?? null,
       }
     : { type: 'a-confirmer', raisons: [...constat.donneesManquantes] };
 
   // ── ÉTAPE 4 — les trois barres, reprises telles quelles ──────────────────
   // ⚠ AUCUN `avant − perte` ICI. `gainNetApresCad` vient du moteur ou vaut
   // `null`, et `apresAffichable` dispense le document de trancher.
-  const gainNetApresCad = ferme ? (retenue!.gainNetApresCad ?? null) : null;
+  // ⚠ LU SUR LE PLAN, JAMAIS RECALCULÉ. `max(0, avant − total)` écrit dans la
+  // couche document serait une règle fiscale, donc une seconde source de vérité.
+  const gainNetApresCad = ferme ? plan!.gainNetApresCad : null;
   const etape4 = {
     gainNetAvantCad,
-    perteRealiseeEstimeeCad: ferme ? retenue!.perteRealiseeEstimeeCad : null,
+    // Le TOTAL du plan — la première ligne seule mentirait sur un plan multi.
+    perteRealiseeEstimeeCad: ferme ? plan!.montantRealiseTotalCad : null,
     gainNetApresCad,
-    ecartCad: ferme ? retenue!.ecartCad : null,
+    ecartCad: ferme ? plan!.ecartCad : null,
     apresAffichable: gainNetApresCad !== null,
   };
 

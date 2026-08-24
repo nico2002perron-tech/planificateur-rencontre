@@ -20,7 +20,7 @@ import { mentionDate } from './rendu-constat';
 import {
   argent, Etape, Carte, Manque, LigneChiffree, EnTeteSociete, CarteChiffre,
   ValidationsAvantExecution as BlocValidations, PageStrategieFiscale,
-  NEUTRE, type EnteteStrategie,
+  ListeTransactions, NEUTRE, type EnteteStrategie,
 } from './langage-fiscal';
 import type { PresentationCristallisationPertes } from './presentation-cristallisation-pertes';
 
@@ -71,7 +71,10 @@ export function CarteAction({ p, logos }: {
       </Carte>
     );
   }
-  const unite = a.uniteQuantite === 'part' ? 'parts' : 'actions';
+  // ⚠ LE MONO GARDE SON RENDU. Le multi passe par `ListeTransactions` : on
+  // n'affiche JAMAIS `lignes[0]` comme si elle portait le plan entier.
+  const l = a.lignes.length === 1 ? a.lignes[0] : null;
+  const unite = l && l.uniteQuantite === 'part' ? 'parts' : 'actions';
   return (
     <Carte fond={C.actionFond} bord={C.actionBord}>
       <Text style={{
@@ -82,36 +85,48 @@ export function CarteAction({ p, logos }: {
       </Text>
       <EnTeteSociete symbole={p.etape1.symbole} description={p.etape1.description} logos={logos} />
 
-      {/* LE CHIFFRE DOMINANT DE LA PAGE — c'est là que l'œil doit tomber. */}
-      <Text style={{
-        marginTop: 6, fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.action,
-      }}>
-        ≈ {a.quantiteEstimeeAVendre.toLocaleString('fr-CA')} {unite}
-      </Text>
-
-      <View style={{ flexDirection: 'row', marginTop: 7 }}>
-        <CarteChiffre libelle="Valeur de vente estimée" valeur={a.valeurVenteEstimeeCad} />
-        <CarteChiffre libelle="Perte estimée réalisée"
-          valeur={a.perteRealiseeEstimeeCad} couleur={C.action} />
-      </View>
-
-      <View style={{
-        flexDirection: 'row', marginTop: 7, paddingTop: 6,
-        borderTopWidth: 1, borderTopColor: C.actionBord, borderTopStyle: 'solid',
-      }}>
-        <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
-          Objectif{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
-            {argent(a.cibleGlobaleCad)}
-          </Text>
+      {l === null ? (
+        <View style={{ marginTop: 7 }}>
+          <ListeTransactions
+            lignes={a.lignes} couleur={C.action} bord={C.actionBord}
+            libelleMontant="Perte réalisée"
+            valeurVenteTotaleCad={a.valeurVenteTotaleCad}
+            montantRealiseTotalCad={a.montantRealiseTotalCad}
+            cibleCad={a.cibleGlobaleCad} ecartCad={a.ecartCad}
+          />
+        </View>
+      ) : (<>
+        {/* LE CHIFFRE DOMINANT DE LA PAGE — c'est là que l'œil doit tomber. */}
+        <Text style={{
+          marginTop: 6, fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.action,
+        }}>
+          ≈ {l.quantiteAVendre.toLocaleString('fr-CA')} {unite}
         </Text>
-        <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
-          Écart{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
-            {a.ecartCad > 0 ? '+' : ''}{argent(a.ecartCad)}
+
+        <View style={{ flexDirection: 'row', marginTop: 7 }}>
+          <CarteChiffre libelle="Valeur de vente estimée" valeur={l.valeurVenteEstimeeCad} />
+          <CarteChiffre libelle="Perte estimée réalisée"
+            valeur={l.montantRealiseEstimeCad} couleur={C.action} />
+        </View>
+
+        <View style={{
+          flexDirection: 'row', marginTop: 7, paddingTop: 6,
+          borderTopWidth: 1, borderTopColor: C.actionBord, borderTopStyle: 'solid',
+        }}>
+          <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
+            Objectif{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {argent(a.cibleGlobaleCad)}
+            </Text>
           </Text>
-        </Text>
-      </View>
+          <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
+            Écart{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {a.ecartCad > 0 ? '+' : ''}{argent(a.ecartCad)}
+            </Text>
+          </Text>
+        </View>
+      </>)}
       {a.dateValeurs && (
         <Text style={{ marginTop: 6, fontSize: 6.4, color: NEUTRE.gris, lineHeight: 1.35 }}>
           {/* ⚠ EN TOUTES LETTRES. « 2026-08-21 » est du vocabulaire de machine ;

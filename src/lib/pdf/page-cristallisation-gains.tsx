@@ -24,7 +24,7 @@ import { mentionDate } from './rendu-constat';
 import {
   argent, Etape, Carte, Manque, LigneChiffree, EnTeteSociete, CarteChiffre,
   ValidationsAvantExecution as BlocValidations, PageStrategieFiscale,
-  NEUTRE, type EnteteStrategie,
+  ListeTransactions, NEUTRE, type EnteteStrategie,
 } from './langage-fiscal';
 import {
   TITRE_PRESENTATION, SOUS_TITRE_PRESENTATION,
@@ -72,7 +72,10 @@ function CarteActionGain({ p, logos }: {
       </Carte>
     );
   }
-  const unite = a.uniteQuantite === 'part' ? 'parts' : 'actions';
+  // ⚠ MÊME DISCIPLINE QUE CÔTÉ PERTES : le mono garde son rendu, le multi
+  // passe par la primitive commune, et aucune ligne ne disparaît.
+  const l = a.lignes.length === 1 ? a.lignes[0] : null;
+  const unite = l && l.uniteQuantite === 'part' ? 'parts' : 'actions';
   return (
     <Carte fond={C.actionFond} bord={C.actionBord}>
       <Text style={{
@@ -82,38 +85,51 @@ function CarteActionGain({ p, logos }: {
         ACTION ESTIMÉE
       </Text>
       <EnTeteSociete symbole={p.etape3.symbole} description={p.etape3.description} logos={logos} />
-      <Text style={{
-        marginTop: 6, fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.action,
-      }}>
-        ≈ {a.quantiteEstimeeAVendre.toLocaleString('fr-CA')} {unite}
-      </Text>
 
-      <View style={{ flexDirection: 'row', marginTop: 7 }}>
-        <CarteChiffre libelle="Valeur de vente estimée" valeur={a.valeurVenteEstimeeCad} />
-        <CarteChiffre libelle="Gain réalisé estimé"
-          valeur={a.gainRealiseEstimeCad} couleur={C.action} />
-      </View>
+      {l === null ? (
+        <View style={{ marginTop: 7 }}>
+          <ListeTransactions
+            lignes={a.lignes} couleur={C.action} bord={C.actionBord}
+            libelleMontant="Gain réalisé"
+            valeurVenteTotaleCad={a.valeurVenteTotaleCad}
+            montantRealiseTotalCad={a.montantRealiseTotalCad}
+            cibleCad={a.cibleGainCad} ecartCad={a.ecartCad}
+          />
+        </View>
+      ) : (<>
+        <Text style={{
+          marginTop: 6, fontSize: 28, fontFamily: 'Montserrat', fontWeight: 800, color: C.action,
+        }}>
+          ≈ {l.quantiteAVendre.toLocaleString('fr-CA')} {unite}
+        </Text>
 
-      {/* ⚠ LES −15 $ RESTENT DANS LE BLOC CHIFFRÉ. La phrase d'explication vient
-          APRÈS, en dessous : elle explique les chiffres, elle ne les remplace
-          pas. Les cacher rendrait le document moins crédible, pas plus simple. */}
-      <View style={{
-        flexDirection: 'row', marginTop: 7, paddingTop: 6,
-        borderTopWidth: 1, borderTopColor: C.actionBord, borderTopStyle: 'solid',
-      }}>
-        <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
-          Objectif{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
-            {argent(a.cibleGainCad)}
+        <View style={{ flexDirection: 'row', marginTop: 7 }}>
+          <CarteChiffre libelle="Valeur de vente estimée" valeur={l.valeurVenteEstimeeCad} />
+          <CarteChiffre libelle="Gain réalisé estimé"
+            valeur={l.montantRealiseEstimeCad} couleur={C.action} />
+        </View>
+
+        {/* ⚠ LES −15 $ RESTENT DANS LE BLOC CHIFFRÉ. La phrase d'explication vient
+            APRÈS, en dessous : elle explique les chiffres, elle ne les remplace
+            pas. Les cacher rendrait le document moins crédible, pas plus simple. */}
+        <View style={{
+          flexDirection: 'row', marginTop: 7, paddingTop: 6,
+          borderTopWidth: 1, borderTopColor: C.actionBord, borderTopStyle: 'solid',
+        }}>
+          <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
+            Objectif{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {argent(a.cibleGainCad)}
+            </Text>
           </Text>
-        </Text>
-        <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
-          Écart estimé{'   '}
-          <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
-            {a.ecartCad > 0 ? '+' : ''}{argent(a.ecartCad)}
+          <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
+            Écart estimé{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {a.ecartCad > 0 ? '+' : ''}{argent(a.ecartCad)}
+            </Text>
           </Text>
-        </Text>
-      </View>
+        </View>
+      </>)}
 
       {p.etape3.precisionGranularite && (
         <Text style={{ marginTop: 6, fontSize: 6.8, color: NEUTRE.gris, lineHeight: 1.4 }}>
