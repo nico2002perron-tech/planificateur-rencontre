@@ -74,6 +74,8 @@ export function CarteAction({ p, logos }: {
   // ⚠ LE MONO GARDE SON RENDU. Le multi passe par `ListeTransactions` : on
   // n'affiche JAMAIS `lignes[0]` comme si elle portait le plan entier.
   const l = a.lignes.length === 1 ? a.lignes[0] : null;
+  // Une liste de cinq ordres ne s'annonce pas « ACTION PROPOSÉE » au singulier.
+  const eyebrow = l === null ? 'TRANSACTIONS À EFFECTUER' : 'ACTION PROPOSÉE';
   const unite = l && l.uniteQuantite === 'part' ? 'parts' : 'actions';
   return (
     <Carte fond={C.actionFond} bord={C.actionBord}>
@@ -81,15 +83,15 @@ export function CarteAction({ p, logos }: {
         fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600,
         color: C.action, letterSpacing: 0.7, marginBottom: 7,
       }}>
-        ACTION PROPOSÉE
+        {eyebrow}
       </Text>
       <EnTeteSociete symbole={p.etape1.symbole} description={p.etape1.description} logos={logos} />
 
       {l === null ? (
         <View style={{ marginTop: 7 }}>
           <ListeTransactions
-            lignes={a.lignes} couleur={C.action} bord={C.actionBord}
-            libelleMontant="Perte réalisée"
+            lignes={a.lignes} couleur={C.action} bord={C.actionBord} logos={logos}
+            libelleMontant="Perte réalisée estimée"
             valeurVenteTotaleCad={a.valeurVenteTotaleCad}
             montantRealiseTotalCad={a.montantRealiseTotalCad}
             cibleCad={a.cibleGlobaleCad} ecartCad={a.ecartCad}
@@ -187,25 +189,56 @@ export function PageCristallisationPertes({ presentation: p, logos }: {
 }) {
   const e1 = p.etape1;
   const usd = e1.deviseNegociation && e1.deviseNegociation.toUpperCase() !== 'CAD';
+  /**
+   * ⚠ CE BLOC EXISTE PARCE QUE LA PAGE MULTI ÉTAIT LAIDE ET MUETTE.
+   *
+   * Sur un plan à plusieurs titres, l'adaptateur laisse volontairement
+   * `symbole`, `perteLatenteDisponibleCad` et `compte` à `null` — nommer un
+   * titre « principal » fabriquerait une sélection qui n'a pas eu lieu. Mais la
+   * page rendait alors une carte « Perte latente disponible — » et un
+   * « Compte — » : deux tirets qui ne disent rien et se lisent comme un
+   * document abîmé.
+   *
+   * On remplace par une phrase INTENTIONNELLE. Elle ne calcule rien et ne nomme
+   * personne ; elle dit où le détail se trouve.
+   */
+  const multiFerme = p.etape3.action.type === 'ferme' && p.etape3.action.lignes.length > 1;
   return (
     <View>
       <Etape numero={1} titre="Pourquoi cette stratégie ?">
         <Carte>
-          <EnTeteSociete symbole={e1.symbole} description={e1.description} logos={logos} />
+          {e1.symbole ? (
+            <EnTeteSociete symbole={e1.symbole} description={e1.description} logos={logos} />
+          ) : (
+            <Text style={{ fontSize: 8, color: NEUTRE.encre, lineHeight: 1.45, marginBottom: 2 }}>
+              {multiFerme
+                ? 'Plusieurs positions peuvent contribuer à l’objectif : le détail des titres et des quantités se trouve à l’étape 3.'
+                : 'Les positions à retenir seront précisées une fois les données du dossier confirmées.'}
+            </Text>
+          )}
           <View style={{ flexDirection: 'row', marginTop: 8 }}>
             <CarteChiffre libelle="Gain en capital net réalisé" valeur={e1.gainNetAvantCad} />
-            <CarteChiffre libelle="Perte latente disponible"
-              valeur={e1.perteLatenteDisponibleCad} couleur={C.action} />
+            {/* ⚠ LA PERTE LATENTE EST UNE GRANDEUR PAR TITRE. Sans titre nommé,
+                elle n'existe pas — et un « — » à sa place ne serait pas une
+                donnée manquante, ce serait une case qui n'a pas lieu d'être.
+                L'espaceur garde au chiffre de gauche la largeur du cas mono,
+                qui reste la référence visuelle. */}
+            {e1.symbole
+              ? <CarteChiffre libelle="Perte latente disponible"
+                  valeur={e1.perteLatenteDisponibleCad} couleur={C.action} />
+              : <View style={{ flex: 1 }} />}
           </View>
-          <Text style={{ marginTop: 8, fontSize: 6.8, color: NEUTRE.gris }}>
-            {/* Minuscule : « Compte Non enregistré » se lisait comme un nom propre. */}
-            Compte {(e1.compte ?? '—').toLocaleLowerCase('fr-CA')}
-            {usd ? `   ·   Négociation : ${e1.deviseNegociation}   ·   Montants fiscaux : ${e1.uniteValeursRapport}` : ''}
-          </Text>
+          {e1.compte !== null && (
+            <Text style={{ marginTop: 8, fontSize: 6.8, color: NEUTRE.gris }}>
+              {/* Minuscule : « Compte Non enregistré » se lisait comme un nom propre. */}
+              Compte {e1.compte.toLocaleLowerCase('fr-CA')}
+              {usd ? `   ·   Négociation : ${e1.deviseNegociation}   ·   Montants fiscaux : ${e1.uniteValeursRapport}` : ''}
+            </Text>
+          )}
         </Carte>
       </Etape>
 
-      <Etape numero={2} titre="Pourquoi ce titre ?">
+      <Etape numero={2} titre={multiFerme ? 'Pourquoi ces titres ?' : 'Pourquoi ce titre ?'}>
         <Carte>
           {p.etape2.raisonSelection
             ? <Text style={{ fontSize: 8, color: NEUTRE.encre, lineHeight: 1.5 }}>{p.etape2.raisonSelection}</Text>
@@ -213,7 +246,9 @@ export function PageCristallisationPertes({ presentation: p, logos }: {
         </Carte>
       </Etape>
 
-      <Etape numero={3} titre="Combien vendre ?" teinte={C.action}>
+      {/* ⚠ SEULE ÉTAPE AUTORISÉE À SE COUPER, et seulement en multi : c'est la
+          seule dont la hauteur dépend du nombre de positions. */}
+      <Etape numero={3} titre="Combien vendre ?" teinte={C.action} wrap={multiFerme}>
         <CarteAction p={p} logos={logos} />
       </Etape>
 

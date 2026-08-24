@@ -286,16 +286,29 @@ describe('A9 · un plan à plusieurs titres arrive entier', () => {
     expect(p.etape4.perteRealiseeEstimeeCad).toBe(12001.23);
   });
 
-  it('AUCUN titre n’est nommé en multi, et la raison de sélection se tait', () => {
-    // ⚠ « cette position suffit à elle seule » serait FAUX sur deux
-    // transactions — et nommer un titre fabriquerait une sélection.
+  it('AUCUN titre n’est nommé en multi — mais l’étape 2 ne se tait plus', () => {
+    // ⚠ CE TEST EXIGEAIT `raisonSelection === null` EN MULTI, ET C'ÉTAIT UNE
+    // ERREUR VUE SUR PDF. Le `null` faisait tomber la page dans son repli
+    // dégradé : un plan CALCULÉ de cinq transactions affichait « Le titre à
+    // retenir sera déterminé une fois les données du dossier confirmées »,
+    // c'est-à-dire que le document réclamait les données qu'il venait
+    // d'utiliser. Se taire n'était pas neutre — c'était affirmer autre chose.
+    //
+    // Ce que la garde protège vraiment reste intact : AUCUN TITRE N'EST NOMMÉ.
     const p = construire(constat({ montantEstime: 12000 }), planMulti(), 12000);
     expect(p.etape1.symbole).toBeNull();
     expect(p.etape1.perteLatenteDisponibleCad).toBeNull();
     expect(p.etape2.symbole).toBeNull();
     expect(p.etape2.couvreSeuleLaCible).toBe(false);
-    expect(p.etape2.raisonSelection).toBeNull();
-    // Et en mono, elle est bien là — sinon la garde serait creuse.
+
+    const raison = p.etape2.raisonSelection ?? '';
+    expect(raison).toMatch(/Aucune position ne porte seule/);
+    // ⚠ « cette position suffit à elle seule » serait FAUX sur deux transactions.
+    expect(raison).not.toMatch(/une seule transaction/);
+    // Et surtout : la phrase multi ne nomme AUCUN des symboles du plan.
+    for (const l of planMulti().lignes) expect(raison).not.toContain(l.symbole);
+
+    // Et en mono, la phrase mono est bien là — sinon la garde serait creuse.
     expect(construire().etape2.raisonSelection).toMatch(/une seule transaction/);
   });
 

@@ -149,10 +149,20 @@ export function construirePresentationCristallisationPertes(
   const etape2 = {
     symbole: seule?.symbole ?? null,
     couvreSeuleLaCible: couvreSeule,
-    raisonSelection: ferme && monoTitre
-      ? 'Cette position est retenue parce que sa perte latente permet d’atteindre '
-        + 'l’objectif avec une seule transaction.'
-      : null,
+    // ⚠ DEUX SITUATIONS FERMES, DONC DEUX PHRASES — et le défaut était visible
+    // sur PDF. Sans la branche multi, un plan CALCULÉ de cinq transactions
+    // tombait dans le repli dégradé et affichait « Le titre à retenir sera
+    // déterminé une fois les données du dossier confirmées » : le document
+    // réclamait des données qu'il venait d'utiliser.
+    //
+    // La phrase multi ne nomme aucun titre et n'avance aucun chiffre — elle dit
+    // la seule chose que le plan démontre : qu'aucune position ne suffisait.
+    raisonSelection: !ferme ? null
+      : monoTitre
+        ? 'Cette position est retenue parce que sa perte latente permet d’atteindre '
+          + 'l’objectif avec une seule transaction.'
+        : 'Aucune position ne porte seule l’objectif : il est atteint en combinant '
+          + 'plusieurs ventes, en commençant par les pertes latentes les plus importantes.',
   };
 
   // ── ÉTAPE 3 — l'action, ou son absence, dans le TYPE ─────────────────────

@@ -75,6 +75,7 @@ function CarteActionGain({ p, logos }: {
   // ⚠ MÊME DISCIPLINE QUE CÔTÉ PERTES : le mono garde son rendu, le multi
   // passe par la primitive commune, et aucune ligne ne disparaît.
   const l = a.lignes.length === 1 ? a.lignes[0] : null;
+  const eyebrow = l === null ? 'TRANSACTIONS ESTIMÉES' : 'ACTION ESTIMÉE';
   const unite = l && l.uniteQuantite === 'part' ? 'parts' : 'actions';
   return (
     <Carte fond={C.actionFond} bord={C.actionBord}>
@@ -82,15 +83,15 @@ function CarteActionGain({ p, logos }: {
         fontSize: 7, fontFamily: 'Open Sans', fontWeight: 600,
         color: C.action, letterSpacing: 0.7, marginBottom: 7,
       }}>
-        ACTION ESTIMÉE
+        {eyebrow}
       </Text>
       <EnTeteSociete symbole={p.etape3.symbole} description={p.etape3.description} logos={logos} />
 
       {l === null ? (
         <View style={{ marginTop: 7 }}>
           <ListeTransactions
-            lignes={a.lignes} couleur={C.action} bord={C.actionBord}
-            libelleMontant="Gain réalisé"
+            lignes={a.lignes} couleur={C.action} bord={C.actionBord} logos={logos}
+            libelleMontant="Gain réalisé estimé"
             valeurVenteTotaleCad={a.valeurVenteTotaleCad}
             montantRealiseTotalCad={a.montantRealiseTotalCad}
             cibleCad={a.cibleGainCad} ecartCad={a.ecartCad}
@@ -153,6 +154,8 @@ export function PageCristallisationGains({ presentation: p, logos }: {
   const e5 = p.etape5;
   const usd = p.etape3.deviseNegociation
     && p.etape3.deviseNegociation.toUpperCase() !== 'CAD';
+  // « Quel titre » au singulier sur cinq titres : le nombre doit suivre le plan.
+  const multiFerme = p.etape3.action.type === 'ferme' && p.etape3.action.lignes.length > 1;
 
   return (
     <View>
@@ -190,7 +193,9 @@ export function PageCristallisationGains({ presentation: p, logos }: {
         </Carte>
       </Etape>
 
-      <Etape numero={3} titre="Quel titre et quelle quantité ?" teinte={C.action}>
+      {/* ⚠ SEULE ÉTAPE AUTORISÉE À SE COUPER, et seulement en multi. */}
+      <Etape numero={3} teinte={C.action} wrap={multiFerme}
+        titre={multiFerme ? 'Quels titres et quelles quantités ?' : 'Quel titre et quelle quantité ?'}>
         <CarteActionGain p={p} logos={logos} />
         {usd && (
           <Text style={{ marginTop: 4, fontSize: 6.6, color: NEUTRE.gris }}>

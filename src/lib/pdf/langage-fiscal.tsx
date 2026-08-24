@@ -110,15 +110,30 @@ export type EnteteStrategie = {
 /**
  * UNE ÉTAPE — pastille numérotée + titre, puis son contenu.
  *
- * `wrap={false}` : une étape coupée en deux par un saut de page se lit comme un
- * document abîmé. Mieux vaut la pousser entière à la page suivante.
+ * `wrap={false}` PAR DÉFAUT : une étape coupée en deux par un saut de page se
+ * lit comme un document abîmé. Mieux vaut la pousser entière à la page
+ * suivante — c'est vrai de toutes les étapes de hauteur bornée.
+ *
+ * ⚠ MAIS UNE LISTE DE TRANSACTIONS N'EST PAS BORNÉE, et là ce défaut se
+ * retourne. MESURÉ : à 14 transactions, l'étape 3 ne tient plus dans le reste
+ * de la page, part entière à la suivante et laisse derrière elle une page aux
+ * deux tiers vide. Au-delà d'une vingtaine elle ne tiendrait sur AUCUNE page —
+ * et un ordre à passer disparaîtrait sans que rien ne le signale.
+ *
+ * D'où `wrap`, explicite et faux par défaut : rien ne change pour les étapes
+ * existantes, et celle qui porte la liste peut respirer sur deux pages. Les
+ * transactions, elles, restent atomiques (`ListeTransactions`), et
+ * `minPresenceAhead` empêche le titre d'étape de rester orphelin en bas de
+ * page — l'en-tête et la première transaction voyagent ensemble.
  */
-export function Etape({ numero, titre, children, teinte = NEUTRE.badge }: {
+export function Etape({ numero, titre, children, teinte = NEUTRE.badge, wrap = false }: {
   numero: number; titre: string; children: React.ReactNode; teinte?: string;
+  wrap?: boolean;
 }) {
   return (
-    <View style={{ marginBottom: 10 }} wrap={false}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
+    <View style={{ marginBottom: 10 }} wrap={wrap}>
+      <View minPresenceAhead={wrap ? 78 : 0}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
         <View style={{
           width: 19, height: 19, borderRadius: 9.5, backgroundColor: teinte,
           alignItems: 'center', justifyContent: 'center', marginRight: 7,
@@ -292,8 +307,14 @@ export function ValidationsAvantExecution({ validations, apparenceConfirme }: {
  * ─────────────────────────────────────────────────────────────────────────
  * ⚠ UNE SEULE PRIMITIVE POUR LES DEUX STRATÉGIES. Les pertes et les gains
  * racontent des histoires différentes, mais « voici les ordres à passer » est
- * la même phrase des deux côtés : mêmes colonnes, même totalisation. Deux
- * composants séparés auraient divergé au premier ajustement.
+ * la même phrase des deux côtés : même anatomie de ligne, même totalisation.
+ * Deux composants séparés auraient divergé au premier ajustement.
+ *
+ * ⚠ CE N'EST PAS UN TABLEAU, ET C'EST LE POINT. La première version alignait
+ * quatre colonnes sous un en-tête « Titre / Quantité / Vente estimée / … » :
+ * regardé sur PDF, ça se lisait comme un extrait de chiffrier, pas comme une
+ * liste d'ordres à passer. Les libellés vivent maintenant dans le PIED, où ils
+ * ne sont dits qu'une fois, et chaque ligne porte son logo.
  *
  * ⚠ ET AUCUNE LIGNE N'EST PERDUE NI CHOISIE. Afficher `lignes[0]` comme si
  * elle portait le plan entier réintroduirait exactement la divergence que le
@@ -303,90 +324,99 @@ export function ValidationsAvantExecution({ validations, apparenceConfirme }: {
  */
 export function ListeTransactions({
   lignes, couleur, bord, libelleMontant, valeurVenteTotaleCad,
-  montantRealiseTotalCad, cibleCad, ecartCad,
+  montantRealiseTotalCad, cibleCad, ecartCad, logos,
 }: {
   lignes: LigneExecution[];
   couleur: string;
   bord: string;
-  /** « de perte » ou « de gain » — le mot que le total porte. */
+  /** « Perte réalisée estimée » ou « Gain réalisé estimé » — le TOTAL le porte. */
   libelleMontant: string;
   valeurVenteTotaleCad: number;
   montantRealiseTotalCad: number;
   cibleCad: number;
   ecartCad: number;
+  /**
+   * Le cache de logos DÉJÀ RÉSOLU — jamais un moyen d'aller en chercher.
+   * `LogoSocieteFiscal` n'a aucun chemin réseau : voir son en-tête.
+   */
+  logos?: Record<string, string>;
 }) {
   return (
     <View>
-      {/* L'EN-TÊTE DU TABLEAU — sans lui, quatre nombres alignés ne disent pas
-          ce qu'ils sont. */}
-      <View style={{
-        flexDirection: 'row', paddingBottom: 3, marginBottom: 3,
-        borderBottomWidth: 0.8, borderBottomColor: bord, borderBottomStyle: 'solid',
-      }}>
-        <Text style={{ flex: 1.4, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris }}>
-          Titre
-        </Text>
-        <Text style={{ flex: 1.3, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris }}>
-          Quantité
-        </Text>
-        <Text style={{ flex: 1.2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris, textAlign: 'right' }}>
-          Vente estimée
-        </Text>
-        <Text style={{ flex: 1.2, fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: NEUTRE.gris, textAlign: 'right' }}>
-          {libelleMontant}
-        </Text>
-      </View>
+      {lignes.map((l, i) => (
+        // ⚠ `wrap={false}` : UNE TRANSACTION NE SE COUPE PAS ENTRE DEUX PAGES.
+        // Un ordre dont le symbole est en bas d'une page et la quantité en haut
+        // de la suivante est un ordre qu'on peut passer de travers.
+        <View key={l.positionId} wrap={false} style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingBottom: 6, marginBottom: 6,
+          borderBottomWidth: i === lignes.length - 1 ? 0 : 0.6,
+          borderBottomColor: bord, borderBottomStyle: 'solid',
+        }}>
+          {/* CHAQUE TITRE REÇOIT LE SIEN — cache, sinon pastille au ticker. */}
+          <LogoSocieteFiscal symbole={l.symbole} logos={logos} taille={19} />
 
-      {lignes.map((l) => (
-        <View key={l.positionId} style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 3 }}>
-          <View style={{ flex: 1.4 }}>
+          <View style={{ flex: 1.25, marginLeft: 7 }}>
             <Text style={{ fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: NEUTRE.encre }}>
               {l.symbole}
             </Text>
             {l.description && (
-              <Text style={{ fontSize: 6.2, color: NEUTRE.gris }}>{l.description}</Text>
+              <Text style={{ fontSize: 6.2, color: NEUTRE.gris, marginTop: 1 }}>{l.description}</Text>
             )}
           </View>
-          <Text style={{ flex: 1.3, fontSize: 9, fontFamily: 'Montserrat', fontWeight: 800, color: couleur }}>
+
+          {/* LA QUANTITÉ DOMINE LA LIGNE — c'est l'ordre qu'on passe. */}
+          <Text style={{
+            flex: 1.15, fontSize: 12, fontFamily: 'Montserrat', fontWeight: 800, color: couleur,
+          }}>
             ≈ {l.quantiteAVendre.toLocaleString('fr-CA')} {l.uniteQuantite === 'part' ? 'parts' : 'actions'}
           </Text>
-          <Text style={{ flex: 1.2, fontSize: 7.6, color: NEUTRE.encre, textAlign: 'right' }}>
-            {argent(l.valeurVenteEstimeeCad)}
-          </Text>
-          <Text style={{
-            flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 700,
-            color: couleur, textAlign: 'right',
-          }}>
-            {argent(l.montantRealiseEstimeCad)}
-          </Text>
+
+          {/* Le montant FISCAL au-dessus, la valeur de vente en appui dessous —
+              la hiérarchie de la consigne, sans une colonne de plus. */}
+          <View style={{ flex: 1.05 }}>
+            <Text style={{
+              fontSize: 9.5, fontFamily: 'Montserrat', fontWeight: 800,
+              color: couleur, textAlign: 'right',
+            }}>
+              {argent(l.montantRealiseEstimeCad)}
+            </Text>
+            <Text style={{ fontSize: 6.4, color: NEUTRE.gris, textAlign: 'right', marginTop: 1 }}>
+              vente {argent(l.valeurVenteEstimeeCad)}
+            </Text>
+          </View>
         </View>
       ))}
 
-      {/* LE PIED — total, objectif, écart. Les trois se lisent ensemble. */}
+      {/* LE PIED — total, valeur de vente, objectif, écart.
+          ⚠ AUCUNE SOMME N'EST FAITE ICI. Les quatre nombres arrivent de
+          `ActionPresentee`, qui les tient du plan canonique. Un `reduce` dans
+          cette vue serait un second moteur fiscal, avec ses propres arrondis. */}
       <View style={{
-        marginTop: 4, paddingTop: 5,
+        marginTop: 2, paddingTop: 7,
         borderTopWidth: 1, borderTopColor: bord, borderTopStyle: 'solid',
       }}>
-        <View style={{ flexDirection: 'row', marginBottom: 2 }}>
-          <Text style={{ flex: 2.7, fontSize: 7.2, color: NEUTRE.gris }}>
-            Total — {lignes.length} transactions
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
+          <Text style={{ flex: 1, fontSize: 7.4, color: NEUTRE.gris }}>
+            {libelleMontant} — {lignes.length} transaction{lignes.length > 1 ? 's' : ''}
           </Text>
-          <Text style={{ flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre, textAlign: 'right' }}>
-            {argent(valeurVenteTotaleCad)}
-          </Text>
-          <Text style={{ flex: 1.2, fontSize: 7.6, fontFamily: 'Montserrat', fontWeight: 800, color: couleur, textAlign: 'right' }}>
+          <Text style={{ fontSize: 11.5, fontFamily: 'Montserrat', fontWeight: 800, color: couleur }}>
             {argent(montantRealiseTotalCad)}
           </Text>
         </View>
         <View style={{ flexDirection: 'row' }}>
-          <Text style={{ flex: 1, fontSize: 7.2, color: NEUTRE.gris }}>
+          <Text style={{ flex: 1, fontSize: 7, color: NEUTRE.gris }}>
+            Valeur de vente{'   '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
+              {argent(valeurVenteTotaleCad)}
+            </Text>
+          </Text>
+          <Text style={{ fontSize: 7, color: NEUTRE.gris }}>
             Objectif{'   '}
             <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
               {argent(cibleCad)}
             </Text>
-          </Text>
-          <Text style={{ fontSize: 7.2, color: NEUTRE.gris }}>
-            Écart estimé{'   '}
+            {'       '}Écart estimé{'   '}
             <Text style={{ fontFamily: 'Montserrat', fontWeight: 700, color: NEUTRE.encre }}>
               {ecartCad > 0 ? '+' : ''}{argent(ecartCad)}
             </Text>
@@ -397,8 +427,6 @@ export function ListeTransactions({
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// L'ASSEMBLAGE — la frontière qui empêche une stratégie de sortir anonyme
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function EnTeteStrategie({ entete }: { entete: EnteteStrategie }) {
