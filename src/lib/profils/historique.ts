@@ -14,6 +14,10 @@ import 'server-only';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { estLocal } from '@/lib/base-locale/mode';
+import {
+  estLigneEntete, indexerEntetes, verifierCoherence,
+  type CarteColonnes, type ChampHistorique,
+} from './colonnes-historique';
 import { dossierTransactions } from '@/lib/base-locale/chemins';
 import { nombre } from '@/lib/parseur-croesus/regles';
 import type { LigneTransaction } from '@/lib/parseur-croesus/types';
@@ -94,13 +98,114 @@ export function diagnostiquerCollage(texte: string): string | null {
   return null;
 }
 
-/** Lit un collage brut : lignes tabulées, 18 ou 20 colonnes, en-tête ignoré. */
-export function parserCollage(texte: string): { lignes: LigneTransaction[]; ignorees: number } {
+export type RejetFormat = {
+  motif: 'colonnes-requises-absentes';
+  colonnes: ChampHistorique[];
+};
+
+export type ResultatParsing = {
+  lignes: LigneTransaction[];
+  ignorees: number;
+  /** Lignes écartées parce que leur structure contredit les en-têtes. */
+  incoherentes: number;
+  /** Non nul quand le format est refusé — jamais un décalage de compensation. */
+  rejet: RejetFormat | null;
+};
+
+/**
+ * LIT UN COLLAGE BRUT, EN SUIVANT LES EN-TÊTES QUAND IL Y EN A.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⚠ LE SENS D'UNE COLONNE VIENT DE SON TITRE, PAS DE SON RANG.
+ *
+ * Ce parseur déduisait le sens des colonnes de leur NOMBRE : 20 → décalage 0,
+ * 18 → décalage 2. Un export réel où la colonne « Nom » a été retirée en
+ * compte 19 : il tombait dans la branche « 18 », et `noCompte` allait lire
+ * « Solde ». Élargir la liste à « 18, 19 ou 20 » n'aurait fait que déplacer le
+ * problème d'un cran.
+ *
+ * ⚠ LE CHEMIN POSITIONNEL SURVIT, MAIS COMME REPLI DÉCLARÉ. Un collage sans
+ * ligne d'en-têtes reste lisible — c'est ainsi que les imports d'avant le
+ * 24 août 2026 fonctionnaient, et rien ne justifie de les casser.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export function parserCollage(texte: string): ResultatParsing {
+  const brutes = texte.split(/\r?\n/).filter((l) => l.trim() !== '');
+
+  // ⚠ AUCUN FILTRAGE DE CELLULES VIDES. Une « Note » vide doit rester à sa
+  // place : la retirer décalerait Traitement, Transaction, Code de CP… et
+  // c'est exactement le décalage qu'on vient d'éliminer.
+  const cellulesDe = (l: string) => l.split('\t');
+
+  const iEntete = brutes.findIndex((l) => estLigneEntete(cellulesDe(l)));
+  if (iEntete >= 0) {
+    const carte = indexerEntetes(cellulesDe(brutes[iEntete]));
+    if (carte.requisesManquantes.length > 0) {
+      // ⚠ REJET EXPLICITE, JAMAIS UNE COMPENSATION. Décaler les autres
+      // colonnes pour « rattraper » une absente fabriquerait des chiffres.
+      return {
+        lignes: [], ignorees: brutes.length - 1, incoherentes: 0,
+        rejet: { motif: 'colonnes-requises-absentes', colonnes: carte.requisesManquantes },
+      };
+    }
+    return parserAvecEntetes(brutes.slice(iEntete + 1).map(cellulesDe), carte);
+  }
+
+  return parserParPosition(brutes.map(cellulesDe));
+}
+
+/** Le chemin nominal : chaque champ est lu à l'index que son titre a donné. */
+function parserAvecEntetes(rangees: string[][], carte: CarteColonnes): ResultatParsing {
   const lignes: LigneTransaction[] = [];
   let ignorees = 0;
-  for (const brut of texte.split(/\r?\n/)) {
-    if (!brut.trim()) continue;
-    const c = brut.split('\t');
+  let incoherentes = 0;
+
+  for (const c of rangees) {
+    const verdict = verifierCoherence(c, carte);
+    if (!verdict.coherente) { incoherentes++; continue; }
+
+    const lire = (champ: ChampHistorique) => {
+      const i = carte.index[champ];
+      return i === undefined ? '' : (c[i] ?? '').trim();
+    };
+    const date = lire('date');
+    const noCompte = lire('noCompte');
+    if (!noCompte || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { ignorees++; continue; }
+
+    lignes.push({
+      date,
+      dateReglement: lire('dateReglement'),
+      // ⚠ FACULTATIVE, ET C'EST LE POINT DU LOT : son absence ne décale rien
+      // et ne change aucun calcul.
+      nom: lire('nom'),
+      note: lire('note'),
+      type: lire('type'),
+      symbole: lire('symbole'),
+      quantite: nombre(lire('quantite')),
+      prix: nombre(lire('prix')),
+      devise: lire('devise'),
+      total: nombre(lire('total')),
+      gainsPertes: nombre(lire('gainsPertes')),
+      solde: nombre(lire('solde')),
+      noCompte,
+      description: lire('description'),
+    });
+  }
+  return { lignes, ignorees, incoherentes, rejet: null };
+}
+
+/**
+ * LE REPLI POSITIONNEL — collages SANS ligne d'en-têtes.
+ *
+ * Conservé tel qu'il était, décalage compris : les deux dispositions connues
+ * (20 colonnes, et la même moins ses deux premières) restent lisibles. Ce
+ * chemin ne devine RIEN de plus qu'avant ; il ne s'applique simplement plus
+ * quand des titres sont disponibles.
+ */
+function parserParPosition(rangees: string[][]): ResultatParsing {
+  const lignes: LigneTransaction[] = [];
+  let ignorees = 0;
+  for (const c of rangees) {
 
     // LES DEUX EXPORTS DE CROESUS, LUS PAR LA MEME ZONE — 18 aout 2026.
     //
@@ -143,7 +248,7 @@ export function parserCollage(texte: string): { lignes: LigneTransaction[]; igno
       description: decalage === 0 ? col(1) : '',
     });
   }
-  return { lignes, ignorees };
+  return { lignes, ignorees, incoherentes: 0, rejet: null };
 }
 
 export type ResultatImport = {
