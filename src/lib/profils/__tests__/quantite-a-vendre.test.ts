@@ -27,11 +27,6 @@ function prop(p: Position, cible: number, c = cpt()) {
   if (!r.ok) throw new Error(`refusée : ${r.refus.motif}`);
   return r.proposition;
 }
-function prop2(p: Position, cible: number, gainNetAvant: number, c = cpt()) {
-  const r = proposerQuantitePourPosition(c, p, cible, gainNetAvant);
-  if (!r.ok) throw new Error(`refusée : ${r.refus.motif}`);
-  return r.proposition;
-}
 function motif(p: Position, cible = 5000, c = cpt()) {
   const r = proposerQuantitePourPosition(c, p, cible);
   return r.ok ? null : r.refus.motif;
@@ -282,44 +277,43 @@ describe('invariant · la quantité proposée tient toujours dans la position', 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// gainNetApresCad — LA TROISIÈME BARRE, ET ELLE NE SE DÉDUIT PAS
+// ÉCART ET CIBLE RESTANTE — deux notions, deux chiffres
 // ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠ CE BLOC PARLAIT DE TROIS CHIFFRES. Le troisième, `gainNetApresCad`, a
+// quitté la proposition : il appartient à `PlanExecution`, parce qu'il se
+// calcule sur le TOTAL exécuté et qu'une valeur par position ne veut plus rien
+// dire dès qu'un plan combine plusieurs titres. Sa batterie complète vit en
+// PE10 — sept cas, dont le plan multi et le côté gains. On ne la duplique pas.
+//
+// Ce qui reste ici est ce que la PROPOSITION prouve encore, et elle seule.
 
-describe('gainNetApresCad · distinct de l’écart et de la cible restante', () => {
-  it('couverture COMPLÈTE avec léger dépassement : après = 0, restante = 0, écart > 0', () => {
+describe('écart et cible restante · distincts, et jamais confondus', () => {
+  it('couverture COMPLÈTE avec léger dépassement : restante = 0, écart > 0', () => {
     // Le cas réel mesuré : 203 actions, 15 537,41 $ de perte latente.
     const p = pos({ symbole: 'GSY', quantite: 203, valeurComptable: 24000, valeurMarchande: 8462.59 });
-    const r = prop2(p, 8997.81, 8997.81);
+    const r = prop(p, 8997.81);
     expect(r.quantiteEstimeeAVendre).toBe(118);
     expect(r.perteRealiseeEstimeeCad).toBeCloseTo(9031.6, 1);
+    // ⚠ UN DÉPASSEMENT DONNE ÉCART POSITIF ET RESTANTE ZÉRO — jamais −33,79.
     expect(r.ecartCad).toBeCloseTo(33.79, 1);
     expect(r.cibleRestanteCad).toBe(0);
-    expect(r.gainNetApresCad).toBe(0);               // JAMAIS −33,79
   });
 
-  it('couverture PARTIELLE : les trois chiffres disent trois choses', () => {
+  it('couverture PARTIELLE : l’écart est signé, la restante ne l’est pas', () => {
     const p = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 15000, valeurMarchande: 10000 });
-    const r = prop2(p, 8998, 8998);
+    const r = prop(p, 8998);
     expect(r.perteRealiseeEstimeeCad).toBe(5000);
     expect(r.ecartCad).toBe(-3998);                  // sous la cible
     expect(r.cibleRestanteCad).toBe(3998);           // ce qu'il manque
-    expect(r.gainNetApresCad).toBe(3998);            // le gain qui subsiste
   });
 
-  it('⚠ la cible n’est PAS le gain net : les deux se fournissent séparément', () => {
-    // `absorbable = min(pertesLatentes, gainsRealises)` — quand les pertes sont
-    // insuffisantes, la cible est PLUS PETITE que le gain à compenser. Déduire
-    // l'un de l'autre donnerait un « après » faussement nul.
+  it('la cible atteinte pile : écart nul, restante nulle', () => {
     const p = pos({ symbole: 'PETIT', quantite: 100, valeurComptable: 15000, valeurMarchande: 10000 });
-    const r = prop2(p, 5000, 20000);                 // cible 5 000, gain net 20 000
+    const r = prop(p, 5000);
     expect(r.perteRealiseeEstimeeCad).toBe(5000);
-    expect(r.ecartCad).toBe(0);                      // la CIBLE est atteinte
+    expect(r.ecartCad).toBe(0);
     expect(r.cibleRestanteCad).toBe(0);
-    expect(r.gainNetApresCad).toBe(15000);           // mais 15 000 $ de gain restent
-  });
-
-  it('sans gain net fourni, le champ vaut null — jamais une déduction', () => {
-    expect(prop(pos({ symbole: 'AAA' }), 3000).gainNetApresCad).toBeNull();
   });
 });
 

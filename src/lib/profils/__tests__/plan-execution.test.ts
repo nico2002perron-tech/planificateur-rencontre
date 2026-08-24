@@ -375,3 +375,52 @@ describe('PE10 · `gainNetApresCad` est produit par le plan, jamais par le docum
     expect(p.gainNetApresCad).toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PE11 — UN SEUL MOTEUR CALCULE LE GAIN NET APRÈS
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PE11 · `gainNetApresCad` n’a qu’un producteur', () => {
+  // ⚠ LE CODE, PAS LES COMMENTAIRES. `quantite-a-vendre.ts` explique en prose
+  // pourquoi le champ l'a quitté — c'est une documentation utile, pas une
+  // seconde implémentation. Une garde qui lirait les commentaires interdirait
+  // d'expliquer ses propres décisions.
+  const sansCommentaires = (source: string) => source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+
+  it('dans la couche moteur, seul `plan-execution` le produit', () => {
+    // ⚠ IL VIVAIT SUR LA PROPOSITION D'UNE POSITION. Dès qu'un plan combine
+    // plusieurs titres, la seule valeur juste se calcule sur le TOTAL exécuté :
+    // une valeur par position ne veut plus rien dire. Deux endroits qui
+    // répondent à la même question finissent toujours par diverger — c'est
+    // exactement ce qui a fait diverger la synthèse et la page détaillée.
+    const fs = require('node:fs') as typeof import('node:fs');
+    const path = require('node:path') as typeof import('node:path');
+    const racine = 'src/lib/profils';
+
+    const fautifs: string[] = [];
+    const visiter = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) { visiter(p); continue; }
+        if (!/\.tsx?$/.test(e.name)) continue;
+        if (e.name === 'plan-execution.ts' || e.name === 'plan-execution.test.ts') continue;
+        if (sansCommentaires(fs.readFileSync(p, 'utf8')).includes('gainNetApresCad')) {
+          fautifs.push(p.split(String.fromCharCode(92)).join('/'));
+        }
+      }
+    };
+    visiter(racine);
+
+    expect(fautifs, `un autre moteur produit gainNetApresCad : ${fautifs.join(', ')}`)
+      .toEqual([]);
+  });
+
+  it('et `plan-execution` le produit bien — sinon la garde serait creuse', () => {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const source = sansCommentaires(
+      fs.readFileSync('src/lib/profils/plan-execution.ts', 'utf8'));
+    expect(source).toContain('gainNetApresCad');
+  });
+});
