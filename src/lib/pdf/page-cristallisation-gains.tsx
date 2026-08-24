@@ -248,13 +248,18 @@ export function PageCristallisationGains({ presentation: p, logos }: {
  * C'est CETTE forme que le vrai flux consommera : le titre ne peut plus être
  * oublié par un assembleur, ni recomposé différemment par chaque harnais.
  */
-export function PageStrategieCristallisationGains({ presentation, logos, pied }: {
+export function PageStrategieCristallisationGains({
+  presentation, logos, pied, libellePied,
+}: {
   presentation: PresentationCristallisationGains;
   logos?: Record<string, string>;
   pied?: React.ReactNode;
+  /** Le nom du document hôte, posé par l'assembleur — jamais deviné ici. */
+  libellePied?: string;
 }) {
   return (
-    <PageStrategieFiscale entete={ENTETE_CRISTALLISATION_GAINS} pied={pied}>
+    <PageStrategieFiscale
+      entete={ENTETE_CRISTALLISATION_GAINS} pied={pied} libellePied={libellePied}>
       <PageCristallisationGains presentation={presentation} logos={logos} />
     </PageStrategieFiscale>
   );

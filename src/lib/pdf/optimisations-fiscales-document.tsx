@@ -26,8 +26,13 @@
 import React from 'react';
 import path from 'node:path';
 import { Document, Page, Text, View, Font } from '@react-pdf/renderer';
-import { styles, C } from './styles';
+import { C } from './styles';
+import {
+  FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, STYLE_PAGE_FISCALE,
+} from './page-fiscale';
 import { OptimisationsFiscalesPage } from './optimisations-fiscales-page';
+import { pagesDeStrategie } from './strategies-visuelles';
+import { libellePiedFiscal } from './langage-fiscal';
 import type { ResultatAnalyse } from '@/lib/profils/strategies';
 
 // Ce document peut être rendu SEUL — il ne passe plus par price-targets-template,
@@ -100,10 +105,18 @@ function BandeauInterne() {
   );
 }
 
-/** La mention en pied — sur CHAQUE page, y compris photographiée seule. */
+/**
+ * La mention en pied — sur CHAQUE page, y compris photographiée seule.
+ *
+ * ⚠ `bottom: 32` ET PAS 18, et ce n'est pas un réglage esthétique. `PageFooterV12`
+ * s'ancre à 18 et il est peint APRÈS : à la même hauteur, le pied gris efface la
+ * mention rouge. Mesuré sur PDF rastérisé le 17 août 2026, corrigé alors sur la
+ * page de synthèse — et sur le point d'être réintroduit ici en posant cette
+ * mention sur les pages de stratégie, qui rendent `{pied}` puis le pied commun.
+ */
 export function PiedInterne() {
   return (
-    <View fixed style={{ position: 'absolute', bottom: 18, left: 44, right: 44 }}>
+    <View fixed style={{ position: 'absolute', bottom: 32, left: 44, right: 44 }}>
       <Text style={{ fontSize: 6.4, fontFamily: 'Open Sans', fontWeight: 600, color: '#b91c1c' }}>
         Version conseiller — usage interne. Ne pas remettre au client.
       </Text>
@@ -117,7 +130,14 @@ function Couverture({ donnees }: { donnees: DonneesDocumentFiscal }) {
   const aDemander = resultat.questionsRencontre.length;
 
   return (
-    <Page size="A4" orientation="portrait" style={[styles.page, { backgroundColor: '#fffdf9' }]}>
+    // ⚠ LE MÊME CONTRAT QUE LA SYNTHÈSE ET LES PAGES DE STRATÉGIE. Le format
+    // et le fond étaient recopiés ici ; ils viennent maintenant de
+    // `page-fiscale.ts`, comme partout ailleurs dans ce document.
+    <Page
+      size={FORMAT_PAGE_FISCALE}
+      orientation={ORIENTATION_PAGE_FISCALE}
+      style={STYLE_PAGE_FISCALE}
+    >
       {resultat.revisionFiscalisteRequise && <BandeauInterne />}
 
       <Text style={{ fontSize: 26, fontFamily: 'Montserrat', fontWeight: 800, color: C.navy }}>
@@ -171,15 +191,33 @@ function Couverture({ donnees }: { donnees: DonneesDocumentFiscal }) {
 }
 
 export function OptimisationsFiscalesDocument({ donnees }: { donnees: DonneesDocumentFiscal }) {
+  const interne = donnees.resultat.revisionFiscalisteRequise;
+  // ⚠ UN SEUL LIBELLÉ POUR TOUT LE DOCUMENT, calculé ici et posé partout. La
+  // synthèse et les pages de stratégie en portaient deux différents.
+  const libellePied = libellePiedFiscal(interne);
   return (
     <Document title="Optimisations fiscales">
       <Couverture donnees={donnees} />
       <OptimisationsFiscalesPage
         resultat={donnees.resultat}
-        piedInterne={donnees.resultat.revisionFiscalisteRequise}
+        piedInterne={interne}
+        libelleDocument={libellePied}
         essaiIA={donnees.essaiIA === true}
         logos={donnees.logos}
       />
+      {/* ⚠ LE DÉTAIL, APRÈS LA SYNTHÈSE — le branchement qui manquait.
+          Les deux pages en cinq étapes existaient, étaient testées, étaient
+          inscrites au registre… et aucun document de production ne les rendait.
+          Elles ne vivaient que dans des aperçus.
+
+          L'ORDRE EST CELUI DES CONSTATS, donc celui des cartes de synthèse, et
+          le STATUT NE FILTRE PAS : une stratégie enregistrée a sa page, dégradée
+          ou non. Voir `pagesDeStrategie`. */}
+      {pagesDeStrategie(donnees.resultat.constats, {
+        logos: donnees.logos,
+        libellePied,
+        pied: interne ? <PiedInterne /> : undefined,
+      })}
     </Document>
   );
 }

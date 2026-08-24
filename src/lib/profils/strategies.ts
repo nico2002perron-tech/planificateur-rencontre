@@ -189,6 +189,22 @@ export type Constat = {
    */
   gainsLatentsCad?: number | null;
   pertesDisponiblesCad?: number | null;
+  /**
+   * LE GAIN EN CAPITAL NET DÉJÀ RÉALISÉ CETTE ANNÉE — la grandeur que la
+   * cristallisation de pertes vient réduire.
+   *
+   * ⚠ EXPOSÉ, PAS CALCULÉ. La stratégie le connaît depuis toujours
+   * (`gainsRealises` : gains bruts moins pertes déjà prises, sur la seule
+   * assiette non enregistrée) ; il ne SORTAIT simplement pas. Le document
+   * devait donc soit le redériver — interdit —, soit s'en passer, et l'étape 4
+   * de la page en cinq étapes sortait alors avec deux barres vides sur trois.
+   *
+   * ⚠ NE JAMAIS LE DÉDUIRE DE LA CIBLE. `absorbable = min(pertesLatentes,
+   * gainNet)` : quand les pertes latentes sont insuffisantes, la cible est
+   * PLUS PETITE que le gain à compenser, et confondre les deux afficherait un
+   * « après » faussement nul.
+   */
+  gainNetRealiseCad?: number | null;
 };
 
 export type LignePlan = {
@@ -417,35 +433,6 @@ function lignesHeritees(plan: PlanExecution, signe: 1 | -1): LignePlan[] {
 /** Combien de candidats on nomme. Trois : de quoi ouvrir la discussion sans noyer. */
 const COMBIEN_DE_CANDIDATS = 3;
 
-function planifierRecolte(
-  enGain: Array<{ p: PositionSituee; g: number }>,
-  cible: number
-): LignePlan[] {
-  const ordonnees = [...enGain]
-    .filter((x) => (x.p.valeurMarchande ?? 0) > 0)
-    .sort((a, b) => b.g / (b.p.valeurMarchande as number) - a.g / (a.p.valeurMarchande as number));
-
-  const plan: LignePlan[] = [];
-  let reste = cible;
-  for (const { p, g } of ordonnees) {
-    if (reste <= 0.005) break;
-    const vm = p.valeurMarchande as number;
-    if (g <= reste + 0.005) {
-      plan.push({ symbole: p.symbole, vendre: Math.round(vm), gain: Math.round(g * 100) / 100, partiel: false });
-      reste -= g;
-    } else {
-      const fraction = reste / g;
-      plan.push({
-        symbole: p.symbole,
-        vendre: Math.round(vm * fraction),
-        gain: Math.round(reste * 100) / 100,
-        partiel: true,
-      });
-      reste = 0;
-    }
-  }
-  return plan;
-}
 
 /** Combien de positions non enregistrées n'ont pas de PBR — le motif d'`indisponible`. */
 function sansPbr(positions: PositionSituee[]): number {
@@ -646,10 +633,14 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   if (absorbable > 0) {
     // ⚠ LE PLAN SE CALCULE UNE FOIS, ICI. Il alimente le tableau de la synthèse
     // ET la page en cinq étapes — c'est tout l'objet du plan canonique.
+    // ⚠ LE 4e ARGUMENT N'ÉTAIT PAS PASSÉ, ET PERSONNE NE LE VOYAIT. Sans lui
+    // `gainNetApresCad` reste `null` sur TOUS les dossiers réels : le contrat
+    // existait, le rendu était prêt, et la donnée n'arrivait jamais.
     const planPertes = construirePlanExecution(
       'perte',
       enPerteAvecGain.map(({ p }) => ({ compte: p.compte, position: p })),
-      absorbable
+      absorbable,
+      gainsRealises
     );
     return {
       ...base,
@@ -659,13 +650,14 @@ function strategieCristallisation(profil: ProfilClient): Constat {
       dateDonnees: completude.dateReleve,
       // LE PLAN NE NOMME QUE DES POSITIONS PLEINEMENT QUALIFIÉES : `enPerteAvecGain`
       // ne contient que des positions à PBR, valeur marchande et devise lisibles.
-      // `planifierRecolte` raisonne sur des grandeurs POSITIVES — on lui passe
-      // donc les pertes en valeur absolue, puis on redonne son signe au gain de
-      // chaque ligne, sans quoi le tableau afficherait une perte comme un gain.
       // ⚠ UN SEUL MOTEUR DE QUANTITÉ. `planExecution` fait foi ; `plan` en est
-      // l'adaptation pour les consommateurs historiques. Les deux portent donc
-      // nécessairement les mêmes titres et les mêmes montants.
+      // l'adaptation pour les consommateurs historiques — la route y lit les
+      // symboles pour charger les logos du cache, et `reformuler` s’en sert pour
+      // vérifier qu’un texte reformulé n’a pas inventé de titre. Les deux portent
+      // donc nécessairement les mêmes titres et les mêmes montants.
       planExecution: planPertes,
+      // Le gain que la stratégie vient réduire — transporté, jamais redérivé.
+      gainNetRealiseCad: gainsRealises,
       plan: lignesHeritees(planPertes, -1),
       candidats: meilleursCandidats(enPerteAvecGain, COMBIEN_DE_CANDIDATS),
       explication:
@@ -1823,7 +1815,17 @@ function rangQuestion(q: string): number {
  * d'entreprise » plutôt que d'escamoter une piste que le planificateur
  * s'attend à voir.
  */
-function selonLeTitulaire(constat: Constat, titulaire: TypeTitulaire): Constat {
+/**
+ * ⚠ EXPORTÉE POUR ÊTRE FALSIFIABLE, pas pour être appelée d'ailleurs.
+ *
+ * `analyser()` reste son unique appelant de production. Mais ses trois lignes
+ * défensives — `montantEstime`, `plan`, `planExecution` remis à `undefined` —
+ * ne pouvaient être prouvées par AUCUN dossier : les quatre stratégies qu'elle
+ * neutralise sortent déjà sans montant. Un sabotage les retirait sans faire
+ * rougir un seul test. Un test peut maintenant lui donner un constat forgé qui
+ * en porte un.
+ */
+export function selonLeTitulaire(constat: Constat, titulaire: TypeTitulaire): Constat {
   if (strategieApplicableA(constat.strategie, titulaire)) return constat;
   return {
     ...constat,
@@ -1837,6 +1839,7 @@ function selonLeTitulaire(constat: Constat, titulaire: TypeTitulaire): Constat {
     // sous un titre « sans objet » serait le pire des rendus.
     plan: undefined,
     planExecution: undefined,
+    gainNetRealiseCad: undefined,
     candidats: undefined,
     echeance: undefined,
     dejaEnOrdre: false,

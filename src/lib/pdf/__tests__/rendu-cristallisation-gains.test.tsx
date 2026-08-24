@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { OptimisationsFiscalesPage } from '../optimisations-fiscales-page';
+import { OptimisationsFiscalesDocument } from '../optimisations-fiscales-document';
 import { analyser, type Constat, type ResultatAnalyse } from '@/lib/profils/strategies';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '@/lib/profils/types';
 import {
@@ -103,7 +104,16 @@ function carteGains(p: ProfilClient): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('PDF-A · statut calculé', () => {
-  it('montre le montant, le badge « Calculé », le plan et la date', () => {
+  it('montre le montant, le badge « Calculé », la date — et RENVOIE au détail', () => {
+    // ⚠ CE TEST EXIGEAIT AUSSI /GAGNANT/ ET /Vendre \(environ\)/, ET C'ÉTAIT JUSTE
+    // TANT QUE LA CARTE ÉTAIT SEULE. Depuis que la page en cinq étapes est
+    // branchée au document, le tableau d'ordres de la synthèse en était le
+    // DOUBLON : deux recommandations complètes pour une stratégie, dans le même
+    // PDF, à quelques pages d'écart.
+    //
+    // La carte redevient une synthèse — montant, statut, renvoi. Le titre et
+    // les quantités n'ont pas disparu du document : ils vivent à la page dédiée,
+    // et le test PDF-A2 ci-dessous l'exige.
     const p = dossier();
     const c = constatGains(analyse(p));
     expect(c.statut).toBe('calcule');
@@ -111,9 +121,27 @@ describe('PDF-A · statut calculé', () => {
     const texte = carteGains(p);
     expect(texte).toMatch(/10 000 \$/);           // le montant, tel que le moteur l'a rendu
     expect(texte).toMatch(/Calculé/);
-    expect(texte).toMatch(/GAGNANT/);             // le plan nomme le titre
-    expect(texte).toMatch(/Vendre \(environ\)/);  // c'est bien un plan, pas des candidats
     expect(texte).toMatch(/Selon les valeurs au 19 août 2026/);
+    // Le renvoi nomme la page par son titre — « à la page suivante » serait faux
+    // dès la deuxième stratégie.
+    expect(texte).toMatch(/Le détail/);
+    expect(texte).toMatch(/Récolter des gains sans payer d’impôt/);
+    // Et le tableau d'ordres, lui, n'y est plus.
+    expect(texte).not.toMatch(/Vendre \(environ\)/);
+  });
+
+  it('PDF-A2 · le titre et la quantité vivent dans le DOCUMENT, pas dans la carte', () => {
+    // ⚠ LA CONTREPARTIE OBLIGATOIRE DU TEST PRÉCÉDENT. Sans elle, retirer le
+    // tableau ferait disparaître le nom du titre de tout le document sans
+    // qu'une seule assertion rougisse — le dépôt appelle ça « un test qui
+    // bénit le défaut ».
+    const resultat = analyse(dossier());
+    const texte = textesDe(React.createElement(OptimisationsFiscalesDocument, {
+      donnees: { resultat, nomClient: 'Dossier Fictif', preset: 'complet' as const },
+    })).join('').replace(/[\s   ]+/g, ' ');
+
+    expect(texte).toMatch(/GAGNANT/);
+    expect(texte).toMatch(/Quels? titres? et quelles? quantités?|Quel titre et quelle quantité/);
   });
 
   it('le montant vient de `montantEstime`, sans recalcul du PDF', () => {

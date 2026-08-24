@@ -182,19 +182,26 @@ function proposer(
   if (sens === 'perte') {
     const r = proposerQuantitePourPosition(compte, position, cibleCad);
     if (!r.ok) return { ok: false, refus: r.refus as RefusQuantite };
-    return { ok: true, v: depuisPerte(r.proposition) };
+    // ⚠ LA POSITION EST PASSÉE POUR SON SEUL NOM DE SOCIÉTÉ. La proposition
+    // des pertes ne le porte pas — sa jumelle des gains, si — et la page
+    // affichait donc un ticker nu d'un côté du document et le nom complet de
+    // l'autre.
+    return { ok: true, v: depuisPerte(r.proposition, position) };
   }
   const r = proposerQuantitePourGain(compte, position, cibleCad);
   if (!r.ok) return { ok: false, refus: r.refus as RefusQuantiteGain };
   return { ok: true, v: depuisGain(r.proposition) };
 }
 
-function depuisPerte(p: PropositionCristallisationPosition): Propose {
+function depuisPerte(p: PropositionCristallisationPosition, position: Position): Propose {
   return {
     capaciteCad: p.perteLatenteDisponibleCad,
     ligne: {
       positionId: p.positionId, compteId: p.compteId, symbole: p.symbole,
-      description: null,
+      // ⚠ DONNÉE DE PRÉSENTATION, ET RIEN D'AUTRE — elle n'entre dans aucun
+      // calcul ni aucune qualification. Elle vient de la POSITION plutôt que de
+      // la proposition, parce que celle des pertes ne la transporte pas.
+      description: position.description ?? null,
       typeInstrument: p.typeInstrument, devise: p.devise,
       uniteValeursRapport: p.uniteValeursRapport,
       quantiteDetenue: p.quantiteDetenue,

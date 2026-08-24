@@ -43,10 +43,11 @@ import {
   FORMAT_PAGE_FISCALE, ORIENTATION_PAGE_FISCALE, STYLE_PAGE_FISCALE,
 } from './page-fiscale';
 import { SectionHeader, PageFooterV12 } from './year-activity-pages';
+import { aUnePageDetaillee, STRATEGIES_VISUELLES } from './strategies-visuelles';
 import type { ResultatAnalyse, Constat } from '@/lib/profils/strategies';
 import {
   montantAffichable, proseSansMontantFerme, ENTETE, raisonsAConfirmer,
-  modeTableau, lignesTableau, COLONNES, mentionDate, mentionPortee,
+  modeTableau, lignesTableau, COLONNES, mentionDate, mentionPortee, libelleRaison,
 } from './rendu-constat';
 
 import { gestesDe, estDejaEnOrdre } from '@/lib/profils/demarches';
@@ -144,6 +145,17 @@ const ICONES: Record<string, { couleur: string; traits: string[] }> = {
     traits: ['M12 3 L12 13', 'M8 7 L12 3 L16 7', 'M4 15 A8 8 0 0 0 20 15'],
   },
   // Une liste ordonnée.
+  // ⚠ LA HUITIÈME, LONGTEMPS MANQUANTE. Sept stratégies avaient leur pastille,
+  // `subvention-reee` non : son titre partait 23 pt à gauche de tous les autres
+  // dans la colonne des cartes. Vu en rastérisant le document d'entreprise, où
+  // les huit constats se suivent.
+  //
+  // Un mortier — le geste « verser dans le REEE » — dans la même grammaire de
+  // traits que les sept autres : deux arcs et une tige, 24×24, sans remplissage.
+  'subvention-reee': {
+    couleur: '#7c3aed',
+    traits: ['M4 10 A8 8 0 0 0 20 10', 'M3 10 H21', 'M12 18 V21', 'M8 21 H16', 'M17 4 L14 8'],
+  },
   'ordre-vente': {
     couleur: C.cyan,
     traits: ['M4 6 L7 6', 'M4 12 L7 12', 'M4 18 L7 18', 'M10 6 L20 6', 'M10 12 L20 12', 'M10 18 L20 18'],
@@ -338,6 +350,28 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
           </View>
         )}
 
+      {/* LE RENVOI VERS LE DÉTAIL — sans quoi la carte se tait sans le dire.
+          Retirer le tableau d'ordres laisse une carte qui annonce un montant et
+          n'explique nulle part comment il s'obtient. Elle nomme donc la page
+          qui le fait, PAR SON TITRE : « à la page suivante » serait faux dès la
+          deuxième stratégie, et un renvoi qu'on ne peut pas suivre ne vaut pas
+          mieux que pas de renvoi. */}
+      {aUnePageDetaillee(constat.strategie) && modeTableau(constat) === 'plan' && (
+        <View style={{
+          marginTop: 6, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6,
+          backgroundColor: t.fond,
+        }}>
+          <Text style={{ fontSize: 7, color: t.encre, lineHeight: 1.4 }}>
+            Le détail — quelles positions vendre, quelles quantités, et l’effet estimé — est
+            présenté plus loin, à la page «{' '}
+            <Text style={{ fontFamily: 'Montserrat', fontWeight: 700 }}>
+              {STRATEGIES_VISUELLES[constat.strategie].entete.titre}
+            </Text>
+            {' '}».
+          </Text>
+        </View>
+      )}
+
       {/* QUOI VENDRE — deux régimes, un seul tableau.
           ─────────────────────────────────────────────────────────────────────
           AVANT le 19 août 2026, ce bloc n'affichait que `plan`, présent sur la
@@ -364,7 +398,24 @@ function CarteConstat({ constat, logos }: { constat: Constat; logos?: Record<str
         // est une marche à suivre ; des candidats sont des observations du
         // relevé. Confondre les deux fabriquait une instruction de vente à
         // partir d'un montant que le moteur n'avait jamais recommandé.
-        const mode = modeTableau(constat);
+        // ⚠ LE TABLEAU D'ORDRES SORT DE LA SYNTHÈSE — mais LUI SEUL.
+        //
+        // Deux régimes vivent dans ce bloc, et les confondre coûterait cher :
+        //   · 'plan'      — la marche à suivre. C'est une RECOMMANDATION
+        //                   COMPLÈTE, et depuis que les pages en cinq étapes
+        //                   sont branchées, le document en donnait DEUX pour
+        //                   la même stratégie. C'est celle-ci qui part.
+        //   · 'candidats' — les trois meilleurs titres par densité, présentés
+        //                   comme des MESURES DU RELEVÉ, avec une légende qui
+        //                   dit qu'ils ne sont pas un ordre de vente. Ils
+        //                   existent parce que sans eux, un constat dégradé ne
+        //                   nommait aucun titre (« je trouve que ça dit rien »,
+        //                   19 août 2026) — et la page en cinq étapes ne les
+        //                   nomme pas non plus sous un statut dégradé. Les
+        //                   retirer rendrait le document MUET là où il l'était
+        //                   déjà une fois. Ils restent.
+        const brut = modeTableau(constat);
+        const mode = brut === 'plan' && aUnePageDetaillee(constat.strategie) ? null : brut;
         if (!mode) return null;
         const lignes = lignesTableau(constat);
         const col = COLONNES[mode];
@@ -524,8 +575,22 @@ export function OptimisationsFiscalesPage({
   piedInterne = false,
   essaiIA = false,
   logos,
+  libelleDocument,
 }: {
   resultat: ResultatAnalyse;
+  /**
+   * LE NOM DU DOCUMENT QUI CONTIENT CETTE PAGE — posé par l'assembleur.
+   *
+   * ⚠ UNE PAGE NE PEUT PAS SAVOIR OÙ ELLE EST. Celle-ci vit dans DEUX
+   * documents : le rapport de cours cibles et le document fiscal autonome. Elle
+   * choisissait son pied d'après `piedInterne`, c'est-à-dire d'après le drapeau
+   * du fiscaliste — le jour où il tombe, le document autonome se serait remis à
+   * s'appeler « Analyse des cours cibles 1.2 ».
+   *
+   * Absent, le pied garde le libellé par défaut de `PageFooterV12` : c'est le
+   * cas de la page INTÉGRÉE aux cours cibles, et c'est juste.
+   */
+  libelleDocument?: string;
   /** Des textes reformulés par l'IA d'essai figurent sur la page. */
   essaiIA?: boolean;
   /**
@@ -632,7 +697,13 @@ export function OptimisationsFiscalesPage({
           <Text style={{ fontSize: 8, fontFamily: 'Open Sans', fontWeight: 600, color: '#64748b' }}>
             À valider ensemble
           </Text>
-          {resultat.questionsRencontre.map((q, i) => (
+          {/* ⚠ TRADUIT, COMME PARTOUT AILLEURS. Cette liste imprimait le slug
+              brut du moteur : sur un dossier d'entreprise, le client lisait
+              « 1. Titulaire-entreprise ». Les cartes passaient déjà par
+              `libelleRaison` via `raisonsAConfirmer` ; cette liste-ci était le
+              canal oublié. Un slug inconnu sort en « une donnée du dossier reste
+              à confirmer » plutôt qu'en vocabulaire de programmeur. */}
+          {[...new Set(resultat.questionsRencontre.map(libelleRaison))].map((q, i) => (
             <Text key={i} style={{ marginTop: 1.5, fontSize: 7, color: '#475569', lineHeight: 1.35 }}>
               {i + 1}. {q.charAt(0).toUpperCase()}{q.slice(1)}
             </Text>
@@ -690,24 +761,16 @@ export function OptimisationsFiscalesPage({
           </Text>
         </View>
       )}
-      {/* ⚠ LE PIED GARDE LE NOM DU DOCUMENT HÔTE quand la page est intégrée au
-          PDF de cours cibles — un test le verrouille, et c'est juste : une page
-          intégrée porte le nom du document qui la contient.
+      {/* ⚠ LE PIED PORTE LE NOM DU DOCUMENT HÔTE, ET C'EST L'HÔTE QUI LE DIT.
+          Intégrée au PDF de cours cibles, la page ne reçoit rien et garde le
+          libellé par défaut — un test le verrouille, et c'est juste. Dans le
+          document fiscal autonome, l'assembleur passe le sien, le MÊME que
+          celui des pages de stratégie.
 
-          MAIS DANS LE DOCUMENT FISCAL AUTONOME, ce défaut fait porter à la page
-          de synthèse « Analyse des cours cibles 1.2 » pendant que les pages de
-          stratégie portent « Optimisations fiscales ». Vu en assemblant le
-          document intégré. Le corriger demande de dire à la page dans QUEL
-          document elle se trouve — une prop de plus, posée par l'assembleur.
-          C'est le même geste que le branchement du registre, donc la même
-          attente : voir le rapport du 23 août 2026. */}
-      <PageFooterV12
-        libelle={
-          piedInterne
-            ? 'Groupe Financier Ste-Foy — Optimisations fiscales (document de travail)'
-            : undefined
-        }
-      />
+          Ce qui a disparu ici : un libellé choisi d'après `piedInterne`. Il
+          liait le nom du document au drapeau du fiscaliste, deux choses sans
+          rapport — et il différait de celui des pages de stratégie du même PDF. */}
+      <PageFooterV12 libelle={libelleDocument} />
     </Page>
   );
 }

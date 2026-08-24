@@ -75,6 +75,22 @@ const NAVY = '#03045e';
 /** Le pied de page du document fiscal — pas celui des cours cibles. */
 export const LIBELLE_PIED_FISCAL = 'Groupe Financier Ste-Foy — Optimisations fiscales';
 
+/** Le même, tant que le fiscaliste n'a pas revu les règles et les barèmes. */
+export const LIBELLE_PIED_FISCAL_TRAVAIL =
+  'Groupe Financier Ste-Foy — Optimisations fiscales (document de travail)';
+
+/**
+ * LE LIBELLÉ DU DOCUMENT FISCAL — une seule règle, un seul endroit.
+ *
+ * ⚠ IL EN FAUT UN SEUL POUR TOUT LE DOCUMENT. La synthèse et les pages de
+ * stratégie en portaient deux différents : la première suffixait « (document de
+ * travail) », les secondes non. Dans le même PDF, deux pieds successifs ne
+ * nommaient pas le même document.
+ */
+export function libellePiedFiscal(revisionFiscalisteRequise: boolean): string {
+  return revisionFiscalisteRequise ? LIBELLE_PIED_FISCAL_TRAVAIL : LIBELLE_PIED_FISCAL;
+}
+
 // Le formateur canonique vit dans `rendu-constat`, qui ignore le moteur de
 // rendu — l'adaptateur de présentation en a besoin sans dépendre du PDF.
 export { argent } from './rendu-constat';

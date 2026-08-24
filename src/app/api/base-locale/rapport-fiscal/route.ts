@@ -17,30 +17,17 @@ import { archiverDocument, entetesArchivage } from '@/lib/base-locale/archiver';
 import { profilPourClient } from '@/lib/profils/stockage';
 import { hydraterProfil, signauxDuLivre } from '@/lib/profils/hydrater';
 import { analyser, restreindre } from '@/lib/profils/strategies';
+import { strategiesDuPreset } from '@/lib/profils/presets-rapport';
 import { parametresReee } from '@/lib/profils/parametres-fiscaux';
 import { OptimisationsFiscalesDocument } from '@/lib/pdf/optimisations-fiscales-document';
 import { logosMemorises } from '@/lib/base-locale/logos';
 import { reformuler, identifiantsDuProfil } from '@/lib/profils/reformuler';
 import { iaEssaiPermise, construireAppelEssai } from '@/lib/profils/appel-llm-essai';
 
-/**
- * LES DEUX PRÉRÉGLAGES — pas deux gabarits.
- *
- * Décision du 5 août : deux gabarits distincts, c'est deux mises en page à
- * entretenir et un jour deux histoires différentes pour le même client. Un
- * préréglage, c'est une sélection de stratégies par défaut sur la MÊME page.
- *
- *   instantané — ce qui se calcule à partir du seul portefeuille ;
- *   complet    — tout le catalogue, y compris ce qui exige la fiche.
- */
-const PRESETS: Record<string, string[]> = {
-  instantane: ['cristallisation-pertes', 'cristallisation-gains', 'don-titres', 'ordre-vente'],
-  complet: [
-    'cristallisation-pertes', 'cristallisation-gains', 'droits-cotisation',
-    'localisation-actifs', 'celi-conjoint', 'don-titres', 'subvention-reee',
-    'ordre-vente',
-  ],
-};
+// ⚠ LES PRÉRÉGLAGES ONT DÉMÉNAGÉ dans `profils/presets-rapport.ts`, sans qu'une
+// seule ligne de leur contenu change. Module-privés ici, ils rendaient le vrai
+// chemin intestable : un harnais qui n'applique pas la même sélection ne produit
+// pas le même document, et donc ne prouve rien.
 
 export async function POST(req: NextRequest) {
   if (!estLocal()) return new NextResponse('Not Found', { status: 404 });
@@ -68,7 +55,7 @@ export async function POST(req: NextRequest) {
     // les stratégies du préréglage QUE LE MOTEUR A RÉELLEMENT PRODUITES.
     const voulues = strategies?.length
       ? strategies
-      : PRESETS[choisi].filter((s) => complet.constats.some((c) => c.strategie === s));
+      : strategiesDuPreset(choisi, complet.constats.map((c) => c.strategie));
     const resultat = restreindre(complet, voulues);
 
     // ── L'IA D'ESSAI — profils FICTIFS seulement (décision du 11 août) ──────
@@ -108,7 +95,15 @@ export async function POST(req: NextRequest) {
     // n'en gagne pas une pour une image. Les logos viennent du cache que les
     // cours cibles ont nourri (base-locale/logos.ts). Un titre sans logo en
     // cache s'affiche avec son seul symbole — comme avant.
-    const symbolesDuPlan = resultat.constats.flatMap((c) => (c.plan ?? []).map((l) => l.symbole));
+    // ⚠ LES SYMBOLES VIENNENT DU PLAN CANONIQUE quand il existe. `plan` en est
+    // l'adaptation historique et porte les mêmes titres — mais c'est
+    // `planExecution` que les pages en cinq étapes rendent, ligne par ligne,
+    // avec un logo chacune. Lire la source plutôt que sa copie évite qu'un
+    // titre s'affiche sans pastille le jour où les deux divergeraient.
+    const symbolesDuPlan = resultat.constats.flatMap((c) =>
+      c.planExecution
+        ? c.planExecution.lignes.map((l) => l.symbole)
+        : (c.plan ?? []).map((l) => l.symbole));
     const logos = symbolesDuPlan.length ? await logosMemorises(symbolesDuPlan) : {};
 
     const buffer = await renderToBuffer(

@@ -307,7 +307,11 @@ export function verifierCompletudeCristallisationGains(
   if (profil.consolidation.comptesExternes !== 'non') {
     ajouter('portee-externe-non-confirmee',
       'Le client n\'a pas confirmé n\'avoir aucun compte ailleurs. Des positions détenues ailleurs porteraient d\'autres gains, et un même titre détenu ailleurs changerait le prix de base de celui d\'ici.',
-      'la liste des positions détenues ailleurs qu\'ici');
+      // ⚠ APOSTROPHE TYPOGRAPHIQUE U+2019, comme les six autres occurrences du
+      // dépôt. Avec l'apostrophe droite, cette question et son jumeau côté
+      // pertes étaient DEUX chaînes distinctes : le `new Set` d'`analyser` ne les
+      // fusionnait pas et le client lisait deux fois la même phrase.
+      'la liste des positions détenues ailleurs qu’ici');
   }
 
   const dateReleve = positions[0]?.compte.dateReleve ?? profil.comptes[0]?.dateReleve ?? null;

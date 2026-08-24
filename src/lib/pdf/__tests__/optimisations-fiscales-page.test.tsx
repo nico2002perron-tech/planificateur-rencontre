@@ -10,6 +10,7 @@ import React from 'react';
 import { Document, Font, renderToBuffer } from '@react-pdf/renderer';
 import path from 'node:path';
 import { OptimisationsFiscalesPage } from '../optimisations-fiscales-page';
+import { OptimisationsFiscalesDocument } from '../optimisations-fiscales-document';
 import { analyser } from '@/lib/profils/strategies';
 import { profilVierge, type ProfilClient, type Compte, type Position } from '@/lib/profils/types';
 import { textesDe } from './_texte-rendu';
@@ -103,10 +104,23 @@ function rendre(profil: ProfilClient, date = DATE): string {
     .replace(/[\s   ]+/g, ' ');
 }
 
-/** La page telle que le document AUTONOME la rend — mention interne comprise. */
+/**
+ * LE DOCUMENT AUTONOME EN ENTIER — couverture, synthèse, pages de stratégie.
+ *
+ * ⚠ CE HARNAIS RENDAIT LA PAGE SEULE, avec `piedInterne: true`, et exigeait
+ * d'elle qu'elle devine le nom du document. C'était la confusion même que le
+ * lot 4 a retirée : le libellé du pied dépendait du drapeau du fiscaliste, si
+ * bien que le jour où il tombe, le document autonome se serait remis à
+ * s'appeler « Analyse des cours cibles ».
+ *
+ * En rendant le VRAI document, le test cesse de vérifier une déduction interne
+ * et vérifie ce que la route produit — pages de stratégie comprises.
+ */
 function rendreAutonome(profil: ProfilClient, date = DATE): string {
   const resultat = analyser(profil, null, date);
-  return textesDe(React.createElement(OptimisationsFiscalesPage, { resultat, piedInterne: true }))
+  return textesDe(React.createElement(OptimisationsFiscalesDocument, {
+    donnees: { resultat, nomClient: 'Dossier Fictif', preset: 'complet' as const },
+  }))
     .join('')
     .replace(/[\s   ]+/g, ' ');
 }
@@ -185,7 +199,13 @@ describe('la page se rend', () => {
     );
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     // Le symbole reste imprimé, avec ou sans image.
-    expect(textesDe(React.createElement(OptimisationsFiscalesPage, { resultat })).join('')).toContain('GAGNANT');
+    // ⚠ LE SYMBOLE A CHANGÉ DE PAGE, PAS DE DOCUMENT. La synthèse ne porte
+    // plus le tableau d'ordres des stratégies qui ont une page dédiée ; le
+    // titre est nommé par cette page-là. On l'exige donc sur le DOCUMENT.
+    const doc = textesDe(React.createElement(OptimisationsFiscalesDocument, {
+      donnees: { resultat, nomClient: 'Dossier Fictif', preset: 'complet' as const },
+    })).join('');
+    expect(doc).toContain('GAGNANT');
   }, DELAI_RENDU_PDF);
 });
 

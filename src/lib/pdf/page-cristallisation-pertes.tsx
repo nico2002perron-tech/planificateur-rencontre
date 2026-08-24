@@ -216,6 +216,12 @@ export function PageCristallisationPertes({ presentation: p, logos }: {
                 : 'Les positions à retenir seront précisées une fois les données du dossier confirmées.'}
             </Text>
           )}
+          {/* ⚠ LA RANGÉE DE CHIFFRES DISPARAÎT QUAND ELLE N'A PLUS AUCUN CHIFFRE.
+              Un « — » sous « Gain en capital net réalisé » n'est pas une donnée
+              manquante à signaler : sous un statut dégradé, le moteur ne produit
+              pas cette grandeur, et la phrase au-dessus l'a déjà dit. La même
+              règle que la perte latente juste en dessous. */}
+          {(e1.gainNetAvantCad !== null || e1.symbole !== null) && (
           <View style={{ flexDirection: 'row', marginTop: 8 }}>
             <CarteChiffre libelle="Gain en capital net réalisé" valeur={e1.gainNetAvantCad} />
             {/* ⚠ LA PERTE LATENTE EST UNE GRANDEUR PAR TITRE. Sans titre nommé,
@@ -228,6 +234,7 @@ export function PageCristallisationPertes({ presentation: p, logos }: {
                   valeur={e1.perteLatenteDisponibleCad} couleur={C.action} />
               : <View style={{ flex: 1 }} />}
           </View>
+          )}
           {e1.compte !== null && (
             <Text style={{ marginTop: 8, fontSize: 6.8, color: NEUTRE.gris }}>
               {/* Minuscule : « Compte Non enregistré » se lisait comme un nom propre. */}
@@ -276,13 +283,18 @@ export function PageCristallisationPertes({ presentation: p, logos }: {
  * C'est CETTE forme que le vrai flux consommera : le titre ne peut plus être
  * oublié par un assembleur, ni recomposé différemment par chaque harnais.
  */
-export function PageStrategieCristallisationPertes({ presentation, logos, pied }: {
+export function PageStrategieCristallisationPertes({
+  presentation, logos, pied, libellePied,
+}: {
   presentation: PresentationCristallisationPertes;
   logos?: Record<string, string>;
   pied?: React.ReactNode;
+  /** Le nom du document hôte, posé par l'assembleur — jamais deviné ici. */
+  libellePied?: string;
 }) {
   return (
-    <PageStrategieFiscale entete={ENTETE_CRISTALLISATION_PERTES} pied={pied}>
+    <PageStrategieFiscale
+      entete={ENTETE_CRISTALLISATION_PERTES} pied={pied} libellePied={libellePied}>
       <PageCristallisationPertes presentation={presentation} logos={logos} />
     </PageStrategieFiscale>
   );
