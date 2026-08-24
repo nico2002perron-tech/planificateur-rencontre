@@ -23,6 +23,7 @@ import {
   ListeTransactions, NEUTRE, type EnteteStrategie,
 } from './langage-fiscal';
 import type { PresentationCristallisationPertes } from './presentation-cristallisation-pertes';
+import { TITRE_CLIENT_CRISTALLISATION_PERTES } from '@/lib/profils/titres-strategies';
 
 /**
  * LA PALETTE DES PERTES — teintes OPAQUES (contrainte 1 du module commun).
@@ -42,7 +43,11 @@ const C = {
 
 /** L'en-tête du document, porté par la page elle-même — plus par un harnais. */
 export const ENTETE_CRISTALLISATION_PERTES: EnteteStrategie = {
-  titre: 'Réduire l’impôt sur vos gains de l’année',
+  // ⚠ LE MÊME IDENTIFIANT QUE `constat.titreClient`, pas un littéral égal. La
+  // carte de synthèse et cette page doivent nommer la stratégie de la même
+  // façon, et la coïncidence doit être structurelle : deux chaînes recopiées se
+  // désynchronisent à la première retouche sans qu'un test s'en aperçoive.
+  titre: TITRE_CLIENT_CRISTALLISATION_PERTES,
   // ⚠ PAS DE SOUS-TITRE AUJOURD'HUI, et c'est un refus explicite plutôt qu'un
   // oubli : le type l'exige, on répond `null`. En ajouter un décalerait toute
   // la page de 13 pt — un changement visuel qui appartient à Nicolas.

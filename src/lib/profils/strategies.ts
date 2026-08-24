@@ -27,6 +27,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { unitePermetUnChiffreFerme, typeTitulaireDe, type TypeTitulaire } from './types';
+import {
+  TITRE_CLIENT_CRISTALLISATION_PERTES, TITRE_CLIENT_CRISTALLISATION_GAINS,
+} from './titres-strategies';
 import { construirePlanExecution, type PlanExecution } from './plan-execution';
 import { strategieApplicableA, RAISON_TITULAIRE_ENTREPRISE } from './applicabilite-titulaire';
 import type {
@@ -487,7 +490,10 @@ function strategieCristallisation(profil: ProfilClient): Constat {
   const base = {
     strategie: 'cristallisation-pertes',
     titre: 'Cristallisation de pertes',
-    titreClient: 'Réduire l’impôt sur vos gains de l’année',
+    // ⚠ LE TITRE CLIENT VIENT DE LA SOURCE CANONIQUE, pas d'un littéral. La
+    // page en cinq étapes lit le MÊME identifiant : deux chaînes égales se
+    // désynchronisent à la première retouche sans faire rougir un test.
+    titreClient: TITRE_CLIENT_CRISTALLISATION_PERTES,
     echeance: 'Ordres réglés avant le 31 décembre pour compter dans l’année — et pas de rachat du même titre pendant 30 jours.',
     libelleMontant: 'de perte à cristalliser',
     recurrence: 'annuel' as const,
@@ -759,7 +765,9 @@ function strategieCristallisationGains(profil: ProfilClient): Constat {
   const base = {
     strategie: 'cristallisation-gains',
     titre: 'Cristallisation de gains',
-    titreClient: 'Récolter des gains sans payer d’impôt',
+    // ⚠ « Récolter des gains sans payer d'impôt » A ÉTÉ ÉCARTÉ le 24 août 2026 :
+    // formulation trop absolue. Voir `titres-strategies.ts` pour le raisonnement.
+    titreClient: TITRE_CLIENT_CRISTALLISATION_GAINS,
     echeance: 'Aucune échéance : une perte reportée ne périme pas, et le rachat du même titre est permis le jour même.',
     libelleMontant: 'de gain cristallisable sans impôt',
     recurrence: 'unique' as const,

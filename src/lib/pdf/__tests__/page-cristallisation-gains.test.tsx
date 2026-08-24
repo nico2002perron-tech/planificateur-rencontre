@@ -20,6 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { PageCristallisationGains } from '../page-cristallisation-gains';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import {
   TITRE_PRESENTATION, SOUS_TITRE_PRESENTATION,
 } from '../presentation-cristallisation-gains';
@@ -86,10 +87,19 @@ describe('PG2 · « sans payer d’impôt » n’atteint jamais le document', ()
       expect(t, nom).not.toMatch(/zéro impôt/i);
       expect(t, nom).not.toMatch(/libre d.impôt/i);
     }
-    // La promesse existe pourtant dans le constat d'origine : c'est la page qui
-    // refuse de la reprendre, pas le catalogue qui aurait été édulcoré.
+    // ⚠ CE TEST GARDAIT UN CONTOURNEMENT, ET LE CONTOURNEMENT A DISPARU.
+    //
+    // Il vérifiait que la page REFUSE le titre du catalogue : la promesse
+    // vivait dans le constat, et seule la page s'en écartait. C'était vrai, et
+    // ça laissait le document porter deux noms — la carte annonçait la
+    // promesse, la page renvoyait à autre chose.
+    //
+    // Le catalogue lui-même ne la porte plus (décision du 24 août 2026). La
+    // page reprend donc simplement le titre client, et le sous-titre a été
+    // REFUSÉ — il répétait mot pour mot ce que le titre dit maintenant.
     expect(PRESENTATION_GAINS_CALCULEE.titre).toBe(TITRE_PRESENTATION);
-    expect(SOUS_TITRE_PRESENTATION).toMatch(/pertes fiscales disponibles/);
+    expect(TITRE_PRESENTATION).toBe(TITRE_CLIENT_CRISTALLISATION_GAINS);
+    expect(SOUS_TITRE_PRESENTATION).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@
 // ⚠ SOCIÉTÉS ENTIÈREMENT FICTIVES. Les symboles sont inventés, les noms aussi.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import type { Constat } from '@/lib/profils/strategies';
 import {
   construirePresentationCristallisationPertes,
@@ -96,7 +97,7 @@ const constatPertes = (montant: number | null, o: Partial<Constat> = {}): Consta
 
 const constatGains = (montant: number | null, o: Partial<Constat> = {}): Constat => ({
   strategie: 'cristallisation-gains', titre: 'T',
-  titreClient: 'Récolter des gains sans payer d’impôt',
+  titreClient: TITRE_CLIENT_CRISTALLISATION_GAINS,
   statut: montant === null ? 'montant-a-confirmer' : 'calcule',
   portee: 'declaree', montantEstime: montant,
   libelleMontant: 'de gain cristallisable', recurrence: 'annuel',

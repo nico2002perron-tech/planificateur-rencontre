@@ -2,6 +2,7 @@
 //
 // Données entièrement fictives, chiffres de la fixture de référence.
 import { describe, it, expect } from 'vitest';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import {
   construirePresentationCristallisationGains, TITRE_PRESENTATION,
 } from '../presentation-cristallisation-gains';
@@ -11,7 +12,7 @@ import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution
 function constat(p: Partial<Constat> = {}): Constat {
   return {
     strategie: 'cristallisation-gains', titre: 'T',
-    titreClient: 'Récolter des gains sans payer d’impôt',
+    titreClient: TITRE_CLIENT_CRISTALLISATION_GAINS,
     statut: 'calcule', portee: 'declaree', montantEstime: 12000,
     libelleMontant: 'de gain cristallisable sans impôt', recurrence: 'annuel',
     explication: '', donneesManquantes: [], sources: [],
@@ -81,19 +82,34 @@ const faire = (c = constat(), m: PlanExecution | null = mono()) =>
 
 describe('le titre client ne promet pas ce que le contrat ne démontre pas', () => {
   it('« sans payer d’impôt » n’atteint jamais le document', () => {
-    // Le catalogue porte cette formule ; elle reste intacte pour ses autres
-    // usages. Mais il reste 15 $ de capacité inutilisée sur le cas de
-    // référence, et rien ne garantit une absorption totale.
+    // Il reste de la capacité inutilisée sur le cas de référence, et rien ne
+    // garantit une absorption totale : le titre nomme le GESTE, pas son
+    // résultat fiscal.
     const p = faire();
     expect(p.titre).toBe(TITRE_PRESENTATION);
     expect(JSON.stringify(p)).not.toMatch(/sans payer d.impôt/i);
-    expect(p.sousTitre).toMatch(/pertes fiscales disponibles/);
+    // Le sous-titre est REFUSÉ, pas oublié : il répétait le titre.
+    expect(p.sousTitre).toBeNull();
   });
 
-  it('le titre historique du catalogue n’est pas modifié', () => {
+  it('LE CATALOGUE LUI-MÊME ne porte plus la promesse', () => {
+    // ⚠ CE TEST DISAIT L'INVERSE, ET C'EST TOUT L'OBJET DU CHANGEMENT.
+    //
+    // Il exigeait que `titreClient` reste « Récolter des gains sans payer
+    // d'impôt » — « le titre historique du catalogue n'est pas modifié ». La
+    // page s'en écartait de son côté, si bien que la carte de synthèse portait
+    // la promesse et la page un autre nom. Nicolas a tranché à la source le
+    // 24 août 2026 : la formulation est trop absolue, elle disparaît du
+    // catalogue, et les deux surfaces lisent le même titre.
     const c = constat();
     faire(c);
-    expect(c.titreClient).toBe('Récolter des gains sans payer d’impôt');
+    expect(c.titreClient).toBe(TITRE_CLIENT_CRISTALLISATION_GAINS);
+    expect(c.titreClient).not.toMatch(/sans payer d.impôt/i);
+    // ⚠ LE NOM DE MÉTIER NE SE VÉRIFIE PAS ICI. Le constat de ce fichier est
+    // un stub (`titre: 'T'`) : l'affirmer sur lui ne prouverait rien du
+    // moteur. ND11 le vérifie sur un constat réellement produit par
+    // , ce qui est le seul niveau où la distinction
+    // métier / client existe.
   });
 });
 

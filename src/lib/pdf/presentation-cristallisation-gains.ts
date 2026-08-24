@@ -19,19 +19,35 @@ import type { ValidationAvantExecution } from './langage-fiscal';
 // ⚠ LE FORMATEUR VIENT DE `rendu-constat`, QUI IGNORE LE MOTEUR DE RENDU.
 // L'adaptateur compose des phrases ; il ne doit pas dépendre du PDF.
 import { argent } from './rendu-constat';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 
 /**
- * ⚠ LE TITRE DE PRÉSENTATION N'EST PAS CELUI DU CATALOGUE.
+ * ⚠ LE TITRE DE PRÉSENTATION EST DÉSORMAIS CELUI DU CATALOGUE, ET C'EST LE
+ * CATALOGUE QUI A CHANGÉ.
  *
- * Le catalogue porte « Récolter des gains sans payer d'impôt ». C'est une
- * PROMESSE que le contrat ne démontre pas : sur le cas de référence il reste
- * 15 $ de capacité inutilisée, et rien ne garantit que l'absorption soit
- * totale. Le champ historique reste intact — il sert ailleurs — mais le
- * document remis au client dit ce que le moteur sait réellement.
+ * Ce module portait un titre À LUI parce que le catalogue promettait
+ * « Récolter des gains sans payer d'impôt » — une promesse que le contrat ne
+ * démontre pas : sur le cas de référence il reste de la capacité inutilisée, et
+ * rien ne garantit que l'absorption soit totale. La page refusait donc de
+ * reprendre le titre du constat.
+ *
+ * Le refus a tenu, mais il laissait le document porter DEUX noms : la carte de
+ * synthèse annonçait la promesse, la page renvoyait à autre chose. Nicolas a
+ * tranché à la source le 24 août 2026 — le titre client du catalogue ne promet
+ * plus l'absence d'impôt. Il n'y a donc plus rien à refuser, et surtout plus
+ * deux chaînes à tenir d'accord.
  */
-export const TITRE_PRESENTATION = 'Cristallisation de gains';
-export const SOUS_TITRE_PRESENTATION =
-  'Réaliser des gains en utilisant vos pertes fiscales disponibles';
+export const TITRE_PRESENTATION = TITRE_CLIENT_CRISTALLISATION_GAINS;
+
+/**
+ * ⚠ PLUS DE SOUS-TITRE, ET C'EST UN REFUS EXPLICITE.
+ *
+ * Le sous-titre disait « Réaliser des gains en utilisant vos pertes fiscales
+ * disponibles » — c'est-à-dire exactement ce que le titre client dit maintenant.
+ * Le garder ferait lire deux fois la même phrase sous le filet de couleur.
+ * Le type accepte `null` pour qu'on puisse REFUSER sans OUBLIER.
+ */
+export const SOUS_TITRE_PRESENTATION: string | null = null;
 
 /** La ligne du plan, telle quelle — aucun type miroir dans la présentation. */
 export type { LigneExecution };
@@ -62,7 +78,8 @@ export type ActionGainPresentee =
 export type PresentationCristallisationGains = {
   statut: StatutConstat;
   titre: string;
-  sousTitre: string;
+  /** `null` quand la stratégie refuse un sous-titre — jamais quand elle l'oublie. */
+  sousTitre: string | null;
   etape1: {
     pertesDisponiblesCad: number | null;
     gainsLatentsCad: number | null;

@@ -8,6 +8,7 @@
 //
 // ⚠ LA SOCIÉTÉ EST FICTIVE. Aucun symbole réel, aucun nom réel.
 import type { Constat } from '@/lib/profils/strategies';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import type { PlanExecution, LigneExecution } from '@/lib/profils/plan-execution';
 import {
   construirePresentationCristallisationGains,
@@ -67,7 +68,7 @@ export function planGainFictif(
 export function constatGainFictif(o: Partial<Constat> = {}): Constat {
   return {
     strategie: 'cristallisation-gains', titre: 'T',
-    titreClient: 'Récolter des gains sans payer d’impôt',
+    titreClient: TITRE_CLIENT_CRISTALLISATION_GAINS,
     statut: 'calcule', portee: 'declaree', montantEstime: 12000,
     libelleMontant: 'de gain cristallisable', recurrence: 'annuel',
     explication: '', donneesManquantes: [], sources: [],

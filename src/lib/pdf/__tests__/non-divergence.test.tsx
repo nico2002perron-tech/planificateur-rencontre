@@ -441,6 +441,62 @@ describe('ND9 · le pied nomme le document, et l’assembleur le dit', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ND11 · UN SEUL TITRE CLIENT PAR STRATÉGIE
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('ND11 · la carte et la page nomment la stratégie de la même façon', () => {
+  it('l’en-tête du registre EST le titreClient du moteur', () => {
+    // ⚠ LE DÉFAUT QUE CE TEST VERROUILLE ÉTAIT LISIBLE DANS LE DOCUMENT REMIS :
+    // la carte annonçait « Récolter des gains sans payer d'impôt », puis
+    // renvoyait à une page intitulée « Cristallisation de gains » — du
+    // vocabulaire de métier, et un second nom pour la même chose.
+    const r = analyse(DOSSIER_COMPLET());
+    for (const cle of CLES_STRATEGIES_VISUELLES) {
+      const c = constat(r, cle);
+      expect(STRATEGIES_VISUELLES[cle].entete.titre, cle).toBe(c.titreClient);
+    }
+  });
+
+  it('titre carte === titre page === titreClient, dans le rendu', () => {
+    // ⚠ SUR LE TEXTE RÉELLEMENT POSÉ, pas sur les constantes : deux littéraux
+    // peuvent être égaux et ne jamais atteindre la même surface.
+    const r = analyse(DOSSIER_COMPLET());
+    const carte = platDe(syntheseDe(r));
+    const doc = platDe(documentDe(r));
+
+    for (const cle of CLES_STRATEGIES_VISUELLES) {
+      const titre = constat(r, cle).titreClient;
+      expect(carte, `${cle} : la carte ne porte pas le titre client`).toContain(titre);
+      expect(doc, `${cle} : la page ne porte pas le titre client`).toContain(titre);
+      // Et le renvoi de la carte nomme CE titre-là, pas un autre.
+      expect(carte, `${cle} : le renvoi nomme une autre page`)
+        .toContain(`à la page « ${titre} »`);
+    }
+  });
+
+  it('« sans payer d’impôt » n’atteint plus aucun rendu client', () => {
+    // Décision de Nicolas, 24 août 2026 : la formulation est TROP ABSOLUE. Le
+    // moteur ne démontre pas l'absence d'impôt — il démontre qu'un gain peut
+    // être absorbé par des pertes déjà disponibles, et il reste même de la
+    // capacité inutilisée sur le cas de référence.
+    const gains = constat(analyse(DOSSIER_COMPLET()), 'cristallisation-gains');
+    expect(gains.titreClient).not.toMatch(/sans payer d.impôt/i);
+
+    for (const dossier of [DOSSIER_COMPLET, DOSSIER_GAINS, DOSSIER_A_CONFIRMER, DOSSIER_ENTREPRISE]) {
+      const texte = platDe(documentDe(analyse(dossier())));
+      expect(texte).not.toMatch(/sans payer d.impôt/i);
+    }
+  });
+
+  it('le nom de MÉTIER survit, il ne sert simplement pas au client', () => {
+    // « Cristallisation de gains » reste le nom du catalogue et de l'écran de
+    // sélection. Ce qui a changé, c'est qu'il n'atteint plus le document.
+    const c = constat(analyse(DOSSIER_COMPLET()), 'cristallisation-gains');
+    expect(c.titre).toBe('Cristallisation de gains');
+    expect(c.titre).not.toBe(c.titreClient);
+  });
+});
+// ═══════════════════════════════════════════════════════════════════════════
 // ND10 · LA CARTE RESTE UNE SYNTHÈSE UTILE
 // ═══════════════════════════════════════════════════════════════════════════
 

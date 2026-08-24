@@ -16,6 +16,7 @@
 // Données entièrement fictives : comptes « FICT », symboles inventés.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest';
+import { TITRE_CLIENT_CRISTALLISATION_GAINS } from '@/lib/profils/titres-strategies';
 import React from 'react';
 import { OptimisationsFiscalesPage } from '../optimisations-fiscales-page';
 import { OptimisationsFiscalesDocument } from '../optimisations-fiscales-document';
@@ -125,7 +126,10 @@ describe('PDF-A · statut calculé', () => {
     // Le renvoi nomme la page par son titre — « à la page suivante » serait faux
     // dès la deuxième stratégie.
     expect(texte).toMatch(/Le détail/);
-    expect(texte).toMatch(/Récolter des gains sans payer d’impôt/);
+    // ⚠ PAR L'IDENTIFIANT, PAS PAR UN LITTÉRAL : c'est précisément la
+    // recopie de ce titre à plusieurs endroits qui avait laissé la carte et la
+    // page se désynchroniser.
+    expect(texte).toContain(TITRE_CLIENT_CRISTALLISATION_GAINS);
     // Et le tableau d'ordres, lui, n'y est plus.
     expect(texte).not.toMatch(/Vendre \(environ\)/);
   });
